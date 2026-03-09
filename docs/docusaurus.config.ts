@@ -11,10 +11,9 @@ const config: Config = {
 
 
   // Set the production url of your site here
-  url: 'https://etiennelescot.github.io',
-  // Set the /<baseUrl>/ pathname under which your site is served
-  // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/n8n-as-code/',
+  url: 'https://n8nascode.dev',
+  // Custom domains are served from the site root on GitHub Pages.
+  baseUrl: '/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
