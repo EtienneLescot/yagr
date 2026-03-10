@@ -6,7 +6,7 @@ description: Welcome to n8n-as-code documentation - Manage your n8n workflows as
 
 # Welcome to n8n-as-code
 
-**n8n-as-code** is an ecosystem designed to manage your n8n workflows as code. It transforms your automations into synchronized local files (JSON or TypeScript), enabling version control (Git), AI-assisted editing, and seamless integration into VS Code.
+**n8n-as-code** is an ecosystem for managing n8n workflows with the same discipline you expect from software projects: local files, Git history, explicit sync operations, and tooling that works well for both humans and AI agents.
 
 :::tip TypeScript Workflows (New!)
 Transform your workflows into type-safe, readable TypeScript with decorators! [Learn more →](/docs/usage/typescript-workflows)
@@ -19,8 +19,8 @@ n8n-as-code bridges the gap between visual workflow automation and software engi
 - **Version Control**: Leverage the ability for you to version your workflows with Git
 - **TypeScript Support**: Transform workflows into type-safe, readable TypeScript (optional)
 - **AI Agent Support**: Empower AI coding assistants with complete n8n node documentation and schemas
-- **Git-like Sync**: Explicit push/pull/fetch commands keep your local files and n8n instance in sync with 3-way merge detection
-- **VS Code Integration**: Edit workflows directly in your favorite code editor with visual status indicators
+- **Git-like Sync**: Explicit `list`, `pull`, `push`, and `resolve` commands make state changes visible and predictable
+- **VS Code Integration**: Edit workflows directly in your favorite code editor with status indicators, validation, and canvas preview
 - **Smart Conflict Resolution**: Deterministic 3-way merge prevents false conflicts with persistent resolution UI
 
 ## 🎯 Key Features
@@ -31,7 +31,7 @@ n8n-as-code bridges the gap between visual workflow automation and software engi
 
 ### 🔄 Git-like Synchronization with 3-Way Merge
 
-Keep your workflows synchronized between your local files and n8n instance using a robust **git-like, explicit sync model**:
+Move workflows between your local files and n8n instance using a robust **git-like, explicit sync model**:
 - **Explicit operations**: `list`, `fetch`, `pull`, `push` — you control when to sync
 - **3-way comparison** (base vs local vs remote) detects true conflicts
 - **Deterministic detection** eliminates false positive conflicts
@@ -44,7 +44,7 @@ Keep your workflows synchronized between your local files and n8n instance using
 <div className="n8n-card">
 
 ### 🤖 AI Agent Empowerment
-Empower your AI coding assistants with **Skills** (`@n8n-as-code/skills`) – a toolkit that provides complete documentation, schemas, and context for all 525 n8n nodes. This enables AI assistants to understand the n8n ecosystem and provide intelligent workflow development support.
+Empower your AI coding assistants with **Skills** (`@n8n-as-code/skills`) - a toolkit that provides complete documentation, schemas, and context for all 537 n8n nodes. This enables AI assistants to understand the n8n ecosystem and provide intelligent workflow development support.
 
 **Key capabilities:**
 - **Complete node documentation**: Structured schemas and documentation for all n8n nodes
@@ -75,7 +75,7 @@ Work with multiple n8n instances simultaneously. Your workflows are automaticall
 <div className="n8n-card">
 
 ### 🎨 Visual Editing
-Edit workflows in a split view: JSON on one side, n8n canvas on the other. See your changes in real-time.
+Edit workflows in a split view: code on one side, n8n canvas on the other. This is for structural validation and review, not for a hidden live-sync experience.
 
 </div>
 
@@ -116,7 +116,7 @@ graph TD
 
 ## 🏁 Quick Start
 
-Ready to get started? Here's how to set up n8n-as-code in under 2 minutes:
+Ready to get started? Here is the shortest path into the V1 workflow:
 
 1. **Install the CLI**:
    ```bash
@@ -135,13 +135,13 @@ Ready to get started? Here's how to set up n8n-as-code in under 2 minutes:
    n8nac list
    ```
 
-4. **Pull workflows you want to work on**:
+4. **Pull the workflows you want to work on**:
    ```bash
    n8nac pull <workflowId>
    ```
 
 5. **Open in VS Code**:
-   Install the n8n-as-code extension and start editing with the git-like workflow!
+   Install the n8n-as-code extension, inspect the tree, edit locally, then push explicitly when ready.
 
 For detailed instructions, check out our [Getting Started guide](/docs/getting-started).
 
@@ -150,14 +150,15 @@ For detailed instructions, check out our [Getting Started guide](/docs/getting-s
 This documentation is organized into several sections:
 
 - **Getting Started**: Installation, configuration, and first steps
-- **Usage**: Detailed guides for each package (CLI, VS Code Extension, Skills, Sync)
+- **Usage**: Detailed guides for each package (CLI, VS Code Extension, Skills)
 - **Contribution**: Architecture, development setup, and contribution guidelines
 - **Troubleshooting**: Common issues and solutions
 
 ## 🆕 What's New?
 
-- **Rebranding**: Renamed CLI to `n8nac` and `skills` to `skills` for better developer experience
-- **Major Refactor (Latest)**: Git-like explicit sync architecture for full control and reliable conflict detection
+- **V1 Positioning**: Docs and product messaging now match the current explicit workflow model instead of the older live-sync narrative
+- **Rebranding**: Renamed CLI to `n8nac` for a tighter developer-facing surface
+- **Major Refactor**: Git-like explicit sync architecture for full control and reliable conflict detection
   - Git-like CLI commands: `list`, `fetch`, `pull`, `push`, `resolve` — all user-triggered
   - Project-scoped sync: one selected project at a time (`init` / `switch`)
   - Persistent conflict resolution UI in VS Code with expandable action buttons
@@ -185,4 +186,4 @@ n8n-as-code is an open-source project. We welcome contributions!
 
 ---
 
-*Last updated: January 2026*
+*Last updated: March 2026*

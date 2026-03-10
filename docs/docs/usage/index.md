@@ -117,7 +117,7 @@ n8nac push workflows/instance/project/workflow.workflow.ts
 | File | Purpose | Location |
 |------|---------|----------|
 | `n8nac-config.json` | Project settings | Project root |
-| VS Code Settings | Connection config | VS Code settings |
+| Credential store | API key storage | System keychain / credential store |
 
 ## 🚀 Getting Started with Each Tool
 
@@ -154,7 +154,7 @@ Work with multiple n8n instances. Workflows are automatically organized by insta
 ### Git-like Sync Workflow
 Follow a git-like pattern for synchronization: list workflows to see status, pull changes you want, edit locally, then push changes back.
 
-Use `n8nac list` to check status, `n8nac pull` to download by workflow ID, and `n8nac push <path>` to upload from the active local sync scope.
+Use `n8nac list` to check status, `n8nac pull` to download by workflow ID, and `n8nac push <path>` to upload the local workflow file you want to send.
 
 ### Git Integration
 Store workflows as JSON files in Git for version control, collaboration, and deployment pipelines.

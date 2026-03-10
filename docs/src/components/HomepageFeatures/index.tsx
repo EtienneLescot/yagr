@@ -11,62 +11,62 @@ type FeatureItem = {
 
 const FeatureList: FeatureItem[] = [
   {
-    title: 'Version Control for Workflows',
+    title: 'Explicit Git-like Workflow',
     image: require('@site/static/img/sections/section-0.png').default,
     description: (
       <>
-        Manage your n8n workflows as code with Git. Track changes, collaborate with teams,
-        and maintain a complete history of your automation evolution.
+        List current status, pull the workflow you want, edit locally, then push a specific
+        filename back to n8n. Clear operations beat hidden background behavior.
       </>
     ),
   },
   {
-    title: 'AI-Powered Assistance',
+    title: 'AI Skill With Real Context',
     image: require('@site/static/img/sections/section-1.png').default,
     description: (
       <>
-        Empower AI agents with n8nac-skills CLI tools to search 640+ nodes, retrieve technical schemas,
-        validate workflows, and access 7000+ community workflow examples.
+        Empower AI agents with schema-accurate node data, documentation, validation, and thousands
+        of workflow examples packaged for fast local search.
       </>
     ),
   },
   {
-    title: 'Real-time Synchronization',
+    title: 'TypeScript Workflows',
     image: require('@site/static/img/sections/section-2.png').default,
     description: (
       <>
-        Keep workflows synchronized between local files and n8n instances.
-        Changes in VS Code instantly reflect in n8n, and vice versa.
+        Convert workflows into readable decorators and stable diffs so humans and coding agents can
+        reason about automation as code instead of opaque JSON blobs.
       </>
     ),
   },
   {
-    title: 'VS Code Integration',
+    title: 'Canvas Preview in VS Code',
     image: require('@site/static/img/sections/section-3.png').default,
     description: (
       <>
-        Edit workflows directly in VS Code with syntax highlighting, validation,
-        and a split view showing JSON alongside the n8n canvas.
+        Edit in code while keeping the n8n canvas close. The IDE becomes the place where review,
+        validation, preview, and sync decisions happen together.
       </>
     ),
   },
   {
-    title: 'Conflict Management',
+    title: 'Deterministic Conflict Resolution',
     image: require('@site/static/img/sections/section-4.png').default,
     description: (
       <>
-        Smart conflict detection prevents data loss. Visual diff tools help you
-        choose which version to keep when conflicts occur.
+        Three-way comparison detects real conflicts, avoids false positives, and keeps resolution
+        visible through diffs and explicit keep-local or keep-remote actions.
       </>
     ),
   },
   {
-    title: 'Multi-Instance Support',
+    title: 'Project-aware Local Structure',
     image: require('@site/static/img/sections/section-5.png').default,
     description: (
       <>
-        Work with multiple n8n instances simultaneously. Workflows are automatically
-        organized by instance to avoid mixing files.
+        Keep instances and projects separated on disk so teams can version the right workflows
+        without cross-environment confusion.
       </>
     ),
   },
@@ -75,16 +75,18 @@ const FeatureList: FeatureItem[] = [
 function Feature({title, image, description}: FeatureItem) {
   return (
     <div className={clsx('col col--4')}>
-      <div className="text--center">
-        <img
-          src={image}
-          className={styles.featureImage}
-          alt={title}
-        />
-      </div>
-      <div className="text--center padding-horiz--md">
-        <Heading as="h3">{title}</Heading>
-        <p>{description}</p>
+      <div className={styles.featureCard}>
+        <div className={styles.featureMedia}>
+          <img
+            src={image}
+            className={styles.featureImage}
+            alt={title}
+          />
+        </div>
+        <div className={styles.featureBody}>
+          <Heading as="h3">{title}</Heading>
+          <p>{description}</p>
+        </div>
       </div>
     </div>
   );
@@ -94,6 +96,10 @@ export default function HomepageFeatures(): ReactNode {
   return (
     <section className={styles.features}>
       <div className="container">
+        <div className={styles.header}>
+          <p className={styles.eyebrow}>What the stack gives your agent and your team</p>
+          <Heading as="h2">A workflow system designed for AI execution and human review.</Heading>
+        </div>
         <div className="row">
           {FeatureList.map((props, idx) => (
             <Feature key={idx} {...props} />

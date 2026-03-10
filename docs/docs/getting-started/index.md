@@ -14,7 +14,7 @@ In this section, you'll learn how to:
 
 1. Install n8nac VS Code Extension or CLI
 2. Configure your connection to n8n
-3. Sync your existing workflows
+3. Inspect and pull the workflows you want locally
 4. Start editing workflows in VS Code
 
 ## 📋 Prerequisites
@@ -48,8 +48,9 @@ The VS Code Extension provides the best user experience with visual editing, git
 ### Step 3: Sync Your Workflows
 
 1. Click the refresh button in the n8n panel
-2. Your workflows will be downloaded and organized by instance
-3. Use the context menu (right-click on a workflow) to **fetch**, **pull**, and **push** changes
+2. Review the current status shown in the tree
+3. Pull the workflows you want to edit locally
+4. Use the context menu (right-click on a workflow) to **fetch**, **pull**, and **push** changes
 
 ## 🛠️ Alternative: CLI Installation
 
@@ -95,8 +96,8 @@ n8nac push workflows/instance/project/workflow.workflow.ts
 
 After setup, you'll have:
 
-- `n8nac-config.json`: Project configuration (safe to commit to Git)
-- Global API key storage (not committed, stored securely in your system)
+- `n8nac-config.json`: Workspace-level project configuration (safe to commit to Git)
+- Global credential storage for your API key (not committed, stored securely in your system)
 
 ## 🔄 Syncing Your Workflows
 
@@ -121,7 +122,7 @@ This will:
 Send your local modifications back to n8n:
 
 - **VS Code Extension**: Use the context menu on workflow items (right-click → Push)
-- **CLI**: Use `n8nac push <path>` command
+- **CLI**: Use `n8nac push <path>` with the local workflow path you want to upload
 
 ### Git-like Sync Workflow
 
@@ -163,17 +164,16 @@ After setup, your project will look like this:
 
 ```
 your-project/
-├── n8nac-config.json          # Project configuration
-├── workflows/                # Workflow storage
+├── n8nac-config.json             # Workspace configuration
+├── workflows/                    # Workflow storage
 │   └── instance-name_user/       # Instance identifier (auto-generated)
 │       └── project-slug/         # Project slug (from project name)
-│           ├── workflow-1.json
-│           ├── workflow-2.json
+│           ├── workflow-1.workflow.ts
+│           ├── workflow-2.workflow.ts
 │           └── folder/
-│               └── workflow-3.json
-├── AGENTS.md                # AI assistant instructions (optional)
-├── n8nac-config.json # Instance configuration
-└── .git/                    # Version control (recommended)
+│               └── workflow-3.workflow.ts
+├── AGENTS.md                     # AI assistant instructions (optional)
+└── .git/                         # Version control (recommended)
 ```
 
 ## 🚨 Common Issues

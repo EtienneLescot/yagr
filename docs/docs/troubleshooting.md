@@ -181,7 +181,7 @@ cat n8nac-config.json
 
 **Solutions:**
 1. **Check Configuration:**
-   - Verify `n8n.host` and `n8n.apiKey` are set in VS Code settings
+   - Verify the workspace has been initialized and `n8nac-config.json` exists at the project root
    - Check the Output panel (View → Output, select "n8n-as-code") for errors
 
 2. **Refresh Tree View:**

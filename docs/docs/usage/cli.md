@@ -58,8 +58,8 @@ This command:
 3. Suggests `n8nac resolve` if a conflict is detected
 
 :::tip How `push` resolves the file
-Pass only the workflow filename, for example `my-workflow.workflow.ts`.
-Do not pass a path. `n8nac` derives the effective local sync path from `n8nac-config.json` (`syncFolder`, `instanceIdentifier`, `projectName`) and resolves the file under the hood.
+Pass the local workflow path you want to upload, for example `workflows/instance/project/workflow.workflow.ts`.
+Use the path that matches your active sync folder and project layout in the workspace.
 :::
 
 ## 📋 Command Reference
@@ -146,7 +146,7 @@ Upload a local workflow to n8n.
 Uploads a single workflow from local to your n8n instance. Uses Optimistic Concurrency Control (OCC) — the push is rejected if the remote was modified since the last pull.
 
 **Options:**
-- `<filename>` (**required**): The workflow filename inside the active sync scope
+- `<path>` (**required**): The local workflow path to upload
 
 **Example:**
 ```bash
@@ -270,8 +270,8 @@ n8nac pull abc123
 # 4. Edit workflow files locally
 #    (edit workflows/*.workflow.ts files)
 
-# 5. Push local changes to n8n (single workflow, by ID)
-n8nac push abc123
+# 5. Push local changes to n8n (single workflow, by path)
+n8nac push workflows/instance/project/workflow.workflow.ts
 ```
 
 ### Git-like Development Pattern
@@ -285,7 +285,7 @@ n8nac pull abc123
 # ... edit workflow ...
 
 # Push local changes back to n8n (single workflow)
-n8nac push abc123
+n8nac push workflows/instance/project/workflow.workflow.ts
 
 # Resolve a conflict (if push/pull is blocked) (single workflow)
 n8nac resolve abc123 --mode keep-current   # keep local

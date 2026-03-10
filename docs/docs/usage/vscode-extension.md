@@ -1,17 +1,17 @@
 ---
 sidebar_label: VS Code Extension
 title: VS Code Extension Guide
-description: Learn how to use the n8n-as-code VS Code Extension for visual workflow editing with git-like synchronization.
+description: Learn how to use the n8n-as-code VS Code Extension for visual workflow editing with explicit git-like workflow controls.
 ---
 
 # VS Code Extension Guide
 
-The n8n-as-code VS Code Extension transforms VS Code into a powerful IDE for your n8n workflows. It provides visual editing, git-like synchronization, and workflow validation.
+The n8n-as-code VS Code Extension transforms VS Code into a focused IDE for n8n workflows. It provides visual editing, explicit git-like workflow controls, and workflow validation.
 
 ## 🎨 Features
 
 ### 🔄 Git-like Synchronization
-The extension follows a git-like workflow with explicit commands. View workflow status, pull changes, and push local changes using the context menu. The tree view refreshes automatically when `.workflow.ts` files are created or deleted locally, and polls the remote every 60 seconds with a lightweight `list` to surface new or deleted workflows.
+The extension follows a git-like workflow with explicit commands. View workflow status, pull changes, and push local changes using the context menu. Local file additions and deletions are reflected in the tree, while remote state is refreshed when you ask for it.
 
 ### 🗂️ Multi-Instance Support
 Your workflows are automatically organized by instance to avoid mixing files from different environments:
@@ -41,7 +41,7 @@ Your environment is automatically configured with validation and snippets upon o
 - **Snippet Library**: Ready-to-use node templates (`node:webhook`, `node:code`, etc.)
 
 ### 🍱 Split View
-Visualize the n8n canvas in real-time using the integrated Webview while editing the JSON code. This is the ideal interface for visually validating your structural changes.
+Visualize the n8n canvas beside your code using the integrated Webview while editing the workflow file. This is the ideal interface for structurally validating changes before you push.
 
 ## ⚙️ Installation
 
@@ -68,9 +68,9 @@ Visualize the n8n canvas in real-time using the integrated Webview while editing
 4. Configure:
    - Sync Folder (default: `workflows`)
 5. Click **Save settings**
-6. Click **Initialize n8n as code** in the n8n view to start syncing
+6. Click **Initialize n8n as code** in the n8n view to initialize the workspace and load the active project context
 
-The extension writes these values into VS Code workspace settings (`n8n.*`).
+The extension stores the active workspace configuration in `n8nac-config.json`. Legacy `n8n.*` VS Code settings remain as a fallback compatibility layer, not the primary source of truth.
 
 ### Apply Changes (safety)
 When you change critical settings (host / API key / sync folder / project), synchronization is paused and an **Apply Changes** action appears (status bar and n8n panel). This prevents partial or accidental settings edits from triggering unexpected sync behavior.
@@ -89,7 +89,7 @@ When you change critical settings (host / API key / sync folder / project), sync
 
 ### Connecting to n8n
 The extension automatically connects to n8n when:
-1. You have configured `n8n.host` and `n8n.apiKey` in settings
+1. You have initialized the workspace or configured the required connection values
 2. You open a workspace with the extension
 3. The extension validates the connection automatically
 
@@ -130,7 +130,7 @@ When a workflow has a conflict (both local and remote modified):
 ## 🔄 Sync Behavior
 
 ### Git-like Explicit Sync
-All sync operations are **user-triggered** — nothing syncs automatically. Follow this git-like pattern:
+All sync operations that move workflow state are **user-triggered**. Follow this git-like pattern:
 
 1. **List**: Right-click a workflow or use the tree refresh to see current sync status
 2. **Fetch**: Fetch remote state to update the local cache for accurate status
@@ -211,4 +211,4 @@ AI coding assistants (like Cursor, Copilot, Claude, etc.) can use these generate
 
 ---
 
-*The VS Code Extension provides the best user experience for editing n8n workflows with git-like sync controls and visual feedback.*
+*The VS Code Extension provides the most direct way to review status, edit locally, preview structure, and push intentionally.*

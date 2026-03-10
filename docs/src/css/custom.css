@@ -265,6 +265,10 @@ table td {
 }
 
 /* Custom scrollbar */
+html {
+  scrollbar-color: #1f7ae6 var(--ifm-background-surface-color);
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -275,12 +279,12 @@ table td {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--ifm-color-primary);
+  background: #1f7ae6;
   border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--ifm-color-primary-dark);
+  background: #1761b8;
 }
 
 /* Animation for page transitions */
