@@ -65,7 +65,7 @@ Plugin-driven workflow work with Claude.
 **Run**  
 <code>/plugin marketplace add <wbr>EtienneLescot/n8n-as-code</code><br>
 <code>/plugin install <wbr>n8n-as-code@n8nac-marketplace</code><br>
-<code>npx --yes n8nac init</code>
+.
 
 [Claude setup docs](https://n8nascode.dev/docs/usage/claude-skill/)
 
