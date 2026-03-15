@@ -1,0 +1,54 @@
+{
+  "name": "n8n-as-code-monorepo",
+  "version": "0.2.0",
+  "private": true,
+  "description": "n8n workflow ecosystem",
+  "type": "module",
+  "bin": {
+    "n8n-as-code": "./packages/cli/dist/index.js"
+  },
+  "workspaces": [
+    "packages/*",
+    "plugins/openclaw/n8n-as-code"
+  ],
+  "scripts": {
+    "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
+    "build": "npm run sync:brand-assets && npm run generate:nodes && tsc -b --force && npm run build --workspace=packages/skills --workspace=packages/cli --workspace=packages/vscode-extension --workspace=plugins/openclaw/n8n-as-code",
+    "build:cli": "cd packages/cli && npm run build",
+    "build:claude-plugin": "npm run build --workspace=packages/skills && npm run build:adapters --workspace=packages/skills",
+    "build:extension": "cd packages/vscode-extension && npm run build",
+    "extension:install": "node scripts/build-and-install.js",
+    "extension:dev": "node scripts/setup-dev-link.js",
+    "release:plan": "node scripts/release/workspace-release.mjs stable-pr",
+    "release:prepare": "node scripts/release/workspace-release.mjs stable-pr --apply",
+    "release:prerelease": "node scripts/release/workspace-release.mjs prerelease",
+    "release:pending": "node scripts/release/workspace-release.mjs pending-stable",
+    "test": "node scripts/unified-test-report.mjs",
+    "test:verbose": "node scripts/unified-test-report.mjs --verbose",
+    "test:integration": "npm run test:integration --workspace=n8nac",
+    "test:ci-local": "node scripts/test-ci-local.js",
+    "validate-schema": "node scripts/validate-schema.js --schema ./packages/cli/src/core/assets/n8n-nodes-index.json",
+    "generate:nodes": "node scripts/ensure-n8n-cache.cjs && node scripts/generate-n8n-index.cjs && node scripts/download-complete-docs.cjs && node scripts/build-complete-index.cjs && node scripts/enrich-nodes-technical.cjs && node scripts/build-knowledge-index.cjs && node scripts/build-workflow-index.cjs && node scripts/compare-extraction.mjs",
+    "clean": "npm run clean --workspaces --if-present && rm -rf packages/*/dist packages/*/out packages/**/tsconfig.tsbuildinfo .n8n-cache/ node_modules/.cache docs/static/img/logo.png",
+    "release": "npm run build",
+    "check-versions": "node scripts/check-version-consistency.js",
+    "docs": "cd docs && npm start",
+    "docs:build": "cd docs && npm run build",
+    "docs:api": "node scripts/generate-api-docs.cjs",
+    "docs:all": "npm run docs:api && npm run docs:build"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "chokidar": "^5.0.0",
+    "deep-equal": "^2.2.3",
+    "dotenv": "^17.2.3",
+    "flexsearch": "^0.8.212",
+    "open": "^8.4.2"
+  },
+  "devDependencies": {
+    "typedoc": "^0.28.16",
+    "typescript": "^5.3.3"
+  }
+}

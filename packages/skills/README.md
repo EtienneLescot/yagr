@@ -1,0 +1,268 @@
+# <img src="https://raw.githubusercontent.com/EtienneLescot/n8n-as-code/main/res/logo.png" alt="n8n-as-code logo" width="32" height="32"> @n8n-as-code/skills
+
+**The AI skill layer that gives coding agents n8n superpowers.**
+
+This package powers the shared n8n ontology behind `n8n-as-code`: searchable nodes, documentation, workflow examples, validation, and generated `AGENTS.md` context for coding agents.
+
+> **⚠️ BREAKING CHANGE (v0.16.0)**: Workflows are now generated and documented in **TypeScript format** (`.workflow.ts`) instead of JSON for better AI compatibility and readability.
+
+> **📌 Internal Library** — This package is not meant to be used directly. Public access is via [`n8nac`](https://www.npmjs.com/package/n8nac): `npx n8nac skills <command>`.
+
+Specialized tooling for AI agents across Copilot, Cursor, Windsurf, Claude Code, and related editor or CLI workflows.
+
+## 🛠 Purpose
+
+This package provides programmatic tools and the skills library consumed by `n8nac skills`. It:
+1. **Provides Context**: Helps AI agents understand n8n node structures.
+2. **Searches Nodes**: Finds specific n8n nodes and their properties.
+3. **Initializes Context**: Bootstraps developer environments with `AGENTS.md`, JSON schemas, and snippets.
+
+## Usage via `n8nac`
+
+All commands below are accessed through the `n8nac` CLI:
+
+```bash
+npx n8nac skills --help
+```
+
+For installation: `npm install -g n8nac`
+
+## 📖 CLI Usage (`n8nac skills`)
+
+### `search <query>` - Deep Unified Search (PRIMARY TOOL)
+
+**Deep Full-Text Search with Smart Keyword Matching** across 600+ nodes and 1240+ documentation pages.
+Optimized for natural language queries, technical terms, and capabilities (e.g., "image generation" finds Google Gemini).
+
+KEY FEATURES:
+- **Comprehensive Keyword Extraction**: Finds nodes based on operations (e.g., "generate", "transcribe") and resources (e.g., "image", "video").
+- **Smart Prioritization**: Matches on keywords first, then titles, then content.
+- **Fuzzy Matching**: Handles typos and partial terms ("googl shets").
+
+```bash
+# Search nodes, docs, and tutorials
+n8nac skills search "how to generate images"
+n8nac skills search "google sheets"
+
+# Filter by type
+n8nac skills search "authentication" --type documentation
+n8nac skills search "database" --type node
+
+# Filter by category
+n8nac skills search "ai" --category advanced-ai
+```
+
+### `node-info <nodeName>` - 📚 Complete Node Info
+Get full node information: schema + documentation + examples.
+
+```bash
+n8nac skills node-info googleSheets
+n8nac skills node-info httpRequest
+```
+
+**Includes hints for next steps!**
+
+### `node-schema <nodeName>` - ⚡ Quick Parameter Reference
+Fast access to technical schema (parameters only).
+
+```bash
+n8nac skills node-schema googleSheets
+# Returns only properties and required fields
+```
+
+### `docs <title>` - 📖 Read Documentation
+Read full documentation pages. Use `search` first to find relevant titles.
+
+```bash
+# Read a specific page
+n8nac skills docs "Google Gemini"
+n8nac skills docs "Expressions"
+
+# List categories or stats
+n8nac skills docs --list
+```
+
+### `guides [query]` - 🎯 Find Guides
+Find workflow guides, tutorials, and walkthroughs.
+
+```bash
+n8nac skills guides "email automation"
+n8nac skills guides "ai workflow"
+n8nac skills guides --list
+```
+
+### `examples` - 🌐 Search & Download Community Workflows
+Search and download workflows from the **n8nworkflows.xyz** community repository (7000+ workflows).
+
+The packaged index contains workflow metadata plus the upstream source ref and exact source commit used for the snapshot. Workflow JSON is fetched on demand from that same indexed upstream revision when you run `examples download`, so search results and downloaded files stay aligned instead of drifting with a floating `main` branch. Each workflow keeps its original upstream license.
+
+#### `examples search <query>`
+Search workflows using FlexSearch for high-relevance results.
+
+```bash
+n8nac skills examples search "slack notification"
+n8nac skills examples search "AI chatbot telegram"
+n8nac skills examples search "invoice processing" --limit 20
+n8nac skills examples search "google sheets" --json
+```
+
+#### `examples info <id>`
+Display detailed information about a specific workflow.
+
+```bash
+n8nac skills examples info 916
+# Shows: name, author, tags, download URL
+```
+
+#### `examples download <id>`
+Download a workflow TypeScript file.
+
+```bash
+n8nac skills examples download 916
+n8nac skills examples download 4365 --output my-chatbot.workflow.ts
+n8nac skills examples download 8088 --force  # Overwrite existing
+```
+
+#### `examples list`
+List available workflows (newest first).
+
+```bash
+n8nac skills examples list
+n8nac skills examples list --limit 50
+```
+
+**Features:**
+- 🔍 **7000+ workflows** indexed from n8nworkflows.xyz
+- ⚡ **Offline search** - FlexSearch powered, < 5ms latency
+
+Thanks to [nusquama/n8nworkflows.xyz](https://github.com/nusquama/n8nworkflows.xyz) for maintaining the public workflow archive used as the source for this index.
+- 📦 **Lightweight** - ~6MB index (~500KB compressed)
+- 🎯 **High relevance** - Smart keyword matching and ranking
+- 🧭 **Explicit refresh policy** - each index build takes a fresh snapshot of the configured upstream ref and stores the resolved commit in `workflows-index.json`
+
+### `related <query>` - 🔗 Discover Resources
+Find related nodes and documentation.
+
+```bash
+n8nac skills related googleSheets
+# Returns: Google Drive, Excel, Airtable, related docs
+
+n8nac skills related "ai agents"
+# Returns: AI-related concepts, nodes, examples
+```
+
+### `list` - 📋 List Resources
+List available nodes and documentation categories.
+
+```bash
+# Summary of nodes and docs
+n8nac skills list
+
+# List all node names
+n8nac skills list --nodes
+
+# List all doc categories
+n8nac skills list --docs
+```
+
+### `validate <file>` - ✅ Validate Workflows
+Validate workflow TypeScript files.
+
+```bash
+n8nac skills validate workflow.workflow.ts
+n8nac skills validate workflow.workflow.ts --strict
+```
+
+**Custom nodes:** If your project uses custom nodes bundled into a self-hosted n8n instance,
+add a `n8nac-custom-nodes.json` sidecar file (see [Custom Nodes](#custom-nodes) below) so the
+validator recognises them instead of reporting errors.
+
+### `update-ai` - 🤖 Update AI Context
+Update AI Context (AGENTS.md and snippets).
+
+```bash
+n8nac skills update-ai
+n8nac skills update-ai --n8n-version 1.70.0
+n8nac skills update-ai --n8n-version 1.70.0 --cli-version latest
+# Also available as:
+n8nac update-ai
+```
+
+## 📁 Data Source
+
+The Skills CLI uses a pre-generated index of n8n nodes from the official n8n source code. The data is stored in `dist/assets/` (generated during build):
+
+- `n8n-knowledge-index.json`: Unified FlexSearch index for the `search` command.
+- `n8n-nodes-technical.json`: Detailed technical schemas for the `get` command.
+- `n8n-docs-complete.json`: Full documentation content.
+
+## 🔧 Custom Nodes
+
+Custom nodes statically bundled into a self-hosted n8n deployment are not present in the
+official `n8n-nodes-technical.json` index. Without extra configuration the validator flags them
+as errors and the AI agent treats them as unknown.
+
+### Sidecar file (recommended)
+
+Create `n8nac-custom-nodes.json` in your project root (next to `n8nac-config.json`):
+
+```json
+{
+  "nodes": {
+    "myCustomNode": {
+      "name": "myCustomNode",
+      "displayName": "My Custom Node",
+      "description": "A proprietary ETL node built into our self-hosted n8n",
+      "type": "n8n-nodes-custom.myCustomNode",
+      "version": 1,
+      "schema": {
+        "properties": [
+          { "name": "endpoint", "type": "string", "required": true },
+          { "name": "timeout",  "type": "number", "required": false }
+        ]
+      }
+    }
+  }
+}
+```
+
+The file is automatically picked up by schema-aware `n8nac skills` commands (for example,
+`validate`, `list`, `node-schema`). Custom entries are merged **on top of** the official
+index: they win on key collision, so you can also patch incorrect official schemas. Note that
+`skills search` uses the pre-generated `n8n-knowledge-index.json` and will not include custom
+nodes that exist only in the sidecar file.
+
+For troubleshooting, run `npx n8nac skills list --debug` to print the resolved `n8nac-config.json`
+path, the selected custom nodes file, and the merged node counts. If you're checking a single
+custom node, `npx n8nac skills node-info <nodeName> --debug` is the most direct verification.
+
+A minimal schema (`"properties": []`) is enough to suppress errors and skip parameter
+validation. Full property definitions enable parameter validation just like official nodes.
+
+### Non-default path
+
+If you prefer a different location, set `customNodesPath` in `n8nac-config.json`:
+
+```json
+{
+  "host": "https://my-n8n.example.com",
+  "syncFolder": "workflows",
+  "projectId": "...",
+  "projectName": "...",
+  "customNodesPath": "./config/custom-nodes.json"
+}
+```
+
+The path is resolved relative to the project root (the directory where `n8nac-config.json`
+lives).
+
+## 🧩 Integration
+
+### With `n8nac`
+The main CLI package (`n8nac`) depends on this package and exposes all commands under the `n8nac skills` subgroup. Users don't need to install `@n8n-as-code/skills` directly.
+
+### With VS Code Extension
+This package is a dependency of the `n8n-as-code` VS Code extension, powering its AI features and node indexing via the TypeScript API (`AiContextGenerator`, `SnippetGenerator`).
+
+## 📄 License
+MIT

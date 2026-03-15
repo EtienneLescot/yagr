@@ -1,0 +1,92 @@
+# Node.js
+node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Logs
+tmp/
+logs/
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Directory for IDE/editor config files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# npm
+package-lock.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+
+# --- Packages build artifacts ---
+packages/*/dist/
+packages/*/out/
+packages/*/node_modules/
+*.vsix
+*.tsbuildinfo
+
+# --- AI Context Artifacts (Generated) ---
+AGENTS.md
+n8nac-skills
+n8nac-skills.cmd
+.cursorrules
+.clinerules
+.claude/
+.ai-rules.md
+.windsurfrules
+.roo
+
+n8nac.json
+n8nac-instance.json
+
+# Generated n8n assets
+packages/skills/src/assets/
+
+.n8n-cache/
+.local
+workflows_test/
+
+ignoredTests/
+session_context.json
+
+packages/skills/src/assets/
+
+# n8n-as-code AI helpers
+
+conversation.md
+
+.temp-workflows/
+
+.bin/
+
+packages/vscode-extension/packages/
+packages/vscode-extension/assets/
+docs/static/api/*
+!docs/static/api/.gitkeep
+docs/static/img/logo.png
+packages/skills/extraction-report.md
+n8nac.cmd
+
+workflows/
+!.github/workflows/
+!.github/workflows/**

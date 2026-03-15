@@ -1,0 +1,424 @@
+/**
+ * Script to enrich the n8n nodes index with documentation metadata
+ * This combines the technical schemas with human-readable documentation
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+const ROOT_DIR = path.resolve(__dirname, '..');
+const NODES_INDEX_FILE = path.resolve(ROOT_DIR, 'packages/skills/src/assets/n8n-nodes-index.json');
+const DOCS_METADATA_FILE = path.resolve(ROOT_DIR, 'packages/skills/src/assets/n8n-docs-cache/metadata.json');
+const OUTPUT_FILE = path.resolve(ROOT_DIR, 'packages/skills/src/assets/n8n-nodes-technical.json');
+
+/**
+ * Normalize node name for matching (remove spaces, lowercase, remove special chars)
+ */
+function normalizeNodeName(name) {
+    return name
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .trim();
+}
+
+function extractToolKeywords(node) {
+    if (!node.name || !node.name.endsWith('Tool')) {
+        return [];
+    }
+
+    const keywords = new Set(['tool', 'agent', 'ai']);
+    const displayName = node.displayName || '';
+    const compactName = normalizeNodeName(node.name);
+    const compactDisplayName = normalizeNodeName(displayName);
+
+    if (compactName) keywords.add(compactName);
+    if (compactDisplayName) keywords.add(compactDisplayName);
+
+    const baseName = node.name.slice(0, -4);
+    const baseWords = baseName
+        .replace(/([A-Z])/g, ' $1')
+        .toLowerCase()
+        .split(/[\s-_]+/)
+        .filter(Boolean);
+
+    const toolWords = [...baseWords, 'tool'];
+    toolWords.forEach((word) => keywords.add(word));
+    if (toolWords.length > 1) {
+        keywords.add(toolWords.join(' '));
+        keywords.add(toolWords.join(''));
+    }
+
+    if (baseWords.length > 0 && baseWords[baseWords.length - 1].endsWith('s')) {
+        const singularWords = [...baseWords];
+        singularWords[singularWords.length - 1] = singularWords[singularWords.length - 1].slice(0, -1);
+        const singularToolWords = [...singularWords, 'tool'];
+        singularToolWords.forEach((word) => keywords.add(word));
+        keywords.add(singularToolWords.join(' '));
+        keywords.add(singularToolWords.join(''));
+    }
+
+    return Array.from(keywords);
+}
+
+/**
+ * Try to match a node from the schema with documentation
+ * Returns the best matching doc or null
+ */
+function findMatchingDoc(node, docsPages) {
+    const nodeName = normalizeNodeName(node.name || '');
+    const nodeDisplayName = normalizeNodeName(node.displayName || '');
+
+    const pages = Object.values(docsPages);
+
+    // 1. Try matching by extracted nodeName property
+    for (const page of pages) {
+        if (page.nodeName && normalizeNodeName(page.nodeName) === nodeName) {
+            return page;
+        }
+    }
+
+    // 2. Try matching by title (exact)
+    for (const page of pages) {
+        const titleNorm = normalizeNodeName(page.title);
+        if (titleNorm === nodeName || titleNorm === nodeDisplayName) {
+            return page;
+        }
+    }
+
+    // 3. Try matching by title (partial)
+    for (const page of pages) {
+        const titleNorm = normalizeNodeName(page.title);
+        if (titleNorm.includes(nodeName) || titleNorm.includes(nodeDisplayName)) {
+            return page;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Extract additional keywords from node schema (basic)
+ */
+function extractSchemaKeywords(node) {
+    const keywords = new Set();
+
+    // From node name
+    const nameWords = (node.name || '')
+        .replace(/([A-Z])/g, ' $1')
+        .toLowerCase()
+        .split(/[\s-_]+/)
+        .filter(w => w.length > 2);
+
+    nameWords.forEach(w => keywords.add(w));
+
+    // From display name
+    const displayWords = (node.displayName || '')
+        .toLowerCase()
+        .split(/[\s-_]+/)
+        .filter(w => w.length > 2);
+
+    displayWords.forEach(w => keywords.add(w));
+
+    // From description
+    if (node.description) {
+        const descWords = node.description
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length > 3);
+
+        // Only add first few significant words from description
+        descWords.slice(0, 10).forEach(w => keywords.add(w));
+    }
+
+    // From group (category)
+    if (Array.isArray(node.group)) {
+        node.group.forEach(g => {
+            const groupWords = g.toLowerCase().split(/[\s-_]+/);
+            groupWords.forEach(w => {
+                if (w.length > 2) keywords.add(w);
+            });
+        });
+    }
+
+    return Array.from(keywords);
+}
+
+/**
+ * Extract comprehensive keywords from node schema properties
+ * Extracts: resources, operations, actions, option values
+ */
+function extractSchemaKeywordsComprehensive(node) {
+    const keywords = new Set();
+    const properties = node.properties || [];
+
+    for (const prop of properties) {
+        // 1. Extract RESOURCE values
+        if (prop.name === 'resource' && prop.options) {
+            prop.options.forEach(opt => {
+                if (opt.value) {
+                    keywords.add(opt.value); // "image", "video", etc.
+                    // Add plural form
+                    keywords.add(opt.value + 's');
+                }
+                if (opt.name) {
+                    const nameWords = opt.name.toLowerCase().split(/\s+/);
+                    nameWords.forEach(w => {
+                        if (w.length > 2) keywords.add(w);
+                    });
+                }
+            });
+        }
+
+        // 2. Extract OPERATION values
+        if (prop.name === 'operation' && prop.options) {
+            prop.options.forEach(opt => {
+                if (opt.value) {
+                    keywords.add(opt.value); // "create", "get", etc.
+
+                    // Add verb variations
+                    const variations = {
+                        'create': ['creating', 'creation'],
+                        'generate': ['generating', 'generation'],
+                        'analyze': ['analyzing', 'analysis'],
+                        'transcribe': ['transcribing', 'transcription'],
+                        'delete': ['deleting', 'deletion'],
+                        'update': ['updating'],
+                        'get': ['getting', 'fetch', 'fetching'],
+                        'send': ['sending'],
+                        'upload': ['uploading']
+                    };
+
+                    if (variations[opt.value]) {
+                        variations[opt.value].forEach(v => keywords.add(v));
+                    }
+                }
+
+                // Extract ACTION descriptions (e.g., "Create a draft")
+                if (opt.action) {
+                    const actionWords = opt.action.toLowerCase()
+                        .replace(/[^a-z0-9\s]/g, ' ')
+                        .split(/\s+/)
+                        .filter(w => w.length > 2);
+                    actionWords.forEach(w => keywords.add(w));
+                }
+
+                // Add name variations
+                if (opt.name) {
+                    const nameWords = opt.name.toLowerCase().split(/\s+/);
+                    nameWords.forEach(w => {
+                        if (w.length > 2) keywords.add(w);
+                    });
+                }
+            });
+        }
+
+        // 3. Extract common OPTIONS (for other important parameters)
+        // Limit to avoid noise from enum-like options
+        if (prop.type === 'options' &&
+            prop.name !== 'resource' &&
+            prop.name !== 'operation' &&
+            prop.options &&
+            prop.options.length <= 15) { // Limit to focused options
+
+            prop.options.forEach(opt => {
+                if (opt.value && typeof opt.value === 'string') {
+                    const value = opt.value.toLowerCase();
+                    if (value.length > 2 && value.length < 20) {
+                        keywords.add(value);
+                    }
+                }
+            });
+        }
+
+        // 4. Extract from important display names
+        if (prop.displayName && prop.required) {
+            const displayWords = prop.displayName.toLowerCase()
+                .replace(/[^a-z0-9\s]/g, ' ')
+                .split(/\s+/)
+                .filter(w => w.length > 3);
+            displayWords.slice(0, 2).forEach(w => keywords.add(w));
+        }
+    }
+
+    return Array.from(keywords);
+}
+
+/**
+ * Calculate a search score for keyword relevance
+ */
+function calculateKeywordScore(keywords) {
+    // AI/automation related keywords get higher scores
+    const highValueKeywords = new Set([
+        'ai', 'openai', 'google', 'anthropic', 'cohere', 'huggingface',
+        'gemini', 'gpt', 'claude', 'palm', 'llm', 'chat', 'assistant',
+        'image', 'video', 'audio', 'generate', 'analyze', 'transcribe',
+        'vision', 'recognition', 'embedding', 'vector', 'semantic'
+    ]);
+
+    let score = 0;
+    keywords.forEach(keyword => {
+        if (highValueKeywords.has(keyword.toLowerCase())) {
+            score += 10;
+        } else {
+            score += 1;
+        }
+    });
+
+    return score;
+}
+
+/**
+ * Main enrichment function
+ */
+async function enrichNodesIndex() {
+    console.log('🔄 Starting node index enrichment...');
+
+    // Load nodes index
+    if (!fs.existsSync(NODES_INDEX_FILE)) {
+        console.error(`❌ Nodes index not found: ${NODES_INDEX_FILE}`);
+        console.log('Please run: node scripts/generate-n8n-index.cjs first');
+        process.exit(1);
+    }
+
+    console.log('📂 Loading nodes index...');
+    const nodesIndex = JSON.parse(fs.readFileSync(NODES_INDEX_FILE, 'utf8'));
+    console.log(`✓ Loaded ${nodesIndex.nodes.length} nodes`);
+
+    // Load documentation metadata (optional)
+    let docsMetadata = null;
+    if (fs.existsSync(DOCS_METADATA_FILE)) {
+        console.log('📂 Loading documentation metadata...');
+        docsMetadata = JSON.parse(fs.readFileSync(DOCS_METADATA_FILE, 'utf8'));
+        console.log(`✓ Loaded documentation for ${Object.keys(docsMetadata.pages).length} pages`);
+    } else {
+        console.warn('⚠️  Documentation metadata not found. Enriching with schema data only.');
+        console.log('To include documentation, run: node scripts/download-n8n-docs.cjs first');
+    }
+
+    // Enrich each node
+    console.log('\n🔧 Enriching nodes...');
+    const enrichedNodes = {};
+    let matchedCount = 0;
+    let enrichedCount = 0;
+
+    for (const node of nodesIndex.nodes) {
+        const nodeKey = node.name;
+
+        // Find matching documentation
+        let docData = null;
+        if (docsMetadata) {
+            docData = findMatchingDoc(node, docsMetadata.pages);
+            if (docData) {
+                matchedCount++;
+            }
+        }
+
+        // Extract keywords from schema
+        const schemaKeywordsBasic = extractSchemaKeywords(node);
+        const schemaKeywordsAdvanced = extractSchemaKeywordsComprehensive(node);
+        const schemaKeywords = [...schemaKeywordsBasic, ...schemaKeywordsAdvanced];
+
+        // Combine keywords from both sources
+        const allKeywords = new Set([...schemaKeywords]);
+
+        // Boost keywords for tool variants so both exact and singular/plural
+        // tool prompts map to the correct node instead of the base node.
+        extractToolKeywords(node).forEach((keyword) => allKeywords.add(keyword));
+
+        let operations = [];
+        let useCases = [];
+
+        if (docData) {
+            docData.keywords.forEach(k => allKeywords.add(k));
+            operations = docData.operations || [];
+            useCases = docData.useCases || [];
+        }
+
+        const keywords = Array.from(allKeywords);
+        const keywordScore = calculateKeywordScore(keywords);
+
+        // Build enriched entry
+        enrichedNodes[nodeKey] = {
+            // Sync schema
+            name: node.name,
+            type: node.fullType,
+            displayName: node.displayName,
+            description: node.description,
+            version: node.version,
+            group: node.group,
+            icon: node.icon,
+            usableAsTool: Boolean(node.usableAsTool),
+
+            // Full schema for generation
+            schema: {
+                properties: node.properties,
+                sourcePath: node.sourcePath
+            },
+
+            // Enriched metadata for search
+            metadata: {
+                keywords,
+                operations,
+                useCases,
+                keywordScore,
+                hasDocumentation: !!docData,
+                markdownUrl: docData?.markdownUrl || null,
+                markdownFile: docData?.markdownFile || null
+            }
+        };
+
+        enrichedCount++;
+    }
+
+    // Build output
+    const output = {
+        generatedAt: new Date().toISOString(),
+        sourceData: {
+            nodesIndexFile: NODES_INDEX_FILE,
+            docsMetadataFile: docsMetadata ? DOCS_METADATA_FILE : null,
+            totalNodes: nodesIndex.nodes.length,
+            nodesWithDocumentation: matchedCount,
+            nodesEnriched: enrichedCount
+        },
+        scanDirectories: nodesIndex.scanDirectories || [],
+        nodes: enrichedNodes
+    };
+
+    // Write output
+    const outputDir = path.dirname(OUTPUT_FILE);
+    if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    fs.writeFileSync(OUTPUT_FILE, JSON.stringify(output, null, 2));
+
+    console.log('\n✨ Enrichment complete!');
+    console.log(`📊 Statistics:`);
+    console.log(`   Total nodes: ${enrichedCount}`);
+    console.log(`   With documentation: ${matchedCount} (${Math.round(matchedCount / enrichedCount * 100)}%)`);
+    console.log(`   Without documentation: ${enrichedCount - matchedCount}`);
+    console.log(`💾 Saved to: ${OUTPUT_FILE}`);
+
+    // Show some examples of enriched nodes
+    console.log('\n🔍 Sample enriched nodes:');
+    const sampleNodes = Object.entries(enrichedNodes)
+        .filter(([_, node]) => node.metadata.keywordScore > 50)
+        .slice(0, 5);
+
+    for (const [name, node] of sampleNodes) {
+        console.log(`   • ${node.displayName} (${name})`);
+        console.log(`     Keywords: ${node.metadata.keywords.slice(0, 8).join(', ')}...`);
+        console.log(`     Score: ${node.metadata.keywordScore}`);
+    }
+}
+
+// Run if called directly
+if (require.main === module) {
+    enrichNodesIndex().catch(err => {
+        console.error('💥 Fatal error:', err);
+        process.exit(1);
+    });
+}
+
+module.exports = { enrichNodesIndex };

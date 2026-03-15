@@ -1,0 +1,56 @@
+{
+  "name": "docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "sync:brand-assets": "node ../scripts/sync-brand-assets.mjs",
+    "docusaurus": "docusaurus",
+    "prestart": "npm run sync:brand-assets",
+    "start": "docusaurus start",
+    "prebuild": "npm run sync:brand-assets",
+    "build": "docusaurus build",
+    "swizzle": "docusaurus swizzle",
+    "predeploy": "npm run sync:brand-assets",
+    "deploy": "docusaurus deploy",
+    "clear": "docusaurus clear",
+    "serve": "docusaurus serve",
+    "write-translations": "docusaurus write-translations",
+    "write-heading-ids": "docusaurus write-heading-ids",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.9.2",
+    "@docusaurus/preset-classic": "3.9.2",
+    "@docusaurus/theme-mermaid": "^3.9.2",
+    "@easyops-cn/docusaurus-search-local": "^0.55.0",
+    "@mdx-js/react": "^3.0.0",
+    "clsx": "^2.0.0",
+    "core-js-compat": "^3.48.0",
+    "micromark-core-commonmark": "^2.0.3",
+    "prism-react-renderer": "^2.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "regexpu-core": "^6.4.0"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "3.9.2",
+    "@docusaurus/tsconfig": "3.9.2",
+    "@docusaurus/types": "3.9.2",
+    "typescript": "~5.6.2"
+  },
+  "browserslist": {
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 3 chrome version",
+      "last 3 firefox version",
+      "last 5 safari version"
+    ]
+  },
+  "engines": {
+    "node": ">=20.0"
+  }
+}

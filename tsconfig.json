@@ -1,0 +1,17 @@
+{
+    "files": [],
+    "references": [
+        {
+            "path": "packages/transformer"
+        },
+        {
+            "path": "packages/skills"
+        },
+        {
+            "path": "packages/cli"
+        },
+        {
+            "path": "packages/vscode-extension"
+        }
+    ]
+}

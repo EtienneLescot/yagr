@@ -1,0 +1,551 @@
+import * as vscode from 'vscode';
+import { N8nApiClient, ConfigService, type IN8nCredentials } from 'n8nac';
+import { getResolvedN8nConfig, getWorkspaceRoot, isFolderPreviouslyInitialized } from '../utils/state-detection.js';
+import { writeUnifiedWorkspaceConfig } from '../utils/unified-config.js';
+
+type UiProject = {
+  id: string;
+  name: string;
+  type?: string;
+};
+
+function normalizeHost(host: string): string {
+  const trimmed = (host || '').trim();
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
+
+function toDisplayName(project: UiProject): string {
+  return project.type === 'personal' ? 'Personal' : project.name;
+}
+
+async function clearLegacyWorkspaceSettings(): Promise<void> {
+  const config = vscode.workspace.getConfiguration('n8n');
+  const keys: Array<'host' | 'apiKey' | 'syncFolder' | 'projectId' | 'projectName'> = [
+    'host',
+    'apiKey',
+    'syncFolder',
+    'projectId',
+    'projectName',
+  ];
+
+  for (const key of keys) {
+    const inspected = config.inspect<string>(key);
+    if (inspected?.workspaceValue !== undefined) {
+      await config.update(key, undefined, vscode.ConfigurationTarget.Workspace);
+    }
+    if (inspected?.workspaceFolderValue !== undefined) {
+      await config.update(key, undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+    }
+  }
+}
+
+function getNonce() {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+}
+
+export class ConfigurationWebview {
+  public static currentPanel: ConfigurationWebview | undefined;
+
+  private readonly _panel: vscode.WebviewPanel;
+  private readonly _context: vscode.ExtensionContext;
+
+  private constructor(panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
+    this._panel = panel;
+    this._context = context;
+
+    this._panel.onDidDispose(() => {
+      ConfigurationWebview.currentPanel = undefined;
+    });
+
+    this._panel.webview.options = {
+      enableScripts: true,
+    };
+
+    this._panel.webview.onDidReceiveMessage(async (message) => {
+      try {
+        if (!message || typeof message !== 'object') return;
+
+        switch (message.type) {
+          case 'loadProjects': {
+            const host = normalizeHost(message.host);
+            const apiKey = (message.apiKey || '').trim();
+
+            if (!host || !apiKey) {
+              this._panel.webview.postMessage({
+                type: 'error',
+                message: 'Host and API key are required to load projects.',
+              });
+              return;
+            }
+
+            const client = new N8nApiClient({ host, apiKey } as IN8nCredentials);
+            const projects = (await client.getProjects()) as any[];
+
+            const uiProjects: UiProject[] = projects.map((p) => ({
+              id: p.id,
+              name: p.name,
+              type: p.type,
+            }));
+
+            const resolvedConfig = getResolvedN8nConfig(getWorkspaceRoot());
+            const selectedProjectId = resolvedConfig.projectId;
+            const selectedProjectName = resolvedConfig.projectName;
+
+            this._panel.webview.postMessage({
+              type: 'projectsLoaded',
+              projects: uiProjects,
+              selectedProjectId,
+              selectedProjectName,
+            });
+            return;
+          }
+
+          case 'saveSettings': {
+            const host = normalizeHost(message.host);
+            const apiKey = (message.apiKey || '').trim();
+
+            const syncFolder = (message.syncFolder || '').trim();
+
+            const workspaceRoot = getWorkspaceRoot();
+            const shouldAutoApply = !!workspaceRoot && isFolderPreviouslyInitialized(workspaceRoot);
+            if (workspaceRoot) {
+              await this._context.workspaceState.update('n8n.suppressSettingsChangedOnce', true);
+            }
+
+            // Project can be picked from the dropdown, but if missing, we’ll default to Personal.
+            let projectId = (message.projectId || '').trim();
+            let projectName = (message.projectName || '').trim();
+
+            if (host && apiKey && (!projectId || !projectName)) {
+              const client = new N8nApiClient({ host, apiKey } as IN8nCredentials);
+              const projects = (await client.getProjects()) as any[];
+              const personal = projects.find((p) => p.type === 'personal');
+              const fallback = personal || (projects.length === 1 ? projects[0] : undefined);
+              if (fallback) {
+                projectId = fallback.id;
+                projectName = fallback.type === 'personal' ? 'Personal' : fallback.name;
+              }
+            }
+
+            // Sync API key to CLI global store so the CLI works without `n8nac init`
+            if (host && apiKey) {
+              try {
+                const configService = new ConfigService();
+                configService.saveApiKey(host, apiKey);
+              } catch (error) {
+                console.warn('Failed to sync API key to n8n CLI global config store:', error);
+              }
+            }
+
+            // Write unified config file for CLI alignment
+            if (workspaceRoot) {
+              await writeUnifiedWorkspaceConfig({
+                workspaceRoot,
+                host,
+                apiKey,
+                syncFolder: syncFolder || 'workflows',
+                projectId,
+                projectName,
+              });
+
+              await clearLegacyWorkspaceSettings();
+            }
+
+            if (host && apiKey) {
+              if (shouldAutoApply) {
+                await vscode.commands.executeCommand('n8n.applySettings');
+                await vscode.window.showInformationMessage('✅ Settings applied. Sync resumed.');
+              } else {
+                await vscode.commands.executeCommand('n8n.init');
+              }
+            } else {
+              await vscode.window.showInformationMessage('✅ Settings saved.');
+            }
+
+            this._panel.webview.postMessage({ type: 'saved' });
+            return;
+          }
+
+          case 'openSettings': {
+            await vscode.commands.executeCommand('n8n.openSettings');
+            return;
+          }
+        }
+      } catch (error: any) {
+        this._panel.webview.postMessage({
+          type: 'error',
+          message: error?.message || 'Unexpected error',
+        });
+      }
+    });
+
+    this._panel.webview.html = this.getHtmlForWebview();
+
+    // Send initial config state.
+    void this.postInitialState();
+
+    // When the webview becomes visible again (for example after opening Settings),
+    // re-post the initial state so the form is repopulated.
+    this._panel.onDidChangeViewState(() => {
+      if (this._panel.visible) {
+        void this.postInitialState();
+      }
+    });
+  }
+
+  public static createOrShow(context: vscode.ExtensionContext) {
+    const column = vscode.ViewColumn.One;
+
+    if (ConfigurationWebview.currentPanel) {
+      ConfigurationWebview.currentPanel._panel.reveal(column);
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      'n8nConfiguration',
+      'n8n: Configure',
+      column,
+      { enableScripts: true }
+    );
+
+    ConfigurationWebview.currentPanel = new ConfigurationWebview(panel, context);
+  }
+
+  private async postInitialState() {
+    const { host, apiKey, projectId, projectName, syncFolder } = getResolvedN8nConfig(getWorkspaceRoot());
+
+    this._panel.webview.postMessage({
+      type: 'init',
+      config: { host: normalizeHost(host), apiKey: apiKey.trim(), projectId, projectName, syncFolder },
+    });
+
+    // If we already have host + apiKey, proactively load projects.
+    if (host && apiKey) {
+      try {
+        const client = new N8nApiClient({ host, apiKey } as IN8nCredentials);
+        const projects = (await client.getProjects()) as any[];
+
+        const uiProjects: UiProject[] = projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          type: p.type,
+        }));
+
+        this._panel.webview.postMessage({
+          type: 'projectsLoaded',
+          projects: uiProjects,
+          selectedProjectId: projectId,
+          selectedProjectName: projectName,
+        });
+      } catch (e: any) {
+        // Non-fatal: the user can still edit host/apiKey and retry.
+        this._panel.webview.postMessage({
+          type: 'error',
+          message: `Failed to load projects: ${e?.message || 'unknown error'}`,
+        });
+      }
+    }
+  }
+
+  private getHtmlForWebview() {
+    const nonce = getNonce();
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>n8n Configure</title>
+  <style>
+    body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 16px; }
+    h2 { margin: 0 0 8px; }
+    .muted { color: var(--vscode-descriptionForeground); }
+    .container { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .card { border: 1px solid var(--vscode-input-border); border-radius: 8px; padding: 12px; background: var(--vscode-panel-background); }
+    .card-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+    .card-title { font-weight: 600; }
+    .grid { display: flex; gap: 12px; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; flex: 1; min-width: 240px; }
+    label { font-size: 12px; color: var(--vscode-descriptionForeground); }
+    input, select { padding: 8px; border-radius: 4px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); }
+    input[type=password] { font-family: var(--vscode-editor-font-family); }
+    .actions { display: flex; gap: 8px; margin-top: 12px; justify-content:flex-end; }
+    button { padding: 8px 10px; border-radius: 4px; border: 1px solid var(--vscode-button-border, transparent); background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; }
+    button.secondary { background: transparent; color: var(--vscode-foreground); border: 1px solid var(--vscode-input-border); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error { margin-top: 12px; color: var(--vscode-errorForeground); white-space: pre-wrap; }
+    .ok { margin-top: 12px; color: var(--vscode-charts-green); }
+    .muted.small { font-size: 12px; }
+    .accordion { margin-top: 8px; }
+    .accordion-toggle { background: transparent; border: none; color: var(--vscode-button-foreground); cursor: pointer; padding: 4px; display:flex; gap:8px; align-items:center; }
+    .accordion-content { margin-top: 6px; display:none; border-top:1px dashed var(--vscode-input-border); padding-top:8px; }
+  </style>
+</head>
+<body>
+  <h2>n8n as code</h2>
+  <div class="muted">Configure your n8n instance and choose which project to sync (default: Personal).</div>
+
+  <div class="container">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Connection</div>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label for="host">n8n Host URL</label>
+          <input id="host" type="text" placeholder="https://my-instance.app.n8n.cloud" />
+          <div class="muted small">Include protocol (https://) and omit trailing slash.</div>
+        </div>
+        <div class="field">
+          <label for="apiKey">API Key</label>
+          <input id="apiKey" type="password" placeholder="n8n API Key" />
+        </div>
+      </div>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <button id="loadProjects" class="secondary">Load projects</button>
+        <div style="flex:1"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Project</div>
+      </div>
+      <div class="field">
+        <label for="project">Select project to sync</label>
+        <select id="project" disabled>
+          <option value="">Load projects to select…</option>
+        </select>
+        <div class="muted small">Projects list is loaded from the n8n API once host + API key are valid.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Sync settings</div>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label for="syncFolder">Sync Folder (relative to workspace)</label>
+          <input id="syncFolder" type="text" placeholder="workflows" />
+          <div class="muted small">Example: <code>workflows</code> or <code>n8n/workflows</code></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Actions</div>
+      </div>
+      <div class="actions">
+        <button id="save">Save settings</button>
+      </div>
+      <div class="accordion">
+        <button id="accordionToggle" class="accordion-toggle">Show advanced options</button>
+        <div id="accordionContent" class="accordion-content">
+          <div class="muted small">Advanced settings are available in VS Code settings. Use the button above to jump there.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="message" class="error" style="display:none;"></div>
+  <div id="saved" class="ok" style="display:none;">Saved.</div>
+
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+
+    const hostEl = document.getElementById('host');
+    const apiKeyEl = document.getElementById('apiKey');
+    const projectEl = document.getElementById('project');
+    const syncFolderEl = document.getElementById('syncFolder');
+    const loadBtn = document.getElementById('loadProjects');
+    const saveBtn = document.getElementById('save');
+    const accordionToggle = document.getElementById('accordionToggle');
+    const accordionContent = document.getElementById('accordionContent');
+    const messageEl = document.getElementById('message');
+    const savedEl = document.getElementById('saved');
+
+    let projects = [];
+    let currentConfig = { host: '', apiKey: '', projectId: '', projectName: '', syncFolder: 'workflows' };
+
+    let autoLoadTimer = null;
+    let lastLoadRequest = { host: '', apiKey: '' };
+
+    function normalizeHost(host) {
+      const trimmed = (host || '').trim();
+      return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+    }
+
+    function setError(text) {
+      if (!text) {
+        messageEl.style.display = 'none';
+        messageEl.textContent = '';
+        return;
+      }
+      messageEl.style.display = 'block';
+      messageEl.textContent = text;
+    }
+
+    function setSaved(visible) {
+      savedEl.style.display = visible ? 'block' : 'none';
+      if (visible) {
+        setTimeout(() => { savedEl.style.display = 'none'; }, 1500);
+      }
+    }
+
+    function resetProjectsUi() {
+      projects = [];
+      projectEl.disabled = true;
+      projectEl.innerHTML = '';
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'Load projects to select…';
+      projectEl.appendChild(opt);
+    }
+
+    function requestProjectsLoad(force = false) {
+      const host = normalizeHost(hostEl.value);
+      const apiKey = (apiKeyEl.value || '').trim();
+
+      if (!host || !apiKey) {
+        lastLoadRequest = { host: '', apiKey: '' };
+        resetProjectsUi();
+        return;
+      }
+
+      if (!force && lastLoadRequest.host === host && lastLoadRequest.apiKey === apiKey) {
+        return;
+      }
+
+      lastLoadRequest = { host, apiKey };
+      setError('');
+      vscode.postMessage({ type: 'loadProjects', host, apiKey });
+    }
+
+    function scheduleAutoLoadProjects() {
+      if (autoLoadTimer) clearTimeout(autoLoadTimer);
+      autoLoadTimer = setTimeout(() => {
+        requestProjectsLoad(false);
+      }, 500);
+    }
+
+    function renderProjects(selectedId) {
+      projectEl.innerHTML = '';
+
+      if (!projects.length) {
+        projectEl.disabled = true;
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No projects found';
+        projectEl.appendChild(opt);
+        return;
+      }
+
+      projectEl.disabled = false;
+
+      // Prefer current selection, otherwise Personal, otherwise first.
+      let defaultId = selectedId;
+      if (!defaultId) {
+        const personal = projects.find(p => p.type === 'personal');
+        defaultId = personal ? personal.id : projects[0].id;
+      }
+
+      for (const p of projects) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.type === 'personal' ? 'Personal' : p.name;
+        opt.dataset.projectName = p.type === 'personal' ? 'Personal' : p.name;
+        projectEl.appendChild(opt);
+      }
+
+      projectEl.value = defaultId;
+
+      // Keep webview local state in sync (helps when the user saves right after auto-load).
+      const selected = projects.find(p => p.id === defaultId);
+      if (selected) {
+        currentConfig.projectId = selected.id;
+        currentConfig.projectName = selected.type === 'personal' ? 'Personal' : selected.name;
+      }
+    }
+
+    loadBtn.addEventListener('click', () => {
+      requestProjectsLoad(true);
+    });
+
+    // Auto-load projects as soon as host + api key are present.
+    hostEl.addEventListener('input', scheduleAutoLoadProjects);
+    apiKeyEl.addEventListener('input', scheduleAutoLoadProjects);
+    hostEl.addEventListener('blur', () => requestProjectsLoad(false));
+    apiKeyEl.addEventListener('blur', () => requestProjectsLoad(false));
+
+    saveBtn.addEventListener('click', () => {
+      setError('');
+      const host = normalizeHost(hostEl.value);
+      const apiKey = (apiKeyEl.value || '').trim();
+
+      const syncFolderEl = document.getElementById('syncFolder');
+      const syncFolder = syncFolderEl ? (syncFolderEl.value || '').trim() : '';
+
+      let projectId = projectEl.value || '';
+      let projectName = '';
+      const selectedOption = projectEl.options[projectEl.selectedIndex];
+      if (selectedOption && selectedOption.dataset && selectedOption.dataset.projectName) {
+        projectName = selectedOption.dataset.projectName;
+      }
+
+      vscode.postMessage({ type: 'saveSettings', host, apiKey, projectId, projectName, syncFolder });
+    });
+
+    if (accordionToggle) {
+      accordionToggle.addEventListener('click', () => {
+        vscode.postMessage({ type: 'openSettings' });
+        if (!accordionContent) return;
+        const isHidden = !accordionContent.style.display || accordionContent.style.display === 'none';
+        accordionContent.style.display = isHidden ? 'block' : 'none';
+        accordionToggle.textContent = isHidden ? 'Open VS Code settings' : 'Show advanced options';
+      });
+    }
+
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (!message || typeof message !== 'object') return;
+
+      if (message.type === 'init') {
+        currentConfig = message.config || currentConfig;
+        hostEl.value = currentConfig.host || '';
+        apiKeyEl.value = currentConfig.apiKey || '';
+
+        const syncFolderEl = document.getElementById('syncFolder');
+        if (syncFolderEl) syncFolderEl.value = currentConfig.syncFolder || 'workflows';
+        return;
+      }
+
+      if (message.type === 'projectsLoaded') {
+        projects = message.projects || [];
+        const selectedId = message.selectedProjectId || currentConfig.projectId || '';
+        renderProjects(selectedId);
+        return;
+      }
+
+      if (message.type === 'saved') {
+        setSaved(true);
+        return;
+      }
+
+      if (message.type === 'error') {
+        setError(message.message || 'Error');
+        return;
+      }
+    });
+  </script>
+</body>
+</html>`;
+  }
+}
