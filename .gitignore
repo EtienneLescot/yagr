@@ -58,6 +58,9 @@ n8nac-skills.cmd
 
 n8nac.json
 n8nac-instance.json
+n8nac-config.json
+holon-config.json
+.holon-test-workspace/
 
 # Generated n8n assets
 packages/skills/src/assets/
