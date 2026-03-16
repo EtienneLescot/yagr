@@ -1,6 +1,8 @@
 export { buildTools } from './build-tools.js';
+export { createDeleteWorkspaceFileTool } from './delete-workspace-file.js';
 export { createListDirectoryTool } from './list-directory.js';
 export { createN8nAcTool } from './n8nac.js';
+export { createMoveWorkspaceFileTool } from './move-workspace-file.js';
 export { createReadWorkspaceFileTool } from './read-workspace-file.js';
 export { createReplaceInWorkspaceFileTool } from './replace-in-workspace-file.js';
 export { createReportProgressTool } from './report-progress.js';

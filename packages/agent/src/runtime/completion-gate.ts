@@ -34,7 +34,7 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
     reasons.push('Unresolved tool failures remain in task state.');
   }
 
-  if (input.hasWorkflowWrites && !input.successfulValidate) {
+  if (input.hasWorkflowWrites && !input.successfulValidate && !input.successfulPush) {
     reasons.push('Validation has not been confirmed.');
   }
 

@@ -22,7 +22,7 @@ import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outc
 import { wrapToolsWithRuntimeHooks } from './policy-hooks.js';
 import { blockingStateForRequiredActions, collectRequiredActions } from './required-actions.js';
 
-const INSPECT_MAX_STEPS = 2;
+const INSPECT_MAX_STEPS = 4;
 const EXECUTE_MAX_STEPS = 10;
 const EXECUTE_RECOVERY_MAX_STEPS = 6;
 const MAX_EXECUTION_ATTEMPTS = 3;
@@ -46,7 +46,8 @@ function createPhasePrompt(phase: 'inspect' | 'execute', userPrompt: string): st
     return [
       'Holon internal phase: inspect.',
       'Analyze the request and gather only the context needed to execute it correctly.',
-      'Use tools to inspect the workspace, existing workflow files, and n8nac workspace status when needed.',
+      'Use tools to inspect the workspace, existing workflow files, workspace instructions, examples, and n8nac workspace status when needed.',
+      'Favor correctness over speed in this phase. If an example or rule is likely to determine the right implementation, read it before acting.',
       'Do not claim completion in this phase.',
       `Original request: ${userPrompt}`,
     ].join('\n');

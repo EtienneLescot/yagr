@@ -84,6 +84,54 @@ test('later successful retry clears an earlier unresolved n8nac failure', () => 
   assert.ok(outcome.successfulValidate);
 });
 
+test('successful push counts as validate and verify evidence for completion gating', async () => {
+  const journal = [
+    {
+      timestamp: '2026-03-16T10:03:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'push succeeded',
+      phase: 'sync',
+      stepNumber: 1,
+      step: {
+        stepNumber: 1,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'sync',
+        text: '',
+        toolCalls: [
+          { toolName: 'writeWorkspaceFile', args: { path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'n8nac', args: { action: 'push', filename: 'demo.workflow.ts' } },
+        ],
+        toolResults: [
+          { toolName: 'writeWorkspaceFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'n8nac', result: { exitCode: 0 } },
+        ],
+      },
+    },
+  ];
+
+  const outcome = analyzeRunOutcome(journal);
+
+  assert.ok(outcome.successfulPush);
+  assert.ok(outcome.successfulValidate);
+  assert.ok(outcome.successfulVerify);
+
+  const decision = await evaluateCompletionGate({
+    text: 'Done.',
+    finishReason: 'stop',
+    requiredActions: [],
+    hasWorkflowWrites: outcome.hasWorkflowWrites,
+    successfulValidate: Boolean(outcome.successfulValidate),
+    successfulPush: Boolean(outcome.successfulPush),
+    unresolvedFailureCount: outcome.unresolvedFailedActions.length,
+    context: { runId: 'run-push', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, true);
+  assert.equal(decision.state, 'completed');
+});
+
 test('completion gate stays blocked when a required action is still open', async () => {
   const requiredActions = collectRequiredActions([
     {
