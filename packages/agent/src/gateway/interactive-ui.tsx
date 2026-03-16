@@ -1,30 +1,17 @@
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, Static, Text, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
-import { FullScreenBox, useScreenSize, withFullScreen } from 'fullscreen-ink';
+import { render } from 'ink';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { HolonAgent } from '../agent.js';
-import type { HolonPhaseEvent, HolonRunOptions, HolonToolEvent } from '../types.js';
+import type { HolonAgentState, HolonDisplayOptions, HolonPhaseEvent, HolonRunOptions, HolonStateEvent, HolonToolEvent } from '../types.js';
 
-type FeedKind = 'user' | 'assistant' | 'status' | 'error';
+type FeedKind = 'user' | 'assistant' | 'thinking' | 'execution' | 'error';
 
 type FeedEntry = {
   id: number;
   kind: FeedKind;
   text: string;
 };
-
-type CommandPanelState = {
-  command: string | null;
-  cwd: string | null;
-  lines: string[];
-  running: boolean;
-  exitCode: number | null;
-  statusText: string | null;
-  lastCommandLine: string | null;
-};
-
-const COMMAND_PANEL_COLLAPSED_LINES = 3;
-const COMMAND_PANEL_EXPANDED_LINES = 10;
 
 function phaseLabel(phase: HolonPhaseEvent['phase'] | null): string {
   switch (phase) {
@@ -47,14 +34,57 @@ function phaseLabel(phase: HolonPhaseEvent['phase'] | null): string {
   }
 }
 
+function stateLabel(state: HolonAgentState): string {
+  switch (state) {
+    case 'idle':
+      return 'Pret';
+    case 'running':
+      return 'En cours';
+    case 'streaming':
+      return 'Streaming';
+    case 'waiting_for_permission':
+      return 'Permission';
+    case 'waiting_for_input':
+      return 'Saisie';
+    case 'compacting':
+      return 'Compaction';
+    case 'resumable':
+      return 'Reprise';
+    case 'completed':
+      return 'Termine';
+    case 'failed_terminal':
+      return 'Bloque';
+    default:
+      return state;
+  }
+}
+
+function stateColor(state: HolonAgentState): string {
+  switch (state) {
+    case 'idle':
+      return 'green';
+    case 'running':
+    case 'streaming':
+      return 'yellow';
+    case 'completed':
+      return 'greenBright';
+    case 'failed_terminal':
+      return 'red';
+    default:
+      return 'cyan';
+  }
+}
+
 function entryAccent(kind: FeedKind): string {
   switch (kind) {
     case 'user':
-      return 'cyan';
+      return 'blue';
     case 'assistant':
-      return 'green';
-    case 'status':
+      return 'greenBright';
+    case 'thinking':
       return 'yellow';
+    case 'execution':
+      return 'magentaBright';
     case 'error':
       return 'red';
     default:
@@ -67,14 +97,42 @@ function entryLabel(kind: FeedKind): string {
     case 'user':
       return 'Vous';
     case 'assistant':
-      return 'Holon';
-    case 'status':
-      return 'Activite';
+      return 'Reponse';
+    case 'thinking':
+      return 'Reflexion';
+    case 'execution':
+      return 'Execution';
     case 'error':
       return 'Erreur';
     default:
       return 'Info';
   }
+}
+
+function entryMarker(kind: FeedKind): string {
+  switch (kind) {
+    case 'user':
+      return '›';
+    case 'assistant':
+      return '◆';
+    case 'thinking':
+      return '·';
+    case 'execution':
+      return '$';
+    case 'error':
+      return '!';
+    default:
+      return '-';
+  }
+}
+
+function normalizeDisplayOptions(display?: HolonDisplayOptions): Required<HolonDisplayOptions> {
+  return {
+    showThinking: display?.showThinking ?? true,
+    showExecution: display?.showExecution ?? true,
+    showResponses: display?.showResponses ?? true,
+    showUserPrompts: display?.showUserPrompts ?? true,
+  };
 }
 
 function normalizeCommandChunk(chunk: string): string {
@@ -88,26 +146,16 @@ type InteractiveAppProps = {
 
 function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
   const app = useApp();
-  const { height, width } = useScreenSize();
   const [inputValue, setInputValue] = useState('');
   const [feed, setFeed] = useState<FeedEntry[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [showExpandedLogs, setShowExpandedLogs] = useState(false);
-  const [showCommandDetails, setShowCommandDetails] = useState(false);
+  const [currentState, setCurrentState] = useState<HolonAgentState>('idle');
   const [currentPhase, setCurrentPhase] = useState<HolonPhaseEvent['phase'] | null>(null);
   const [phaseStatusText, setPhaseStatusText] = useState('Pret.');
-  const [commandPanel, setCommandPanel] = useState<CommandPanelState>({
-    command: null,
-    cwd: null,
-    lines: [],
-    running: false,
-    exitCode: null,
-    statusText: null,
-    lastCommandLine: null,
-  });
+  const [display, setDisplay] = useState<Required<HolonDisplayOptions>>(() => normalizeDisplayOptions(options.display));
+  const [liveAssistantText, setLiveAssistantText] = useState('');
+  const [liveExecutionText, setLiveExecutionText] = useState('');
   const nextEntryIdRef = useRef(1);
-  const activeAssistantEntryIdRef = useRef<number | null>(null);
-  const assistantBufferRef = useRef('');
   const commandBuffersRef = useRef({ stdout: '', stderr: '' });
 
   const pushEntry = useCallback((kind: FeedKind, text: string) => {
@@ -116,96 +164,65 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
 
     setFeed((previous: FeedEntry[]) => [
-      ...previous,
-      {
-        id: nextEntryIdRef.current++,
-        kind,
-        text,
-      },
-    ]);
+        ...previous,
+        {
+          id: nextEntryIdRef.current++,
+          kind,
+          text,
+        },
+      ]);
   }, []);
-
-  const ensureAssistantEntry = useCallback(() => {
-    if (activeAssistantEntryIdRef.current !== null) {
-      return activeAssistantEntryIdRef.current;
-    }
-
-    const id = nextEntryIdRef.current++;
-    activeAssistantEntryIdRef.current = id;
-    assistantBufferRef.current = '';
-    setFeed((previous: FeedEntry[]) => [...previous, { id, kind: 'assistant', text: '' }]);
-    return id;
-  }, []);
-
-  const updateAssistantEntry = useCallback((text: string) => {
-    const id = ensureAssistantEntry();
-    assistantBufferRef.current = text;
-    setFeed((previous: FeedEntry[]) => previous.map((entry: FeedEntry) => (
-      entry.id === id
-        ? { ...entry, text }
-        : entry
-    )));
-  }, [ensureAssistantEntry]);
 
   const finalizeAssistantEntry = useCallback((finalText: string) => {
-    const currentText = assistantBufferRef.current.trim();
+    const currentText = liveAssistantText.trim();
     const resolvedText = finalText.trim();
 
-    if (!currentText && resolvedText) {
+    if (display.showResponses && !currentText && resolvedText) {
       pushEntry('assistant', resolvedText);
-    } else if (resolvedText && resolvedText !== currentText) {
-      updateAssistantEntry(resolvedText);
+    } else if (display.showResponses && resolvedText && resolvedText !== currentText) {
+      pushEntry('assistant', resolvedText);
     }
 
-    activeAssistantEntryIdRef.current = null;
-    assistantBufferRef.current = '';
-  }, [pushEntry, updateAssistantEntry]);
-
-  const appendCommandLines = useCallback((rawLines: string[]) => {
-    const lines = rawLines
-      .map((line) => line.trimEnd())
-      .filter((line) => line.length > 0)
-      .map((line) => line.slice(0, 240));
-
-    if (lines.length === 0) {
-      return;
-    }
-
-    setCommandPanel((previous: CommandPanelState) => {
-      const limit = showExpandedLogs ? COMMAND_PANEL_EXPANDED_LINES : COMMAND_PANEL_COLLAPSED_LINES;
-      return {
-        ...previous,
-        lines: [...previous.lines, ...lines].slice(-limit),
-      };
-    });
-  }, [showExpandedLogs]);
+    setLiveAssistantText('');
+  }, [display.showResponses, liveAssistantText, pushEntry]);
 
   const flushPendingCommandBuffers = useCallback(() => {
-    const pending = Object.values(commandBuffersRef.current as Record<'stdout' | 'stderr', string>)
-      .map((value: string) => value.trimEnd())
+    const pending = Object.entries(commandBuffersRef.current as Record<'stdout' | 'stderr', string>)
+      .map(([stream, value]: [string, string]) => ({
+        stream,
+        value: value.trimEnd(),
+      }))
+      .filter(({ value }: { value: string }) => value.length > 0)
+      .map(({ stream, value }: { stream: string; value: string }) => `${stream === 'stderr' ? 'err' : 'out'}  ${value}`)
       .filter((value) => value.length > 0);
 
     commandBuffersRef.current = { stdout: '', stderr: '' };
-    appendCommandLines(pending);
-  }, [appendCommandLines]);
+    if (display.showExecution) {
+      setLiveExecutionText((previous: string) => {
+        const mergedLines = [previous.trimEnd(), ...pending].filter((line) => line.length > 0);
+        const mergedText = mergedLines.join('\n');
+        if (mergedText) {
+          pushEntry('execution', mergedText);
+        }
+        return '';
+      });
+    }
+  }, [display.showExecution, pushEntry]);
 
   const handleToolEvent = useCallback((event: HolonToolEvent) => {
     if (event.type === 'status' && event.toolName === 'reportProgress') {
-      pushEntry('status', event.message);
+      if (display.showThinking) {
+        pushEntry('thinking', event.message);
+      }
       return;
     }
 
     if (event.type === 'command-start') {
       commandBuffersRef.current = { stdout: '', stderr: '' };
-      setCommandPanel({
-        command: event.command,
-        cwd: event.cwd ?? null,
-        lines: [],
-        running: true,
-        exitCode: null,
-        statusText: 'Commande en cours...',
-        lastCommandLine: event.command,
-      });
+      if (display.showExecution) {
+        const cwd = event.cwd ? ` dans ${event.cwd}` : '';
+        setLiveExecutionText(`$ ${event.command}${cwd}`);
+      }
       return;
     }
 
@@ -214,22 +231,39 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
       const combined = `${commandBuffersRef.current[event.stream]}${normalized}`;
       const parts = combined.split('\n');
       commandBuffersRef.current[event.stream] = parts.pop() ?? '';
-      const prefixed = parts.map((line) => `${event.stream === 'stderr' ? 'err' : 'out'}  ${line}`);
-      appendCommandLines(prefixed);
+
+      if (display.showExecution) {
+        const lines = parts
+          .map((line) => line.trimEnd())
+          .filter((line) => line.length > 0)
+          .map((line) => `${event.stream === 'stderr' ? 'err' : 'out'}  ${line}`);
+
+        if (lines.length > 0) {
+          setLiveExecutionText((previous: string) => [previous, ...lines].filter((line) => line.length > 0).join('\n'));
+        }
+      }
       return;
     }
 
     if (event.type === 'command-end') {
       flushPendingCommandBuffers();
-      setCommandPanel((previous: CommandPanelState) => ({
-        ...previous,
-        running: false,
-        exitCode: event.exitCode,
-        statusText: event.message ?? null,
-        lastCommandLine: previous.command,
-      }));
+      if (display.showExecution) {
+        const suffix = event.message ? ` ${event.message}` : '';
+        setLiveExecutionText((previous: string) => {
+          const mergedText = [previous.trimEnd(), `exit ${event.exitCode}${suffix}`].filter((line) => line.length > 0).join('\n');
+          if (mergedText) {
+            pushEntry('execution', mergedText);
+          }
+          return '';
+        });
+      }
+      return;
     }
-  }, [appendCommandLines, flushPendingCommandBuffers, pushEntry]);
+
+    if (event.type === 'result' && display.showExecution) {
+      setLiveExecutionText((previous: string) => [previous, event.message].filter((line) => line.length > 0).join('\n'));
+    }
+  }, [display.showExecution, display.showThinking, flushPendingCommandBuffers, pushEntry]);
 
   const submitPrompt = useCallback(async () => {
     const prompt = inputValue.trim();
@@ -247,26 +281,43 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
     if (prompt === '/clear') {
       agent.clearConversation();
       setFeed([]);
+      setCurrentState('idle');
       setCurrentPhase(null);
       setPhaseStatusText('Conversation reinitialisee.');
-      setCommandPanel({
-        command: null,
-        cwd: null,
-        lines: [],
-        running: false,
-        exitCode: null,
-        statusText: null,
-        lastCommandLine: null,
+      setLiveAssistantText('');
+      setLiveExecutionText('');
+      commandBuffersRef.current = { stdout: '', stderr: '' };
+      return;
+    }
+
+    if (prompt === '/toggle-thinking' || prompt === '/toggle-agent-thinking') {
+      setDisplay((previous: Required<HolonDisplayOptions>) => {
+        const next = { ...previous, showThinking: !previous.showThinking };
+        pushEntry('thinking', `Affichage reflexion: ${next.showThinking ? 'actif' : 'masque'}.`);
+        return next;
+      });
+      setInputValue('');
+      return;
+    }
+
+    if (prompt === '/toggle-cli' || prompt === '/toggle-command-executions') {
+      setDisplay((previous: Required<HolonDisplayOptions>) => {
+        const next = { ...previous, showExecution: !previous.showExecution };
+        pushEntry('thinking', `Affichage execution: ${next.showExecution ? 'actif' : 'masque'}.`);
+        return next;
       });
       return;
     }
 
-    pushEntry('user', prompt);
+    if (display.showUserPrompts) {
+      pushEntry('user', prompt);
+    }
     setIsRunning(true);
+    setCurrentState('running');
     setCurrentPhase('inspect');
     setPhaseStatusText('Analyse en cours...');
-    activeAssistantEntryIdRef.current = null;
-    assistantBufferRef.current = '';
+    setLiveAssistantText('');
+    setLiveExecutionText('');
 
     try {
       const result = await agent.run(prompt, {
@@ -275,14 +326,24 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
           if (event.status === 'started') {
             setCurrentPhase(event.phase);
             setPhaseStatusText(event.message);
+            if (display.showThinking) {
+              pushEntry('thinking', `${phaseLabel(event.phase)}: ${event.message}`);
+            }
           } else if (event.phase === 'summarize') {
             setPhaseStatusText('Reponse prete.');
           }
 
           await options.onPhaseChange?.(event);
         },
+        onStateChange: async (event: HolonStateEvent) => {
+          setCurrentState(event.state);
+          setPhaseStatusText(event.message);
+          await options.onStateChange?.(event);
+        },
         onTextDelta: async (textDelta) => {
-          updateAssistantEntry(`${assistantBufferRef.current}${textDelta}`);
+          if (display.showResponses) {
+            setLiveAssistantText((previous: string) => `${previous}${textDelta}`);
+          }
           await options.onTextDelta?.(textDelta);
         },
         onToolEvent: async (event) => {
@@ -292,19 +353,21 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
       });
 
       finalizeAssistantEntry(result.text);
+      setCurrentState(result.finalState);
       setCurrentPhase(null);
       setPhaseStatusText('Pret.');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       pushEntry('error', message);
-      activeAssistantEntryIdRef.current = null;
-      assistantBufferRef.current = '';
+      setLiveAssistantText('');
+      setLiveExecutionText('');
+      setCurrentState('failed_terminal');
       setCurrentPhase(null);
       setPhaseStatusText('Echec du run.');
     } finally {
       setIsRunning(false);
     }
-  }, [agent, app, finalizeAssistantEntry, handleToolEvent, inputValue, isRunning, options, pushEntry, updateAssistantEntry]);
+  }, [agent, app, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, handleToolEvent, inputValue, isRunning, options, pushEntry]);
 
   useInput((inputKey, key) => {
     if (key.ctrl && inputKey === 'c') {
@@ -312,100 +375,79 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
       return;
     }
 
-    if (key.ctrl && inputKey === 'l') {
-      setShowExpandedLogs((previous: boolean) => !previous);
+    if (key.ctrl && inputKey === 't') {
+      setDisplay((previous: Required<HolonDisplayOptions>) => ({
+        ...previous,
+        showThinking: !previous.showThinking,
+      }));
       return;
     }
 
-    if (key.ctrl && inputKey === 'o') {
-      setShowCommandDetails((previous: boolean) => !previous);
+    if (key.ctrl && inputKey === 'e') {
+      setDisplay((previous: Required<HolonDisplayOptions>) => ({
+        ...previous,
+        showExecution: !previous.showExecution,
+      }));
     }
   }, { isActive: true });
 
-  const commandLineLimit = showExpandedLogs ? COMMAND_PANEL_EXPANDED_LINES : COMMAND_PANEL_COLLAPSED_LINES;
-  const commandLines = commandPanel.lines.slice(-commandLineLimit);
-  const showCommandPanel = commandPanel.running || showExpandedLogs;
-  const commandPanelHeight = showCommandPanel ? (showExpandedLogs ? 12 : 6) : 0;
-  const commandDetailsHeight = showCommandDetails ? 6 : 0;
-  const reservedHeight = 9 + commandPanelHeight + commandDetailsHeight;
-  const visibleFeedCount = Math.max(6, height - reservedHeight);
-  const visibleFeed = useMemo(() => feed.slice(-visibleFeedCount), [feed, visibleFeedCount]);
+  const statusLine = useMemo(() => {
+    const thinking = display.showThinking ? 'reflexion on' : 'reflexion off';
+    const execution = display.showExecution ? 'cli on' : 'cli off';
+    return `${thinking} | ${execution} | /toggle-agent-thinking | /toggle-command-executions | /clear | /exit`;
+  }, [display.showExecution, display.showThinking]);
 
   return (
-    <FullScreenBox flexDirection="column" padding={1}>
-      <Box borderStyle="round" borderColor="cyan" paddingX={1} paddingY={0} marginBottom={1}>
-        <Box flexDirection="column" width="100%">
-          <Box>
-            <Text bold color="cyan">Holon</Text>
-            <Text>  </Text>
-            <Text color={isRunning ? 'yellow' : 'green'}>{isRunning ? 'En cours' : 'Pret'}</Text>
-            <Text>  </Text>
-            <Text dimColor>Phase: {phaseLabel(currentPhase)}</Text>
-          </Box>
-          <Text dimColor wrap="truncate-end">{phaseStatusText}</Text>
-        </Box>
+    <Box flexDirection="column" padding={1}>
+      <Box flexDirection="column" marginBottom={1}>
+        <Text bold color="cyan">Holon <Text color={stateColor(currentState)}>{stateLabel(currentState)}</Text> <Text dimColor>Phase: {phaseLabel(currentPhase)}</Text></Text>
+        <Text dimColor wrap="truncate-end">{phaseStatusText}</Text>
+        <Text dimColor>{statusLine}</Text>
       </Box>
 
-      <Box flexGrow={1} borderStyle="round" borderColor="gray" paddingX={1} paddingY={0} marginBottom={1} flexDirection="column">
-        {visibleFeed.length === 0 ? (
+      {feed.length === 0 ? (
+        <Box marginBottom={1} flexDirection="column">
           <Box flexDirection="column" marginTop={1}>
             <Text color="cyan">Pose une demande en langage naturel.</Text>
-            <Text dimColor>Raccourcis: Ctrl+L logs CLI, Ctrl+O details terminal, /clear, /exit.</Text>
+            <Text dimColor>Les blocs defilent naturellement dans le terminal. Raccourcis: Ctrl+T, Ctrl+E, /toggle-agent-thinking, /toggle-command-executions.</Text>
           </Box>
-        ) : (
-          visibleFeed.map((entry) => (
-            <Box key={entry.id} marginBottom={1} flexDirection="column">
-              <Text color={entryAccent(entry.kind)} bold>{entryLabel(entry.kind)}</Text>
+        </Box>
+      ) : null}
+
+      <Static items={feed}>
+        {(entry) => (
+          <Box key={entry.id} marginBottom={1} flexDirection="column">
+            <Text color={entryAccent(entry.kind)} bold>{entryLabel(entry.kind)}</Text>
+            {entry.kind === 'assistant' ? (
+              <Text bold color="greenBright">{entry.text}</Text>
+            ) : (
               <Text>{entry.text}</Text>
-            </Box>
-          ))
+            )}
+          </Box>
         )}
-      </Box>
+      </Static>
 
-      {showCommandPanel ? (
-        <Box height={commandPanelHeight} borderStyle="round" borderColor="magenta" paddingX={1} paddingY={0} marginBottom={1} flexDirection="column">
-          <Box>
-            <Text bold color="magenta">Commande CLI</Text>
-            <Text>  </Text>
-            <Text color={commandPanel.running ? 'yellow' : commandPanel.exitCode === 0 ? 'green' : commandPanel.exitCode === null ? 'gray' : 'red'}>
-              {commandPanel.running ? 'En cours' : commandPanel.exitCode === null ? 'Inactive' : `Exit ${commandPanel.exitCode}`}
-            </Text>
-            <Text>  </Text>
-            <Text dimColor>{showExpandedLogs ? '[Ctrl+L reduire]' : '[Ctrl+L agrandir]'}</Text>
-            <Text> </Text>
-            <Text dimColor>[Ctrl+O details]</Text>
-          </Box>
-          <Text dimColor wrap="truncate-middle">{commandPanel.command ?? 'Aucune commande en cours.'}</Text>
-          <Box flexDirection="column" marginTop={1}>
-            {commandLines.length === 0 ? (
-              <Text dimColor>{commandPanel.statusText ?? 'Les 3 dernieres lignes apparaissent ici.'}</Text>
-            ) : commandLines.map((line: string, index: number) => (
-              <Text key={`${index}-${line}`} wrap="truncate">{line}</Text>
-            ))}
-          </Box>
+      {liveExecutionText ? (
+        <Box marginBottom={1} flexDirection="column">
+          <Text color="magentaBright" bold>Execution</Text>
+          <Text>{liveExecutionText}</Text>
         </Box>
       ) : null}
 
-      {showCommandDetails ? (
-        <Box height={commandDetailsHeight} borderStyle="round" borderColor="blue" paddingX={1} paddingY={0} marginBottom={1} flexDirection="column">
-          <Box>
-            <Text bold color="blue">Details terminal</Text>
-            <Text>  </Text>
-            <Text dimColor>[Ctrl+O fermer]</Text>
-          </Box>
-          <Text dimColor wrap="truncate-middle">cwd: {commandPanel.cwd ?? '.'}</Text>
-          <Text wrap="truncate-middle">{commandPanel.command ?? commandPanel.lastCommandLine ?? 'Aucune commande recente.'}</Text>
-          <Text dimColor wrap="truncate">Le runner actuel utilise des processus pipes, pas un terminal persistant re-ouvrable.</Text>
+      {liveAssistantText ? (
+        <Box marginBottom={1} flexDirection="column">
+          <Text color="greenBright" bold>Reponse</Text>
+          <Text color="greenBright" bold>{liveAssistantText}</Text>
         </Box>
       ) : null}
 
-      <Box borderStyle="round" borderColor="green" paddingX={1} paddingY={0} flexDirection="column">
+      <Box flexDirection="column">
         <Box>
           <Text bold color="green">Prompt</Text>
           <Text>  </Text>
           <Text dimColor>{isRunning ? 'Holon travaille...' : 'Entrer pour envoyer'}</Text>
         </Box>
-        <Box width={Math.max(20, width - 8)}>
+        <Box>
           <Text color="green">› </Text>
           <TextInput
             value={inputValue}
@@ -419,15 +461,14 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
           />
         </Box>
       </Box>
-    </FullScreenBox>
+    </Box>
   );
 }
 
 export async function runInteractiveGateway(agent: HolonAgent, options: HolonRunOptions): Promise<void> {
-  const ink = withFullScreen(<HolonInteractiveApp agent={agent} options={options} />, {
+  const ink = render(<HolonInteractiveApp agent={agent} options={options} />, {
     exitOnCtrlC: false,
   });
 
-  await ink.start();
   await ink.waitUntilExit();
 }

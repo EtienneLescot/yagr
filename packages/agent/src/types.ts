@@ -93,6 +93,28 @@ export type { HolonLanguageModelConfig, HolonModelProvider };
 
 export type HolonRunPhase = 'inspect' | 'plan' | 'edit' | 'validate' | 'sync' | 'verify' | 'summarize';
 
+export type HolonAgentState =
+  | 'idle'
+  | 'running'
+  | 'streaming'
+  | 'waiting_for_permission'
+  | 'waiting_for_input'
+  | 'compacting'
+  | 'resumable'
+  | 'completed'
+  | 'failed_terminal';
+
+export type HolonRequiredActionKind = 'input' | 'permission' | 'external';
+
+export interface HolonRequiredAction {
+  id: string;
+  kind: HolonRequiredActionKind;
+  title: string;
+  message: string;
+  detail?: string;
+  resumable: boolean;
+}
+
 export interface HolonToolCallTrace {
   toolName: string;
   args: unknown;
@@ -151,23 +173,79 @@ export interface HolonPhaseEvent {
   message: string;
 }
 
+export interface HolonStateEvent {
+  state: HolonAgentState;
+  phase?: HolonRunPhase;
+  message: string;
+}
+
+export interface HolonRuntimeContext {
+  runId: string;
+  phase?: HolonRunPhase;
+  state: HolonAgentState;
+}
+
+export interface HolonToolHookContext extends HolonRuntimeContext {
+  toolName: string;
+  args: unknown;
+}
+
+export interface HolonToolHookDecision {
+  allowed?: boolean;
+  message?: string;
+  requiredAction?: HolonRequiredAction;
+}
+
+export interface HolonCompletionAttempt {
+  text: string;
+  finishReason: string;
+  requiredActions: HolonRequiredAction[];
+}
+
+export interface HolonCompletionHookDecision {
+  accepted?: boolean;
+  message?: string;
+  requiredAction?: HolonRequiredAction;
+}
+
+export interface HolonRuntimeHook {
+  beforeTool?: (context: HolonToolHookContext) => void | HolonToolHookDecision | Promise<void | HolonToolHookDecision>;
+  afterTool?: (context: HolonToolHookContext & { result: unknown }) => void | Promise<void>;
+  beforeCompletion?: (
+    attempt: HolonCompletionAttempt,
+    context: HolonRuntimeContext,
+  ) => void | HolonCompletionHookDecision | Promise<void | HolonCompletionHookDecision>;
+}
+
 export interface HolonRunJournalEntry {
   timestamp: string;
-  type: 'run' | 'phase' | 'step';
+  type: 'run' | 'phase' | 'step' | 'state';
   status: 'started' | 'completed' | 'failed';
   message: string;
   phase?: HolonRunPhase;
+  state?: HolonAgentState;
+  requiredAction?: HolonRequiredAction;
   stepNumber?: number;
   runId?: string;
   step?: HolonRunStep;
 }
 
+export interface HolonDisplayOptions {
+  showThinking?: boolean;
+  showExecution?: boolean;
+  showResponses?: boolean;
+  showUserPrompts?: boolean;
+}
+
 export interface HolonRunOptions extends HolonLanguageModelConfig {
   maxSteps?: number;
   rememberConversation?: boolean;
+  display?: HolonDisplayOptions;
+  runtimeHooks?: HolonRuntimeHook[];
   onTextDelta?: (textDelta: string) => void | Promise<void>;
   onStepFinish?: (step: HolonRunStep) => void | Promise<void>;
   onPhaseChange?: (phase: HolonPhaseEvent) => void | Promise<void>;
+  onStateChange?: (state: HolonStateEvent) => void | Promise<void>;
   onJournalEntry?: (entry: HolonRunJournalEntry) => void | Promise<void>;
   onToolEvent?: (event: HolonToolEvent) => void | Promise<void>;
 }
@@ -178,6 +256,9 @@ export interface HolonRunResult {
   finishReason: string;
   steps: number;
   toolCalls: Array<{ toolName: string }>;
+  completionAccepted: boolean;
+  requiredActions: HolonRequiredAction[];
+  finalState: HolonAgentState;
   finalPhase: HolonRunPhase;
   journal: HolonRunJournalEntry[];
 }

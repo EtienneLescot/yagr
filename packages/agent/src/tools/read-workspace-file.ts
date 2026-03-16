@@ -17,7 +17,11 @@ export function createReadWorkspaceFileTool(_observer?: ToolExecutionObserver) {
       const stats = fs.statSync(targetPath);
 
       if (!stats.isFile()) {
-        throw new Error(`Path is not a file: ${inputPath}`);
+        return {
+          ok: false,
+          path: relativeWorkspacePath(targetPath),
+          error: `Path is not a file: ${inputPath}`,
+        };
       }
 
       const text = readTextFile(targetPath);
@@ -27,6 +31,7 @@ export function createReadWorkspaceFileTool(_observer?: ToolExecutionObserver) {
       const selected = lines.slice(from - 1, to).join('\n');
 
       return {
+        ok: true,
         path: relativeWorkspacePath(targetPath),
         startLine: from,
         endLine: Math.min(to, lines.length),
