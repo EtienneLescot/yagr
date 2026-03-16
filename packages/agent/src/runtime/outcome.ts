@@ -108,6 +108,9 @@ export function analyzeRunOutcome(journal: HolonRunJournalEntry[]): RunOutcome {
   const resolvedFailureKeys = new Set(successfulActions.map(actionKey));
   const unresolvedFailedActions = failedActions.filter((action) => !resolvedFailureKeys.has(actionKey(action)));
   const hasWorkflowWrites = [...facts.writtenFiles, ...facts.updatedFiles].some((filePath) => filePath.endsWith('.workflow.ts'));
+  const successfulPush = findSuccessfulAction(facts.n8nacActions, 'push');
+  const successfulValidate = findSuccessfulAction(facts.n8nacActions, 'validate') ?? successfulPush;
+  const successfulVerify = findSuccessfulAction(facts.n8nacActions, 'verify') ?? successfulPush;
 
   return {
     writtenFiles: facts.writtenFiles,
@@ -115,9 +118,9 @@ export function analyzeRunOutcome(journal: HolonRunJournalEntry[]): RunOutcome {
     successfulActions,
     failedActions,
     unresolvedFailedActions,
-    successfulValidate: findSuccessfulAction(facts.n8nacActions, 'validate'),
-    successfulPush: findSuccessfulAction(facts.n8nacActions, 'push'),
-    successfulVerify: findSuccessfulAction(facts.n8nacActions, 'verify'),
+    successfulValidate,
+    successfulPush,
+    successfulVerify,
     hasWorkflowWrites,
   };
 }
