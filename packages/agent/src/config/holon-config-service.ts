@@ -3,10 +3,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { HolonModelProvider } from '../llm/create-language-model.js';
 
+export interface HolonTelegramLinkedChat {
+  chatId: string;
+  userId?: string;
+  username?: string;
+  firstName?: string;
+  linkedAt: string;
+  lastSeenAt?: string;
+}
+
+export interface HolonTelegramConfig {
+  botUsername?: string;
+  onboardingToken?: string;
+  linkedChats?: HolonTelegramLinkedChat[];
+}
+
 export interface HolonLocalConfig {
   provider?: HolonModelProvider;
   model?: string;
   baseUrl?: string;
+  telegram?: HolonTelegramConfig;
 }
 
 export class HolonConfigService {
@@ -38,6 +54,12 @@ export class HolonConfigService {
     fs.writeFileSync(this.localConfigPath, JSON.stringify(config, null, 2));
   }
 
+  updateLocalConfig(updater: (config: HolonLocalConfig) => HolonLocalConfig): HolonLocalConfig {
+    const nextConfig = updater(this.getLocalConfig());
+    this.saveLocalConfig(nextConfig);
+    return nextConfig;
+  }
+
   getApiKey(provider: HolonModelProvider): string | undefined {
     const credentials = (this.globalStore.get('providers') as Record<string, string> | undefined) ?? {};
     return credentials[provider];
@@ -61,5 +83,17 @@ export class HolonConfigService {
 
   clearAllApiKeys(): void {
     this.globalStore.set('providers', {});
+  }
+
+  getTelegramBotToken(): string | undefined {
+    return this.globalStore.get('telegram.botToken') as string | undefined;
+  }
+
+  saveTelegramBotToken(botToken: string): void {
+    this.globalStore.set('telegram.botToken', botToken);
+  }
+
+  clearTelegramBotToken(): void {
+    this.globalStore.delete('telegram.botToken');
   }
 }

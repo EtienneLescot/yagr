@@ -17,6 +17,16 @@ export {
 } from './config/load-n8n-engine-config.js';
 export { HolonConfigService } from './config/holon-config-service.js';
 export { runCliGateway } from './gateway/cli.js';
+export {
+  buildTelegramDeepLink,
+  getTelegramGatewayStatus,
+  resetTelegramGateway,
+  runTelegramGateway,
+  showTelegramOnboarding,
+  setupTelegramGateway,
+  splitTelegramMessage,
+  upsertLinkedChat,
+} from './gateway/telegram.js';
 export { N8nEngine } from './engine/n8n-engine.js';
 export { HolonNativeEngine } from './engine/holon-engine.js';
 export {
@@ -47,6 +57,7 @@ export {
 } from './tools/index.js';
 
 export type { Engine } from './engine/engine.js';
+export type { Gateway, InboundMessage } from './gateway/types.js';
 
 export type {
   CredentialRequirement,
@@ -79,3 +90,9 @@ export type {
   WorkflowSpecNode,
   WorkflowValidationResult,
 } from './types.js';
+
+export type {
+  HolonLocalConfig,
+  HolonTelegramConfig,
+  HolonTelegramLinkedChat,
+} from './config/holon-config-service.js';
