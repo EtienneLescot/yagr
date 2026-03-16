@@ -3,6 +3,13 @@ import { createOpenAI } from '@ai-sdk/openai';
 
 export type HolonModelProvider = 'anthropic' | 'openai' | 'google' | 'groq' | 'mistral' | 'openrouter';
 
+export interface HolonModelContextProfile {
+  provider: HolonModelProvider;
+  model: string;
+  contextWindowTokens: number;
+  reservedOutputTokens: number;
+}
+
 export interface HolonLanguageModelConfig {
   provider?: HolonModelProvider;
   model?: string;
@@ -13,6 +20,49 @@ export interface HolonLanguageModelConfig {
 const DEFAULT_ANTHROPIC_MODEL = 'claude-3-5-sonnet-latest';
 const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 const DEFAULT_OPENROUTER_MODEL = 'anthropic/claude-3.5-sonnet';
+const DEFAULT_RESERVED_OUTPUT_TOKENS = 8_192;
+
+function inferContextWindowTokens(provider: HolonModelProvider, modelName: string): number {
+  const normalized = modelName.toLowerCase();
+
+  if (provider === 'anthropic' || provider === 'openrouter') {
+    if (normalized.includes('haiku') || normalized.includes('sonnet') || normalized.includes('opus') || normalized.includes('claude')) {
+      return 200_000;
+    }
+  }
+
+  if (provider === 'openai') {
+    if (normalized.startsWith('gpt-5') || normalized.includes('gpt-5')) {
+      return 400_000;
+    }
+    if (normalized.startsWith('o1') || normalized.startsWith('o3')) {
+      return 200_000;
+    }
+    return 128_000;
+  }
+
+  if (provider === 'google') {
+    return 1_000_000;
+  }
+
+  if (provider === 'groq' || provider === 'mistral') {
+    return 128_000;
+  }
+
+  return 128_000;
+}
+
+export function resolveModelContextProfile(config: HolonLanguageModelConfig = {}): HolonModelContextProfile {
+  const provider = resolveModelProvider(config.provider);
+  const model = resolveModelName(provider, config.model);
+
+  return {
+    provider,
+    model,
+    contextWindowTokens: inferContextWindowTokens(provider, model),
+    reservedOutputTokens: DEFAULT_RESERVED_OUTPUT_TOKENS,
+  };
+}
 
 export function resolveModelProvider(explicitProvider?: string): HolonModelProvider {
   if (explicitProvider) {

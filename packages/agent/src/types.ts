@@ -219,15 +219,26 @@ export interface HolonRuntimeHook {
 
 export interface HolonRunJournalEntry {
   timestamp: string;
-  type: 'run' | 'phase' | 'step' | 'state';
+  type: 'run' | 'phase' | 'step' | 'state' | 'compaction';
   status: 'started' | 'completed' | 'failed';
   message: string;
   phase?: HolonRunPhase;
   state?: HolonAgentState;
   requiredAction?: HolonRequiredAction;
+  compaction?: HolonContextCompactionEvent;
   stepNumber?: number;
   runId?: string;
   step?: HolonRunStep;
+}
+
+export interface HolonContextCompactionEvent {
+  summary: string;
+  source: 'llm' | 'fallback';
+  estimatedTokens: number;
+  thresholdTokens: number;
+  messagesCompacted: number;
+  preservedRecentMessages: number;
+  fallbackReason?: string;
 }
 
 export interface HolonDisplayOptions {
@@ -240,9 +251,16 @@ export interface HolonDisplayOptions {
 export interface HolonRunOptions extends HolonLanguageModelConfig {
   maxSteps?: number;
   rememberConversation?: boolean;
+  autoCompactContext?: boolean;
+  compactContextThresholdPercent?: number;
+  compactPreserveRecentMessages?: number;
+  charsPerToken?: number;
+  contextWindowTokens?: number;
+  reservedOutputTokens?: number;
   satisfiedRequiredActionIds?: string[];
   display?: HolonDisplayOptions;
   runtimeHooks?: HolonRuntimeHook[];
+  onCompaction?: (event: HolonContextCompactionEvent) => void | Promise<void>;
   onTextDelta?: (textDelta: string) => void | Promise<void>;
   onStepFinish?: (step: HolonRunStep) => void | Promise<void>;
   onPhaseChange?: (phase: HolonPhaseEvent) => void | Promise<void>;
@@ -259,6 +277,7 @@ export interface HolonRunResult {
   toolCalls: Array<{ toolName: string }>;
   completionAccepted: boolean;
   requiredActions: HolonRequiredAction[];
+  compactions: HolonContextCompactionEvent[];
   finalState: HolonAgentState;
   finalPhase: HolonRunPhase;
   journal: HolonRunJournalEntry[];

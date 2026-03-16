@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { generateText, streamText, type CoreMessage } from 'ai';
 import type { Engine } from '../engine/engine.js';
 import { createLanguageModel } from '../llm/create-language-model.js';
+import { resolveModelContextProfile } from '../llm/create-language-model.js';
 import type {
   HolonAgentState,
+  HolonContextCompactionEvent,
   HolonRequiredAction,
   HolonRuntimeContext,
   HolonPhaseEvent,
@@ -18,6 +20,7 @@ import type {
 import { buildSystemPrompt } from '../prompt/build-system-prompt.js';
 import { buildTools } from '../tools/index.js';
 import { evaluateCompletionGate } from './completion-gate.js';
+import { compactConversationContext } from './context-compaction.js';
 import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outcome.js';
 import { wrapToolsWithRuntimeHooks } from './policy-hooks.js';
 import { blockingStateForRequiredActions, collectRequiredActions } from './required-actions.js';
@@ -36,6 +39,7 @@ type ExecuteRunResult = {
 type RunState = {
   runId: string;
   journal: HolonRunJournalEntry[];
+  compactions: HolonContextCompactionEvent[];
   currentPhase: HolonRunPhase | null;
   currentAgentState: HolonAgentState;
   stepNumber: number;
@@ -255,6 +259,53 @@ async function emitJournal(state: RunState, options: HolonRunOptions, entry: Omi
   const journalEntry = buildJournalEntry(entry);
   state.journal.push(journalEntry);
   await options.onJournalEntry?.(journalEntry);
+}
+
+async function maybeCompactMessages(
+  state: RunState,
+  options: HolonRunOptions,
+  systemPrompt: string,
+  prompt: string,
+  messages: CoreMessage[],
+): Promise<CoreMessage[]> {
+  if (options.autoCompactContext === false) {
+    return messages;
+  }
+
+  const modelProfile = resolveModelContextProfile(options);
+  const compaction = await compactConversationContext({
+    messages,
+    prompt,
+    journal: state.journal,
+    systemPrompt,
+    budget: {
+      contextWindowTokens: options.contextWindowTokens ?? modelProfile.contextWindowTokens,
+      reservedOutputTokens: options.reservedOutputTokens ?? modelProfile.reservedOutputTokens,
+      thresholdPercent: options.compactContextThresholdPercent,
+      preserveRecentMessages: options.compactPreserveRecentMessages,
+      charsPerToken: options.charsPerToken,
+    },
+    llmConfig: options,
+  });
+
+  if (!compaction.event) {
+    return messages;
+  }
+
+  await transitionAgentState(state, options, 'compacting', 'Compacting runtime context before the next model call.');
+
+  state.compactions.push(compaction.event);
+  await emitJournal(state, options, {
+    type: 'compaction',
+    status: 'completed',
+    phase: state.currentPhase ?? undefined,
+    message: `Context compacted: ${compaction.event.messagesCompacted} messages folded into a checkpoint summary.`,
+    compaction: compaction.event,
+  });
+  await options.onCompaction?.(compaction.event);
+  await transitionAgentState(state, options, 'running', 'Context compaction completed.');
+
+  return compaction.messages;
 }
 
 async function transitionAgentState(
@@ -514,6 +565,7 @@ export class HolonRunEngine {
     const state: RunState = {
       runId: randomUUID(),
       journal: [],
+      compactions: [],
       currentPhase: null,
       currentAgentState: 'idle',
       stepNumber: 0,
@@ -533,7 +585,7 @@ export class HolonRunEngine {
       state: state.currentAgentState,
     }), options.satisfiedRequiredActionIds) as typeof baseTools;
     const persistedMessages: CoreMessage[] = [currentUserMessage];
-    const executionContext: CoreMessage[] = [...this.history, currentUserMessage];
+    let executionContext: CoreMessage[] = [...this.history, currentUserMessage];
 
     await emitJournal(state, options, {
       type: 'run',
@@ -545,6 +597,8 @@ export class HolonRunEngine {
 
     try {
       await transitionPhase(state, options, 'inspect', 'started', 'Inspecting workspace and task context.');
+
+      executionContext = await maybeCompactMessages(state, options, systemPrompt, prompt, executionContext);
 
       const inspectInstruction: CoreMessage = {
         role: 'user',
@@ -596,6 +650,8 @@ export class HolonRunEngine {
       let responseMessages: CoreMessage[] = [];
 
       for (let attemptNumber = 1; attemptNumber <= MAX_EXECUTION_ATTEMPTS; attemptNumber += 1) {
+        executeMessages = await maybeCompactMessages(state, options, systemPrompt, prompt, executeMessages);
+
         const phaseResult = await executePhase(
           state,
           options,
@@ -693,6 +749,7 @@ export class HolonRunEngine {
           toolCalls: collectToolNames(state.journal).length > 0 ? collectToolNames(state.journal) : toolCalls,
           completionAccepted: completionDecision.accepted,
           requiredActions: completionDecision.requiredActions,
+          compactions: state.compactions,
           finalState: state.currentAgentState,
           finalPhase: 'summarize',
           journal: state.journal,
