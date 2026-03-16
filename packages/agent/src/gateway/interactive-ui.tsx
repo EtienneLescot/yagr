@@ -3,7 +3,7 @@ import TextInput from 'ink-text-input';
 import { render } from 'ink';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { HolonAgent } from '../agent.js';
-import type { HolonAgentState, HolonDisplayOptions, HolonPhaseEvent, HolonRunOptions, HolonStateEvent, HolonToolEvent } from '../types.js';
+import type { HolonAgentState, HolonDisplayOptions, HolonPhaseEvent, HolonRequiredAction, HolonRunOptions, HolonStateEvent, HolonToolEvent } from '../types.js';
 
 type FeedKind = 'user' | 'assistant' | 'thinking' | 'execution' | 'error';
 
@@ -139,6 +139,11 @@ function normalizeCommandChunk(chunk: string): string {
   return chunk.replace(/\r+/g, '\n');
 }
 
+function formatRequiredAction(action: HolonRequiredAction): string {
+  const detail = action.detail ? ` ${action.detail}` : '';
+  return `${action.title} [${action.kind}]${action.resumable ? ' resumable' : ''}: ${action.message}.${detail}`;
+}
+
 type InteractiveAppProps = {
   agent: HolonAgent;
   options: HolonRunOptions;
@@ -155,6 +160,8 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
   const [display, setDisplay] = useState<Required<HolonDisplayOptions>>(() => normalizeDisplayOptions(options.display));
   const [liveAssistantText, setLiveAssistantText] = useState('');
   const [liveExecutionText, setLiveExecutionText] = useState('');
+  const [pendingRequiredActions, setPendingRequiredActions] = useState<HolonRequiredAction[]>([]);
+  const [approvedRequiredActionIds, setApprovedRequiredActionIds] = useState<string[]>([]);
   const nextEntryIdRef = useRef(1);
   const commandBuffersRef = useRef({ stdout: '', stderr: '' });
 
@@ -265,53 +272,11 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
   }, [display.showExecution, display.showThinking, flushPendingCommandBuffers, pushEntry]);
 
-  const submitPrompt = useCallback(async () => {
-    const prompt = inputValue.trim();
-    if (!prompt || isRunning) {
-      return;
-    }
-
-    setInputValue('');
-
-    if (prompt === '/exit' || prompt === '/quit') {
-      app.exit();
-      return;
-    }
-
-    if (prompt === '/clear') {
-      agent.clearConversation();
-      setFeed([]);
-      setCurrentState('idle');
-      setCurrentPhase(null);
-      setPhaseStatusText('Conversation reinitialisee.');
-      setLiveAssistantText('');
-      setLiveExecutionText('');
-      commandBuffersRef.current = { stdout: '', stderr: '' };
-      return;
-    }
-
-    if (prompt === '/toggle-thinking' || prompt === '/toggle-agent-thinking') {
-      setDisplay((previous: Required<HolonDisplayOptions>) => {
-        const next = { ...previous, showThinking: !previous.showThinking };
-        pushEntry('thinking', `Affichage reflexion: ${next.showThinking ? 'actif' : 'masque'}.`);
-        return next;
-      });
-      setInputValue('');
-      return;
-    }
-
-    if (prompt === '/toggle-cli' || prompt === '/toggle-command-executions') {
-      setDisplay((previous: Required<HolonDisplayOptions>) => {
-        const next = { ...previous, showExecution: !previous.showExecution };
-        pushEntry('thinking', `Affichage execution: ${next.showExecution ? 'actif' : 'masque'}.`);
-        return next;
-      });
-      return;
-    }
-
+  const runPrompt = useCallback(async (prompt: string) => {
     if (display.showUserPrompts) {
       pushEntry('user', prompt);
     }
+
     setIsRunning(true);
     setCurrentState('running');
     setCurrentPhase('inspect');
@@ -322,6 +287,7 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
     try {
       const result = await agent.run(prompt, {
         ...options,
+        satisfiedRequiredActionIds: approvedRequiredActionIds,
         onPhaseChange: async (event) => {
           if (event.status === 'started') {
             setCurrentPhase(event.phase);
@@ -355,7 +321,17 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
       finalizeAssistantEntry(result.text);
       setCurrentState(result.finalState);
       setCurrentPhase(null);
-      setPhaseStatusText('Pret.');
+      setPendingRequiredActions(result.requiredActions);
+
+      if (result.requiredActions.length > 0) {
+        for (const action of result.requiredActions) {
+          pushEntry(action.kind === 'permission' ? 'thinking' : 'error', `Action requise: ${formatRequiredAction(action)}`);
+        }
+        setPhaseStatusText(result.requiredActions[0].message);
+      } else {
+        setApprovedRequiredActionIds([]);
+        setPhaseStatusText('Pret.');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       pushEntry('error', message);
@@ -367,7 +343,82 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
     } finally {
       setIsRunning(false);
     }
-  }, [agent, app, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, handleToolEvent, inputValue, isRunning, options, pushEntry]);
+  }, [agent, approvedRequiredActionIds, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, handleToolEvent, options, pushEntry]);
+
+  const submitPrompt = useCallback(async () => {
+    const prompt = inputValue.trim();
+    if (!prompt || isRunning) {
+      return;
+    }
+
+    setInputValue('');
+
+    if (prompt === '/exit' || prompt === '/quit') {
+      app.exit();
+      return;
+    }
+
+    if (prompt === '/clear') {
+      agent.clearConversation();
+      setFeed([]);
+      setPendingRequiredActions([]);
+      setApprovedRequiredActionIds([]);
+      setCurrentState('idle');
+      setCurrentPhase(null);
+      setPhaseStatusText('Conversation reinitialisee.');
+      setLiveAssistantText('');
+      setLiveExecutionText('');
+      commandBuffersRef.current = { stdout: '', stderr: '' };
+      return;
+    }
+
+    if (prompt === '/toggle-thinking' || prompt === '/toggle-agent-thinking') {
+      setDisplay((previous: Required<HolonDisplayOptions>) => {
+        const next = { ...previous, showThinking: !previous.showThinking };
+        pushEntry('thinking', `Affichage reflexion: ${next.showThinking ? 'actif' : 'masque'}.`);
+        return next;
+      });
+      setInputValue('');
+      return;
+    }
+
+    if (prompt === '/toggle-cli' || prompt === '/toggle-command-executions') {
+      setDisplay((previous: Required<HolonDisplayOptions>) => {
+        const next = { ...previous, showExecution: !previous.showExecution };
+        pushEntry('thinking', `Affichage execution: ${next.showExecution ? 'actif' : 'masque'}.`);
+        return next;
+      });
+      return;
+    }
+
+    if (prompt === '/pending') {
+      if (pendingRequiredActions.length === 0) {
+        pushEntry('thinking', 'Aucune action requise en attente.');
+      } else {
+        for (const action of pendingRequiredActions) {
+          pushEntry('thinking', `En attente: ${formatRequiredAction(action)}`);
+        }
+      }
+      return;
+    }
+
+    if (prompt.startsWith('/approve')) {
+      const permissionActions = pendingRequiredActions.filter((action) => action.kind === 'permission');
+      if (permissionActions.length === 0) {
+        pushEntry('thinking', 'Aucune permission en attente.');
+        return;
+      }
+
+      const approvedIds = permissionActions.map((action) => action.id);
+      setApprovedRequiredActionIds((previous: string[]) => [...new Set([...previous, ...approvedIds])]);
+      setPendingRequiredActions((previous: HolonRequiredAction[]) => previous.filter((action) => action.kind !== 'permission'));
+      pushEntry('thinking', `Permission accordee pour ${permissionActions.length} action(s). Relance du run.`);
+      await runPrompt('Permission granted. Continue the current task and execute the previously blocked step now.');
+      return;
+    }
+
+    await runPrompt(prompt);
+  }, [agent, app, inputValue, isRunning, pendingRequiredActions, pushEntry, runPrompt]);
 
   useInput((inputKey, key) => {
     if (key.ctrl && inputKey === 'c') {
@@ -394,7 +445,7 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
   const statusLine = useMemo(() => {
     const thinking = display.showThinking ? 'reflexion on' : 'reflexion off';
     const execution = display.showExecution ? 'cli on' : 'cli off';
-    return `${thinking} | ${execution} | /toggle-agent-thinking | /toggle-command-executions | /clear | /exit`;
+    return `${thinking} | ${execution} | /approve | /pending | /toggle-agent-thinking | /toggle-command-executions | /clear | /exit`;
   }, [display.showExecution, display.showThinking]);
 
   return (
@@ -409,8 +460,17 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
         <Box marginBottom={1} flexDirection="column">
           <Box flexDirection="column" marginTop={1}>
             <Text color="cyan">Pose une demande en langage naturel.</Text>
-            <Text dimColor>Les blocs defilent naturellement dans le terminal. Raccourcis: Ctrl+T, Ctrl+E, /toggle-agent-thinking, /toggle-command-executions.</Text>
+            <Text dimColor>Les blocs defilent naturellement dans le terminal. Raccourcis: Ctrl+T, Ctrl+E, /approve, /pending, /toggle-agent-thinking, /toggle-command-executions.</Text>
           </Box>
+        </Box>
+      ) : null}
+
+      {pendingRequiredActions.length > 0 ? (
+        <Box marginBottom={1} flexDirection="column">
+          <Text color="yellow" bold>Actions requises</Text>
+          {pendingRequiredActions.map((action) => (
+            <Text key={action.id} dimColor>{formatRequiredAction(action)}</Text>
+          ))}
         </Box>
       ) : null}
 

@@ -530,7 +530,7 @@ export class HolonRunEngine {
       runId: state.runId,
       phase: state.currentPhase,
       state: state.currentAgentState,
-    })) as typeof baseTools;
+    }), options.satisfiedRequiredActionIds) as typeof baseTools;
     const persistedMessages: CoreMessage[] = [currentUserMessage];
     const executionContext: CoreMessage[] = [...this.history, currentUserMessage];
 
@@ -640,6 +640,7 @@ export class HolonRunEngine {
         text,
         finishReason,
         requiredActions,
+        satisfiedRequiredActionIds: options.satisfiedRequiredActionIds,
         hasWorkflowWrites: analyzeRunOutcome(state.journal).hasWorkflowWrites,
         successfulValidate: Boolean(analyzeRunOutcome(state.journal).successfulValidate),
         successfulPush: Boolean(analyzeRunOutcome(state.journal).successfulPush),

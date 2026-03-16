@@ -5,6 +5,7 @@ export interface CompletionGateInput {
   text: string;
   finishReason: string;
   requiredActions: HolonRequiredAction[];
+  satisfiedRequiredActionIds?: string[];
   hasWorkflowWrites: boolean;
   successfulValidate: boolean;
   successfulPush: boolean;
@@ -22,7 +23,8 @@ export interface CompletionGateDecision {
 
 export async function evaluateCompletionGate(input: CompletionGateInput): Promise<CompletionGateDecision> {
   const reasons: string[] = [];
-  const requiredActions = [...input.requiredActions];
+  const satisfiedRequiredActionIds = new Set(input.satisfiedRequiredActionIds ?? []);
+  const requiredActions = input.requiredActions.filter((action) => !satisfiedRequiredActionIds.has(action.id));
 
   if (requiredActions.length > 0) {
     reasons.push('Required action is still open.');
@@ -52,11 +54,11 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
       continue;
     }
 
-    if (decision.requiredAction) {
+    if (decision.requiredAction && !satisfiedRequiredActionIds.has(decision.requiredAction.id)) {
       requiredActions.push(decision.requiredAction);
     }
 
-    if (decision.accepted === false) {
+    if (decision.accepted === false && (!decision.requiredAction || !satisfiedRequiredActionIds.has(decision.requiredAction.id))) {
       reasons.push(decision.message ?? 'Completion rejected by runtime hook.');
     }
   }
