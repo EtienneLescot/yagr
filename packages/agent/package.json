@@ -20,6 +20,7 @@
     "@clack/prompts": "^1.1.0",
     "@n8n-as-code/skills": "1.1.2",
     "@n8n-as-code/transformer": "1.0.1",
+    "@types/qrcode-terminal": "^0.12.2",
     "ai": "^4.3.19",
     "conf": "^13.0.1",
     "dotenv": "^17.2.3",
@@ -27,7 +28,9 @@
     "ink": "^6.8.0",
     "ink-text-input": "^6.0.0",
     "n8nac": "1.1.2",
+    "qrcode-terminal": "^0.12.0",
     "react": "^19.2.4",
+    "telegraf": "^4.16.3",
     "zod": "^3.22.4"
   },
   "devDependencies": {
