@@ -28,7 +28,9 @@ export { buildSystemPrompt } from './prompt/build-system-prompt.js';
 export {
   buildTools,
   createListDirectoryTool,
+  createDeleteWorkspaceFileTool,
   createN8nAcTool,
+  createMoveWorkspaceFileTool,
   createReadWorkspaceFileTool,
   createReplaceInWorkspaceFileTool,
   createRequestRequiredActionTool,
