@@ -158,15 +158,13 @@ function collectToolNames(journal: HolonRunJournalEntry[]): Array<{ toolName: st
 }
 
 function buildGroundedSummary(
-  prompt: string,
+  _prompt: string,
   finishReason: string,
   journal: HolonRunJournalEntry[],
   requiredActions: HolonRequiredAction[],
 ): string {
   const lines: string[] = [];
   const outcome = analyzeRunOutcome(journal);
-
-  lines.push(`Demande: ${prompt}`);
 
   if (outcome.writtenFiles.length > 0) {
     lines.push(`Fichiers crees ou reecrits: ${outcome.writtenFiles.join(', ')}`);
@@ -236,15 +234,15 @@ async function ensureFinalText(
     .join('\n')
     .trim();
 
-  if (!sanitizedText) {
-    return groundedSummary;
-  }
-
   if (!completionAccepted) {
     return groundedSummary;
   }
 
-  return `${groundedSummary}\n\nReponse du modele:\n${sanitizedText}`;
+  if (!sanitizedText) {
+    return groundedSummary;
+  }
+
+  return sanitizedText;
 }
 
 function buildRuntimeContext(state: RunState): HolonRuntimeContext {
