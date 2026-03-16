@@ -17,7 +17,11 @@ export function createWriteWorkspaceFileTool(_observer?: ToolExecutionObserver) 
       const exists = fileExists(targetPath);
 
       if (mode === 'create' && exists) {
-        throw new Error(`File already exists: ${inputPath}`);
+        return {
+          ok: false,
+          path: relativeWorkspacePath(targetPath),
+          error: `File already exists: ${inputPath}`,
+        };
       }
 
       ensureParentDirectory(targetPath);
@@ -29,6 +33,7 @@ export function createWriteWorkspaceFileTool(_observer?: ToolExecutionObserver) 
       }
 
       return {
+        ok: true,
         path: relativeWorkspacePath(targetPath),
         mode,
         bytesWritten: Buffer.byteLength(content, 'utf-8'),

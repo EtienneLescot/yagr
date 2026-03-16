@@ -4,6 +4,7 @@ export { createN8nAcTool } from './n8nac.js';
 export { createReadWorkspaceFileTool } from './read-workspace-file.js';
 export { createReplaceInWorkspaceFileTool } from './replace-in-workspace-file.js';
 export { createReportProgressTool } from './report-progress.js';
+export { createRequestRequiredActionTool } from './request-required-action.js';
 export { createSearchWorkspaceTool } from './search-workspace.js';
 export { createWriteWorkspaceFileTool } from './write-workspace-file.js';
 export { createDeployWorkflowTool } from './deploy.js';

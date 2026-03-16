@@ -21,11 +21,15 @@ interface ParsedArgs {
   provider?: HolonModelProvider;
   model?: string;
   maxSteps?: number;
+  showThinking: boolean;
+  showExecution: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = {
     interactive: false,
+    showThinking: true,
+    showExecution: true,
   };
 
   if (argv[0] === 'config' && argv[1] === 'show') {
@@ -70,6 +74,26 @@ function parseArgs(argv: string[]): ParsedArgs {
       }
       parsed.maxSteps = value;
       index += 1;
+      continue;
+    }
+
+    if (arg === '--hide-thinking') {
+      parsed.showThinking = false;
+      continue;
+    }
+
+    if (arg === '--hide-agent-thinking') {
+      parsed.showThinking = false;
+      continue;
+    }
+
+    if (arg === '--hide-cli' || arg === '--hide-execution') {
+      parsed.showExecution = false;
+      continue;
+    }
+
+    if (arg === '--hide-command-executions') {
+      parsed.showExecution = false;
       continue;
     }
 
@@ -122,6 +146,10 @@ async function main(): Promise<void> {
     provider: args.provider,
     model: args.model,
     maxSteps: args.maxSteps,
+    display: {
+      showThinking: args.showThinking,
+      showExecution: args.showExecution,
+    },
   });
 }
 

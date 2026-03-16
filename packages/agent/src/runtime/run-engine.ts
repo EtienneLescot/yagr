@@ -3,18 +3,29 @@ import { generateText, streamText, type CoreMessage } from 'ai';
 import type { Engine } from '../engine/engine.js';
 import { createLanguageModel } from '../llm/create-language-model.js';
 import type {
+  HolonAgentState,
+  HolonRequiredAction,
+  HolonRuntimeContext,
   HolonPhaseEvent,
   HolonRunJournalEntry,
   HolonRunOptions,
   HolonRunPhase,
   HolonRunResult,
   HolonRunStep,
+  HolonStateEvent,
+  HolonToolEvent,
 } from '../types.js';
 import { buildSystemPrompt } from '../prompt/build-system-prompt.js';
 import { buildTools } from '../tools/index.js';
+import { evaluateCompletionGate } from './completion-gate.js';
+import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outcome.js';
+import { wrapToolsWithRuntimeHooks } from './policy-hooks.js';
+import { blockingStateForRequiredActions, collectRequiredActions } from './required-actions.js';
 
 const INSPECT_MAX_STEPS = 2;
 const EXECUTE_MAX_STEPS = 10;
+const EXECUTE_RECOVERY_MAX_STEPS = 6;
+const MAX_EXECUTION_ATTEMPTS = 3;
 const PHASE_ORDER: HolonRunPhase[] = ['inspect', 'plan', 'edit', 'validate', 'sync', 'verify', 'summarize'];
 
 type ExecuteRunResult = {
@@ -26,6 +37,7 @@ type RunState = {
   runId: string;
   journal: HolonRunJournalEntry[];
   currentPhase: HolonRunPhase | null;
+  currentAgentState: HolonAgentState;
   stepNumber: number;
 };
 
@@ -140,128 +152,51 @@ function collectToolNames(journal: HolonRunJournalEntry[]): Array<{ toolName: st
   return [...names].map((toolName) => ({ toolName }));
 }
 
-type ObservedN8nacAction = {
-  action: string;
-  success: boolean;
-  filename?: string;
-  workflowId?: string;
-  validateFile?: string;
-  exitCode?: number;
-};
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' ? value : undefined;
-}
-
-function extractObservedFacts(journal: HolonRunJournalEntry[]) {
-  const writtenFiles = new Set<string>();
-  const updatedFiles = new Set<string>();
-  const n8nacActions: ObservedN8nacAction[] = [];
-
-  for (const entry of journal) {
-    if (entry.type !== 'step' || !entry.step) {
-      continue;
-    }
-
-    const step = entry.step;
-
-    for (let index = 0; index < step.toolCalls.length; index += 1) {
-      const toolCall = step.toolCalls[index];
-      const toolResult = step.toolResults[index];
-      const args = asRecord(toolCall.args);
-      const result = asRecord(toolResult?.result);
-
-      if (toolCall.toolName === 'writeWorkspaceFile') {
-        const path = asString(result?.path) ?? asString(args?.path);
-        if (path) {
-          writtenFiles.add(path);
-        }
-        continue;
-      }
-
-      if (toolCall.toolName === 'replaceInWorkspaceFile') {
-        const path = asString(result?.path) ?? asString(args?.path);
-        if (path) {
-          updatedFiles.add(path);
-        }
-        continue;
-      }
-
-      if (toolCall.toolName === 'n8nac') {
-        const action = asString(args?.action) ?? 'unknown';
-        n8nacActions.push({
-          action,
-          success: (asNumber(result?.exitCode) ?? 1) === 0,
-          filename: asString(args?.filename),
-          workflowId: asString(args?.workflowId),
-          validateFile: asString(args?.validateFile),
-          exitCode: asNumber(result?.exitCode),
-        });
-      }
-    }
-  }
-
-  return {
-    writtenFiles: [...writtenFiles],
-    updatedFiles: [...updatedFiles],
-    n8nacActions,
-  };
-}
-
-function findSuccessfulAction(actions: ObservedN8nacAction[], actionName: string): ObservedN8nacAction | undefined {
-  return actions.find((action) => action.action === actionName && action.success);
-}
-
-function formatAction(action: ObservedN8nacAction): string {
-  const target = action.filename ?? action.validateFile ?? action.workflowId;
-  return target ? `${action.action} (${target})` : action.action;
-}
-
-function buildGroundedSummary(prompt: string, finishReason: string, journal: HolonRunJournalEntry[]): string {
-  const facts = extractObservedFacts(journal);
+function buildGroundedSummary(
+  prompt: string,
+  finishReason: string,
+  journal: HolonRunJournalEntry[],
+  requiredActions: HolonRequiredAction[],
+): string {
   const lines: string[] = [];
-  const successfulActions = facts.n8nacActions.filter((action) => action.success);
-  const failedActions = facts.n8nacActions.filter((action) => !action.success);
-  const successfulValidate = findSuccessfulAction(facts.n8nacActions, 'validate');
-  const successfulPush = findSuccessfulAction(facts.n8nacActions, 'push');
-  const successfulVerify = findSuccessfulAction(facts.n8nacActions, 'verify');
+  const outcome = analyzeRunOutcome(journal);
 
   lines.push(`Demande: ${prompt}`);
 
-  if (facts.writtenFiles.length > 0) {
-    lines.push(`Fichiers crees ou reecrits: ${facts.writtenFiles.join(', ')}`);
+  if (outcome.writtenFiles.length > 0) {
+    lines.push(`Fichiers crees ou reecrits: ${outcome.writtenFiles.join(', ')}`);
   }
 
-  if (facts.updatedFiles.length > 0) {
-    lines.push(`Fichiers modifies: ${facts.updatedFiles.join(', ')}`);
+  if (outcome.updatedFiles.length > 0) {
+    lines.push(`Fichiers modifies: ${outcome.updatedFiles.join(', ')}`);
   }
 
-  if (successfulActions.length > 0) {
-    lines.push(`Actions n8nac reussies: ${successfulActions.map(formatAction).join(', ')}`);
+  if (outcome.successfulActions.length > 0) {
+    lines.push(`Actions n8nac reussies: ${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
   }
 
-  if (failedActions.length > 0) {
-    lines.push(`Actions n8nac en echec: ${failedActions.map(formatAction).join(', ')}`);
+  if (outcome.unresolvedFailedActions.length > 0) {
+    lines.push(`Actions n8nac en echec: ${outcome.unresolvedFailedActions.map(formatObservedAction).join(', ')}`);
   }
 
-  if (!successfulValidate) {
+  if (requiredActions.length > 0) {
+    lines.push(`Actions requises en attente: ${requiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
+  }
+
+  if (!outcome.successfulValidate) {
     lines.push('La validation du workflow n’a pas ete confirmee.');
   }
 
-  if (!successfulPush) {
+  if (!outcome.successfulPush) {
     lines.push('Le push vers n8n n’a pas ete confirme.');
   }
 
-  if (!successfulVerify) {
+  if (!outcome.successfulVerify) {
     lines.push('La verification distante n’a pas ete confirmee.');
+  }
+
+  if (outcome.unresolvedFailedActions.length > 0) {
+    lines.push('Le run s’est arrete alors que certaines actions avaient encore echoue. Une correction supplementaire reste necessaire ou un bloqueur externe persiste.');
   }
 
   if (finishReason !== 'stop') {
@@ -272,26 +207,236 @@ function buildGroundedSummary(prompt: string, finishReason: string, journal: Hol
 }
 
 async function ensureFinalText(
-  _engine: Engine,
   _options: HolonRunOptions,
   prompt: string,
   finishReason: string,
   journal: HolonRunJournalEntry[],
   existingText: string,
+  requiredActions: HolonRequiredAction[],
+  completionAccepted: boolean,
 ): Promise<string> {
-  const groundedSummary = buildGroundedSummary(prompt, finishReason, journal);
+  const groundedSummary = buildGroundedSummary(prompt, finishReason, journal, requiredActions);
+  const sanitizedText = existingText
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      return trimmed.length > 0
+        && !trimmed.startsWith('Holon internal phase:')
+        && trimmed !== 'think silently.'
+        && trimmed !== 'Complete the task end-to-end using the gathered context.'
+        && trimmed !== 'When appropriate, author or edit workflow files, validate them, sync them, verify them, and then summarize what changed.'
+        && trimmed !== 'Ask the user only when a specific missing value blocks execution.'
+        && !trimmed.startsWith('Original request:');
+    })
+    .join('\n')
+    .trim();
 
-  if (!existingText.trim()) {
+  if (!sanitizedText) {
     return groundedSummary;
   }
 
-  return `${groundedSummary}\n\nReponse du modele:\n${existingText.trim()}`;
+  if (!completionAccepted) {
+    return groundedSummary;
+  }
+
+  return `${groundedSummary}\n\nReponse du modele:\n${sanitizedText}`;
+}
+
+function buildRuntimeContext(state: RunState): HolonRuntimeContext {
+  return {
+    runId: state.runId,
+    phase: state.currentPhase ?? undefined,
+    state: state.currentAgentState,
+  };
 }
 
 async function emitJournal(state: RunState, options: HolonRunOptions, entry: Omit<HolonRunJournalEntry, 'timestamp'>): Promise<void> {
   const journalEntry = buildJournalEntry(entry);
   state.journal.push(journalEntry);
   await options.onJournalEntry?.(journalEntry);
+}
+
+async function transitionAgentState(
+  state: RunState,
+  options: HolonRunOptions,
+  nextState: HolonAgentState,
+  message: string,
+): Promise<void> {
+  if (state.currentAgentState === nextState) {
+    return;
+  }
+
+  state.currentAgentState = nextState;
+
+  const event: HolonStateEvent = {
+    state: nextState,
+    phase: state.currentPhase ?? undefined,
+    message,
+  };
+
+  await emitJournal(state, options, {
+    type: 'state',
+    status: nextState === 'failed_terminal' ? 'failed' : 'completed',
+    phase: state.currentPhase ?? undefined,
+    state: nextState,
+    message,
+  });
+  await options.onStateChange?.(event);
+}
+
+function withRuntimeToolEvents(state: RunState, options: HolonRunOptions) {
+  return async (event: HolonToolEvent): Promise<void> => {
+    if (event.type === 'command-start') {
+      await transitionAgentState(state, options, 'streaming', `Streaming command output for ${event.toolName}.`);
+    } else if (event.type === 'command-end') {
+      await transitionAgentState(state, options, 'running', `Command finished for ${event.toolName}.`);
+    }
+
+    await options.onToolEvent?.(event);
+  };
+}
+
+function shouldAttemptRecovery(outcome: RunOutcome, attemptNumber: number, requiredActions: HolonRequiredAction[]): boolean {
+  if (attemptNumber >= MAX_EXECUTION_ATTEMPTS) {
+    return false;
+  }
+
+  if (requiredActions.length > 0) {
+    return false;
+  }
+
+  if (outcome.unresolvedFailedActions.length > 0) {
+    return true;
+  }
+
+  if (outcome.hasWorkflowWrites && (!outcome.successfulValidate || !outcome.successfulPush)) {
+    return true;
+  }
+
+  return false;
+}
+
+function buildRecoveryPrompt(outcome: RunOutcome, attemptNumber: number): string {
+  const failedActions = outcome.failedActions.map(formatObservedAction).join(', ');
+  const missingChecks: string[] = [];
+
+  if (outcome.hasWorkflowWrites && !outcome.successfulValidate) {
+    missingChecks.push('validation');
+  }
+
+  if (outcome.hasWorkflowWrites && !outcome.successfulPush) {
+    missingChecks.push('push');
+  }
+
+  if (outcome.hasWorkflowWrites && !outcome.successfulVerify) {
+    missingChecks.push('verification distante');
+  }
+
+  const issues = [
+    failedActions ? `Actions en echec: ${failedActions}.` : '',
+    missingChecks.length > 0 ? `Etapes non confirmees: ${missingChecks.join(', ')}.` : '',
+  ].filter(Boolean).join(' ');
+
+  return [
+    `Holon internal recovery pass ${attemptNumber}.`,
+    issues,
+    'Do not summarize yet.',
+    'Inspect the failing tool output, correct the local files or command arguments, and retry the necessary steps now.',
+    'Only stop if a genuine blocker remains that cannot be resolved locally in this run.',
+  ].join(' ');
+}
+
+async function executePhase(
+  state: RunState,
+  options: HolonRunOptions,
+  systemPrompt: string,
+  tools: ReturnType<typeof buildTools>,
+  messages: CoreMessage[],
+  maxSteps: number,
+): Promise<{
+  text: string;
+  finishReason: string;
+  steps: number;
+  toolCalls: Array<{ toolName: string }>;
+  responseMessages: CoreMessage[];
+}> {
+  if (options.onTextDelta || options.onStepFinish || options.onPhaseChange || options.onJournalEntry) {
+    const result = streamText({
+      model: createLanguageModel(options),
+      system: systemPrompt,
+      tools,
+      messages,
+      maxSteps,
+      toolCallStreaming: true,
+      onStepFinish: async (stepResult) => {
+        await recordStep(state, options, {
+          stepType: stepResult.stepType,
+          finishReason: String(stepResult.finishReason),
+          toolCalls: stepResult.toolCalls.map((toolCall) => ({
+            toolName: toolCall.toolName,
+            args: toolCall.args,
+          })),
+          toolResults: stepResult.toolResults.map((toolResult) => ({
+            toolName: toolResult.toolName,
+            result: toolResult.result,
+          })),
+          text: stepResult.text,
+        });
+      },
+    });
+
+    for await (const textDelta of result.textStream) {
+      await options.onTextDelta?.(textDelta);
+    }
+
+    const response = await result.response;
+    const resolved = await Promise.all([
+      result.text,
+      result.finishReason,
+      result.steps,
+      result.toolCalls,
+    ]);
+
+    return {
+      text: resolved[0],
+      finishReason: String(resolved[1]),
+      steps: resolved[2].length,
+      toolCalls: resolved[3].map((toolCall) => ({ toolName: toolCall.toolName })),
+      responseMessages: response.messages,
+    };
+  }
+
+  const result = await generateText({
+    model: createLanguageModel(options),
+    system: systemPrompt,
+    tools,
+    messages,
+    maxSteps,
+  });
+
+  for (const step of result.steps) {
+    await recordStep(state, options, {
+      stepType: step.stepType,
+      finishReason: String(step.finishReason),
+      toolCalls: step.toolCalls.map((toolCall) => ({
+        toolName: toolCall.toolName,
+        args: toolCall.args,
+      })),
+      toolResults: step.toolResults.map((toolResult) => ({
+        toolName: toolResult.toolName,
+        result: toolResult.result,
+      })),
+      text: step.text,
+    });
+  }
+
+  return {
+    text: result.text,
+    finishReason: String(result.finishReason),
+    steps: result.steps.length,
+    toolCalls: result.toolCalls.map((toolCall) => ({ toolName: toolCall.toolName })),
+    responseMessages: result.response.messages,
+  };
 }
 
 async function transitionPhase(state: RunState, options: HolonRunOptions, phase: HolonRunPhase, status: HolonPhaseEvent['status'], message: string): Promise<void> {
@@ -369,6 +514,7 @@ export class HolonRunEngine {
       runId: randomUUID(),
       journal: [],
       currentPhase: null,
+      currentAgentState: 'idle',
       stepNumber: 0,
     };
 
@@ -377,9 +523,14 @@ export class HolonRunEngine {
       content: prompt,
     };
     const systemPrompt = buildSystemPrompt(this.engine);
-    const tools = buildTools(this.engine, {
-      onToolEvent: options.onToolEvent,
+    const baseTools = buildTools(this.engine, {
+      onToolEvent: withRuntimeToolEvents(state, options),
     });
+    const tools = wrapToolsWithRuntimeHooks(baseTools as any, options.runtimeHooks, () => ({
+      runId: state.runId,
+      phase: state.currentPhase,
+      state: state.currentAgentState,
+    })) as typeof baseTools;
     const persistedMessages: CoreMessage[] = [currentUserMessage];
     const executionContext: CoreMessage[] = [...this.history, currentUserMessage];
 
@@ -389,6 +540,7 @@ export class HolonRunEngine {
       message: 'Holon run started.',
       runId: state.runId,
     });
+    await transitionAgentState(state, options, 'running', 'Task execution started.');
 
     try {
       await transitionPhase(state, options, 'inspect', 'started', 'Inspecting workspace and task context.');
@@ -434,7 +586,7 @@ export class HolonRunEngine {
         role: 'user',
         content: createPhasePrompt('execute', prompt),
       };
-      const executeMessages = [...executionContext, executeInstruction];
+      let executeMessages = [...executionContext, executeInstruction];
 
       let text = '';
       let finishReason = 'stop';
@@ -442,82 +594,72 @@ export class HolonRunEngine {
       let toolCalls: Array<{ toolName: string }> = [];
       let responseMessages: CoreMessage[] = [];
 
-      if (options.onTextDelta || options.onStepFinish || options.onPhaseChange || options.onJournalEntry) {
-        const result = streamText({
-          model: createLanguageModel(options),
-          system: systemPrompt,
+      for (let attemptNumber = 1; attemptNumber <= MAX_EXECUTION_ATTEMPTS; attemptNumber += 1) {
+        const phaseResult = await executePhase(
+          state,
+          options,
+          systemPrompt,
           tools,
-          messages: executeMessages,
-          maxSteps: options.maxSteps ?? EXECUTE_MAX_STEPS,
-          toolCallStreaming: true,
-          onStepFinish: async (stepResult) => {
-            await recordStep(state, options, {
-              stepType: stepResult.stepType,
-              finishReason: String(stepResult.finishReason),
-              toolCalls: stepResult.toolCalls.map((toolCall) => ({
-                toolName: toolCall.toolName,
-                args: toolCall.args,
-              })),
-              toolResults: stepResult.toolResults.map((toolResult) => ({
-                toolName: toolResult.toolName,
-                result: toolResult.result,
-              })),
-              text: stepResult.text,
-            });
+          executeMessages,
+          attemptNumber === 1 ? (options.maxSteps ?? EXECUTE_MAX_STEPS) : Math.min(options.maxSteps ?? EXECUTE_MAX_STEPS, EXECUTE_RECOVERY_MAX_STEPS),
+        );
+
+        text = phaseResult.text;
+        finishReason = phaseResult.finishReason;
+        steps += phaseResult.steps;
+        toolCalls = phaseResult.toolCalls;
+        responseMessages = [...responseMessages, ...phaseResult.responseMessages];
+
+        const outcome = analyzeRunOutcome(state.journal);
+        const requiredActions = collectRequiredActions(state.journal);
+        if (!shouldAttemptRecovery(outcome, attemptNumber, requiredActions)) {
+          break;
+        }
+
+        await emitJournal(state, options, {
+          type: 'phase',
+          phase: state.currentPhase ?? 'plan',
+          status: 'started',
+          message: `Recovery pass ${attemptNumber + 1} triggered after failed or incomplete execution steps.`,
+        });
+
+        executeMessages = [
+          ...executeMessages,
+          ...phaseResult.responseMessages,
+          {
+            role: 'user',
+            content: buildRecoveryPrompt(outcome, attemptNumber + 1),
           },
-        });
-
-        for await (const textDelta of result.textStream) {
-          await options.onTextDelta?.(textDelta);
-        }
-
-        const response = await result.response;
-        const resolved = await Promise.all([
-          result.text,
-          result.finishReason,
-          result.steps,
-          result.toolCalls,
-        ]);
-
-        text = resolved[0];
-        finishReason = String(resolved[1]);
-        steps = resolved[2].length + inspectResult.steps.length;
-        toolCalls = resolved[3].map((toolCall) => ({ toolName: toolCall.toolName }));
-        responseMessages = response.messages;
-      } else {
-        const result = await generateText({
-          model: createLanguageModel(options),
-          system: systemPrompt,
-          tools,
-          messages: executeMessages,
-          maxSteps: options.maxSteps ?? EXECUTE_MAX_STEPS,
-        });
-
-        for (const step of result.steps) {
-          await recordStep(state, options, {
-            stepType: step.stepType,
-            finishReason: String(step.finishReason),
-            toolCalls: step.toolCalls.map((toolCall) => ({
-              toolName: toolCall.toolName,
-              args: toolCall.args,
-            })),
-            toolResults: step.toolResults.map((toolResult) => ({
-              toolName: toolResult.toolName,
-              result: toolResult.result,
-            })),
-            text: step.text,
-          });
-        }
-
-        text = result.text;
-        finishReason = String(result.finishReason);
-        steps = result.steps.length + inspectResult.steps.length;
-        toolCalls = result.toolCalls.map((toolCall) => ({ toolName: toolCall.toolName }));
-        responseMessages = result.response.messages;
+        ];
       }
 
       persistedMessages.push(...responseMessages);
-      text = await ensureFinalText(this.engine, options, prompt, finishReason, state.journal, text);
+      steps += inspectResult.steps.length;
+      const requiredActions = collectRequiredActions(state.journal);
+      const completionDecision = await evaluateCompletionGate({
+        text,
+        finishReason,
+        requiredActions,
+        hasWorkflowWrites: analyzeRunOutcome(state.journal).hasWorkflowWrites,
+        successfulValidate: Boolean(analyzeRunOutcome(state.journal).successfulValidate),
+        successfulPush: Boolean(analyzeRunOutcome(state.journal).successfulPush),
+        unresolvedFailureCount: analyzeRunOutcome(state.journal).unresolvedFailedActions.length,
+        hooks: options.runtimeHooks,
+        context: buildRuntimeContext(state),
+      });
+
+      for (const requiredAction of completionDecision.requiredActions) {
+        await emitJournal(state, options, {
+          type: 'state',
+          status: 'completed',
+          phase: state.currentPhase ?? undefined,
+          state: blockingStateForRequiredActions([requiredAction]) ?? undefined,
+          message: requiredAction.message,
+          requiredAction,
+        });
+      }
+
+      text = await ensureFinalText(options, prompt, finishReason, state.journal, text, completionDecision.requiredActions, completionDecision.accepted);
 
       if (state.currentPhase && state.currentPhase !== 'summarize') {
         await transitionPhase(state, options, state.currentPhase, 'completed', `${state.currentPhase} phase completed.`);
@@ -525,6 +667,12 @@ export class HolonRunEngine {
 
       await transitionPhase(state, options, 'summarize', 'started', 'Summarizing run outcome.');
       await transitionPhase(state, options, 'summarize', 'completed', 'Run summary ready.');
+
+      if (completionDecision.accepted) {
+        await transitionAgentState(state, options, 'completed', 'Task execution completed.');
+      } else {
+        await transitionAgentState(state, options, completionDecision.state, completionDecision.reasons[0] ?? 'Task requires further action before completion.');
+      }
 
       await emitJournal(state, options, {
         type: 'run',
@@ -541,12 +689,16 @@ export class HolonRunEngine {
           finishReason,
           steps,
           toolCalls: collectToolNames(state.journal).length > 0 ? collectToolNames(state.journal) : toolCalls,
+          completionAccepted: completionDecision.accepted,
+          requiredActions: completionDecision.requiredActions,
+          finalState: state.currentAgentState,
           finalPhase: 'summarize',
           journal: state.journal,
         },
         persistedMessages,
       };
     } catch (error) {
+      await transitionAgentState(state, options, 'failed_terminal', 'Task execution failed with a terminal blocker.');
       await emitJournal(state, options, {
         type: 'run',
         status: 'failed',

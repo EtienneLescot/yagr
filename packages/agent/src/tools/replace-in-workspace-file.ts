@@ -19,11 +19,20 @@ export function createReplaceInWorkspaceFileTool(_observer?: ToolExecutionObserv
       const occurrences = countOccurrences(original, oldText);
 
       if (occurrences === 0) {
-        throw new Error(`Text not found in ${inputPath}`);
+        return {
+          ok: false,
+          path: relativeWorkspacePath(targetPath),
+          error: `Text not found in ${inputPath}`,
+        };
       }
 
       if (!replaceAll && occurrences !== 1) {
-        throw new Error(`Expected exactly 1 match in ${inputPath}, found ${occurrences}`);
+        return {
+          ok: false,
+          path: relativeWorkspacePath(targetPath),
+          error: `Expected exactly 1 match in ${inputPath}, found ${occurrences}`,
+          occurrences,
+        };
       }
 
       const updated = replaceAll
@@ -33,6 +42,7 @@ export function createReplaceInWorkspaceFileTool(_observer?: ToolExecutionObserv
       fs.writeFileSync(targetPath, updated, 'utf-8');
 
       return {
+        ok: true,
         path: relativeWorkspacePath(targetPath),
         occurrences,
         replaced: replaceAll ? occurrences : 1,

@@ -1,5 +1,3 @@
-import readline from 'node:readline/promises';
-import { stdin as input, stdout as output } from 'node:process';
 import * as p from '@clack/prompts';
 import { HolonAgent } from '../agent.js';
 import { HolonConfigService } from '../config/holon-config-service.js';
