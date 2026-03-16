@@ -14,10 +14,13 @@ export function wrapToolsWithRuntimeHooks<T extends ToolMap>(
   tools: T,
   hooks: HolonRuntimeHook[] | undefined,
   getContext: () => { runId: string; phase: HolonRunPhase | null; state: HolonAgentState },
+  satisfiedRequiredActionIds: string[] | undefined = [],
 ): T {
   if (!hooks || hooks.length === 0) {
     return tools;
   }
+
+  const approvedActionIds = new Set(satisfiedRequiredActionIds);
 
   const wrappedEntries = Object.entries(tools).map(([toolName, originalTool]) => {
     if (typeof originalTool.execute !== 'function') {
@@ -43,6 +46,10 @@ export function wrapToolsWithRuntimeHooks<T extends ToolMap>(
         for (const hook of hooks) {
           const decision = await hook.beforeTool?.(hookContext);
           if (decision && decision.allowed === false) {
+            if (decision.requiredAction && approvedActionIds.has(decision.requiredAction.id)) {
+              continue;
+            }
+
             return {
               ok: false,
               blocked: true,

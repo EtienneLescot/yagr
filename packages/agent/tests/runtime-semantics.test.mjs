@@ -152,3 +152,75 @@ test('beforeCompletion hook can inject a permission blocker', async () => {
   assert.equal(decision.state, 'waiting_for_permission');
   assert.equal(decision.requiredActions[0].kind, 'permission');
 });
+
+test('approved required action bypasses beforeTool permission blocker', async () => {
+  let executed = false;
+
+  const wrappedTools = wrapToolsWithRuntimeHooks(
+    {
+      dangerousTool: {
+        description: 'dangerous',
+        parameters: undefined,
+        execute: async () => {
+          executed = true;
+          return { ok: true };
+        },
+      },
+    },
+    [
+      {
+        beforeTool: async () => ({
+          allowed: false,
+          message: 'Approval required before running this tool.',
+          requiredAction: {
+            id: 'approval-3',
+            kind: 'permission',
+            title: 'Approve command',
+            message: 'Confirm the privileged command.',
+            resumable: true,
+          },
+        }),
+      },
+    ],
+    () => ({ runId: 'run-4', phase: 'edit', state: 'running' }),
+    ['approval-3'],
+  );
+
+  const result = await wrappedTools.dangerousTool.execute({});
+
+  assert.equal(result.ok, true);
+  assert.equal(executed, true);
+});
+
+test('approved required action bypasses completion blocker', async () => {
+  const decision = await evaluateCompletionGate({
+    text: 'Done.',
+    finishReason: 'stop',
+    requiredActions: [],
+    satisfiedRequiredActionIds: ['approval-4'],
+    hasWorkflowWrites: false,
+    successfulValidate: true,
+    successfulPush: true,
+    unresolvedFailureCount: 0,
+    hooks: [
+      {
+        beforeCompletion: async () => ({
+          accepted: false,
+          message: 'Manual approval is required before completion.',
+          requiredAction: {
+            id: 'approval-4',
+            kind: 'permission',
+            title: 'Review completion',
+            message: 'Approve the final state.',
+            resumable: true,
+          },
+        }),
+      },
+    ],
+    context: { runId: 'run-5', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, true);
+  assert.equal(decision.state, 'completed');
+  assert.equal(decision.requiredActions.length, 0);
+});

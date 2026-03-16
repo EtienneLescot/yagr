@@ -240,6 +240,7 @@ export interface HolonDisplayOptions {
 export interface HolonRunOptions extends HolonLanguageModelConfig {
   maxSteps?: number;
   rememberConversation?: boolean;
+  satisfiedRequiredActionIds?: string[];
   display?: HolonDisplayOptions;
   runtimeHooks?: HolonRuntimeHook[];
   onTextDelta?: (textDelta: string) => void | Promise<void>;
