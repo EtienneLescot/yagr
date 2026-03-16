@@ -42,10 +42,15 @@ export function createListDirectoryTool(_observer?: ToolExecutionObserver) {
       const stats = fs.statSync(targetPath);
 
       if (!stats.isDirectory()) {
-        throw new Error(`Path is not a directory: ${inputPath}`);
+        return {
+          ok: false,
+          path: relativeWorkspacePath(targetPath),
+          error: `Path is not a directory: ${inputPath}`,
+        };
       }
 
       return {
+        ok: true,
         path: relativeWorkspacePath(targetPath),
         entries: collectEntries(targetPath, recursive, maxDepth),
       };
