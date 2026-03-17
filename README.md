@@ -155,7 +155,7 @@ From this repository:
 
 ```bash
 npm install
-npm run build --workspace=packages/agent
+npm run build --workspace=packages/holon
 npm run holon:setup
 npm run holon:start
 ```

@@ -2,7 +2,7 @@
     "files": [],
     "references": [
         {
-            "path": "packages/agent"
+            "path": "packages/holon"
         },
         {
             "path": "packages/transformer"

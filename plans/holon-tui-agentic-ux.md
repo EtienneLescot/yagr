@@ -30,7 +30,7 @@ Relevant references used for this direction:
 
 ## Diagnosis Of The Current Holon UI
 
-Current baseline in [packages/agent/src/gateway/interactive-ui.tsx](/home/etienne/repos/n8n-as-code/packages/agent/src/gateway/interactive-ui.tsx):
+Current baseline in [packages/holon/src/gateway/interactive-ui.tsx](/home/etienne/repos/n8n-as-code/packages/holon/src/gateway/interactive-ui.tsx):
 
 - good:
   - explicit state and phase labels already exist
@@ -427,7 +427,7 @@ Implement:
 
 The next implementation pass should not start by adding colors everywhere.
 
-It should start by restructuring [packages/agent/src/gateway/interactive-ui.tsx](/home/etienne/repos/n8n-as-code/packages/agent/src/gateway/interactive-ui.tsx) around four persistent surfaces:
+It should start by restructuring [packages/holon/src/gateway/interactive-ui.tsx](/home/etienne/repos/n8n-as-code/packages/holon/src/gateway/interactive-ui.tsx) around four persistent surfaces:
 
 1. header band
 2. main stage card
