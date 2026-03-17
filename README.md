@@ -103,7 +103,7 @@ Read next if you want more than the fast path:
 
 ---
 
-## Why Another Autonomous Agent?
+## 🧠 Why Another Autonomous Agent? (The Reality Check)
 
 Most AI agents today execute tasks by writing ephemeral scripts or firing blind API calls.
 
