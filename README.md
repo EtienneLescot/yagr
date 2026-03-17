@@ -56,13 +56,15 @@ This connects three things:
 
 - your n8n backend
 - your default model
-- your gateway surfaces
+- your optional messaging integrations
 
 ### 3. Start the agent
 
 ```bash
 yagr start
 ```
+
+`yagr start` now lets you choose whether to open the Web UI or the TUI. If you want to skip the prompt, use `yagr start webui` or `yagr start tui`.
 
 After setup, the day-to-day loop is:
 
@@ -211,7 +213,7 @@ This separation is deliberate:
 
 1. your **V1 backend**: n8n instance, API key, project, local sync folder
 2. your **default model**: provider, model, API key, optional base URL
-3. your **gateway surfaces**: for example Telegram
+3. your **optional messaging integrations**: for example Telegram
 
 Yagr stores that state in its own home so the product does not depend on whatever repo or shell happens to be open.
 

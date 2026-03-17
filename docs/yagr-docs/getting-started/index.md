@@ -9,9 +9,9 @@ Yagr starts with a simple loop:
 
 1. Install `yagr`
 2. Run `yagr onboard`
-3. Connect the agent to its backend, model, and surfaces
+3. Connect the agent to its backend, model, and optional messaging integrations
 4. Run `yagr start`
-5. Interact through the TUI or an enabled surface such as Telegram
+5. Choose the Web UI or the TUI, then optionally add Telegram later
 
 Under the hood, that setup is not the product goal. It is the bootstrap that lets Yagr do its actual job: translate intent into workflows and operate them over time.
 
@@ -42,7 +42,7 @@ yagr start
 
 1. Your **V1 backend**: today that means an n8n instance, API key, project, and local sync folder
 2. Your **default LLM**: provider, model, API key, optional base URL
-3. Your **gateway surfaces**: for example Telegram
+3. Your **optional messaging integrations**: for example Telegram
 
 Yagr persists this state in the Yagr home, so you do not need to recreate setup per repo.
 
@@ -78,6 +78,8 @@ The main commands you will keep using are:
 
 ```bash
 yagr start
+yagr start webui
+yagr start tui
 yagr gateway status
 yagr telegram onboarding
 ```

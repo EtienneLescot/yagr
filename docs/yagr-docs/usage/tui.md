@@ -10,10 +10,10 @@ Yagr's local interface is the fastest way to operate it when you are on the mach
 ## Start the runtime
 
 ```bash
-yagr start
+yagr start tui
 ```
 
-If setup is incomplete, Yagr will first drive you through the missing bootstrap steps.
+If setup is incomplete, Yagr will first drive you through the missing bootstrap steps. Use `yagr start` if you want the launcher to ask whether to open the Web UI or the TUI.
 
 ## What the TUI is for
 
