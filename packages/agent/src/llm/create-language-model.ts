@@ -1,5 +1,6 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
+import { HolonConfigService, type HolonLocalConfig } from '../config/holon-config-service.js';
 
 export type HolonModelProvider = 'anthropic' | 'openai' | 'google' | 'groq' | 'mistral' | 'openrouter';
 
@@ -17,10 +18,23 @@ export interface HolonLanguageModelConfig {
   baseUrl?: string;
 }
 
+export interface ResolvedHolonLanguageModelConfig {
+  provider: HolonModelProvider;
+  model: string;
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+interface HolonLanguageModelConfigStore {
+  getLocalConfig(): HolonLocalConfig;
+  getApiKey(provider: HolonModelProvider): string | undefined;
+}
+
 const DEFAULT_ANTHROPIC_MODEL = 'claude-3-5-sonnet-latest';
 const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 const DEFAULT_OPENROUTER_MODEL = 'anthropic/claude-3.5-sonnet';
 const DEFAULT_RESERVED_OUTPUT_TOKENS = 8_192;
+const KNOWN_MODEL_PROVIDERS: HolonModelProvider[] = ['anthropic', 'openai', 'google', 'groq', 'mistral', 'openrouter'];
 
 function inferContextWindowTokens(provider: HolonModelProvider, modelName: string): number {
   const normalized = modelName.toLowerCase();
@@ -53,53 +67,50 @@ function inferContextWindowTokens(provider: HolonModelProvider, modelName: strin
 }
 
 export function resolveModelContextProfile(config: HolonLanguageModelConfig = {}): HolonModelContextProfile {
-  const provider = resolveModelProvider(config.provider);
-  const model = resolveModelName(provider, config.model);
+  const resolvedConfig = resolveLanguageModelConfig(config);
 
   return {
-    provider,
-    model,
-    contextWindowTokens: inferContextWindowTokens(provider, model),
+    provider: resolvedConfig.provider,
+    model: resolvedConfig.model,
+    contextWindowTokens: inferContextWindowTokens(resolvedConfig.provider, resolvedConfig.model),
     reservedOutputTokens: DEFAULT_RESERVED_OUTPUT_TOKENS,
   };
 }
 
-export function resolveModelProvider(explicitProvider?: string): HolonModelProvider {
+export function resolveModelProvider(
+  explicitProvider?: string,
+  configStore: HolonLanguageModelConfigStore = new HolonConfigService(),
+): HolonModelProvider {
   if (explicitProvider) {
     return explicitProvider as HolonModelProvider;
   }
 
-  // Priority order for provider resolution
-  if (process.env.HOLON_MODEL_PROVIDER) {
-    return process.env.HOLON_MODEL_PROVIDER as HolonModelProvider;
+  const localConfig = configStore.getLocalConfig();
+  if (localConfig.provider) {
+    return localConfig.provider;
   }
 
-  // Auto-detect based on valid-looking keys (ignore 'lm-studio' or empty strings)
-  const isOk = (keyName: string) => {
-    const val = process.env[keyName];
-    return val && val.trim() !== '' && val !== 'lm-studio';
-  };
+  const detectedProvider = KNOWN_MODEL_PROVIDERS.find((provider) => Boolean(configStore.getApiKey(provider)));
+  if (detectedProvider) {
+    return detectedProvider;
+  }
 
-  if (isOk('OPENROUTER_API_KEY')) return 'openrouter';
-  if (isOk('ANTHROPIC_API_KEY')) return 'anthropic';
-  if (isOk('OPENAI_API_KEY')) return 'openai';
-  if (isOk('GOOGLE_GENERATIVE_AI_API_KEY')) return 'google';
-  if (isOk('GROQ_API_KEY')) return 'groq';
-  if (isOk('MISTRAL_API_KEY')) return 'mistral';
-
-  throw new Error('No valid AI provider detected');
+  throw new Error('No valid AI provider detected. Run `holon setup` first.');
 }
 
 export function resolveModelName(
   provider: HolonModelProvider,
   explicitModel?: string,
+  configStore: HolonLanguageModelConfigStore = new HolonConfigService(),
 ): string {
   if (explicitModel) {
     return explicitModel;
   }
 
-  const fromEnv = process.env.HOLON_MODEL;
-  if (fromEnv) return fromEnv;
+  const localConfig = configStore.getLocalConfig();
+  if (localConfig.provider === provider && localConfig.model) {
+    return localConfig.model;
+  }
 
   switch (provider) {
     case 'openrouter': return DEFAULT_OPENROUTER_MODEL;
@@ -112,18 +123,28 @@ export function resolveModelName(
   }
 }
 
-export function createLanguageModel(config: HolonLanguageModelConfig = {}) {
-  const provider = resolveModelProvider(config.provider);
-  const modelName = resolveModelName(provider, config.model);
+export function resolveLanguageModelConfig(
+  config: HolonLanguageModelConfig = {},
+  configStore: HolonLanguageModelConfigStore = new HolonConfigService(),
+): ResolvedHolonLanguageModelConfig {
+  const provider = resolveModelProvider(config.provider, configStore);
 
-  // We allow overriding the API key and Base URL via config or env
-  const apiKey = config.apiKey || getApiKeyForProvider(provider);
-  const baseURL = config.baseUrl || getBaseUrlForProvider(provider);
+  return {
+    provider,
+    model: resolveModelName(provider, config.model, configStore),
+    apiKey: config.apiKey || getApiKeyForProvider(provider, configStore),
+    baseUrl: config.baseUrl || getBaseUrlForProvider(provider, configStore),
+  };
+}
+
+export function createLanguageModel(config: HolonLanguageModelConfig = {}) {
+  const resolvedConfig = resolveLanguageModelConfig(config);
+  const { provider, model: modelName, apiKey, baseUrl: baseURL } = resolvedConfig;
   const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
 
   if (provider === 'openrouter') {
     return createOpenAI({
-      apiKey: apiKey || process.env.OPENROUTER_API_KEY,
+      apiKey,
       baseURL: baseURL || 'https://openrouter.ai/api/v1',
       headers,
       name: 'openrouter',
@@ -152,22 +173,23 @@ export function createLanguageModel(config: HolonLanguageModelConfig = {}) {
   throw new Error(`Provider ${provider} is not yet fully implemented in createLanguageModel`);
 }
 
-function getApiKeyForProvider(provider: HolonModelProvider): string | undefined {
-  switch (provider) {
-    case 'openrouter': return process.env.OPENROUTER_API_KEY;
-    case 'anthropic': return process.env.ANTHROPIC_API_KEY;
-    case 'openai': return process.env.OPENAI_API_KEY;
-    case 'google': return process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    case 'groq': return process.env.GROQ_API_KEY;
-    case 'mistral': return process.env.MISTRAL_API_KEY;
-    default: return undefined;
-  }
+function getApiKeyForProvider(
+  provider: HolonModelProvider,
+  configStore: HolonLanguageModelConfigStore,
+): string | undefined {
+  return configStore.getApiKey(provider);
 }
 
-function getBaseUrlForProvider(provider: HolonModelProvider): string | undefined {
+function getBaseUrlForProvider(
+  provider: HolonModelProvider,
+  configStore: HolonLanguageModelConfigStore,
+): string | undefined {
+  const localConfig = configStore.getLocalConfig();
+  const configuredBaseUrl = localConfig.provider === provider ? localConfig.baseUrl : undefined;
+
   switch (provider) {
-    case 'openai': return process.env.OPENAI_BASE_URL;
-    case 'anthropic': return process.env.ANTHROPIC_BASE_URL;
+    case 'openai': return configuredBaseUrl;
+    case 'anthropic': return configuredBaseUrl;
     case 'openrouter': return 'https://openrouter.ai/api/v1';
     case 'groq': return 'https://api.groq.com/openai/v1';
     case 'mistral': return 'https://api.mistral.ai/v1';

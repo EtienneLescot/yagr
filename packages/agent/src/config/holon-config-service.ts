@@ -1,6 +1,7 @@
 import Conf from 'conf';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ensureHolonHomeDir, getHolonHomeDir } from './holon-home.js';
 import type { GatewaySurface } from '../gateway/types.js';
 import type { HolonModelProvider } from '../llm/create-language-model.js';
 
@@ -48,11 +49,12 @@ export class HolonConfigService {
   private readonly localConfigPath: string;
 
   constructor() {
+    ensureHolonHomeDir();
     this.globalStore = new Conf({
       projectName: 'holon',
       configName: 'credentials',
     });
-    this.localConfigPath = path.join(process.cwd(), 'holon-config.json');
+    this.localConfigPath = path.join(getHolonHomeDir(), 'holon-config.json');
   }
 
   getLocalConfig(): HolonLocalConfig {

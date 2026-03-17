@@ -13,6 +13,9 @@
   ],
   "scripts": {
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
+    "holon:setup": "HOLON_HOME=.holon-test-workspace node packages/agent/dist/cli.js setup",
+    "holon:start": "HOLON_HOME=.holon-test-workspace node packages/agent/dist/cli.js start",
+    "holon:gateway:status": "HOLON_HOME=.holon-test-workspace node packages/agent/dist/cli.js gateway status",
     "holon:test:workspace": "node scripts/holon-test-workspace.mjs pwd",
     "holon:test:init": "node scripts/holon-test-workspace.mjs init",
     "holon:test:agent": "node scripts/holon-test-workspace.mjs agent",

@@ -80,7 +80,7 @@ function buildTelegramTokenInstructions(): string {
     '1) Open Telegram and chat with @BotFather',
     '2) Run /newbot (or /mybots)',
     '3) Copy the token (looks like 123456:ABC...)',
-    'Tip: you can also set TELEGRAM_BOT_TOKEN in your env.',
+    'Holon stores this token during setup.',
     'Docs: https://core.telegram.org/bots#how-do-i-create-a-bot',
   ].join('\n');
 }
@@ -116,7 +116,7 @@ async function resolveTelegramBotIdentity(botToken: string): Promise<{ username:
 
 export async function setupTelegramGateway(configService = new HolonConfigService()): Promise<void> {
   const current = configService.getLocalConfig();
-  const currentToken = process.env.TELEGRAM_BOT_TOKEN ?? configService.getTelegramBotToken() ?? '';
+  const currentToken = configService.getTelegramBotToken() ?? '';
 
   if (!currentToken) {
     p.note(buildTelegramTokenInstructions(), 'Telegram bot token');
@@ -200,7 +200,7 @@ export function showTelegramOnboarding(configService = new HolonConfigService())
 export function getTelegramGatewayStatus(configService = new HolonConfigService()): TelegramGatewayStatus {
   const localConfig = configService.getLocalConfig();
   const telegram = localConfig.telegram;
-  const botToken = process.env.TELEGRAM_BOT_TOKEN ?? configService.getTelegramBotToken();
+  const botToken = configService.getTelegramBotToken();
   const linkedChats = telegram?.linkedChats ?? [];
   const deepLink = telegram?.botUsername && telegram.onboardingToken
     ? buildTelegramDeepLink(telegram.botUsername, telegram.onboardingToken)
@@ -230,7 +230,7 @@ export function createTelegramGatewayRuntime(
   configService = new HolonConfigService(),
 ): GatewayRuntimeHandle {
   const status = getTelegramGatewayStatus(configService);
-  const botToken = options.botToken ?? process.env.TELEGRAM_BOT_TOKEN ?? configService.getTelegramBotToken();
+  const botToken = options.botToken ?? configService.getTelegramBotToken();
   const onboardingToken = configService.getLocalConfig().telegram?.onboardingToken;
 
   if (!botToken || !status.botUsername || !onboardingToken) {

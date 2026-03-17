@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { getHolonHomeDir } from '../config/holon-home.js';
 
 const DEFAULT_TEXT_LIMIT = 12_000;
 
 export function workspaceRoot(): string {
-  return process.cwd();
+  return getHolonHomeDir();
 }
 
 export function resolveWorkspacePath(targetPath = '.'): string {
