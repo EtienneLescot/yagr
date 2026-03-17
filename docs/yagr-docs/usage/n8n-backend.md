@@ -11,7 +11,7 @@ Instead, Yagr uses n8n as its V1 execution backend for automation work while kee
 
 ## What Yagr configures
 
-Yagr setup captures:
+Yagr onboarding captures:
 
 - the n8n instance URL
 - the API key

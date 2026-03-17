@@ -33,7 +33,7 @@ That implies four design choices:
 
 ## What Yagr does today
 
-- Configures the V1 n8n backend once through `yagr setup`
+- Configures the V1 n8n backend once through `yagr onboard`
 - Stores Yagr state in its own home instead of arbitrary repo roots
 - Persists model and gateway credentials through setup instead of shell drift
 - Starts the local runtime and gateway surfaces with `yagr start`

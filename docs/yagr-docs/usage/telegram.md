@@ -11,7 +11,7 @@ It is important to frame it correctly: Telegram is a gateway into the Yagr agent
 
 ## Setup flow
 
-During `yagr setup`, Yagr can configure Telegram for you. You can also rerun Telegram setup separately:
+During `yagr onboard`, Yagr can configure Telegram for you. You can also rerun Telegram setup separately:
 
 ```bash
 yagr telegram setup
