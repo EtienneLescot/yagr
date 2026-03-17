@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: "Connect Yagr to its backend, model, and surfaces so it can turn intent into automation."
+description: "Connect Yagr to its current orchestrator, model, and optional integrations so it can turn intent into automation."
 ---
 
 # Getting Started
@@ -9,7 +9,7 @@ Yagr starts with a simple loop:
 
 1. Install `yagr`
 2. Run `yagr onboard`
-3. Connect the agent to its backend, model, and optional messaging integrations
+3. Connect the agent to its current orchestrator, model, and optional messaging integrations
 4. Run `yagr start`
 5. Choose the Web UI or the TUI, then optionally add Telegram later
 
@@ -40,7 +40,7 @@ yagr start
 
 `yagr onboard` is the standard first-run entry point. Internally it drives the same setup flow as `yagr setup` and configures three things:
 
-1. Your **V1 backend**: today that means an n8n instance, API key, project, and local sync folder
+1. Your **current orchestrator connection**: today that means an n8n instance, API key, project, and local sync folder
 2. Your **default LLM**: provider, model, API key, optional base URL
 3. Your **optional messaging integrations**: for example Telegram
 

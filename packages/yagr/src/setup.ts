@@ -100,7 +100,7 @@ export async function runYagrSetup(
   p.intro('Yagr setup');
   p.note(
     [
-      'This wizard configures your n8n backend, your default LLM, and optional messaging integrations.',
+      'This wizard configures your current orchestrator connection, your default LLM, and optional messaging integrations.',
       'After this, you should only need `yagr start`.',
     ].join('\n'),
     'Setup flow',

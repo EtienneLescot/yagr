@@ -47,9 +47,9 @@ const proofPoints = [
   },
   {
     icon: '⚙️',
-    value: 'n8n is V1',
-    label: 'Execution backend, not product identity',
-    detail: 'Yagr uses the n8n-as-code sync and schema foundation today while keeping the engine replaceable for a future native runtime.',
+    value: 'Orchestrator boundary',
+    label: 'n8n today, other runtimes tomorrow',
+    detail: 'Yagr uses the n8n-as-code sync and schema foundation today while keeping the orchestrator replaceable for future runtimes.',
   },
 ];
 
@@ -89,7 +89,7 @@ const quickStartSteps = [
   },
   {
     label: 'Onboard',
-    text: 'Bind n8n, your model provider, and the surfaces you want to expose in one guided first-run flow.',
+    text: 'Bind the current orchestrator, your model provider, and any optional integrations in one guided first-run flow.',
   },
   {
     label: 'Start',
@@ -112,7 +112,7 @@ function HomepageHeader() {
                 <div className={styles.heroBrandTag}>Grounded in reliable infrastructure</div>
               </div>
             </div>
-            <div className={styles.eyebrow}>Autonomous agent · deterministic workflows · n8n today</div>
+            <div className={styles.eyebrow}>Autonomous agent · deterministic workflows · orchestrator-ready</div>
             <Heading as="h1" className={styles.heroTitle}>
               Your autonomous agent.
               <span className={styles.heroAccent}> Grounded in reliable infrastructure.</span>
@@ -175,8 +175,8 @@ $ yagr telegram onboarding`}</code>
                 </div>
                 <div className={styles.panelCard}>
                   <span className={styles.cardKicker}>Engine</span>
-                  <strong>n8n is the V1 backend</strong>
-                  <p>The engine sits underneath the agent so the product layer can stay stable as backends evolve.</p>
+                  <strong>n8n is the current orchestrator</strong>
+                  <p>The orchestrator sits underneath the agent so the product layer can stay stable as runtimes evolve.</p>
                 </div>
               </div>
             </div>

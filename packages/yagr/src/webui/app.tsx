@@ -123,14 +123,14 @@ function App() {
   });
 
   const onSaveN8n = React.useEffectEvent(async () => {
-    setBusyLabel('Saving n8n backend...');
+    setBusyLabel('Saving orchestrator connection...');
     try {
       const result = await request<{ warning?: string; snapshot: any }>('/api/config/n8n', {
         method: 'POST',
         body: JSON.stringify({ host: n8nHost, apiKey: n8nApiKey || undefined, projectId: n8nProjectId, syncFolder: n8nSyncFolder }),
       });
       hydrate(result.snapshot);
-      notify(result.warning ?? 'n8n backend saved.');
+      notify(result.warning ?? 'Orchestrator connection saved.');
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error), 'error');
     } finally {
@@ -299,7 +299,7 @@ function App() {
 
         <section className="panel formPanel">
           <div className="sectionHeader">
-            <p className="eyebrow">n8n backend</p>
+            <p className="eyebrow">Current orchestrator</p>
             <button className="ghostButton" type="button" onClick={() => void onLoadProjects()}>Load projects</button>
           </div>
           <label>
@@ -323,8 +323,8 @@ function App() {
             <span>Local sync folder</span>
             <input value={n8nSyncFolder} onChange={(event) => setN8nSyncFolder(event.target.value)} type="text" placeholder="workflows" />
           </label>
-          <button className="primaryButton" type="button" onClick={() => void onSaveN8n()}>Save backend</button>
-          <p className="hint">This writes the same n8n bootstrap state that onboarding uses.</p>
+          <button className="primaryButton" type="button" onClick={() => void onSaveN8n()}>Save orchestrator</button>
+          <p className="hint">This writes the current n8n-based orchestrator connection that onboarding uses today.</p>
         </section>
 
         <section className="panel formPanel">
