@@ -1,7 +1,20 @@
 import Conf from 'conf';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { GatewaySurface } from '../gateway/types.js';
 import type { HolonModelProvider } from '../llm/create-language-model.js';
+
+export function normalizeGatewaySurfaces(surfaces: readonly string[] | undefined): GatewaySurface[] {
+  const normalized: GatewaySurface[] = [];
+
+  for (const surface of surfaces ?? []) {
+    if ((surface === 'telegram' || surface === 'webui' || surface === 'whatsapp') && !normalized.includes(surface)) {
+      normalized.push(surface);
+    }
+  }
+
+  return normalized;
+}
 
 export interface HolonTelegramLinkedChat {
   chatId: string;
@@ -18,10 +31,15 @@ export interface HolonTelegramConfig {
   linkedChats?: HolonTelegramLinkedChat[];
 }
 
+export interface HolonGatewayConfig {
+  enabledSurfaces?: GatewaySurface[];
+}
+
 export interface HolonLocalConfig {
   provider?: HolonModelProvider;
   model?: string;
   baseUrl?: string;
+  gateway?: HolonGatewayConfig;
   telegram?: HolonTelegramConfig;
 }
 
@@ -58,6 +76,40 @@ export class HolonConfigService {
     const nextConfig = updater(this.getLocalConfig());
     this.saveLocalConfig(nextConfig);
     return nextConfig;
+  }
+
+  getEnabledGatewaySurfaces(): GatewaySurface[] {
+    const localConfig = this.getLocalConfig();
+    if (Array.isArray(localConfig.gateway?.enabledSurfaces)) {
+      return normalizeGatewaySurfaces(localConfig.gateway.enabledSurfaces);
+    }
+
+    if (localConfig.telegram) {
+      return ['telegram'];
+    }
+
+    return [];
+  }
+
+  setEnabledGatewaySurfaces(surfaces: GatewaySurface[]): HolonLocalConfig {
+    const nextSurfaces = normalizeGatewaySurfaces(surfaces);
+    return this.updateLocalConfig((localConfig) => ({
+      ...localConfig,
+      gateway: {
+        ...localConfig.gateway,
+        enabledSurfaces: nextSurfaces,
+      },
+    }));
+  }
+
+  enableGatewaySurface(surface: GatewaySurface): HolonLocalConfig {
+    const nextSurfaces = normalizeGatewaySurfaces([...this.getEnabledGatewaySurfaces(), surface]);
+    return this.setEnabledGatewaySurfaces(nextSurfaces);
+  }
+
+  disableGatewaySurface(surface: GatewaySurface): HolonLocalConfig {
+    const nextSurfaces = this.getEnabledGatewaySurfaces().filter((entry) => entry !== surface);
+    return this.setEnabledGatewaySurfaces(nextSurfaces);
   }
 
   getApiKey(provider: HolonModelProvider): string | undefined {
