@@ -101,7 +101,7 @@ function HomepageHeader() {
   const yagrLogoUrl = useBaseUrl('/img/yagr-logo.png');
 
   return (
-    <header className={clsx('hero hero--primary', styles.heroBanner)}>
+    <header className={clsx('hero hero--primary', styles.heroBanner, styles.yagrHeroBanner)}>
       <div className="container">
         <div className={styles.heroGrid}>
           <div className={styles.heroCopy}>
@@ -194,7 +194,7 @@ export default function Home(): ReactNode {
       title={`${siteConfig.title} - ${siteConfig.tagline}`}
       description="Yagr is your autonomous agent, grounded in reliable infrastructure: deterministic workflows underneath the chat surface instead of ephemeral scripts and blind API calls.">
       <HomepageHeader />
-      <main>
+      <main className={styles.yagrHome}>
         <section className={styles.quickStartSection}>
           <div className="container">
             <div className={styles.quickStartShell}>

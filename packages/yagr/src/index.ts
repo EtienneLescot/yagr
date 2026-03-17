@@ -22,6 +22,10 @@ export {
   splitTelegramMessage,
   upsertLinkedChat,
 } from './gateway/telegram.js';
+export {
+  createWebUiGatewayRuntime,
+  getWebUiGatewayStatus,
+} from './gateway/webui.js';
 export { N8nEngine } from './engine/n8n-engine.js';
 export { YagrNativeEngine } from './engine/yagr-engine.js';
 export {
@@ -61,6 +65,7 @@ export type { Engine } from './engine/engine.js';
 export type { Gateway, InboundMessage } from './gateway/types.js';
 export type { GatewayRuntimeHandle, GatewaySurface } from './gateway/types.js';
 export type { GatewaySupervisorStatus, GatewaySurfaceStatus } from './gateway/manager.js';
+export type { WebUiGatewayStatus } from './gateway/webui.js';
 export type { YagrSetupStatus } from './setup.js';
 
 export type {
