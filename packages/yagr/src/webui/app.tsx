@@ -275,7 +275,7 @@ function App() {
           <div className="brandMark" aria-hidden="true" />
           <div>
             <p className="eyebrow">Yagr Web UI</p>
-            <h1>Grounded in reliable infrastructure.</h1>
+            <h1>(Y)our (A)gent (G)rounded in (R)eality.</h1>
             <p className="lede">Configure the runtime, wire Telegram, and chat with the same Yagr agent from a clean local surface.</p>
           </div>
         </div>

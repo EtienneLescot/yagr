@@ -9,7 +9,7 @@
 
 # Yagr
 
-### Your autonomous agent. Grounded in reliable infrastructure.
+### (Y)our (A)gent (G)rounded in (R)eality
 
 **Autonomous automation agent · orchestrator-ready by design · powered by n8n-as-code today**
 
@@ -54,7 +54,6 @@ If you want to see Yagr working before reading the full product story, start her
 
 ```bash
 npm install -g yagr@latest
-# or: pnpm add -g yagr@latest
 ```
 
 ### 2. Run onboarding once

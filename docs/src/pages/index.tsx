@@ -109,13 +109,13 @@ function HomepageHeader() {
               <img src={yagrLogoUrl} alt="Yagr logo" className={styles.heroLogo} />
               <div>
                 <div className={styles.heroBrandName}>Yagr</div>
-                <div className={styles.heroBrandTag}>Grounded in reliable infrastructure</div>
+                <div className={styles.heroBrandTag}>(Y)our (A)gent (G)rounded in (R)eality</div>
               </div>
             </div>
             <div className={styles.eyebrow}>Autonomous agent · deterministic workflows · orchestrator-ready</div>
             <Heading as="h1" className={styles.heroTitle}>
-              Your autonomous agent.
-              <span className={styles.heroAccent}> Grounded in reliable infrastructure.</span>
+              (Y)our (A)gent
+              <span className={styles.heroAccent}> (G)rounded in (R)eality.</span>
             </Heading>
             <p className={styles.heroSubtitle}>
               Most agents disappear into ephemeral scripts and blind API calls. Yagr takes the opposite path: it uses
