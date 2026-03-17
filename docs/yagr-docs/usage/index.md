@@ -1,6 +1,6 @@
 ---
 title: Usage
-description: "Understand how Yagr turns intent into automation through a backend engine and simple gateway surfaces."
+description: "Understand how Yagr turns intent into automation through an execution orchestrator and simple gateway surfaces."
 ---
 
 # Usage
@@ -40,10 +40,10 @@ The workflows it creates already are memory:
 - setup is the source of truth
 - runtime config is persisted
 - user configuration should not depend on shell-local environment variables
-- backend execution is delegated to the engine, not embedded into the agent brain
+- execution is delegated to the orchestrator boundary, not embedded into the agent brain
 
 ## Related guides
 
 - [Telegram](/yagr/docs/usage/telegram)
 - [TUI](/yagr/docs/usage/tui)
-- [n8n backend](/yagr/docs/usage/n8n-backend)
+- [Execution orchestrators](/yagr/docs/usage/n8n-backend)

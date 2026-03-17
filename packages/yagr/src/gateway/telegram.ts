@@ -243,7 +243,7 @@ export function createTelegramGatewayRuntime(
     gateway: new TelegramGateway(engineResolver, options, configService, botToken, onboardingToken),
     startupMessages: [
       `Yagr Telegram gateway listening as @${status.botUsername}. ${formatLinkedChatCount(linkedCount)}.`,
-      'Telegram transport is ready. n8n backend will be resolved on first message.',
+      'Telegram transport is ready. The current orchestrator connection will be resolved on first message.',
     ],
     onboardingLink: status.deepLink && linkedCount === 0 ? status.deepLink : undefined,
   };
@@ -355,7 +355,7 @@ class TelegramGateway implements Gateway {
       }
 
       if (ctx.chat.type !== 'private') {
-        await ctx.reply('V1 Telegram supporte seulement les chats prives pour le moment.');
+        await ctx.reply('Telegram supporte seulement les chats prives pour le moment.');
         return;
       }
 
