@@ -14,12 +14,7 @@ const __dirname = dirname(__filename);
 const rootDir = join(__dirname, '..');
 
 const PACKAGES = [
-
   'packages/yagr',
-
-  'packages/cli',
-  'packages/skills',
-  'packages/vscode-extension'
 ];
 
 const colors = {
