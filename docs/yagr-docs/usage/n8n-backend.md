@@ -37,4 +37,4 @@ Yagr and `n8n-as-code` are complementary:
 - Yagr focuses on the agent product, intent capture, and user-facing surfaces
 - `n8n-as-code` focuses on workflow GitOps, schema-grounded agent tooling, sync, and TypeScript workflows
 
-If you need the workflow engineering product directly, go to [n8n-as-code](/n8n-as-code) or its documentation at [/docs](/docs).
+If you need the workflow engineering product directly, go to [n8n-as-code](https://n8nascode.dev) or its [documentation](https://n8nascode.dev/docs).

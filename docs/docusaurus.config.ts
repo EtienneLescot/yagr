@@ -18,7 +18,7 @@ const config: Config = {
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
   organizationName: 'EtienneLescot',
-  projectName: 'n8n-as-code',
+  projectName: 'yagr',
   trailingSlash: true,
 
   onBrokenLinks: 'warn',
@@ -43,12 +43,12 @@ const config: Config = {
       'classic',
       {
         docs: {
-          path: 'docs',
-          sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/EtienneLescot/n8n-as-code/tree/main/docs/',
+          path: 'yagr-docs',
+          sidebarPath: './sidebars.yagr.ts',
+          routeBasePath: 'yagr/docs',
+          editUrl: 'https://github.com/EtienneLescot/yagr/tree/main/docs/',
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
-          routeBasePath: '/docs',
         },
         blog: false,
         theme: {
@@ -70,25 +70,12 @@ const config: Config = {
         language: ['en'],
         highlightSearchTermsOnTargetPage: true,
         explicitSearchResultPath: true,
-        docsRouteBasePath: ['/docs', '/yagr/docs'],
+        docsRouteBasePath: ['/yagr/docs'],
       },
     ],
   ],
 
   plugins: [
-    [
-      '@docusaurus/plugin-content-docs',
-      {
-        id: 'yagr',
-        path: 'yagr-docs',
-        routeBasePath: 'yagr/docs',
-        sidebarPath: './sidebars.yagr.ts',
-        editUrl: 'https://github.com/EtienneLescot/n8n-as-code/tree/main/docs/',
-        showLastUpdateAuthor: true,
-        showLastUpdateTime: true,
-        breadcrumbs: true,
-      },
-    ],
     // Temporarily disabled API plugin due to TypeDoc markdown ID issues
     // [
     //   '@docusaurus/plugin-content-docs',
@@ -123,20 +110,10 @@ const config: Config = {
         {
           to: '/yagr/docs/getting-started',
           position: 'left',
-          label: 'Yagr Docs',
+          label: 'Docs',
         },
         {
-          to: '/n8n-as-code',
-          position: 'left',
-          label: 'n8n-as-code',
-        },
-        {
-          to: '/docs/getting-started',
-          position: 'left',
-          label: 'n8n-as-code Docs',
-        },
-        {
-          href: 'https://github.com/EtienneLescot/n8n-as-code',
+          href: 'https://github.com/EtienneLescot/yagr',
           label: 'GitHub',
           position: 'right',
         },
@@ -149,29 +126,12 @@ const config: Config = {
           title: 'Documentation',
           items: [
             {
-              label: 'Yagr Docs',
-              to: '/yagr/docs',
+              label: 'Getting Started',
+              to: '/yagr/docs/getting-started',
             },
             {
-              label: 'n8n-as-code Docs',
-              to: '/docs/getting-started',
-            },
-          ],
-        },
-        {
-          title: 'Products',
-          items: [
-            {
-              label: 'Yagr',
-              to: '/yagr/docs',
-            },
-            {
-              label: 'n8n-as-code',
-              to: '/n8n-as-code',
-            },
-            {
-              label: 'VS Code Extension',
-              href: 'https://marketplace.visualstudio.com/items?itemName=etienne-lescot.n8n-as-code',
+              label: 'CLI Reference',
+              to: '/yagr/docs/reference/commands',
             },
           ],
         },
@@ -180,20 +140,20 @@ const config: Config = {
           items: [
             {
               label: 'GitHub',
-              href: 'https://github.com/EtienneLescot/n8n-as-code',
+              href: 'https://github.com/EtienneLescot/yagr',
             },
             {
               label: 'Discussions',
-              href: 'https://github.com/EtienneLescot/n8n-as-code/discussions',
+              href: 'https://github.com/EtienneLescot/yagr/discussions',
             },
             {
               label: 'Issues',
-              href: 'https://github.com/EtienneLescot/n8n-as-code/issues',
+              href: 'https://github.com/EtienneLescot/yagr/issues',
             }
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Yagr and n8n-as-code. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Yagr. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,

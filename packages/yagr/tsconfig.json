@@ -12,15 +12,5 @@
   "exclude": [
     "src/webui/**/*"
   ],
-  "references": [
-    {
-      "path": "../skills"
-    },
-    {
-      "path": "../transformer"
-    },
-    {
-      "path": "../cli"
-    }
-  ]
+  "references": []
 }

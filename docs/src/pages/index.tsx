@@ -69,7 +69,7 @@ const entryPoints = [
   {
     title: 'For workflow engineering',
     text: 'n8n-as-code remains a product in its own right for workflow GitOps, AI skills, schema grounding, and TypeScript workflows.',
-    link: '/n8n-as-code',
+    link: 'https://n8nascode.dev',
     cta: 'Open the n8n-as-code product page',
   },
 ];
@@ -137,7 +137,7 @@ function HomepageHeader() {
               </Link>
               <Link
                 className={clsx('button button--lg', styles.secondaryButton)}
-                to="/n8n-as-code">
+                to="https://n8nascode.dev">
                 Explore n8n-as-code
               </Link>
             </div>
@@ -331,7 +331,7 @@ export default function Home(): ReactNode {
                 </Link>
                 <Link
                   className={clsx('button button--lg', styles.ghostButton)}
-                  to="/n8n-as-code">
+                  href="https://n8nascode.dev">
                   Open n8n-as-code
                 </Link>
               </div>
