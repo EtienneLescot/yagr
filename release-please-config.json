@@ -9,9 +9,9 @@
   "tag-separator": "@",
   "include-component-in-tag": true,
   "packages": {
-    "packages/holon": {
-      "package-name": "holon",
-      "component": "holon",
+    "packages/yagr": {
+      "package-name": "yagr",
+      "component": "yagr",
       "changelog-path": "CHANGELOG.md"
     },
     "packages/transformer": {

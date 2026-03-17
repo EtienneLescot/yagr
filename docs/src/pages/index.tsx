@@ -19,51 +19,51 @@ const proofPoints = [
     icon: '🧭',
     value: 'Intent first',
     label: 'Natural language becomes automation',
-    detail: 'Holon is meant to turn user intent into real workflows, not just provide a nicer shell around existing commands.',
+    detail: 'Yagr is meant to turn user intent into real workflows, not just provide a nicer shell around existing commands.',
   },
   {
     icon: '🧩',
-    value: 'Holons compose',
+    value: 'Yagrs compose',
     label: 'Use the node ecosystem as a tool palette',
-    detail: 'Holon composes existing nodes into larger wholes instead of rebuilding integrations from generic HTTP glue every time.',
+    detail: 'Yagr composes existing nodes into larger wholes instead of rebuilding integrations from generic HTTP glue every time.',
   },
   {
     icon: '🧠',
     value: 'Workflows remember',
     label: 'Generated automations are durable memory',
-    detail: 'A workflow is persisted intent that Holon can later inspect, explain, modify, and extend instead of starting from zero.',
+    detail: 'A workflow is persisted intent that Yagr can later inspect, explain, modify, and extend instead of starting from zero.',
   },
   {
     icon: '🏠',
     value: 'Stable home',
     label: 'State lives outside arbitrary repos',
-    detail: 'Holon uses a dedicated home directory so setup, linked surfaces, and runtime state do not leak into random working folders.',
+    detail: 'Yagr uses a dedicated home directory so setup, linked surfaces, and runtime state do not leak into random working folders.',
   },
   {
     icon: '💬',
     value: 'Gateways stay thin',
     label: 'Telegram and TUI are surfaces, not the brain',
-    detail: 'The agent logic lives above the gateways so Holon can be reached through Telegram, local UI, CLI, or future web surfaces.',
+    detail: 'The agent logic lives above the gateways so Yagr can be reached through Telegram, local UI, CLI, or future web surfaces.',
   },
   {
     icon: '⚙️',
     value: 'n8n is V1',
     label: 'Execution backend, not product identity',
-    detail: 'Holon uses the n8n-as-code sync and schema foundation today while keeping the engine replaceable for a future native runtime.',
+    detail: 'Yagr uses the n8n-as-code sync and schema foundation today while keeping the engine replaceable for a future native runtime.',
   },
 ];
 
 const entryPoints = [
   {
     title: 'For automation intent',
-    text: 'Start from what you want to automate, not from raw node wiring. Holon should be the product layer that translates that intent.',
-    link: '/holon/docs/getting-started',
-    cta: 'Read the Holon starting point',
+    text: 'Start from what you want to automate, not from raw node wiring. Yagr should be the product layer that translates that intent.',
+    link: '/yagr/docs/getting-started',
+    cta: 'Read the Yagr starting point',
   },
   {
     title: 'For remote interaction',
     text: 'Use Telegram as one gateway into the same agent loop, with setup-managed credentials, onboarding links, and linked chats.',
-    link: '/holon/docs/usage/telegram',
+    link: '/yagr/docs/usage/telegram',
     cta: 'See the Telegram flow',
   },
   {
@@ -76,14 +76,14 @@ const entryPoints = [
 
 const workflowSteps = [
   {label: '1', title: 'Express intent', text: 'Start with the automation you want, in natural language, instead of manually assembling raw implementation primitives.'},
-  {label: '2', title: 'Ground in the engine', text: 'Holon uses the node and schema knowledge of the current backend so generation stays anchored to real capabilities.'},
+  {label: '2', title: 'Ground in the engine', text: 'Yagr uses the node and schema knowledge of the current backend so generation stays anchored to real capabilities.'},
   {label: '3', title: 'Generate and validate', text: 'The agent produces workflows against the execution engine rather than embedding its own brain into the runtime.'},
-  {label: '4', title: 'Persist as memory', text: 'The resulting workflow becomes durable executable memory that Holon can revisit, explain, and evolve later.'},
+  {label: '4', title: 'Persist as memory', text: 'The resulting workflow becomes durable executable memory that Yagr can revisit, explain, and evolve later.'},
   {label: '5', title: 'Operate through surfaces', text: 'TUI, Telegram, and future gateways remain thin surfaces over the same agent and engine boundary.'},
 ];
 
 function HomepageHeader() {
-  const holonLogoUrl = useBaseUrl('/img/holon-logo.png');
+  const yagrLogoUrl = useBaseUrl('/img/yagr-logo.png');
 
   return (
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
@@ -91,9 +91,9 @@ function HomepageHeader() {
         <div className={styles.heroGrid}>
           <div className={styles.heroCopy}>
             <div className={styles.heroBrand}>
-              <img src={holonLogoUrl} alt="Holon logo" className={styles.heroLogo} />
+              <img src={yagrLogoUrl} alt="Yagr logo" className={styles.heroLogo} />
               <div>
-                <div className={styles.heroBrandName}>Holon</div>
+                <div className={styles.heroBrandName}>Yagr</div>
                 <div className={styles.heroBrandTag}>Grounded in reliable infrastructure</div>
               </div>
             </div>
@@ -103,7 +103,7 @@ function HomepageHeader() {
               <span className={styles.heroAccent}> Grounded in reliable infrastructure.</span>
             </Heading>
             <p className={styles.heroSubtitle}>
-              Most agents disappear into ephemeral scripts and blind API calls. Holon takes the opposite path: it uses
+              Most agents disappear into ephemeral scripts and blind API calls. Yagr takes the opposite path: it uses
               chat as the interface, but architects, validates, and deploys deterministic workflows underneath so the
               result stays auditable, inspectable, and durable.
             </p>
@@ -117,8 +117,8 @@ function HomepageHeader() {
             <div className={styles.buttons}>
               <Link
                 className={clsx('button button--lg', styles.primaryButton)}
-                to="/holon/docs/getting-started">
-                Start with Holon
+                to="/yagr/docs/getting-started">
+                Start with Yagr
               </Link>
               <Link
                 className={clsx('button button--lg', styles.secondaryButton)}
@@ -137,20 +137,20 @@ function HomepageHeader() {
               </div>
               <div className={styles.panelLabel}>Agent loop</div>
               <pre className={styles.commandBlock}>
-                <code>{`$ holon setup
-$ holon start
-$ holon telegram onboarding`}</code>
+                <code>{`$ yagr setup
+$ yagr start
+$ yagr telegram onboarding`}</code>
               </pre>
               <div className={styles.panelCardGrid}>
                 <div className={styles.panelCard}>
                   <span className={styles.cardKicker}>Intent</span>
                   <strong>Start from what to automate</strong>
-                  <p>Holon should begin from the user goal, not from manually wiring raw nodes and scripts.</p>
+                  <p>Yagr should begin from the user goal, not from manually wiring raw nodes and scripts.</p>
                 </div>
                 <div className={styles.panelCard}>
                   <span className={styles.cardKicker}>Reliability</span>
                   <strong>No blind script sprawl</strong>
-                  <p>Holon should not solve tasks by dropping opaque one-off scripts that nobody can audit tomorrow.</p>
+                  <p>Yagr should not solve tasks by dropping opaque one-off scripts that nobody can audit tomorrow.</p>
                 </div>
                 <div className={styles.panelCard}>
                   <span className={styles.cardKicker}>Memory</span>
@@ -176,18 +176,18 @@ export default function Home(): ReactNode {
   return (
     <Layout
       title={`${siteConfig.title} - ${siteConfig.tagline}`}
-      description="Holon is your autonomous agent, grounded in reliable infrastructure: deterministic workflows underneath the chat surface instead of ephemeral scripts and blind API calls.">
+      description="Yagr is your autonomous agent, grounded in reliable infrastructure: deterministic workflows underneath the chat surface instead of ephemeral scripts and blind API calls.">
       <HomepageHeader />
       <main>
         <section className={styles.proofSection}>
           <div className="container">
             <div className={styles.proofHeader}>
-              <p className={styles.sectionEyebrow}>Why Holon exists</p>
+              <p className={styles.sectionEyebrow}>Why Yagr exists</p>
               <Heading as="h2" className={styles.sectionTitle}>
                 Magic chat for users. Reliable systems for engineers.
               </Heading>
               <p className={styles.sectionLead}>
-                Holon matters because autonomous behavior should not require opaque one-off scripts. The chat interface
+                Yagr matters because autonomous behavior should not require opaque one-off scripts. The chat interface
                 can feel magical, while the actual execution remains deterministic, inspectable, and built on strict
                 workflow ontology.
               </p>
@@ -212,7 +212,7 @@ export default function Home(): ReactNode {
             <div className={styles.entryHeader}>
               <p className={styles.sectionEyebrow}>How the repository is now organized</p>
               <Heading as="h2" className={styles.sectionTitle}>
-                Holon as the agent product, n8n-as-code as the engineering substrate.
+                Yagr as the agent product, n8n-as-code as the engineering substrate.
               </Heading>
             </div>
             <div className={styles.entryGrid}>
@@ -238,7 +238,7 @@ export default function Home(): ReactNode {
                   Intent, engine, workflow, memory.
                 </Heading>
                 <p className={styles.sectionLead}>
-                  Holon is intentionally narrower than a generic assistant and intentionally higher-level than the
+                  Yagr is intentionally narrower than a generic assistant and intentionally higher-level than the
                   workflow engineering stack. It sits in the middle: above the execution engine, below the user-facing
                   intent, and connected to durable workflow artifacts it can evolve over time.
                 </p>
@@ -263,17 +263,17 @@ export default function Home(): ReactNode {
             <div className={styles.ctaCard}>
               <p className={styles.sectionEyebrow}>Start here</p>
               <Heading as="h2" className={styles.ctaTitle}>
-                Start from the Holon vision, then drop to the layer you need.
+                Start from the Yagr vision, then drop to the layer you need.
               </Heading>
               <p className={styles.ctaLead}>
-                Use Holon if you want the agent product that turns intent into automation. Use n8n-as-code if you want
+                Use Yagr if you want the agent product that turns intent into automation. Use n8n-as-code if you want
                 direct workflow GitOps, AI skill, VS Code extension, and TypeScript tooling.
               </p>
               <div className={styles.buttons}>
                 <Link
                   className={clsx('button button--lg', styles.primaryButton)}
-                  to="/holon/docs/getting-started">
-                  Read the Holon guide
+                  to="/yagr/docs/getting-started">
+                  Read the Yagr guide
                 </Link>
                 <Link
                   className={clsx('button button--lg', styles.ghostButton)}

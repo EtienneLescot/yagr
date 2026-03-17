@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  title: 'Holon',
+  title: 'Yagr',
   tagline: 'Your autonomous agent. Grounded in reliable infrastructure.',
   favicon: 'img/favicon.ico',
 
@@ -70,7 +70,7 @@ const config: Config = {
         language: ['en'],
         highlightSearchTermsOnTargetPage: true,
         explicitSearchResultPath: true,
-        docsRouteBasePath: ['/docs', '/holon/docs'],
+        docsRouteBasePath: ['/docs', '/yagr/docs'],
       },
     ],
   ],
@@ -79,10 +79,10 @@ const config: Config = {
     [
       '@docusaurus/plugin-content-docs',
       {
-        id: 'holon',
-        path: 'holon-docs',
-        routeBasePath: 'holon/docs',
-        sidebarPath: './sidebars.holon.ts',
+        id: 'yagr',
+        path: 'yagr-docs',
+        routeBasePath: 'yagr/docs',
+        sidebarPath: './sidebars.yagr.ts',
         editUrl: 'https://github.com/EtienneLescot/n8n-as-code/tree/main/docs/',
         showLastUpdateAuthor: true,
         showLastUpdateTime: true,
@@ -114,16 +114,16 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'Holon',
+      title: 'Yagr',
       logo: {
-        alt: 'Holon Logo',
-        src: 'img/holon-logo.png',
+        alt: 'Yagr Logo',
+        src: 'img/yagr-logo.png',
       },
       items: [
         {
-          to: '/holon/docs/getting-started',
+          to: '/yagr/docs/getting-started',
           position: 'left',
-          label: 'Holon Docs',
+          label: 'Yagr Docs',
         },
         {
           to: '/n8n-as-code',
@@ -149,8 +149,8 @@ const config: Config = {
           title: 'Documentation',
           items: [
             {
-              label: 'Holon Docs',
-              to: '/holon/docs',
+              label: 'Yagr Docs',
+              to: '/yagr/docs',
             },
             {
               label: 'n8n-as-code Docs',
@@ -162,8 +162,8 @@ const config: Config = {
           title: 'Products',
           items: [
             {
-              label: 'Holon',
-              to: '/holon/docs',
+              label: 'Yagr',
+              to: '/yagr/docs',
             },
             {
               label: 'n8n-as-code',
@@ -193,7 +193,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Holon and n8n-as-code. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Yagr and n8n-as-code. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,
@@ -215,7 +215,7 @@ const config: Config = {
     //   contextualSearch: true,
     // },
     metadata: [
-      { name: 'keywords', content: 'holon, n8n-as-code, automation, ai agent, telegram, tui, workflow, gitops' },
+      { name: 'keywords', content: 'yagr, n8n-as-code, automation, ai agent, telegram, tui, workflow, gitops' },
       { name: 'twitter:card', content: 'summary_large_image' },
     ],
   } satisfies Preset.ThemeConfig,

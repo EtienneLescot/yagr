@@ -15,7 +15,7 @@ const rootDir = join(__dirname, '..');
 
 const PACKAGES = [
 
-  'packages/holon',
+  'packages/yagr',
 
   'packages/cli',
   'packages/skills',
