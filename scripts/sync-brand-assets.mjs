@@ -8,9 +8,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
-const sourceLogo = path.join(repoRoot, 'res', 'logo.png');
-const generatedTargets = [
-  path.join(repoRoot, 'docs', 'static', 'img', 'logo.png'),
+const generatedAssets = [
+  {
+    source: path.join(repoRoot, 'res', 'logo.png'),
+    targets: [path.join(repoRoot, 'docs', 'static', 'img', 'logo.png')],
+  },
+  {
+    source: path.join(repoRoot, 'res', 'holon-logo.png'),
+    targets: [path.join(repoRoot, 'docs', 'static', 'img', 'holon-logo.png')],
+  },
 ];
 
 function ensureFileExists(filePath) {
@@ -33,14 +39,16 @@ function copyIfChanged(sourcePath, targetPath) {
   return true;
 }
 
-ensureFileExists(sourceLogo);
-
 let changedCount = 0;
 
-for (const target of generatedTargets) {
-  if (copyIfChanged(sourceLogo, target)) {
-    changedCount += 1;
-    console.log(`Synced ${path.relative(repoRoot, target)}`);
+for (const asset of generatedAssets) {
+  ensureFileExists(asset.source);
+
+  for (const target of asset.targets) {
+    if (copyIfChanged(asset.source, target)) {
+      changedCount += 1;
+      console.log(`Synced ${path.relative(repoRoot, target)}`);
+    }
   }
 }
 

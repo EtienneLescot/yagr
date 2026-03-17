@@ -5,8 +5,8 @@ import type * as Preset from '@docusaurus/preset-classic';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  title: 'n8n-as-code',
-  tagline: 'Manage n8n workflows as code with version control and AI assistance',
+  title: 'Holon',
+  tagline: 'Your autonomous agent. Grounded in reliable infrastructure.',
   favicon: 'img/favicon.ico',
 
 
@@ -43,6 +43,7 @@ const config: Config = {
       'classic',
       {
         docs: {
+          path: 'docs',
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/EtienneLescot/n8n-as-code/tree/main/docs/',
           showLastUpdateAuthor: true,
@@ -69,12 +70,25 @@ const config: Config = {
         language: ['en'],
         highlightSearchTermsOnTargetPage: true,
         explicitSearchResultPath: true,
-        docsRouteBasePath: '/docs',
+        docsRouteBasePath: ['/docs', '/holon/docs'],
       },
     ],
   ],
 
   plugins: [
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'holon',
+        path: 'holon-docs',
+        routeBasePath: 'holon/docs',
+        sidebarPath: './sidebars.holon.ts',
+        editUrl: 'https://github.com/EtienneLescot/n8n-as-code/tree/main/docs/',
+        showLastUpdateAuthor: true,
+        showLastUpdateTime: true,
+        breadcrumbs: true,
+      },
+    ],
     // Temporarily disabled API plugin due to TypeDoc markdown ID issues
     // [
     //   '@docusaurus/plugin-content-docs',
@@ -100,17 +114,26 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'n8n-as-code',
+      title: 'Holon',
       logo: {
-        alt: 'n8n-as-code Logo',
-        src: 'img/logo.png',
+        alt: 'Holon Logo',
+        src: 'img/holon-logo.png',
       },
       items: [
         {
-          type: 'docSidebar',
-          sidebarId: 'docs',
+          to: '/holon/docs/getting-started',
           position: 'left',
-          label: 'Documentation',
+          label: 'Holon Docs',
+        },
+        {
+          to: '/n8n-as-code',
+          position: 'left',
+          label: 'n8n-as-code',
+        },
+        {
+          to: '/docs/getting-started',
+          position: 'left',
+          label: 'n8n-as-code Docs',
         },
         {
           href: 'https://github.com/EtienneLescot/n8n-as-code',
@@ -126,12 +149,29 @@ const config: Config = {
           title: 'Documentation',
           items: [
             {
-              label: 'Getting Started',
-              to: '/docs/getting-started',
+              label: 'Holon Docs',
+              to: '/holon/docs',
             },
             {
-              label: 'Usage Guides',
-              to: '/docs/usage',
+              label: 'n8n-as-code Docs',
+              to: '/docs/getting-started',
+            },
+          ],
+        },
+        {
+          title: 'Products',
+          items: [
+            {
+              label: 'Holon',
+              to: '/holon/docs',
+            },
+            {
+              label: 'n8n-as-code',
+              to: '/n8n-as-code',
+            },
+            {
+              label: 'VS Code Extension',
+              href: 'https://marketplace.visualstudio.com/items?itemName=etienne-lescot.n8n-as-code',
             },
           ],
         },
@@ -149,24 +189,11 @@ const config: Config = {
             {
               label: 'Issues',
               href: 'https://github.com/EtienneLescot/n8n-as-code/issues',
-            },
-          ],
-        },
-        {
-          title: 'More',
-          items: [
-            {
-              label: 'n8n',
-              href: 'https://n8n.io',
-            },
-            {
-              label: 'n8n Community',
-              href: 'https://community.n8n.io',
-            },
+            }
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} n8n-as-code. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Holon and n8n-as-code. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,
@@ -188,7 +215,7 @@ const config: Config = {
     //   contextualSearch: true,
     // },
     metadata: [
-      { name: 'keywords', content: 'n8n, workflow, automation, version control, git, vs code, cli' },
+      { name: 'keywords', content: 'holon, n8n-as-code, automation, ai agent, telegram, tui, workflow, gitops' },
       { name: 'twitter:card', content: 'summary_large_image' },
     ],
   } satisfies Preset.ThemeConfig,
