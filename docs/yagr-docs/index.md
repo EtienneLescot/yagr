@@ -14,7 +14,7 @@ Yagr is designed to sit above execution orchestrators. Today that means n8n thro
 
 ## Vision
 
-> Your autonomous agent. Grounded in reliable infrastructure.
+> (Y)our (A)gent (G)rounded in (R)eality
 
 ## Why another autonomous agent?
 

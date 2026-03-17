@@ -6,7 +6,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'Yagr',
-  tagline: 'Your autonomous agent. Grounded in reliable infrastructure.',
+  tagline: '(Y)our (A)gent (G)rounded in (R)eality',
   favicon: 'img/favicon.ico',
 
 
