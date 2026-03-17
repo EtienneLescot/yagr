@@ -77,7 +77,7 @@ If you are contributing from this repository instead of installing the product g
 ```bash
 npm install
 npm run build --workspace=packages/yagr
-npm run yagr:setup
+npm run yagr:onboard
 npm run yagr:start
 ```
 
