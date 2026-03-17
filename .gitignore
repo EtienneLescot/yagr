@@ -38,11 +38,8 @@ ehthumbs.db
 Thumbs.db
 
 
-# --- Packages build artifacts ---
-packages/*/dist/
-packages/*/out/
-packages/*/node_modules/
-*.vsix
+# --- Build artifacts ---
+dist/
 *.tsbuildinfo
 
 # --- AI Context Artifacts (Generated) ---
@@ -60,21 +57,15 @@ n8nac.json
 n8nac-instance.json
 n8nac-config.json
 .yagr-config.json
-.holon-config.json
 .yagr-test-workspace/
-.holon-test-workspace/
 
-# Generated n8n assets
-packages/skills/src/assets/
-
+# Generated assets
 .n8n-cache/
 .local
 workflows_test/
 
 ignoredTests/
 session_context.json
-
-packages/skills/src/assets/
 
 # n8n-as-code AI helpers
 
@@ -84,12 +75,9 @@ conversation.md
 
 .bin/
 
-packages/vscode-extension/packages/
-packages/vscode-extension/assets/
 docs/static/api/*
 !docs/static/api/.gitkeep
 docs/static/img/logo.png
-packages/skills/extraction-report.md
 n8nac.cmd
 
 workflows/
