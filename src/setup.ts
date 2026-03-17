@@ -32,7 +32,7 @@ export interface YagrSetupStatus {
   llmConfigured: boolean;
   enabledSurfaces: GatewaySurface[];
   startableSurfaces: GatewaySurface[];
-  missingSteps: Array<'n8n' | 'llm'>;
+  missingSteps: Array<'n8n' | 'llm' | 'surfaces'>;
 }
 
 export function buildYagrSetupStatus(input: {
@@ -41,7 +41,7 @@ export function buildYagrSetupStatus(input: {
   enabledSurfaces: GatewaySurface[];
   startableSurfaces: GatewaySurface[];
 }): YagrSetupStatus {
-  const missingSteps: Array<'n8n' | 'llm'> = [];
+  const missingSteps: Array<'n8n' | 'llm' | 'surfaces'> = [];
 
   if (!input.n8nConfigured) {
     missingSteps.push('n8n');
@@ -49,6 +49,10 @@ export function buildYagrSetupStatus(input: {
 
   if (!input.llmConfigured) {
     missingSteps.push('llm');
+  }
+
+  if (input.startableSurfaces.length === 0) {
+    missingSteps.push('surfaces');
   }
 
   return {

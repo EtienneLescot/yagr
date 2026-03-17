@@ -1,22 +1,22 @@
 {
   "name": "yagr",
-  "version": "0.2.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Autonomous automation agent grounded in deterministic workflow infrastructure",
   "type": "module",
   "bin": {
-    "yagr": "./packages/yagr/dist/cli.js"
+    "yagr": "dist/cli.js"
   },
-  "workspaces": [
-    "packages/yagr"
-  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -b --force && npm run build --workspace=packages/yagr",
-    "test": "npm run test --workspace=packages/yagr",
+    "build": "tsc -b && node scripts/build-webui.mjs",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo node_modules/.cache docs/static/img/yagr-logo.png",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit",
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
-    "yagr:onboard": "YAGR_HOME=.yagr-test-workspace node packages/yagr/dist/cli.js onboard",
-    "yagr:start": "YAGR_HOME=.yagr-test-workspace node packages/yagr/dist/cli.js start",
-    "yagr:gateway:status": "YAGR_HOME=.yagr-test-workspace node packages/yagr/dist/cli.js gateway status",
+    "yagr:onboard": "YAGR_HOME=.yagr-test-workspace node dist/cli.js onboard",
+    "yagr:start": "YAGR_HOME=.yagr-test-workspace node dist/cli.js start",
+    "yagr:gateway:status": "YAGR_HOME=.yagr-test-workspace node dist/cli.js gateway status",
     "yagr:test:workspace": "node scripts/yagr-test-workspace.mjs pwd",
     "yagr:test:init": "node scripts/yagr-test-workspace.mjs init",
     "yagr:test:agent": "node scripts/yagr-test-workspace.mjs agent",
@@ -26,12 +26,47 @@
     "release:pending": "node scripts/release/workspace-release.mjs pending-stable",
     "check-versions": "node scripts/check-version-consistency.js",
     "docs": "cd docs && npm start",
-    "docs:build": "cd docs && npm run build",
-    "clean": "npm run clean --workspaces --if-present && rm -rf packages/*/dist packages/*/out packages/**/tsconfig.tsbuildinfo node_modules/.cache docs/static/img/yagr-logo.png"
+    "docs:build": "cd docs && npm run build"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^1.2.12",
+    "@ai-sdk/openai": "^1.3.24",
+    "@clack/prompts": "^1.1.0",
+    "@n8n-as-code/skills": "1.1.2",
+    "@n8n-as-code/transformer": "1.0.1",
+    "@types/qrcode-terminal": "^0.12.2",
+    "ai": "^4.3.19",
+    "conf": "^13.0.1",
+    "dotenv": "^17.2.3",
+    "fullscreen-ink": "^0.1.0",
+    "ink": "^6.8.0",
+    "ink-text-input": "^6.0.0",
+    "n8nac": "1.1.2",
+    "qrcode-terminal": "^0.12.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "telegraf": "^4.16.3",
+    "zustand": "^5.0.8",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/react-dom": "^19.2.3",
+    "@types/node": "^20.10.0",
+    "@types/react": "^19.2.14",
+    "esbuild": "^0.25.3",
+    "typescript": "^5.3.3"
+  },
+  "files": [
+    "dist/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EtienneLescot/yagr"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "author": "Etienne Lescot",
-  "license": "ISC",
-  "devDependencies": {
-    "typescript": "^5.3.3"
-  }
+  "license": "ISC"
 }
+
