@@ -9,6 +9,15 @@ const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 
 const PACKAGES = [
   {
+    name: 'holon',
+    path: 'packages/holon',
+    packageJsonPath: 'packages/holon/package.json',
+    changelogPath: 'packages/holon/CHANGELOG.md',
+    publishTarget: 'npm',
+    tagPrefix: 'holon@',
+    internalDependencies: ['@n8n-as-code/skills', '@n8n-as-code/transformer', 'n8nac'],
+  },
+  {
     name: '@n8n-as-code/transformer',
     path: 'packages/transformer',
     packageJsonPath: 'packages/transformer/package.json',

@@ -107,6 +107,9 @@ jobs:
           if should_publish '@n8n-as-code/skills'; then
             publish_npm '@n8n-as-code/skills' 'packages/skills'
           fi
+          if should_publish 'holon'; then
+            publish_npm 'holon' 'packages/holon'
+          fi
           if should_publish 'n8nac'; then
             publish_npm 'n8nac' 'packages/cli'
           fi
@@ -173,6 +176,7 @@ jobs:
           const { execFileSync } = require('child_process');
           const plan = JSON.parse(fs.readFileSync('release-plan.json', 'utf8'));
           const prefixByName = {
+            'holon': 'holon@v',
             '@n8n-as-code/transformer': '@n8n-as-code/transformer@v',
             '@n8n-as-code/skills': '@n8n-as-code/skills@v',
             '@n8n-as-code/n8nac': '@n8n-as-code/n8nac@v',
@@ -190,10 +194,13 @@ jobs:
             }
           }
 
-          const releasePkg = plan.packages.find(pkg => pkg.name === 'n8nac' && pkg.changed);
+          const releasePkg = plan.packages.find(pkg => pkg.name === 'holon' && pkg.changed)
+            || plan.packages.find(pkg => pkg.name === 'n8nac' && pkg.changed);
           if (changedPackages.length > 0) {
             const shortSha = (process.env.GITHUB_SHA || execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' })).trim().slice(0, 7);
-            const repoTag = releasePkg ? `v${releasePkg.targetVersion}` : `release-${shortSha}`;
+            const repoTag = releasePkg
+              ? (releasePkg.name === 'holon' ? `holon-v${releasePkg.targetVersion}` : `v${releasePkg.targetVersion}`)
+              : `release-${shortSha}`;
             try {
               execFileSync('git', ['rev-parse', '-q', '--verify', `refs/tags/${repoTag}`], { stdio: 'ignore' });
             } catch {
@@ -212,7 +219,8 @@ jobs:
           const { execFileSync } = require('child_process');
 
           const plan = JSON.parse(fs.readFileSync('release-plan.json', 'utf8'));
-          const pkg = plan.packages.find(item => item.name === 'n8nac');
+          const pkg = plan.packages.find(item => item.name === 'holon' && item.changed)
+            || plan.packages.find(item => item.name === 'n8nac' && item.changed);
           const changedPackages = plan.packages.filter(item => item.changed);
 
           if (changedPackages.length === 0) {
@@ -221,6 +229,10 @@ jobs:
           }
 
           const packageMeta = new Map([
+            ['holon', {
+              label: 'Holon',
+              summary: 'Autonomous automation agent grounded in deterministic workflow infrastructure and gateway surfaces.',
+            }],
             ['n8n-as-code', {
               label: 'Editor Integrations',
               summary: 'Marketplace and Open VSX editor integration for browsing, searching, syncing, and validating n8n workflows.',
@@ -265,18 +277,23 @@ jobs:
 
           const shortSha = (process.env.GITHUB_SHA || execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' })).trim().slice(0, 7);
           const version = pkg?.changed ? pkg.targetVersion : null;
-          const tag = version ? `v${version}` : `release-${shortSha}`;
+          const tag = version
+            ? (pkg.name === 'holon' ? `holon-v${version}` : `v${version}`)
+            : `release-${shortSha}`;
           const title = version
-            ? (version === '1.0.0'
-                ? "🚀 n8n-as-code v1.0.0 - The 'State of the Art' Release"
-                : `n8n-as-code v${version}`)
+            ? (pkg.name === 'holon'
+                ? `Holon v${version}`
+                : (version === '1.0.0'
+                    ? "🚀 n8n-as-code v1.0.0 - The 'State of the Art' Release"
+                    : `n8n-as-code v${version}`))
             : 'n8n-as-code';
 
           const notesLines = [
-            version ? `## n8n-as-code ${version}` : '## n8n-as-code',
+            version ? `## ${pkg.name === 'holon' ? 'Holon' : 'n8n-as-code'} ${version}` : '## n8n-as-code',
             '',
             '### Product Surface',
             '',
+            '- Holon autonomous agent for intent-driven automation',
             '- Editor integrations published via Microsoft Marketplace and Open VSX',
             '- Shared n8nac CLI for workspace bootstrap, sync, and automation',
             '- AI Skills and Claude-ready agent context generation',
@@ -412,6 +429,8 @@ jobs:
           base: main
           add-paths: |
             package-lock.json
+            packages/holon/CHANGELOG.md
+            packages/holon/package.json
             packages/cli/CHANGELOG.md
             packages/cli/package.json
             packages/skills/CHANGELOG.md
@@ -513,6 +532,9 @@ jobs:
           fi
           if should_publish '@n8n-as-code/skills'; then
             publish_npm '@n8n-as-code/skills' 'packages/skills'
+          fi
+          if should_publish 'holon'; then
+            publish_npm 'holon' 'packages/holon'
           fi
           if should_publish 'n8nac'; then
             publish_npm 'n8nac' 'packages/cli'

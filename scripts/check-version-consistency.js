@@ -15,6 +15,8 @@ const rootDir = join(__dirname, '..');
 
 const PACKAGES = [
 
+  'packages/holon',
+
   'packages/cli',
   'packages/skills',
   'packages/vscode-extension'

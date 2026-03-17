@@ -169,7 +169,7 @@ Each layer has a single responsibility. The agent never talks to the runtime dir
 ### 3.1 Package structure
 
 ```
-packages/agent/
+packages/holon/
 ├── src/
 │   ├── index.ts                 # Public API exports
 │   ├── agent.ts                 # Core HolonAgent class
@@ -566,7 +566,7 @@ The rule is simple: Holon should automate credential flows only when doing so is
 
 ## 7. Dependencies
 
-### New (packages/agent only)
+### New (packages/holon only)
 
 ```json
 {
@@ -598,7 +598,7 @@ Note: `@holon/*` are the new package names. During transition, the actual worksp
 ## 8. Roadmap
 
 ### Phase 1 — Agent MVP (V1: n8n backend)
-- [x] `packages/agent/` package scaffold
+- [x] `packages/holon/` package scaffold
 - [x] `Engine` interface + `N8nEngine` implementation
 - [x] `HolonAgent` class with first Vercel AI SDK run loop
 - [x] Tools: searchNodes, nodeInfo, searchTemplates, generateWorkflow, validate, deploy, list/manage workflow (engine-backed scaffold)
