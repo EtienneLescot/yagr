@@ -14,7 +14,7 @@ const __dirname = dirname(__filename);
 const rootDir = join(__dirname, '..');
 
 const PACKAGES = [
-  'packages/yagr',
+  '.',
 ];
 
 const colors = {
@@ -31,7 +31,9 @@ function log(color, message) {
 }
 
 function readPackageJson(packagePath) {
-  const fullPath = join(rootDir, packagePath, 'package.json');
+  const fullPath = packagePath === '.'
+    ? join(rootDir, 'package.json')
+    : join(rootDir, packagePath, 'package.json');
   try {
     return JSON.parse(readFileSync(fullPath, 'utf-8'));
   } catch (error) {

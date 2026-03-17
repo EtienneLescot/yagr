@@ -10,9 +10,9 @@ const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 const PACKAGES = [
   {
     name: 'yagr',
-    path: 'packages/yagr',
-    packageJsonPath: 'packages/yagr/package.json',
-    changelogPath: 'packages/yagr/CHANGELOG.md',
+    path: '.',
+    packageJsonPath: 'package.json',
+    changelogPath: 'CHANGELOG.md',
     publishTarget: 'npm',
     tagPrefix: 'yagr@',
     internalDependencies: [],
@@ -26,7 +26,13 @@ const extensionPackage = null;
 const CROSS_PACKAGE_RULES = [
   {
     matches(file) {
-      return file.startsWith('res/') || file === 'scripts/sync-brand-assets.mjs';
+      return (
+        file.startsWith('src/') ||
+        file.startsWith('tests/') ||
+        file.startsWith('res/') ||
+        file === 'scripts/sync-brand-assets.mjs' ||
+        file === 'scripts/build-webui.mjs'
+      );
     },
     packages: ['yagr'],
   },
@@ -253,7 +259,9 @@ function getAffectedPackageNames(files) {
 
   for (const file of files) {
     for (const pkg of PACKAGES) {
-      if (file === pkg.packageJsonPath || file.startsWith(`${pkg.path}/`)) {
+      const matchesRoot = pkg.path === '.' && file === pkg.packageJsonPath;
+      const matchesPrefix = pkg.path !== '.' && (file === pkg.packageJsonPath || file.startsWith(`${pkg.path}/`));
+      if (matchesRoot || matchesPrefix) {
         affected.add(pkg.name);
       }
     }

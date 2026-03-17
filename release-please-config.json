@@ -9,7 +9,7 @@
   "tag-separator": "@",
   "include-component-in-tag": true,
   "packages": {
-    "packages/yagr": {
+    ".": {
       "package-name": "yagr",
       "component": "yagr",
       "changelog-path": "CHANGELOG.md"
