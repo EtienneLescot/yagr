@@ -18,7 +18,13 @@ export {
 export { HolonConfigService } from './config/holon-config-service.js';
 export { runCliGateway } from './gateway/cli.js';
 export {
+  buildGatewaySupervisorStatus,
+  getGatewaySupervisorStatus,
+  runGatewaySupervisor,
+} from './gateway/manager.js';
+export {
   buildTelegramDeepLink,
+  createTelegramGatewayRuntime,
   getTelegramGatewayStatus,
   resetTelegramGateway,
   runTelegramGateway,
@@ -58,6 +64,8 @@ export {
 
 export type { Engine } from './engine/engine.js';
 export type { Gateway, InboundMessage } from './gateway/types.js';
+export type { GatewayRuntimeHandle, GatewaySurface } from './gateway/types.js';
+export type { GatewaySupervisorStatus, GatewaySurfaceStatus } from './gateway/manager.js';
 
 export type {
   CredentialRequirement,
@@ -92,6 +100,7 @@ export type {
 } from './types.js';
 
 export type {
+  HolonGatewayConfig,
   HolonLocalConfig,
   HolonTelegramConfig,
   HolonTelegramLinkedChat,

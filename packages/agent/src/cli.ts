@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js';
 import { HolonConfigService } from './config/holon-config-service.js';
-import { runCliGateway } from './gateway/cli.js';
+import { getGatewaySupervisorStatus, runGatewaySupervisor } from './gateway/manager.js';
 import {
   getTelegramGatewayStatus,
   resetTelegramGateway,
@@ -22,7 +22,7 @@ const VALID_PROVIDERS: HolonModelProvider[] = [
 ];
 
 interface ParsedArgs {
-  command?: 'config-show' | 'config-reset' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
+  command?: 'config-show' | 'config-reset' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
   prompt?: string;
   interactive: boolean;
   provider?: HolonModelProvider;
@@ -48,6 +48,16 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   if (argv[0] === 'config' && argv[1] === 'reset') {
     parsed.command = 'config-reset';
+    return parsed;
+  }
+
+  if (argv[0] === 'gateway' && argv[1] === 'start') {
+    parsed.command = 'gateway-start';
+    startIndex = 2;
+  }
+
+  if (argv[0] === 'gateway' && argv[1] === 'status') {
+    parsed.command = 'gateway-status';
     return parsed;
   }
 
@@ -174,6 +184,12 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (args.command === 'gateway-status') {
+      const status = getGatewaySupervisorStatus(configService);
+      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+      return;
+    }
+
     if (args.command === 'telegram-status') {
       const status = getTelegramGatewayStatus(configService);
       process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
@@ -192,6 +208,15 @@ async function main(): Promise<void> {
     }
   }
 
+  if (args.command === 'gateway-start') {
+    await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
+      provider: args.provider,
+      model: args.model,
+      maxSteps: args.maxSteps,
+    }, configService);
+    return;
+  }
+
   if (args.command === 'telegram-start') {
     await runTelegramGateway(async () => await createN8nEngineFromWorkspace(), {
       provider: args.provider,
@@ -204,6 +229,7 @@ async function main(): Promise<void> {
   const engine = await createN8nEngineFromWorkspace();
 
   const agent = new HolonAgent(engine);
+  const { runCliGateway } = await import('./gateway/cli.js');
 
   await runCliGateway(agent, {
     prompt: args.prompt,
