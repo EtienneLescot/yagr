@@ -2,7 +2,7 @@
     "files": [],
     "references": [
         {
-            "path": "packages/holon"
+            "path": "packages/yagr"
         },
         {
             "path": "packages/transformer"

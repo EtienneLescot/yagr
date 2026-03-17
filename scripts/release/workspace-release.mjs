@@ -9,12 +9,12 @@ const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 
 const PACKAGES = [
   {
-    name: 'holon',
-    path: 'packages/holon',
-    packageJsonPath: 'packages/holon/package.json',
-    changelogPath: 'packages/holon/CHANGELOG.md',
+    name: 'yagr',
+    path: 'packages/yagr',
+    packageJsonPath: 'packages/yagr/package.json',
+    changelogPath: 'packages/yagr/CHANGELOG.md',
     publishTarget: 'npm',
-    tagPrefix: 'holon@',
+    tagPrefix: 'yagr@',
     internalDependencies: ['@n8n-as-code/skills', '@n8n-as-code/transformer', 'n8nac'],
   },
   {
