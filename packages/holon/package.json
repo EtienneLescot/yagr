@@ -1,5 +1,5 @@
 {
-  "name": "@n8n-as-code/agent",
+  "name": "holon",
   "version": "0.1.0",
   "description": "Holon agent layer for turning intent into automation",
   "type": "module",
@@ -44,7 +44,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/EtienneLescot/n8n-as-code",
-    "directory": "packages/agent"
+    "directory": "packages/holon"
   },
   "publishConfig": {
     "access": "public"

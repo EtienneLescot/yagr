@@ -9,6 +9,11 @@
   "tag-separator": "@",
   "include-component-in-tag": true,
   "packages": {
+    "packages/holon": {
+      "package-name": "holon",
+      "component": "holon",
+      "changelog-path": "CHANGELOG.md"
+    },
     "packages/transformer": {
       "package-name": "@n8n-as-code/transformer",
       "component": "@n8n-as-code/transformer",
