@@ -6,7 +6,7 @@ import { HolonAgent } from '../agent.js';
 import { HolonConfigService, type HolonTelegramLinkedChat } from '../config/holon-config-service.js';
 import type { Engine } from '../engine/engine.js';
 import type { HolonRequiredAction, HolonRunOptions } from '../types.js';
-import type { Gateway } from './types.js';
+import type { Gateway, GatewayRuntimeHandle } from './types.js';
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 
@@ -66,6 +66,13 @@ export function splitTelegramMessage(text: string, limit = TELEGRAM_MESSAGE_LIMI
 
 interface TelegramGatewayRuntimeOptions extends HolonRunOptions {
   botToken?: string;
+}
+
+export interface TelegramGatewayStatus {
+  configured: boolean;
+  botUsername?: string;
+  linkedChats: HolonTelegramLinkedChat[];
+  deepLink?: string;
 }
 
 function buildTelegramTokenInstructions(): string {
@@ -149,6 +156,7 @@ export async function setupTelegramGateway(configService = new HolonConfigServic
       linkedChats: localConfig.telegram?.linkedChats ?? [],
     },
   }));
+  configService.enableGatewaySurface('telegram');
 
   const deepLink = buildTelegramDeepLink(
     nextConfig.telegram?.botUsername ?? identity.username,
@@ -166,7 +174,7 @@ export async function setupTelegramGateway(configService = new HolonConfigServic
     'Telegram setup',
   );
   qrcode.generate(deepLink, { small: true });
-  p.outro('Telegram setup saved. Start the gateway with `holon telegram start`.');
+  p.outro('Telegram setup saved. Start the gateway with `holon gateway start`.');
 }
 
 export function showTelegramOnboarding(configService = new HolonConfigService()): void {
@@ -189,12 +197,7 @@ export function showTelegramOnboarding(configService = new HolonConfigService())
   qrcode.generate(status.deepLink, { small: true });
 }
 
-export function getTelegramGatewayStatus(configService = new HolonConfigService()): {
-  configured: boolean;
-  botUsername?: string;
-  linkedChats: HolonTelegramLinkedChat[];
-  deepLink?: string;
-} {
+export function getTelegramGatewayStatus(configService = new HolonConfigService()): TelegramGatewayStatus {
   const localConfig = configService.getLocalConfig();
   const telegram = localConfig.telegram;
   const botToken = process.env.TELEGRAM_BOT_TOKEN ?? configService.getTelegramBotToken();
@@ -213,11 +216,37 @@ export function getTelegramGatewayStatus(configService = new HolonConfigService(
 
 export function resetTelegramGateway(configService = new HolonConfigService()): void {
   configService.clearTelegramBotToken();
+  configService.disableGatewaySurface('telegram');
   configService.updateLocalConfig((localConfig) => {
     const nextConfig = { ...localConfig };
     delete nextConfig.telegram;
     return nextConfig;
   });
+}
+
+export function createTelegramGatewayRuntime(
+  engineResolver: () => Promise<Engine>,
+  options: TelegramGatewayRuntimeOptions = {},
+  configService = new HolonConfigService(),
+): GatewayRuntimeHandle {
+  const status = getTelegramGatewayStatus(configService);
+  const botToken = options.botToken ?? process.env.TELEGRAM_BOT_TOKEN ?? configService.getTelegramBotToken();
+  const onboardingToken = configService.getLocalConfig().telegram?.onboardingToken;
+
+  if (!botToken || !status.botUsername || !onboardingToken) {
+    throw new Error('Telegram is not configured. Run `holon telegram setup` first.');
+  }
+
+  const linkedCount = status.linkedChats.length;
+
+  return {
+    gateway: new TelegramGateway(engineResolver, options, configService, botToken, onboardingToken),
+    startupMessages: [
+      `Holon Telegram gateway listening as @${status.botUsername}. ${formatLinkedChatCount(linkedCount)}.`,
+      'Telegram transport is ready. n8n backend will be resolved on first message.',
+    ],
+    onboardingLink: status.deepLink && linkedCount === 0 ? status.deepLink : undefined,
+  };
 }
 
 class TelegramGateway implements Gateway {
@@ -471,29 +500,21 @@ export async function runTelegramGateway(
   options: TelegramGatewayRuntimeOptions = {},
   configService = new HolonConfigService(),
 ): Promise<void> {
-  const status = getTelegramGatewayStatus(configService);
-  const botToken = options.botToken ?? process.env.TELEGRAM_BOT_TOKEN ?? configService.getTelegramBotToken();
-  const onboardingToken = configService.getLocalConfig().telegram?.onboardingToken;
+  const runtime = createTelegramGatewayRuntime(engineResolver, options, configService);
 
-  if (!botToken || !status.botUsername || !onboardingToken) {
-    throw new Error('Telegram is not configured. Run `holon telegram setup` first.');
+  for (const line of runtime.startupMessages) {
+    process.stdout.write(`${line}\n`);
+  }
+  if (runtime.onboardingLink) {
+    process.stdout.write(`Onboarding link: ${runtime.onboardingLink}\n`);
+    qrcode.generate(runtime.onboardingLink, { small: true });
   }
 
-  const gateway = new TelegramGateway(engineResolver, options, configService, botToken, onboardingToken);
-
-  const linkedCount = status.linkedChats.length;
-  process.stdout.write(`Holon Telegram gateway listening as @${status.botUsername}. ${formatLinkedChatCount(linkedCount)}.\n`);
-  process.stdout.write('Telegram transport is ready. n8n backend will be resolved on first message.\n');
-  if (status.deepLink && linkedCount === 0) {
-    process.stdout.write(`Onboarding link: ${status.deepLink}\n`);
-    qrcode.generate(status.deepLink, { small: true });
-  }
-
-  await gateway.start();
+  await runtime.gateway.start();
 
   await new Promise<void>((resolve) => {
     const stop = async () => {
-      await gateway.stop();
+      await runtime.gateway.stop();
       resolve();
     };
 
