@@ -53,7 +53,7 @@ If you are working from this monorepo instead of using the published package:
 ```bash
 npm install
 npm run build --workspace=packages/yagr
-npm run yagr:setup
+npm run yagr:onboard
 npm run yagr:start
 ```
 

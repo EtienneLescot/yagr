@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
-    "yagr:setup": "YAGR_HOME=.yagr-test-workspace node packages/yagr/dist/cli.js setup",
+    "yagr:onboard": "YAGR_HOME=.yagr-test-workspace node packages/yagr/dist/cli.js onboard",
     "yagr:start": "YAGR_HOME=.yagr-test-workspace node packages/yagr/dist/cli.js start",
     "yagr:gateway:status": "YAGR_HOME=.yagr-test-workspace node packages/yagr/dist/cli.js gateway status",
     "yagr:test:workspace": "node scripts/yagr-test-workspace.mjs pwd",
