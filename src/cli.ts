@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import * as p from '@clack/prompts';
 import './config/init-yagr-home.js';
 import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js';
 import { YagrConfigService } from './config/yagr-config-service.js';
@@ -180,28 +179,17 @@ async function promptForStartTarget(): Promise<'webui' | 'tui' | undefined> {
     return 'webui';
   }
 
-  const selection = await p.select<'webui' | 'tui'>({
-    message: 'How do you want to launch Yagr?',
-    initialValue: 'webui',
-    options: [
-      {
-        value: 'webui',
-        label: 'Web UI',
-        hint: 'Open the browser-based runtime',
-      },
-      {
-        value: 'tui',
-        label: 'Terminal UI',
-        hint: 'Stay in the terminal conversation loop',
-      },
-    ],
-  });
-
-  if (p.isCancel(selection)) {
-    return undefined;
+  const readline = await import('node:readline/promises');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    process.stdout.write('  [1] Web UI   [2] Terminal UI\n');
+    const answer = await rl.question('  Launch → ');
+    const trimmed = answer.trim();
+    if (trimmed === '2' || trimmed.toLowerCase() === 'tui') return 'tui';
+    return 'webui';
+  } finally {
+    rl.close();
   }
-
-  return selection;
 }
 
 async function runTui(args: ParsedArgs): Promise<void> {
@@ -265,12 +253,18 @@ async function main(): Promise<void> {
         return;
       }
 
-      const startNow = await p.confirm({
-        message: 'Start Yagr now?',
-        initialValue: true,
-      });
-
-      if (p.isCancel(startNow) || !startNow) {
+      if (process.stdin.isTTY && process.stdout.isTTY) {
+        const readline = await import('node:readline/promises');
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        let startNow: boolean;
+        try {
+          const answer = await rl.question('Start Yagr now? [Y/n] ');
+          startNow = answer.trim().toLowerCase() !== 'n';
+        } finally {
+          rl.close();
+        }
+        if (!startNow) return;
+      } else {
         return;
       }
 
