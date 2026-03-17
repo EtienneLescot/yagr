@@ -218,24 +218,11 @@ export default function Home(): ReactNode {
                 </div>
               </div>
               <div className={styles.quickStartTerminal}>
-                <div className={styles.quickStartTerminalBar}>
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <pre className={styles.quickStartCode}>
-                  <code>{`npm install -g yagr@latest
-# or: pnpm add -g yagr@latest
-yagr onboard
-yagr start`}</code>
-                </pre>
-                <p className={styles.quickStartNote}>
-                  Working from the monorepo instead? Use the repo scripts for development. They intentionally target
-                  <code> .yagr-test-workspace</code> so local iteration stays isolated from your real runtime home.
-                </p>
                 <div className={styles.quickStartActions}>
-                  <Link className={styles.inlineLink} to="/yagr/docs/getting-started">
-                    Open the full getting started guide
+                  <Link
+                    className={clsx('button button--lg', styles.primaryButton)}
+                    to="/yagr/docs/getting-started">
+                    Open the getting started guide
                   </Link>
                   <Link className={styles.inlineLink} to="/yagr/docs/reference/commands">
                     See all CLI commands

@@ -175,15 +175,12 @@
   transform: rotate(-0.8deg);
 }
 
-.yagrHome,
-.yagrHeroBanner {
-  --yagr-mist: #f3fcfc;
-  --yagr-ice: #b8ecef;
-  --yagr-cyan: #80bbc7;
-  --yagr-steel: #80bbc7;
-  --yagr-slate: #456874;
-  --yagr-night: #0d1020;
-  --yagr-night-deep: #0d1020;
+.yagrHome {
+  --yagr-blue-soft: #ebfbff;
+  --yagr-blue: #3bc6ff;
+  --yagr-blue-deep: #2a88ff;
+  --yagr-violet: #7f4dff;
+  --yagr-violet-deep: #592dff;
 }
 
 .yagrHeroBanner {
@@ -196,53 +193,35 @@
       transparent 1px,
       transparent 90px
     ),
-    radial-gradient(circle at top left, rgba(184, 236, 239, 0.32), transparent 30%),
-    radial-gradient(circle at 85% 15%, rgba(128, 187, 199, 0.22), transparent 24%),
-    radial-gradient(circle at 74% 74%, rgba(13, 16, 32, 0.08), transparent 24%),
-    linear-gradient(135deg, #f7fcfc 0%, #eef8f8 46%, #edf5f6 100%);
+    radial-gradient(circle at top left, rgba(59, 198, 255, 0.22), transparent 30%),
+    radial-gradient(circle at 85% 15%, rgba(127, 77, 255, 0.18), transparent 24%),
+    radial-gradient(circle at 74% 74%, rgba(42, 136, 255, 0.12), transparent 24%),
+    linear-gradient(135deg, #f1fcff 0%, #f7f3ff 46%, #eef7ff 100%);
 }
 
 .yagrHeroBanner .heroBrandTag,
+.yagrHome .sectionEyebrow,
+.yagrHeroBanner .eyebrow,
 .yagrHome .inlineLink {
-  color: var(--yagr-cyan);
-}
-
-.yagrHeroBanner .eyebrow,
-.yagrHome .sectionEyebrow {
-  color: var(--yagr-night);
-}
-
-.yagrHeroBanner::after {
-  background: rgba(128, 187, 199, 0.16);
-}
-
-.yagrHeroBanner .eyebrow,
-.yagrHome .sectionEyebrow {
-  background: rgba(255, 255, 255, 0.92);
-  border-color: rgba(128, 187, 199, 0.28);
-  box-shadow: 0 10px 24px rgba(13, 16, 32, 0.05);
-}
-
-.yagrHeroBanner .heroLogo {
-  filter: drop-shadow(0 20px 32px rgba(128, 187, 199, 0.28));
+  color: var(--yagr-violet-deep);
 }
 
 .yagrHeroBanner .heroCopy::after,
-.yagrHeroBanner .panelCard::before,
 .yagrHome .quickStartCard::before,
+.yagrHome .panelCard::before,
 .yagrHome .statCard::before,
 .yagrHome .workflowCard span,
 .yagrHome .entryCard::before {
-  background: linear-gradient(180deg, var(--yagr-ice), var(--yagr-cyan));
+  background: linear-gradient(180deg, var(--yagr-blue), var(--yagr-violet));
 }
 
 .yagrHeroBanner .heroCopy::after {
-  background: linear-gradient(180deg, var(--yagr-ice), var(--yagr-cyan));
+  background: linear-gradient(180deg, var(--yagr-blue), var(--yagr-violet));
 }
 
 .yagrHeroBanner .heroAccent,
 .yagrHome .inlineLink:hover {
-  color: var(--yagr-slate);
+  color: var(--yagr-violet);
 }
 
 .yagrHeroBanner .heroBrandName,
@@ -252,266 +231,62 @@
 .yagrHome .statLabel,
 .yagrHome .entryCard h3,
 .yagrHome .workflowCard h3 {
-  color: var(--yagr-night);
+  color: #182447;
 }
 
-.yagrHeroBanner .heroSubtitle,
-.yagrHome .sectionLead,
-.yagrHome .ctaLead,
-.yagrHome .statDetail,
-.yagrHome .entryCard p,
-.yagrHome .workflowCard p,
-.yagrHome .quickStartCard p,
-.yagrHome .quickStartCard strong,
-.yagrHome .quickStartCard span,
-.yagrHome .heroPill {
-  color: var(--yagr-slate);
-}
-
-.yagrHeroBanner :global(.button).primaryButton,
-.yagrHome :global(.button).primaryButton,
 .yagrHeroBanner .primaryButton,
 .yagrHome .primaryButton {
-  background: linear-gradient(135deg, var(--yagr-night-deep) 0%, #17223d 55%, var(--yagr-cyan) 100%);
-  box-shadow: 0 14px 32px rgba(26, 30, 43, 0.2);
-  color: #f7fbfb;
-  border: 1px solid rgba(12, 16, 31, 0.22);
+  background: linear-gradient(135deg, var(--yagr-blue-deep) 0%, var(--yagr-violet) 100%);
+  box-shadow: 0 14px 32px rgba(89, 45, 255, 0.2);
 }
 
-.yagrHeroBanner :global(.button).secondaryButton,
 .yagrHeroBanner .secondaryButton {
-  border: 1px solid rgba(128, 187, 199, 0.34);
-  box-shadow: 0 10px 24px rgba(128, 187, 199, 0.12);
-  color: var(--yagr-night);
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.yagrHome :global(.button).ghostButton,
-.yagrHome .ghostButton {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(184, 236, 239, 0.3);
-  color: #f5fbfb;
-}
-
-.yagrHeroBanner :global(.button).primaryButton:hover,
-.yagrHome :global(.button).primaryButton:hover,
-.yagrHeroBanner .primaryButton:hover,
-.yagrHome .primaryButton:hover {
-  color: #ffffff;
-  background: linear-gradient(135deg, #0d1020 0%, #17223d 55%, #80bbc7 100%);
-}
-
-.yagrHeroBanner :global(.button).secondaryButton:hover,
-.yagrHeroBanner .secondaryButton:hover,
-.yagrHome :global(.button).ghostButton:hover,
-.yagrHome .ghostButton:hover {
-  color: var(--yagr-night);
-}
-
-.yagrHeroBanner .heroPill {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(128, 187, 199, 0.22);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 20px rgba(13, 16, 32, 0.05);
-}
-
-.yagrHeroBanner .heroPanel::before {
-  background: linear-gradient(135deg, rgba(128, 187, 199, 0.24), rgba(184, 236, 239, 0.14));
-}
-
-.yagrHeroBanner .heroPanel::after {
-  background: rgba(184, 236, 239, 0.16);
-}
-
-.yagrHeroBanner .panelWindow,
-.yagrHome .quickStartTerminal,
-.yagrHome .ctaCard {
-  background: linear-gradient(180deg, rgba(18, 23, 36, 0.96), rgba(12, 16, 31, 0.96));
-  color: #eff7f8;
-  border-color: rgba(184, 236, 239, 0.14);
-  box-shadow: 0 24px 56px rgba(12, 16, 31, 0.22);
-}
-
-.yagrHeroBanner .panelWindow::before,
-.yagrHome .ctaCard::after {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.07), transparent 45%);
-}
-
-.yagrHeroBanner .panelLabel,
-.yagrHome .quickStartNote,
-.yagrHome .ctaLead {
-  color: rgba(239, 247, 248, 0.76);
-}
-
-.yagrHeroBanner .commandBlock,
-.yagrHome .quickStartCode {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(184, 236, 239, 0.05));
-}
-
-.yagrHeroBanner .commandBlock code,
-.yagrHome .quickStartCode code,
-.yagrHome .quickStartNote code {
-  color: #d9f1f4;
-}
-
-.yagrHeroBanner .panelCard {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(184, 236, 239, 0.14);
-}
-
-.yagrHeroBanner .panelCard p {
-  color: rgba(239, 247, 248, 0.78);
-}
-
-.yagrHeroBanner .cardKicker {
-  color: var(--yagr-ice);
-}
-
-.yagrHome .quickStartIntro,
-.yagrHome .statCard,
-.yagrHome .entryCard,
-.yagrHome .workflowCard {
-  background: rgba(255, 255, 255, 0.94);
-  border-color: rgba(72, 90, 101, 0.12);
-  box-shadow: 0 14px 30px rgba(12, 16, 31, 0.05);
-}
-
-.yagrHome .quickStartCard {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 252, 252, 0.96));
-  border: 1px solid rgba(128, 187, 199, 0.16);
-}
-
-.yagrHome .quickStartCard span {
-  color: var(--yagr-night);
-}
-
-.yagrHome .statCard::before {
-  background: linear-gradient(90deg, var(--yagr-night), var(--yagr-ice));
-}
-
-.yagrHome .statCard:nth-child(2n) {
-  background: rgba(255, 255, 255, 0.97);
-}
-
-.yagrHome .statCard:nth-child(3n)::before {
-  background: linear-gradient(90deg, var(--yagr-slate), var(--yagr-ice));
-}
-
-.yagrHome .statCard:nth-child(4n)::before {
-  background: linear-gradient(90deg, var(--yagr-night-deep), var(--yagr-steel));
-}
-
-.yagrHome .statCard:hover {
-  box-shadow: 0 18px 36px rgba(12, 16, 31, 0.1);
-}
-
-.yagrHome .statIcon {
-  background: linear-gradient(135deg, rgba(184, 236, 239, 0.22), rgba(128, 187, 199, 0.3));
-}
-
-.yagrHome .entryCard::before,
-.yagrHome .workflowCard span {
-  color: #f7fbfb;
-  background: linear-gradient(135deg, var(--yagr-night-deep) 0%, var(--yagr-slate) 100%);
-  box-shadow: 0 10px 20px rgba(26, 30, 43, 0.16);
-}
-
-.yagrHome .entryCard::after {
-  background: radial-gradient(circle, rgba(184, 236, 239, 0.22), transparent 66%);
-}
-
-.yagrHome .workflowStack::before {
-  background: linear-gradient(180deg, rgba(13, 16, 32, 0.42), rgba(184, 236, 239, 0.22));
-}
-
-.yagrHome .inlineLink {
-  color: var(--yagr-slate);
-}
-
-.yagrHome .quickStartTerminal .inlineLink {
-  color: var(--yagr-ice);
-}
-
-.yagrHome .ctaCard::before {
-  background: radial-gradient(circle, rgba(184, 236, 239, 0.22), transparent 64%);
-}
-
-.yagrHome .ctaTitle {
-  color: #b8ecef;
-}
-
-.yagrHome .sectionEyebrow.ctaEyebrow,
-.yagrHome .ctaCard .sectionEyebrow {
-  color: var(--yagr-ice);
-  background: rgba(184, 236, 239, 0.12);
-  border-color: rgba(184, 236, 239, 0.28);
+  border: 1px solid rgba(59, 198, 255, 0.24);
+  box-shadow: 0 10px 24px rgba(42, 136, 255, 0.08);
 }
 
 .yagrHeroBanner .panelDots span:first-child,
 .yagrHome .quickStartTerminalBar span:first-child {
-  background: var(--yagr-night-deep);
+  background: var(--yagr-blue);
 }
 
 .yagrHeroBanner .panelDots span:nth-child(2),
 .yagrHome .quickStartTerminalBar span:nth-child(2) {
-  background: var(--yagr-slate);
+  background: #66dbff;
 }
 
 .yagrHeroBanner .panelDots span:nth-child(3),
 .yagrHome .quickStartTerminalBar span:nth-child(3) {
-  background: var(--yagr-ice);
+  background: var(--yagr-violet);
 }
 
 .yagrHome .quickStartSection {
   background:
-    radial-gradient(circle at 12% 16%, rgba(184, 236, 239, 0.24), transparent 24%),
-    radial-gradient(circle at 88% 22%, rgba(128, 187, 199, 0.18), transparent 22%),
-    linear-gradient(180deg, #fbfdfd 0%, #f1f7f8 44%, #edf3f5 100%);
+    radial-gradient(circle at 12% 16%, rgba(59, 198, 255, 0.14), transparent 24%),
+    radial-gradient(circle at 88% 22%, rgba(127, 77, 255, 0.14), transparent 22%),
+    linear-gradient(180deg, #fbfeff 0%, #f4fbff 44%, #f7f3ff 100%);
 }
 
 .yagrHome .proofSection {
-  background: linear-gradient(180deg, #f9fcfc 0%, #eff5f6 50%, #eef3f5 100%);
+  background: linear-gradient(180deg, #fafdff 0%, #f5faff 50%, #f8f4ff 100%);
 }
 
 .yagrHome .entrySection {
-  background: linear-gradient(180deg, #f1f8f8 0%, #edf3f5 54%, #edf2f4 100%);
+  background: linear-gradient(180deg, #f4fcff 0%, #f4f7ff 54%, #f8f3ff 100%);
 }
 
 .yagrHome .workflowSection {
   background:
-    radial-gradient(circle at 10% 20%, rgba(184, 236, 239, 0.22), transparent 22%),
-    radial-gradient(circle at 88% 30%, rgba(128, 187, 199, 0.16), transparent 20%),
-    linear-gradient(180deg, #fbfdfd 0%, #eef5f6 42%, #edf2f4 100%);
+    radial-gradient(circle at 10% 20%, rgba(59, 198, 255, 0.12), transparent 22%),
+    radial-gradient(circle at 88% 30%, rgba(127, 77, 255, 0.12), transparent 20%),
+    linear-gradient(180deg, #fbfeff 0%, #f3faff 42%, #f7f3ff 100%);
 }
 
 .yagrHome .ctaSection {
-  background: linear-gradient(135deg, var(--yagr-night-deep) 0%, #16203c 38%, #2d5360 72%, var(--yagr-ice) 100%);
+  background: linear-gradient(135deg, #111a33 0%, #123c70 40%, #4c2d8a 100%);
 }
 
 @media screen and (max-width: 1180px) {
-  .yagrHeroBanner .heroGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .yagrHeroBanner .heroCopy {
-    max-width: none;
-  }
-
-  .yagrHeroBanner .heroTitle {
-    max-width: none;
-  }
-
-  .yagrHeroBanner .heroPanel {
-    margin-top: 1rem;
-  }
-
-  .yagrHeroBanner .panelWindow {
-    transform: none;
-  }
-
-  .yagrHeroBanner .panelCardGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .n8nHeroTitle {
     max-width: none;
     font-size: clamp(2.7rem, 6.8vw, 4.4rem);
@@ -849,11 +624,9 @@
 }
 
 .quickStartTerminal {
-  padding: 2rem;
-  background: rgba(255, 255, 255, 0.88);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  padding: 1.1rem;
+  background: rgba(18, 18, 18, 0.94);
+  color: #f5efe6;
 }
 
 .quickStartTerminalBar {
