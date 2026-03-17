@@ -4,6 +4,7 @@ import TextInput from 'ink-text-input';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
 import type { HolonAgent } from '../agent.js';
+import { getHolonHomeDir } from '../config/holon-home.js';
 import type {
   HolonAgentState,
   HolonContextCompactionEvent,
@@ -260,7 +261,7 @@ function HolonInteractiveApp({ agent, options }: InteractiveAppProps) {
   const [activeOperationText, setActiveOperationText] = useState('Pret pour une demande.');
   const nextEntryIdRef = useRef(1);
   const commandBuffersRef = useRef({ stdout: '', stderr: '', command: '', toolName: '' });
-  const workspaceLabel = useMemo(() => basename(process.cwd()), []);
+  const workspaceLabel = useMemo(() => basename(getHolonHomeDir()), []);
 
   useEffect(() => {
     if (!isRunning) {

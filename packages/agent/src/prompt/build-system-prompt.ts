@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { getHolonHomeDir, getHolonLaunchDir } from '../config/holon-home.js';
 import type { Engine } from '../engine/engine.js';
 
 export function buildSystemPrompt(engine: Engine): string {
@@ -39,22 +40,29 @@ export function buildSystemPrompt(engine: Engine): string {
 
 function loadWorkspaceInstructions(): string {
   const candidateFiles = ['AGENTS.md', 'AGENT.md'];
+  const candidateRoots = Array.from(new Set([
+    getHolonHomeDir(),
+    getHolonLaunchDir(),
+    process.cwd(),
+  ]));
 
-  for (const candidateFile of candidateFiles) {
-    const candidatePath = path.join(process.cwd(), candidateFile);
-    if (!fs.existsSync(candidatePath)) {
-      continue;
-    }
-
-    try {
-      const content = fs.readFileSync(candidatePath, 'utf-8').trim();
-      if (!content) {
+  for (const candidateRoot of candidateRoots) {
+    for (const candidateFile of candidateFiles) {
+      const candidatePath = path.join(candidateRoot, candidateFile);
+      if (!fs.existsSync(candidatePath)) {
         continue;
       }
 
-      return `Follow these workspace instructions when relevant: ${content}`;
-    } catch {
-      continue;
+      try {
+        const content = fs.readFileSync(candidatePath, 'utf-8').trim();
+        if (!content) {
+          continue;
+        }
+
+        return `Follow these workspace instructions when relevant: ${content}`;
+      } catch {
+        continue;
+      }
     }
   }
 
