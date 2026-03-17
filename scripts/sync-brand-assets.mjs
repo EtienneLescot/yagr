@@ -14,8 +14,8 @@ const generatedAssets = [
     targets: [path.join(repoRoot, 'docs', 'static', 'img', 'logo.png')],
   },
   {
-    source: path.join(repoRoot, 'res', 'holon-logo.png'),
-    targets: [path.join(repoRoot, 'docs', 'static', 'img', 'holon-logo.png')],
+    source: path.join(repoRoot, 'res', 'yagr-logo.png'),
+    targets: [path.join(repoRoot, 'docs', 'static', 'img', 'yagr-logo.png')],
   },
 ];
 
