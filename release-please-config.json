@@ -13,31 +13,6 @@
       "package-name": "yagr",
       "component": "yagr",
       "changelog-path": "CHANGELOG.md"
-    },
-    "packages/transformer": {
-      "package-name": "@n8n-as-code/transformer",
-      "component": "@n8n-as-code/transformer",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "packages/skills": {
-      "package-name": "@n8n-as-code/skills",
-      "component": "@n8n-as-code/skills",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "packages/cli": {
-      "package-name": "n8nac",
-      "component": "n8nac",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "packages/vscode-extension": {
-      "package-name": "n8n-as-code",
-      "component": "n8n-as-code",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "plugins/openclaw/n8n-as-code": {
-      "package-name": "@n8n-as-code/n8nac",
-      "component": "@n8n-as-code/n8nac",
-      "changelog-path": "CHANGELOG.md"
     }
   },
   "plugins": [

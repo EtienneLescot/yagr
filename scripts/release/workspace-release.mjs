@@ -15,96 +15,26 @@ const PACKAGES = [
     changelogPath: 'packages/yagr/CHANGELOG.md',
     publishTarget: 'npm',
     tagPrefix: 'yagr@',
-    internalDependencies: ['@n8n-as-code/skills', '@n8n-as-code/transformer', 'n8nac'],
-  },
-  {
-    name: '@n8n-as-code/transformer',
-    path: 'packages/transformer',
-    packageJsonPath: 'packages/transformer/package.json',
-    changelogPath: 'packages/transformer/CHANGELOG.md',
-    publishTarget: 'npm',
-    tagPrefix: '@n8n-as-code/transformer@',
-    internalDependencies: [],
-  },
-  {
-    name: '@n8n-as-code/skills',
-    path: 'packages/skills',
-    packageJsonPath: 'packages/skills/package.json',
-    changelogPath: 'packages/skills/CHANGELOG.md',
-    publishTarget: 'npm',
-    tagPrefix: '@n8n-as-code/skills@',
-    internalDependencies: ['@n8n-as-code/transformer'],
-  },
-  {
-    name: 'n8nac',
-    path: 'packages/cli',
-    packageJsonPath: 'packages/cli/package.json',
-    changelogPath: 'packages/cli/CHANGELOG.md',
-    publishTarget: 'npm',
-    tagPrefix: 'n8nac@',
-    internalDependencies: ['@n8n-as-code/skills', '@n8n-as-code/transformer'],
-  },
-  {
-    name: 'n8n-as-code',
-    path: 'packages/vscode-extension',
-    packageJsonPath: 'packages/vscode-extension/package.json',
-    changelogPath: 'packages/vscode-extension/CHANGELOG.md',
-    publishTarget: 'vscode',
-    tagPrefix: 'n8n-as-code@',
-    internalDependencies: ['@n8n-as-code/skills', 'n8nac'],
-  },
-  {
-    name: '@n8n-as-code/n8nac',
-    path: 'plugins/openclaw/n8n-as-code',
-    packageJsonPath: 'plugins/openclaw/n8n-as-code/package.json',
-    changelogPath: 'plugins/openclaw/n8n-as-code/CHANGELOG.md',
-    publishTarget: 'npm',
-    tagPrefix: '@n8n-as-code/n8nac@',
     internalDependencies: [],
   },
 ];
 
 const PATCH_TYPES = new Set(['fix', 'perf', 'refactor', 'revert', 'deps', 'build', 'docs']);
 const BUMP_PRIORITY = { none: 0, patch: 1, minor: 2, major: 3 };
-const extensionPackage = PACKAGES.find(pkg => pkg.name === 'n8n-as-code');
+const extensionPackage = null;
 
 const CROSS_PACKAGE_RULES = [
   {
     matches(file) {
-      return file.startsWith('res/') || file === 'scripts/sync-brand-assets.mjs' || file === 'scripts/build-and-install.js' || file === 'scripts/setup-dev-link.js';
+      return file.startsWith('res/') || file === 'scripts/sync-brand-assets.mjs';
     },
-    packages: ['n8n-as-code'],
+    packages: ['yagr'],
   },
   {
     matches(file) {
-      return file === '.claude-plugin/marketplace.json' || file.startsWith('plugins/claude/') || file === 'CLAUDE_PLUGIN_SUBMISSION_DRAFT.md';
+      return file.startsWith('docs/yagr-docs/');
     },
-    packages: ['@n8n-as-code/skills'],
-  },
-  {
-    matches(file) {
-      return file === 'scripts/ensure-n8n-cache.cjs'
-        || file === 'scripts/generate-n8n-index.cjs'
-        || file === 'scripts/download-complete-docs.cjs'
-        || file === 'scripts/build-complete-index.cjs'
-        || file === 'scripts/enrich-nodes-technical.cjs'
-        || file === 'scripts/build-knowledge-index.cjs'
-        || file === 'scripts/build-workflow-index.cjs'
-        || file === 'scripts/compare-extraction.mjs';
-    },
-    packages: ['@n8n-as-code/skills'],
-  },
-  {
-    matches(file) {
-      return file.startsWith('packages/cli/src/core/assets/') || file === 'scripts/test-ci-local.js';
-    },
-    packages: ['n8nac'],
-  },
-  {
-    matches(file) {
-      return file.startsWith('docs/docs/usage/claude-skill') || file.startsWith('docs/docs/contribution/claude-skill');
-    },
-    packages: ['@n8n-as-code/skills'],
+    packages: ['yagr'],
   },
 ];
 

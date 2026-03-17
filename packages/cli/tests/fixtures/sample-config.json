@@ -1,8 +1,0 @@
-{
-  "host": "http://localhost:5678",
-  "syncFolder": "workflows",
-  "instanceIdentifier": "test-instance",
-  "pollInterval": 3000,
-  "syncInactive": true,
-  "ignoredTags": ["archive"]
-}

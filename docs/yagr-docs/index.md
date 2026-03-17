@@ -41,13 +41,13 @@ That implies four design choices:
 
 ## Product map
 
-This repository now contains two user-facing products:
+This repository contains the Yagr agent product. The n8n-as-code workflow engineering tools it builds on are a separate standalone project.
 
 - **Yagr**: the automation agent product. Its docs live under `/yagr/docs`.
-- **n8n-as-code**: the workflow GitOps and agent skill product. Its landing page lives at `/n8n-as-code`, and its documentation remains at `/docs`.
+- **n8n-as-code**: the workflow GitOps and agent skill product available at [n8nascode.dev](https://n8nascode.dev).
 
 ## Start here
 
 - Go to [Getting Started](/yagr/docs/getting-started)
 - See the [command reference](/yagr/docs/reference/commands)
-- Jump to [n8n-as-code](/n8n-as-code) if what you want is direct workflow GitOps and engineering tooling rather than the Yagr agent product
+- Jump to [n8n-as-code](https://n8nascode.dev) if what you want is direct workflow GitOps and engineering tooling rather than the Yagr agent product
