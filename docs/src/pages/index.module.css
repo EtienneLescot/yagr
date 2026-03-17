@@ -175,6 +175,117 @@
   transform: rotate(-0.8deg);
 }
 
+.yagrHome {
+  --yagr-blue-soft: #ebfbff;
+  --yagr-blue: #3bc6ff;
+  --yagr-blue-deep: #2a88ff;
+  --yagr-violet: #7f4dff;
+  --yagr-violet-deep: #592dff;
+}
+
+.yagrHeroBanner {
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.18) 0%, transparent 38%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(19, 19, 19, 0.03) 0,
+      rgba(19, 19, 19, 0.03) 1px,
+      transparent 1px,
+      transparent 90px
+    ),
+    radial-gradient(circle at top left, rgba(59, 198, 255, 0.22), transparent 30%),
+    radial-gradient(circle at 85% 15%, rgba(127, 77, 255, 0.18), transparent 24%),
+    radial-gradient(circle at 74% 74%, rgba(42, 136, 255, 0.12), transparent 24%),
+    linear-gradient(135deg, #f1fcff 0%, #f7f3ff 46%, #eef7ff 100%);
+}
+
+.yagrHeroBanner .heroBrandTag,
+.yagrHome .sectionEyebrow,
+.yagrHeroBanner .eyebrow,
+.yagrHome .inlineLink {
+  color: var(--yagr-violet-deep);
+}
+
+.yagrHeroBanner .heroCopy::after,
+.yagrHome .quickStartCard::before,
+.yagrHome .panelCard::before,
+.yagrHome .statCard::before,
+.yagrHome .workflowCard span,
+.yagrHome .entryCard::before {
+  background: linear-gradient(180deg, var(--yagr-blue), var(--yagr-violet));
+}
+
+.yagrHeroBanner .heroCopy::after {
+  background: linear-gradient(180deg, var(--yagr-blue), var(--yagr-violet));
+}
+
+.yagrHeroBanner .heroAccent,
+.yagrHome .inlineLink:hover {
+  color: var(--yagr-violet);
+}
+
+.yagrHeroBanner .heroBrandName,
+.yagrHome .sectionTitle,
+.yagrHome .ctaTitle,
+.yagrHome .statCard strong,
+.yagrHome .statLabel,
+.yagrHome .entryCard h3,
+.yagrHome .workflowCard h3 {
+  color: #182447;
+}
+
+.yagrHeroBanner .primaryButton,
+.yagrHome .primaryButton {
+  background: linear-gradient(135deg, var(--yagr-blue-deep) 0%, var(--yagr-violet) 100%);
+  box-shadow: 0 14px 32px rgba(89, 45, 255, 0.2);
+}
+
+.yagrHeroBanner .secondaryButton {
+  border: 1px solid rgba(59, 198, 255, 0.24);
+  box-shadow: 0 10px 24px rgba(42, 136, 255, 0.08);
+}
+
+.yagrHeroBanner .panelDots span:first-child,
+.yagrHome .quickStartTerminalBar span:first-child {
+  background: var(--yagr-blue);
+}
+
+.yagrHeroBanner .panelDots span:nth-child(2),
+.yagrHome .quickStartTerminalBar span:nth-child(2) {
+  background: #66dbff;
+}
+
+.yagrHeroBanner .panelDots span:nth-child(3),
+.yagrHome .quickStartTerminalBar span:nth-child(3) {
+  background: var(--yagr-violet);
+}
+
+.yagrHome .quickStartSection {
+  background:
+    radial-gradient(circle at 12% 16%, rgba(59, 198, 255, 0.14), transparent 24%),
+    radial-gradient(circle at 88% 22%, rgba(127, 77, 255, 0.14), transparent 22%),
+    linear-gradient(180deg, #fbfeff 0%, #f4fbff 44%, #f7f3ff 100%);
+}
+
+.yagrHome .proofSection {
+  background: linear-gradient(180deg, #fafdff 0%, #f5faff 50%, #f8f4ff 100%);
+}
+
+.yagrHome .entrySection {
+  background: linear-gradient(180deg, #f4fcff 0%, #f4f7ff 54%, #f8f3ff 100%);
+}
+
+.yagrHome .workflowSection {
+  background:
+    radial-gradient(circle at 10% 20%, rgba(59, 198, 255, 0.12), transparent 22%),
+    radial-gradient(circle at 88% 30%, rgba(127, 77, 255, 0.12), transparent 20%),
+    linear-gradient(180deg, #fbfeff 0%, #f3faff 42%, #f7f3ff 100%);
+}
+
+.yagrHome .ctaSection {
+  background: linear-gradient(135deg, #111a33 0%, #123c70 40%, #4c2d8a 100%);
+}
+
 @media screen and (max-width: 1180px) {
   .n8nHeroTitle {
     max-width: none;

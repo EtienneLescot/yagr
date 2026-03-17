@@ -34,6 +34,10 @@ export interface YagrTelegramConfig {
 
 export interface YagrGatewayConfig {
   enabledSurfaces?: GatewaySurface[];
+  webui?: {
+    host?: string;
+    port?: number;
+  };
 }
 
 export interface YagrLocalConfig {

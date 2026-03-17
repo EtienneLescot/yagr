@@ -4,6 +4,7 @@ import type { Engine } from '../engine/engine.js';
 import type { YagrRunOptions } from '../types.js';
 import type { GatewayRuntimeHandle, GatewaySurface } from './types.js';
 import { createTelegramGatewayRuntime, getTelegramGatewayStatus, type TelegramGatewayStatus } from './telegram.js';
+import { createWebUiGatewayRuntime, getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui.js';
 
 export interface GatewaySurfaceStatus {
   id: GatewaySurface;
@@ -44,6 +45,14 @@ function summarizeTelegramStatus(status: TelegramGatewayStatus): string {
   return `@${status.botUsername}, ${chatSummary}`;
 }
 
+function summarizeWebUiStatus(status: WebUiGatewayStatus): string {
+  if (!status.configured) {
+    return 'Not configured';
+  }
+
+  return status.url;
+}
+
 const GATEWAY_DESCRIPTORS: GatewayDescriptor[] = [
   {
     id: 'telegram',
@@ -69,14 +78,23 @@ const GATEWAY_DESCRIPTORS: GatewayDescriptor[] = [
   {
     id: 'webui',
     label: 'Web UI',
-    getStatus: (_configService, enabled) => ({
+    getStatus: (configService, enabled) => {
+      const status = getWebUiGatewayStatus(configService);
+      return {
       id: 'webui',
       label: 'Web UI',
       enabled,
-      configured: false,
-      implemented: false,
-      summary: 'Not implemented yet',
-    }),
+      configured: status.configured,
+      implemented: true,
+      summary: summarizeWebUiStatus(status),
+      details: {
+        url: status.url,
+        host: status.host,
+        port: status.port,
+      },
+    };
+    },
+    createRuntime: async (engineResolver, options, configService) => createWebUiGatewayRuntime(engineResolver, options, configService),
   },
   {
     id: 'whatsapp',
@@ -135,6 +153,70 @@ async function stopRuntimeHandles(runtimes: GatewayRuntimeHandle[]): Promise<voi
   await Promise.allSettled(runtimes.map(async (runtime) => {
     await runtime.gateway.stop();
   }));
+}
+
+export async function runGatewaySurfaces(
+  surfaces: GatewaySurface[],
+  engineResolver: () => Promise<Engine>,
+  options: YagrRunOptions = {},
+  configService = new YagrConfigService(),
+): Promise<void> {
+  const requestedSurfaces = Array.from(new Set(surfaces));
+  if (requestedSurfaces.length === 0) {
+    throw new Error('No gateway surfaces were selected.');
+  }
+
+  const runtimes: GatewayRuntimeHandle[] = [];
+
+  try {
+    for (const surface of requestedSurfaces) {
+      const descriptor = GATEWAY_DESCRIPTORS.find((entry) => entry.id === surface);
+      if (!descriptor || !descriptor.createRuntime) {
+        throw new Error(`${surface} is not implemented yet.`);
+      }
+
+      const status = descriptor.getStatus(configService, true);
+      if (!status.implemented) {
+        throw new Error(`${descriptor.label} is not implemented yet.`);
+      }
+
+      if (!status.configured) {
+        throw new Error(`${descriptor.label} is not configured.`);
+      }
+
+      const runtime = await descriptor.createRuntime(engineResolver, options, configService);
+      await runtime.gateway.start();
+      runtimes.push(runtime);
+
+      for (const line of runtime.startupMessages) {
+        process.stdout.write(`${line}\n`);
+      }
+
+      if (runtime.onboardingLink) {
+        process.stdout.write(`Onboarding link: ${runtime.onboardingLink}\n`);
+        qrcode.generate(runtime.onboardingLink, { small: true });
+      }
+    }
+  } catch (error) {
+    await stopRuntimeHandles(runtimes);
+    throw error;
+  }
+
+  process.stdout.write(`Yagr gateway active. Surfaces: ${requestedSurfaces.join(', ')}.\n`);
+
+  await new Promise<void>((resolve) => {
+    const stop = async () => {
+      await stopRuntimeHandles(runtimes);
+      resolve();
+    };
+
+    process.once('SIGINT', () => {
+      void stop();
+    });
+    process.once('SIGTERM', () => {
+      void stop();
+    });
+  });
 }
 
 export async function runGatewaySupervisor(

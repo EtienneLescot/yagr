@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import * as p from '@clack/prompts';
 import './config/init-yagr-home.js';
 import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js';
 import { YagrConfigService } from './config/yagr-config-service.js';
-import { getGatewaySupervisorStatus, runGatewaySupervisor } from './gateway/manager.js';
+import { getGatewaySupervisorStatus, runGatewaySupervisor, runGatewaySurfaces } from './gateway/manager.js';
 import {
   getTelegramGatewayStatus,
   resetTelegramGateway,
@@ -25,6 +26,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [
 
 interface ParsedArgs {
   command?: 'config-show' | 'config-reset' | 'setup' | 'start' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
+  startTarget?: 'webui' | 'tui';
   prompt?: string;
   interactive: boolean;
   provider?: YagrModelProvider;
@@ -101,6 +103,11 @@ function parseArgs(argv: string[]): ParsedArgs {
   for (let index = startIndex; index < argv.length; index += 1) {
     const arg = argv[index];
 
+    if (parsed.command === 'start' && (arg === 'webui' || arg === 'tui')) {
+      parsed.startTarget = arg;
+      continue;
+    }
+
     if (arg === '--interactive' || arg === '-i') {
       parsed.interactive = true;
       continue;
@@ -168,6 +175,61 @@ function parseArgs(argv: string[]): ParsedArgs {
   return parsed;
 }
 
+async function promptForStartTarget(): Promise<'webui' | 'tui' | undefined> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return 'webui';
+  }
+
+  const selection = await p.select<'webui' | 'tui'>({
+    message: 'How do you want to launch Yagr?',
+    initialValue: 'webui',
+    options: [
+      {
+        value: 'webui',
+        label: 'Web UI',
+        hint: 'Open the browser-based runtime',
+      },
+      {
+        value: 'tui',
+        label: 'Terminal UI',
+        hint: 'Stay in the terminal conversation loop',
+      },
+    ],
+  });
+
+  if (p.isCancel(selection)) {
+    return undefined;
+  }
+
+  return selection;
+}
+
+async function runTui(args: ParsedArgs): Promise<void> {
+  const engine = await createN8nEngineFromWorkspace();
+  const agent = new YagrAgent(engine);
+  const { runCliGateway } = await import('./gateway/cli.js');
+
+  await runCliGateway(agent, {
+    prompt: args.prompt,
+    interactive: true,
+    provider: args.provider,
+    model: args.model,
+    maxSteps: args.maxSteps,
+    display: {
+      showThinking: args.showThinking,
+      showExecution: args.showExecution,
+    },
+  });
+}
+
+async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  await runGatewaySurfaces(['webui'], async () => await createN8nEngineFromWorkspace(), {
+    provider: args.provider,
+    model: args.model,
+    maxSteps: args.maxSteps,
+  }, configService);
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const configService = new YagrConfigService();
@@ -198,7 +260,31 @@ async function main(): Promise<void> {
     }
 
     if (args.command === 'setup') {
-      await runYagrSetup(configService);
+      const completed = await runYagrSetup(configService);
+      if (!completed) {
+        return;
+      }
+
+      const startNow = await p.confirm({
+        message: 'Start Yagr now?',
+        initialValue: true,
+      });
+
+      if (p.isCancel(startNow) || !startNow) {
+        return;
+      }
+
+      const startTarget = await promptForStartTarget();
+      if (!startTarget) {
+        return;
+      }
+
+      if (startTarget === 'webui') {
+        await runWebUi(args, configService);
+        return;
+      }
+
+      await runTui(args);
       return;
     }
 
@@ -244,11 +330,17 @@ async function main(): Promise<void> {
       }
     }
 
-    await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
-      provider: args.provider,
-      model: args.model,
-      maxSteps: args.maxSteps,
-    }, configService);
+    const startTarget = args.startTarget ?? await promptForStartTarget();
+    if (!startTarget) {
+      return;
+    }
+
+    if (startTarget === 'webui') {
+      await runWebUi(args, configService);
+      return;
+    }
+
+    await runTui(args);
     return;
   }
 

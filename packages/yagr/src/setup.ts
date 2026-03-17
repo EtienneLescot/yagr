@@ -32,7 +32,7 @@ export interface YagrSetupStatus {
   llmConfigured: boolean;
   enabledSurfaces: GatewaySurface[];
   startableSurfaces: GatewaySurface[];
-  missingSteps: Array<'n8n' | 'llm' | 'surfaces'>;
+  missingSteps: Array<'n8n' | 'llm'>;
 }
 
 export function buildYagrSetupStatus(input: {
@@ -41,7 +41,7 @@ export function buildYagrSetupStatus(input: {
   enabledSurfaces: GatewaySurface[];
   startableSurfaces: GatewaySurface[];
 }): YagrSetupStatus {
-  const missingSteps: Array<'n8n' | 'llm' | 'surfaces'> = [];
+  const missingSteps: Array<'n8n' | 'llm'> = [];
 
   if (!input.n8nConfigured) {
     missingSteps.push('n8n');
@@ -49,10 +49,6 @@ export function buildYagrSetupStatus(input: {
 
   if (!input.llmConfigured) {
     missingSteps.push('llm');
-  }
-
-  if (input.startableSurfaces.length === 0) {
-    missingSteps.push('surfaces');
   }
 
   return {
@@ -104,7 +100,7 @@ export async function runYagrSetup(
   p.intro('Yagr setup');
   p.note(
     [
-      'This wizard configures your n8n backend, your default LLM, and your gateway surfaces.',
+      'This wizard configures your n8n backend, your default LLM, and optional messaging integrations.',
       'After this, you should only need `yagr start`.',
     ].join('\n'),
     'Setup flow',
@@ -137,7 +133,7 @@ export async function runYagrSetup(
       'Yagr setup complete.',
       `n8n project: ${n8nLocalConfig.projectName ?? 'unknown'}`,
       `LLM: ${yagrLocalConfig.provider ?? 'unknown'} / ${yagrLocalConfig.model ?? 'default'}`,
-      `Gateway surfaces: ${status.enabledSurfaces.join(', ') || 'none'}`,
+      `Optional integrations: ${status.enabledSurfaces.join(', ') || 'none'}`,
       '',
       'Next commands:',
       '  yagr start',
@@ -292,12 +288,11 @@ async function runLlmSetup(configService: YagrConfigService): Promise<boolean> {
 async function runSurfaceSetup(configService: YagrConfigService): Promise<boolean> {
   const currentSurfaces = configService.getEnabledGatewaySurfaces();
   const selected = await p.multiselect<GatewaySurface>({
-    message: 'Gateway surfaces to enable',
+    message: 'Optional messaging surfaces to enable',
     initialValues: currentSurfaces,
-    required: true,
+    required: false,
     options: [
       { value: 'telegram', label: 'Telegram', hint: 'Implemented now' },
-      { value: 'webui', label: 'Web UI', hint: 'Config can be saved now, runtime not implemented yet' },
       { value: 'whatsapp', label: 'WhatsApp', hint: 'Config can be saved now, runtime not implemented yet' },
     ],
   });
