@@ -137,11 +137,70 @@
   max-width: 10ch;
   font-size: clamp(3rem, 7vw, 5.5rem);
   line-height: 0.92;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+  text-wrap: balance;
 }
 
 .heroAccent {
   display: inline-block;
   color: #e63d7a;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+}
+
+.n8nHeroCopy {
+  max-width: 46rem;
+}
+
+.n8nHeroTitle {
+  max-width: 12ch;
+}
+
+.n8nHeroLine {
+  display: inline;
+}
+
+.n8nHeroSubtitle {
+  max-width: 40rem;
+}
+
+.n8nHeroPanel {
+  align-self: stretch;
+}
+
+.n8nPanelWindow {
+  transform: rotate(-0.8deg);
+}
+
+@media screen and (max-width: 1180px) {
+  .n8nHeroTitle {
+    max-width: none;
+    font-size: clamp(2.7rem, 6.8vw, 4.4rem);
+    line-height: 0.98;
+  }
+
+  .n8nHeroLine {
+    display: block;
+  }
+
+  .n8nHeroSubtitle {
+    max-width: none;
+    font-size: 1.02rem;
+    line-height: 1.62;
+  }
+
+  .n8nPanelWindow {
+    transform: none;
+  }
+
+  .n8nPanelWindow .commandBlock code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
 }
 
 .heroSubtitle,
@@ -151,6 +210,15 @@
   color: #485365;
   font-size: 1.12rem;
   line-height: 1.75;
+}
+
+.sectionTitle,
+.ctaTitle,
+.eyebrow,
+.sectionEyebrow {
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
 }
 
 .heroPills {
@@ -854,6 +922,7 @@
   .sectionTitle,
   .ctaTitle {
     max-width: none;
+    text-wrap: pretty;
   }
 
   .panelCardGrid {
@@ -865,10 +934,68 @@
     align-items: stretch;
   }
 
+  .buttons :global(.button) {
+    width: 100%;
+    justify-content: center;
+  }
+
   .heroBrand {
     display: flex;
     width: 100%;
     justify-content: flex-start;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .n8nHeroCopy,
+  .n8nHeroSubtitle {
+    max-width: none;
+  }
+
+  .n8nHeroTitle {
+    max-width: none;
+    font-size: clamp(2.45rem, 7vw, 3.6rem);
+    line-height: 1;
+  }
+
+  .n8nHeroPanel {
+    width: 100%;
+  }
+
+  .n8nPanelWindow .panelCardGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .heroCopy,
+  .proofHeader,
+  .entryHeader {
+    max-width: none;
+  }
+
+  .eyebrow,
+  .sectionEyebrow {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .panelWindow {
+    transform: none;
+  }
+
+  .entryCard {
+    padding: 1.35rem 1.35rem 1.35rem 4rem;
+  }
+
+  .quickStartIntro {
+    padding: 1.5rem;
+  }
+
+  .quickStartTerminal {
+    padding: 1rem;
+  }
+
+  .ctaCard {
+    padding: 1.75rem;
   }
 
   .heroCopy::after,
@@ -886,5 +1013,177 @@
   .workflowCard span {
     width: 2.75rem;
     height: 2.75rem;
+  }
+}
+
+@media screen and (max-width: 640px) {
+  .heroBanner,
+  .quickStartSection,
+  .proofSection,
+  .entrySection,
+  .workflowSection,
+  .ctaSection {
+    padding: 2.25rem 0.85rem;
+  }
+
+  .heroGrid,
+  .quickStartShell,
+  .workflowLayout,
+  .entryGrid,
+  .statsGrid {
+    gap: 1rem;
+  }
+
+  .heroBrand {
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .heroLogo {
+    width: 3.75rem;
+  }
+
+  .heroBrandName {
+    font-size: 1.6rem;
+  }
+
+  .heroBrandTag {
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+  }
+
+  .eyebrow,
+  .sectionEyebrow {
+    display: inline-flex;
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.76rem;
+    line-height: 1.4;
+  }
+
+  .heroTitle {
+    font-size: clamp(2.65rem, 15vw, 3.6rem);
+    line-height: 0.98;
+    letter-spacing: -0.05em;
+  }
+
+  .n8nHeroTitle {
+    max-width: none;
+    font-size: clamp(2.05rem, 11.2vw, 2.85rem);
+    line-height: 1.03;
+  }
+
+  .n8nHeroLine {
+    display: block;
+  }
+
+  .n8nHeroSubtitle {
+    font-size: 0.94rem;
+    line-height: 1.55;
+  }
+
+  .sectionTitle,
+  .ctaTitle {
+    font-size: clamp(1.9rem, 10vw, 2.6rem);
+    line-height: 1.02;
+  }
+
+  .heroSubtitle,
+  .sectionLead,
+  .ctaLead {
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+
+  .heroPills {
+    gap: 0.55rem;
+    margin: 1.25rem 0 1.5rem;
+  }
+
+  .heroPill {
+    padding: 0.55rem 0.7rem;
+    font-size: 0.92rem;
+  }
+
+  .panelWindow,
+  .quickStartIntro,
+  .quickStartTerminal,
+  .statCard,
+  .entryCard,
+  .workflowCard,
+  .ctaCard {
+    border-radius: 1.2rem;
+  }
+
+  .panelWindow {
+    padding: 0.95rem;
+  }
+
+  .n8nPanelWindow {
+    transform: none;
+  }
+
+  .n8nPanelWindow .panelCardGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .n8nPanelWindow .commandBlock code {
+    font-size: 0.78rem;
+    line-height: 1.55;
+  }
+
+  .n8nHeroPanel {
+    margin-top: 0.25rem;
+  }
+
+  .commandBlock,
+  .quickStartCode {
+    padding: 0.9rem 0.95rem;
+  }
+
+  .commandBlock code,
+  .quickStartCode code {
+    font-size: 0.84rem;
+    line-height: 1.65;
+  }
+
+  .quickStartCards,
+  .panelCardGrid {
+    gap: 0.75rem;
+  }
+
+  .panelCard,
+  .quickStartCard,
+  .workflowCard,
+  .statCard {
+    padding: 0.95rem;
+  }
+
+  .entryCard {
+    padding: 4rem 1rem 1rem;
+  }
+
+  .entryCard::before {
+    left: 1rem;
+    top: 1rem;
+  }
+
+  .workflowStack {
+    padding-left: 0;
+  }
+
+  .workflowCard {
+    gap: 0.8rem;
+  }
+
+  .workflowCard span,
+  .statIcon {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .quickStartActions {
+    flex-direction: column;
+    gap: 0.5rem;
   }
 }

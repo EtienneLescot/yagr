@@ -92,13 +92,14 @@ function HomepageHeader() {
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
         <div className={styles.heroGrid}>
-          <div className={styles.heroCopy}>
+          <div className={clsx(styles.heroCopy, styles.n8nHeroCopy)}>
             <div className={styles.eyebrow}>GitOps · AI Skills · TypeScript Workflows</div>
-            <Heading as="h1" className={styles.heroTitle}>
-              The AI Skill that gives your coding agent
-              <span className={styles.heroAccent}> n8n superpowers.</span>
+            <Heading as="h1" className={clsx(styles.heroTitle, styles.n8nHeroTitle)}>
+              <span className={styles.n8nHeroLine}>The AI Skill that gives</span>
+              <span className={styles.n8nHeroLine}>your coding agent</span>
+              <span className={clsx(styles.heroAccent, styles.n8nHeroLine)}>n8n superpowers.</span>
             </Heading>
-            <p className={styles.heroSubtitle}>
+            <p className={clsx(styles.heroSubtitle, styles.n8nHeroSubtitle)}>
               Give your coding agent the full n8n ontology: nodes, schemas, docs, templates, validation,
               and the real shape of what can connect to what. Then keep the workflow itself in clean local code
               so pull requests stay readable and GitOps stays real.
@@ -124,8 +125,8 @@ function HomepageHeader() {
             </div>
           </div>
 
-          <div className={styles.heroPanel}>
-            <div className={styles.panelWindow}>
+          <div className={clsx(styles.heroPanel, styles.n8nHeroPanel)}>
+            <div className={clsx(styles.panelWindow, styles.n8nPanelWindow)}>
               <div className={styles.panelDots}>
                 <span />
                 <span />

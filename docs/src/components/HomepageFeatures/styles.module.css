@@ -27,6 +27,10 @@
   font-size: clamp(2.2rem, 4vw, 3.4rem);
   line-height: 1;
   letter-spacing: -0.04em;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+  text-wrap: balance;
 }
 
 .eyebrow {
@@ -40,6 +44,9 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
 }
 
 .featureSvg {
@@ -175,5 +182,68 @@
 
   .header h2 {
     font-size: 2.2rem;
+  }
+
+  .eyebrow {
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
+@media screen and (max-width: 640px) {
+  .features {
+    padding: 2.25rem 0.85rem;
+  }
+
+  .header {
+    max-width: none;
+    margin-bottom: 1.25rem;
+  }
+
+  .header h2 {
+    font-size: clamp(1.9rem, 10vw, 2.5rem);
+    line-height: 1.03;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.76rem;
+    line-height: 1.4;
+  }
+
+  .features :global(.row) {
+    row-gap: 1rem;
+  }
+
+  .featureCard {
+    padding: 1rem;
+    border-radius: 1.2rem;
+  }
+
+  .featureMedia {
+    min-height: 9rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .featureMedia::before {
+    width: 9rem;
+    height: 6rem;
+  }
+
+  .featureImage {
+    width: min(100%, 210px);
+  }
+
+  .features :global(h3) {
+    margin-bottom: 0.55rem;
+    font-size: 1.12rem;
+    line-height: 1.25;
+  }
+
+  .features :global(p) {
+    font-size: 0.97rem;
+    line-height: 1.6;
   }
 }
