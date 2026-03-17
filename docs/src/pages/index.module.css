@@ -363,10 +363,148 @@
 }
 
 .proofSection,
+.quickStartSection,
 .entrySection,
 .workflowSection,
 .ctaSection {
   padding: 5rem 0;
+}
+
+.quickStartSection {
+  position: relative;
+  background:
+    radial-gradient(circle at 12% 16%, rgba(255, 59, 122, 0.1), transparent 24%),
+    radial-gradient(circle at 88% 22%, rgba(31, 122, 230, 0.1), transparent 22%),
+    linear-gradient(180deg, #fffef8 0%, #fff8f3 44%, #f5f9ff 100%);
+}
+
+.quickStartShell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(18rem, 0.9fr);
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+.quickStartIntro,
+.quickStartTerminal {
+  border: 1px solid rgba(19, 19, 19, 0.12);
+  border-radius: 1.6rem;
+  box-shadow: 0 16px 40px rgba(19, 19, 19, 0.05);
+}
+
+.quickStartIntro {
+  padding: 2rem;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.quickStartCards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1.6rem;
+}
+
+.quickStartCard {
+  position: relative;
+  padding: 1rem;
+  border-radius: 1.15rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 250, 252, 0.96));
+  border: 1px solid rgba(230, 61, 122, 0.12);
+  overflow: hidden;
+}
+
+.quickStartCard::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0.24rem;
+  background: linear-gradient(180deg, #ff3b7a, #cf2c63);
+}
+
+.quickStartCard span {
+  display: inline-block;
+  margin-bottom: 0.55rem;
+  color: #c6386d;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.quickStartCard strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+  color: #1c2534;
+}
+
+.quickStartCard p {
+  margin: 0;
+  color: #4a5668;
+  line-height: 1.6;
+}
+
+.quickStartTerminal {
+  padding: 1.1rem;
+  background: rgba(18, 18, 18, 0.94);
+  color: #f5efe6;
+}
+
+.quickStartTerminalBar {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.quickStartTerminalBar span {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.quickStartTerminalBar span:first-child {
+  background: #ff3b7a;
+}
+
+.quickStartTerminalBar span:nth-child(2) {
+  background: #6bb6ff;
+}
+
+.quickStartTerminalBar span:nth-child(3) {
+  background: #1f7ae6;
+}
+
+.quickStartCode {
+  margin: 1rem 0;
+  padding: 1rem 1.1rem;
+  border-radius: 1.1rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  overflow-x: auto;
+}
+
+.quickStartCode code {
+  color: #fff3da;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.95rem;
+  line-height: 1.8;
+}
+
+.quickStartNote {
+  margin: 0;
+  color: rgba(245, 239, 230, 0.76);
+  line-height: 1.65;
+}
+
+.quickStartNote code {
+  color: #fff3da;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+.quickStartActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1.2rem;
 }
 
 .proofSection {
@@ -693,6 +831,7 @@
 
 @media screen and (max-width: 996px) {
   .heroBanner,
+  .quickStartSection,
   .proofSection,
   .entrySection,
   .workflowSection,
@@ -701,8 +840,13 @@
   }
 
   .heroGrid,
+  .quickStartShell,
   .workflowLayout,
   .entryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .quickStartCards {
     grid-template-columns: 1fr;
   }
 
