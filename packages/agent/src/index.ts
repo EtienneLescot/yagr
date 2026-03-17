@@ -1,14 +1,3 @@
-import { config as dotenvConfig } from 'dotenv';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-
-// Load .env files if present (prefer .env.test if it exists)
-const envTest = join(process.cwd(), '.env.test');
-if (existsSync(envTest)) {
-  dotenvConfig({ path: envTest });
-} else {
-  dotenvConfig();
-}
 export { HolonAgent } from './agent.js';
 export { HolonRunEngine } from './runtime/run-engine.js';
 export {
@@ -37,9 +26,15 @@ export { N8nEngine } from './engine/n8n-engine.js';
 export { HolonNativeEngine } from './engine/holon-engine.js';
 export {
   createLanguageModel,
+  resolveLanguageModelConfig,
   resolveModelName,
   resolveModelProvider,
 } from './llm/create-language-model.js';
+export {
+  buildHolonSetupStatus,
+  getHolonSetupStatus,
+  runHolonSetup,
+} from './setup.js';
 export { buildSystemPrompt } from './prompt/build-system-prompt.js';
 export {
   buildTools,
@@ -66,6 +61,7 @@ export type { Engine } from './engine/engine.js';
 export type { Gateway, InboundMessage } from './gateway/types.js';
 export type { GatewayRuntimeHandle, GatewaySurface } from './gateway/types.js';
 export type { GatewaySupervisorStatus, GatewaySurfaceStatus } from './gateway/manager.js';
+export type { HolonSetupStatus } from './setup.js';
 
 export type {
   CredentialRequirement,

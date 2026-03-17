@@ -2,7 +2,7 @@ import * as p from '@clack/prompts';
 import { HolonAgent } from '../agent.js';
 import { HolonConfigService } from '../config/holon-config-service.js';
 import { runInteractiveGateway } from './interactive-ui.js';
-import { resolveModelProvider } from '../llm/create-language-model.js';
+import { resolveLanguageModelConfig, resolveModelName, resolveModelProvider, type HolonModelProvider } from '../llm/create-language-model.js';
 import type { HolonRunOptions } from '../types.js';
 
 export interface CliGatewayOptions extends HolonRunOptions {
@@ -12,35 +12,30 @@ export interface CliGatewayOptions extends HolonRunOptions {
 
 /**
  * Ensures a language model provider is available.
- * If not provided in options and not found in env, prompts the user.
+ * If setup is incomplete, prompts the user and persists the result.
  */
-async function ensureProvider(options: CliGatewayOptions): Promise<string> {
+async function ensureProvider(options: CliGatewayOptions): Promise<HolonModelProvider> {
   const configService = new HolonConfigService();
   const savedConfig = configService.getLocalConfig();
 
-  // If explicitly provided in options, use it
-  if (options.provider) return options.provider;
-
-  if (savedConfig.provider) {
-    return savedConfig.provider;
+  if (options.provider) {
+    return options.provider;
   }
 
-  // Try to resolve from environment or auto-detection
   try {
-    const resolved = resolveModelProvider();
+    const resolved = resolveModelProvider(savedConfig.provider, configService);
     return resolved;
-  } catch (e) {
-    // If resolution fails (no keys found), prompt the user
+  } catch {
     p.intro('Holon LLM Setup');
-    const selection = await p.select({
-      message: 'No AI provider detected. Please select one:',
+    const selection = await p.select<HolonModelProvider>({
+      message: 'No AI provider configured. Select one to finish setup:',
       options: [
-        { value: 'openrouter', label: 'OpenRouter', hint: 'Requires OPENROUTER_API_KEY' },
-        { value: 'anthropic', label: 'Anthropic (Claude)', hint: 'Requires ANTHROPIC_API_KEY' },
-        { value: 'openai', label: 'OpenAI (GPT)', hint: 'Requires OPENAI_API_KEY' },
-        { value: 'google', label: 'Google (Gemini)', hint: 'Requires GOOGLE_GENERATIVE_AI_API_KEY' },
-        { value: 'groq', label: 'Groq (Llama)', hint: 'Requires GROQ_API_KEY' },
-        { value: 'mistral', label: 'Mistral', hint: 'Requires MISTRAL_API_KEY' },
+        { value: 'openrouter', label: 'OpenRouter', hint: 'Stored by Holon setup' },
+        { value: 'anthropic', label: 'Anthropic (Claude)', hint: 'Stored by Holon setup' },
+        { value: 'openai', label: 'OpenAI (GPT)', hint: 'Stored by Holon setup' },
+        { value: 'google', label: 'Google (Gemini)', hint: 'Stored by Holon setup' },
+        { value: 'groq', label: 'Groq (Llama)', hint: 'Stored by Holon setup' },
+        { value: 'mistral', label: 'Mistral', hint: 'Stored by Holon setup' },
       ],
     });
 
@@ -48,16 +43,13 @@ async function ensureProvider(options: CliGatewayOptions): Promise<string> {
       process.exit(0);
     }
 
-    const providerValue = selection as string;
-    process.env.HOLON_MODEL_PROVIDER = providerValue;
+    const providerValue = selection as HolonModelProvider;
     configService.saveLocalConfig({
       ...savedConfig,
-      provider: providerValue as any,
+      provider: providerValue,
     });
 
-    // Ask for API Key if not present in environment
-    const envKeyName = getEnvKeyName(providerValue);
-    if (!process.env[envKeyName] && !configService.getApiKey(providerValue as any)) {
+    if (!configService.getApiKey(providerValue)) {
       const apiKey = await p.password({
         message: `Enter your API key for ${providerValue}:`,
         validate: (value) => {
@@ -71,21 +63,15 @@ async function ensureProvider(options: CliGatewayOptions): Promise<string> {
         process.exit(0);
       }
 
-      // Set it in process.env so createLanguageModel can find it
-      process.env[envKeyName] = apiKey as string;
-      configService.saveApiKey(providerValue as any, apiKey as string);
-      p.log.success(`${envKeyName} set for this session.`);
+      configService.saveApiKey(providerValue, apiKey as string);
+      p.log.success(`API key saved for ${providerValue}.`);
     }
 
-    if (!process.env[envKeyName]) {
-      const persistedApiKey = configService.getApiKey(providerValue as any);
-      if (persistedApiKey) {
-        process.env[envKeyName] = persistedApiKey;
-      }
+    const apiKey = configService.getApiKey(providerValue);
+    if (!apiKey) {
+      throw new Error(`Missing API key for ${providerValue}. Run holon setup again.`);
     }
 
-    // Fetch models if provider supports it
-    const apiKey = process.env[envKeyName]!;
     const models = await fetchAvailableModels(providerValue, apiKey);
     if (models.length > 0) {
       const modelSelection = await p.select({
@@ -97,10 +83,9 @@ async function ensureProvider(options: CliGatewayOptions): Promise<string> {
         process.exit(0);
       }
 
-      process.env.HOLON_MODEL = modelSelection as string;
       configService.saveLocalConfig({
         ...configService.getLocalConfig(),
-        provider: providerValue as any,
+        provider: providerValue,
         model: modelSelection as string,
         baseUrl: getBaseUrlForProvider(providerValue),
       });
@@ -160,52 +145,32 @@ async function fetchAvailableModels(provider: string, apiKey: string): Promise<s
   }
 }
 
-function getEnvKeyName(provider: string): string {
-  switch (provider) {
-    case 'openrouter': return 'OPENROUTER_API_KEY';
-    case 'anthropic': return 'ANTHROPIC_API_KEY';
-    case 'openai': return 'OPENAI_API_KEY';
-    case 'google': return 'GOOGLE_GENERATIVE_AI_API_KEY';
-    case 'groq': return 'GROQ_API_KEY';
-    case 'mistral': return 'MISTRAL_API_KEY';
-    default: return 'AI_API_KEY';
-  }
-}
-
 export async function runCliGateway(agent: HolonAgent, options: CliGatewayOptions = {}): Promise<void> {
   const configService = new HolonConfigService();
   const savedConfig = configService.getLocalConfig();
 
-  // Ensure we have a provider before starting
   const provider = await ensureProvider({
     ...options,
     provider: options.provider ?? savedConfig.provider,
   });
-  const providerApiKey = process.env[getEnvKeyName(provider)];
+  const resolvedConfig = resolveLanguageModelConfig({
+    provider,
+    model: options.model,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+  }, configService);
 
-  if (!process.env[getEnvKeyName(provider)]) {
-    const persistedApiKey = configService.getApiKey(provider as any);
-    if (persistedApiKey) {
-      process.env[getEnvKeyName(provider)] = persistedApiKey;
-    }
-  }
-
-  if (!process.env.HOLON_MODEL && savedConfig.model) {
-    process.env.HOLON_MODEL = savedConfig.model;
-  }
-  
-  // Update options with the resolved provider and potentially the model/key from env
-  const effectiveOptions: CliGatewayOptions = { 
-    ...options, 
-    provider: provider as any,
-    model: process.env.HOLON_MODEL || options.model || savedConfig.model,
-    apiKey: process.env[getEnvKeyName(provider)] || providerApiKey || options.apiKey,
-    baseUrl: options.baseUrl || savedConfig.baseUrl || getBaseUrlForProvider(provider),
+  const effectiveOptions: CliGatewayOptions = {
+    ...options,
+    provider: resolvedConfig.provider,
+    model: resolvedConfig.model,
+    apiKey: resolvedConfig.apiKey,
+    baseUrl: resolvedConfig.baseUrl,
   };
 
   configService.saveLocalConfig({
     ...savedConfig,
-    provider: provider as any,
+    provider: provider,
     model: effectiveOptions.model,
     baseUrl: effectiveOptions.baseUrl,
   });
@@ -220,18 +185,18 @@ export async function runCliGateway(agent: HolonAgent, options: CliGatewayOption
   return;
 }
 
-function getBaseUrlForProvider(provider: string): string | undefined {
+function getBaseUrlForProvider(provider: HolonModelProvider): string | undefined {
   switch (provider) {
     case 'openrouter':
       return 'https://openrouter.ai/api/v1';
     case 'openai':
-      return process.env.OPENAI_BASE_URL;
+      return undefined;
     case 'groq':
       return 'https://api.groq.com/openai/v1';
     case 'mistral':
       return 'https://api.mistral.ai/v1';
     case 'anthropic':
-      return process.env.ANTHROPIC_BASE_URL;
+      return undefined;
     default:
       return undefined;
   }

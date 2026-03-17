@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './config/init-holon-home.js';
 import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js';
 import { HolonConfigService } from './config/holon-config-service.js';
 import { getGatewaySupervisorStatus, runGatewaySupervisor } from './gateway/manager.js';
@@ -11,6 +12,7 @@ import {
 } from './gateway/telegram.js';
 import { HolonAgent } from './agent.js';
 import type { HolonModelProvider } from './llm/create-language-model.js';
+import { getHolonSetupStatus, runHolonSetup } from './setup.js';
 
 const VALID_PROVIDERS: HolonModelProvider[] = [
   'anthropic',
@@ -22,7 +24,7 @@ const VALID_PROVIDERS: HolonModelProvider[] = [
 ];
 
 interface ParsedArgs {
-  command?: 'config-show' | 'config-reset' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
+  command?: 'config-show' | 'config-reset' | 'setup' | 'start' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
   prompt?: string;
   interactive: boolean;
   provider?: HolonModelProvider;
@@ -49,6 +51,16 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (argv[0] === 'config' && argv[1] === 'reset') {
     parsed.command = 'config-reset';
     return parsed;
+  }
+
+  if (argv[0] === 'setup') {
+    parsed.command = 'setup';
+    startIndex = 1;
+  }
+
+  if (argv[0] === 'start') {
+    parsed.command = 'start';
+    startIndex = 1;
   }
 
   if (argv[0] === 'gateway' && argv[1] === 'start') {
@@ -163,12 +175,13 @@ async function main(): Promise<void> {
   if (args.command) {
     if (args.command === 'config-show') {
       const localConfig = configService.getLocalConfig();
+      const setupStatus = getHolonSetupStatus(configService);
       const providers = VALID_PROVIDERS.map((provider) => ({
         provider,
         apiKeyStored: configService.hasApiKey(provider),
       })).filter((entry) => entry.apiKeyStored);
 
-      process.stdout.write(`${JSON.stringify({ localConfig, providers }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ localConfig, providers, setupStatus }, null, 2)}\n`);
       return;
     }
 
@@ -181,6 +194,11 @@ async function main(): Promise<void> {
 
     if (args.command === 'telegram-setup') {
       await setupTelegramGateway(configService);
+      return;
+    }
+
+    if (args.command === 'setup') {
+      await runHolonSetup(configService);
       return;
     }
 
@@ -209,6 +227,23 @@ async function main(): Promise<void> {
   }
 
   if (args.command === 'gateway-start') {
+    await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
+      provider: args.provider,
+      model: args.model,
+      maxSteps: args.maxSteps,
+    }, configService);
+    return;
+  }
+
+  if (args.command === 'start') {
+    const status = getHolonSetupStatus(configService);
+    if (!status.ready) {
+      const completed = await runHolonSetup(configService);
+      if (!completed) {
+        return;
+      }
+    }
+
     await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
       provider: args.provider,
       model: args.model,
