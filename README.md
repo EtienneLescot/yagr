@@ -11,7 +11,7 @@
 
 ### Your autonomous agent. Grounded in reliable infrastructure.
 
-**Autonomous automation agent · n8n backend today · native engine tomorrow**
+**Autonomous automation agent · orchestrator-ready by design · powered by n8n-as-code today**
 
 </td>
 </tr>
@@ -20,20 +20,31 @@
 [![CI](https://github.com/EtienneLescot/n8n-as-code/actions/workflows/ci.yml/badge.svg)](https://github.com/EtienneLescot/n8n-as-code/actions/workflows/ci.yml)
 [![Documentation](https://github.com/EtienneLescot/n8n-as-code/actions/workflows/docs.yml/badge.svg)](https://n8nascode.dev/)
 [![Yagr Docs](https://img.shields.io/badge/docs-yagr-black?logo=gitbook)](https://n8nascode.dev/yagr/docs/)
-[![n8n backend](https://img.shields.io/badge/backend-n8n-FE5A16?logo=n8n&logoColor=white)](https://n8n.io/)
+[![orchestrator:n8n](https://img.shields.io/badge/orchestrator-n8n-FE5A16?logo=n8n&logoColor=white)](https://n8n.io/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 <br>
 
-**Yagr is the product layer.** It takes natural-language intent and turns it into live automations.
-
-**n8n is the V1 execution engine.** Yagr uses the n8n-as-code stack as its bridge today, while keeping the product story stable for a future native Yagr engine.
+**Yagr is designed to sit above execution orchestrators.** Today it runs on top of n8n through the n8n-as-code stack. Tomorrow it can target a native Yagr runtime or other orchestrators without changing the product story.
 
 [**Read Yagr docs**](https://n8nascode.dev/yagr/docs/) · [**Open n8n-as-code**](https://n8nascode.dev/n8n-as-code/) · [**Workflow GitOps docs**](https://n8nascode.dev/docs/)
 
 </div>
 
----
+
+> <table>
+> <tr>
+> <td width="108" align="center">
+> <img src="res/logo.png" alt="n8n-as-code logo" width="84">
+> </td>
+> <td>
+> <strong>Yagr is built on top of n8n-as-code today.</strong><br>
+> The repository now opens on Yagr first, but the underlying n8n-as-code technology, workflow GitOps model, schema grounding, and editor tooling remain first-class and continue to power the current runtime.<br><br>
+> <a href="products/n8n-as-code/README.md">Read the n8n-as-code README</a>
+> </td>
+> </tr>
+> </table>
+
 
 ## Quick Start
 
@@ -54,7 +65,7 @@ yagr onboard
 
 This connects three things:
 
-- your n8n backend
+- your execution orchestrator connection, which is n8n today
 - your default model
 - your optional messaging integrations
 
@@ -116,7 +127,7 @@ That means Yagr is an **automation agent** where:
 
 - you express intent in natural language
 - Yagr plans against a grounded node ecosystem
-- Yagr generates and validates a workflow on a deterministic execution backend
+- Yagr generates and validates a workflow on a deterministic execution orchestrator
 - the resulting workflow becomes durable, executable memory and muscle that Yagr can revisit later
 
 For the user, it feels like magic chat.
@@ -149,7 +160,7 @@ Generated workflows are not throwaway output. They are persisted intent that Yag
 
 ### Engine Boundary
 
-Yagr stays above the execution engine. Today that engine is n8n. Tomorrow it can be a native Yagr runtime.
+Yagr stays above the execution orchestrator. Today that means n8n through n8n-as-code. Tomorrow it can mean a native Yagr runtime or another orchestrator.
 
 </td>
 </tr>
@@ -191,9 +202,9 @@ Yagr stays above the execution engine. Today that engine is n8n. Tomorrow it can
 ```text
 User intent
 	-> Yagr agent
-		-> Engine interface
-			-> V1: n8n backend via n8n-as-code
-			-> V2: native Yagr engine
+		-> Orchestrator interface
+			-> today: n8n via n8n-as-code
+			-> tomorrow: native Yagr runtime or other orchestrators
 				-> workflow is generated, validated, deployed
 					-> workflow becomes durable executable memory
 ```
@@ -211,7 +222,7 @@ This separation is deliberate:
 
 `yagr setup` configures three things:
 
-1. your **V1 backend**: n8n instance, API key, project, local sync folder
+1. your **current orchestrator connection**: today that means an n8n instance, API key, project, and local sync folder
 2. your **default model**: provider, model, API key, optional base URL
 3. your **optional messaging integrations**: for example Telegram
 
@@ -221,10 +232,10 @@ Yagr stores that state in its own home so the product does not depend on whateve
 
 ## Product Philosophy
 
-- **Yagr is the agent.** n8n is the V1 execution backend.
+- **Yagr is the agent.** It should stay above the execution orchestrator.
 - **Gateways are not the brain.** Telegram and TUI are surfaces into the same agent loop.
 - **Workflows are memory and muscle.** They persist how the problem was solved and they execute it reliably over time.
-- **The backend must stay swappable.** Moving from n8n to a native Yagr engine should be an engine change, not a product rewrite.
+- **The orchestrator must stay swappable.** Today that orchestrator is n8n via n8n-as-code. Tomorrow it may be a native Yagr runtime or something else.
 
 ---
 

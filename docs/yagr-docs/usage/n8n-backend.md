@@ -1,13 +1,13 @@
 ---
-title: n8n Backend
-description: "Yagr uses n8n as its V1 execution backend while keeping the product layer above the engine."
+title: Execution Orchestrators
+description: "Yagr sits above execution orchestrators. Today that means n8n through n8n-as-code, while keeping the product layer independent from any single runtime."
 ---
 
-# n8n Backend
+# Execution Orchestrators
 
 Yagr does not run its own agent logic as an n8n workflow.
 
-Instead, Yagr uses n8n as its V1 execution backend for automation work while keeping the agent, planning loop, and gateway surfaces outside the execution engine.
+Instead, Yagr sits above an execution orchestrator for automation work while keeping the agent, planning loop, and gateway surfaces outside that runtime. Today, that orchestrator is n8n through the n8n-as-code foundation.
 
 ## What Yagr configures
 
@@ -25,10 +25,10 @@ This information is stored in the Yagr home so the operator experience stays sta
 This separation is one of the central Yagr design decisions:
 
 - Yagr is the product and agent layer
-- n8n is the current execution backend
-- the backend should remain swappable without rewriting the user story
+- n8n is the current orchestrator
+- the orchestrator should remain swappable without rewriting the user story
 
-That is why the blueprint treats n8n as V1 and leaves room for a future native Yagr engine.
+That is why Yagr is framed around an orchestrator boundary: n8n today, potentially a native Yagr runtime or other orchestrators later.
 
 ## Relationship to n8n-as-code
 
