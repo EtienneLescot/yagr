@@ -1,4 +1,3 @@
-import * as p from '@clack/prompts';
 import { randomBytes } from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import { Telegraf } from 'telegraf';
@@ -101,7 +100,7 @@ function formatRequiredActions(actions: YagrRequiredAction[]): string {
   ].join('\n');
 }
 
-async function resolveTelegramBotIdentity(botToken: string): Promise<{ username: string; firstName: string }> {
+export async function resolveTelegramBotIdentity(botToken: string): Promise<{ username: string; firstName: string }> {
   const bot = new Telegraf(botToken);
   const me = await bot.telegram.getMe();
   if (!me.username) {
@@ -115,36 +114,31 @@ async function resolveTelegramBotIdentity(botToken: string): Promise<{ username:
 }
 
 export async function setupTelegramGateway(configService = new YagrConfigService()): Promise<void> {
-  const current = configService.getLocalConfig();
   const currentToken = configService.getTelegramBotToken() ?? '';
 
   if (!currentToken) {
-    p.note(buildTelegramTokenInstructions(), 'Telegram bot token');
+    process.stdout.write(`\nTo create a Telegram bot token:\n${buildTelegramTokenInstructions()}\n`);
   }
 
-  const tokenAnswer = currentToken || await p.password({
-    message: 'Telegram bot token',
-    validate: (value) => value && value.includes(':') ? undefined : 'Enter a valid BotFather token.',
-  });
+  const readline = await import('node:readline/promises');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  if (p.isCancel(tokenAnswer)) {
-    p.cancel('Telegram setup cancelled.');
-    return;
-  }
-
-  const botToken = String(tokenAnswer);
-  const spinner = p.spinner();
-  spinner.start('Checking Telegram bot token...');
-
-  let identity: { username: string; firstName: string };
+  let botToken: string;
   try {
-    identity = await resolveTelegramBotIdentity(botToken);
-  } catch (error) {
-    spinner.stop('Telegram setup failed.');
-    throw error;
+    if (currentToken) {
+      const answer = await rl.question(`Reuse saved token? [Y/n] `);
+      botToken = answer.trim().toLowerCase() === 'n' ? await rl.question('Telegram bot token: ') : currentToken;
+    } else {
+      botToken = await rl.question('Telegram bot token: ');
+    }
+  } finally {
+    rl.close();
   }
 
-  spinner.stop(`Telegram bot ready: @${identity.username}`);
+  if (!botToken.includes(':')) throw new Error('Invalid Telegram bot token format.');
+
+  process.stdout.write('Verifying token...\n');
+  const identity = await resolveTelegramBotIdentity(botToken);
   configService.saveTelegramBotToken(botToken);
 
   const nextConfig = configService.updateLocalConfig((localConfig) => ({
@@ -163,18 +157,9 @@ export async function setupTelegramGateway(configService = new YagrConfigService
     nextConfig.telegram?.onboardingToken ?? createOnboardingToken(),
   );
 
-  p.note(
-    [
-      `Bot: @${identity.username}`,
-      `Lien d'onboarding: ${deepLink}`,
-      `Chats deja lies: ${formatLinkedChatCount(nextConfig.telegram?.linkedChats?.length ?? 0)}`,
-      '',
-      'Scanne le QR ou ouvre le lien, puis appuie sur Start dans Telegram.',
-    ].join('\n'),
-    'Telegram setup',
-  );
+  process.stdout.write(`\nTelegram bot ready: @${identity.username}\nOnboarding link: ${deepLink}\n`);
   qrcode.generate(deepLink, { small: true });
-  p.outro('Telegram setup saved. Start the gateway with `yagr gateway start`.');
+  process.stdout.write('Gateway saved. Start with `yagr gateway start`.\n');
 }
 
 export function showTelegramOnboarding(configService = new YagrConfigService()): void {
@@ -184,15 +169,16 @@ export function showTelegramOnboarding(configService = new YagrConfigService()):
     throw new Error('Telegram is not configured. Run `yagr telegram setup` first.');
   }
 
-  p.note(
+  process.stdout.write(
     [
-      `Bot: @${status.botUsername}`,
-      `Lien d'onboarding: ${status.deepLink}`,
-      `Chats deja lies: ${formatLinkedChatCount(status.linkedChats.length)}`,
       '',
-      'Scanne le QR ou ouvre le lien, puis appuie sur Start dans Telegram.',
+      `Bot: @${status.botUsername}`,
+      `Onboarding link: ${status.deepLink}`,
+      `Linked chats: ${formatLinkedChatCount(status.linkedChats.length)}`,
+      '',
+      'Scan the QR or open the link, then press Start in Telegram.',
+      '',
     ].join('\n'),
-    'Telegram onboarding',
   );
   qrcode.generate(status.deepLink, { small: true });
 }
