@@ -53,7 +53,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     return parsed;
   }
 
-  if (argv[0] === 'setup') {
+  if (argv[0] === 'setup' || argv[0] === 'onboard') {
     parsed.command = 'setup';
     startIndex = 1;
   }

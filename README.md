@@ -35,6 +35,62 @@
 
 ---
 
+## Quick Start
+
+If you want to see Yagr working before reading the full product story, start here.
+
+### 1. Install Yagr globally
+
+```bash
+npm install -g yagr@latest
+# or: pnpm add -g yagr@latest
+```
+
+### 2. Run onboarding once
+
+```bash
+yagr onboard
+```
+
+This connects three things:
+
+- your n8n backend
+- your default model
+- your gateway surfaces
+
+### 3. Start the agent
+
+```bash
+yagr start
+```
+
+After setup, the day-to-day loop is:
+
+```bash
+yagr start
+yagr gateway status
+yagr telegram onboarding
+```
+
+If you are contributing from this repository instead of installing the product globally, use the repo-scoped dev flow:
+
+```bash
+npm install
+npm run build --workspace=packages/yagr
+npm run yagr:setup
+npm run yagr:start
+```
+
+The repository dev scripts intentionally use `.yagr-test-workspace` so local development does not pollute your real Yagr home.
+
+Read next if you want more than the fast path:
+
+- [Yagr getting started](https://n8nascode.dev/yagr/docs/getting-started/)
+- [Yagr command reference](https://n8nascode.dev/yagr/docs/reference/commands/)
+- [n8n-as-code product page](https://n8nascode.dev/n8n-as-code/)
+
+---
+
 ## Why Another Autonomous Agent?
 
 Most AI agents today execute tasks by writing ephemeral scripts or firing blind API calls.
@@ -146,29 +202,6 @@ This separation is deliberate:
 - the agent is the reasoning layer
 - the engine executes automations
 - workflows are the lasting artifact, memory, and muscle
-
----
-
-## Quick Start
-
-From this repository:
-
-```bash
-npm install
-npm run build --workspace=packages/yagr
-npm run yagr:setup
-npm run yagr:start
-```
-
-The repository dev scripts intentionally use `.yagr-test-workspace` so local development does not pollute your real Yagr home.
-
-After setup, the core operating loop is:
-
-```bash
-yagr start
-yagr gateway status
-yagr telegram onboarding
-```
 
 ---
 

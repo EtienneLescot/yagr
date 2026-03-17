@@ -82,6 +82,21 @@ const workflowSteps = [
   {label: '5', title: 'Operate through surfaces', text: 'TUI, Telegram, and future gateways remain thin surfaces over the same agent and engine boundary.'},
 ];
 
+const quickStartSteps = [
+  {
+    label: 'Install',
+    text: 'Install the published Yagr CLI globally with the package manager you already use.',
+  },
+  {
+    label: 'Onboard',
+    text: 'Bind n8n, your model provider, and the surfaces you want to expose in one guided first-run flow.',
+  },
+  {
+    label: 'Start',
+    text: 'Launch the agent and keep operating it through the same runtime loop from its own home.',
+  },
+];
+
 function HomepageHeader() {
   const yagrLogoUrl = useBaseUrl('/img/yagr-logo.png');
 
@@ -137,7 +152,8 @@ function HomepageHeader() {
               </div>
               <div className={styles.panelLabel}>Agent loop</div>
               <pre className={styles.commandBlock}>
-                <code>{`$ yagr setup
+                <code>{`$ npm install -g yagr@latest
+$ yagr onboard
 $ yagr start
 $ yagr telegram onboarding`}</code>
               </pre>
@@ -179,6 +195,57 @@ export default function Home(): ReactNode {
       description="Yagr is your autonomous agent, grounded in reliable infrastructure: deterministic workflows underneath the chat surface instead of ephemeral scripts and blind API calls.">
       <HomepageHeader />
       <main>
+        <section className={styles.quickStartSection}>
+          <div className="container">
+            <div className={styles.quickStartShell}>
+              <div className={styles.quickStartIntro}>
+                <p className={styles.sectionEyebrow}>Quick Start</p>
+                <Heading as="h2" className={styles.sectionTitle}>
+                  Get Yagr running before you read the manifesto.
+                </Heading>
+                <p className={styles.sectionLead}>
+                  If your first question is “how do I try it?”, the answer should be immediate: install the CLI,
+                  run onboarding once, then start the agent.
+                </p>
+                <div className={styles.quickStartCards}>
+                  {quickStartSteps.map((step, index) => (
+                    <div key={step.label} className={styles.quickStartCard}>
+                      <span>{String(index + 1).padStart(2, '0')}</span>
+                      <strong>{step.label}</strong>
+                      <p>{step.text}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.quickStartTerminal}>
+                <div className={styles.quickStartTerminalBar}>
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <pre className={styles.quickStartCode}>
+                  <code>{`npm install -g yagr@latest
+# or: pnpm add -g yagr@latest
+yagr onboard
+yagr start`}</code>
+                </pre>
+                <p className={styles.quickStartNote}>
+                  Working from the monorepo instead? Use the repo scripts for development. They intentionally target
+                  <code> .yagr-test-workspace</code> so local iteration stays isolated from your real runtime home.
+                </p>
+                <div className={styles.quickStartActions}>
+                  <Link className={styles.inlineLink} to="/yagr/docs/getting-started">
+                    Open the full getting started guide
+                  </Link>
+                  <Link className={styles.inlineLink} to="/yagr/docs/reference/commands">
+                    See all CLI commands
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className={styles.proofSection}>
           <div className="container">
             <div className={styles.proofHeader}>

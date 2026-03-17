@@ -8,6 +8,7 @@ description: "Core Yagr CLI commands."
 ## Core flow
 
 ```bash
+yagr onboard
 yagr setup
 yagr start
 yagr gateway status
@@ -32,5 +33,6 @@ yagr config reset
 
 ## Notes
 
+- `yagr onboard` is the standard first-run command and currently drives the same interactive setup flow as `yagr setup`.
 - `yagr start` will trigger setup automatically if the runtime is not ready.
 - Runtime configuration is expected to come from setup, not from ad hoc environment variable injection.
