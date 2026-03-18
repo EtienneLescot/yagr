@@ -208,19 +208,19 @@ function buildGroundedSummary(
     lines.push(`Actions requises en attente: ${requiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
   }
 
-  if (!outcome.successfulValidate) {
+  if (outcome.hasWorkflowWrites && !outcome.successfulValidate) {
     lines.push('La validation du workflow n’a pas ete confirmee.');
   }
 
-  if (!outcome.successfulPush) {
+  if (outcome.hasWorkflowWrites && !outcome.successfulPush) {
     lines.push('Le push vers n8n n’a pas ete confirme.');
   }
 
-  if (!outcome.successfulVerify) {
+  if (outcome.hasWorkflowWrites && !outcome.successfulVerify) {
     lines.push('La verification distante n’a pas ete confirmee.');
   }
 
-  if (outcome.unresolvedFailedActions.length > 0) {
+  if (outcome.hasWorkflowWrites && outcome.unresolvedFailedActions.length > 0) {
     lines.push('Le run s’est arrete alors que certaines actions avaient encore echoue. Une correction supplementaire reste necessaire ou un bloqueur externe persiste.');
   }
 
