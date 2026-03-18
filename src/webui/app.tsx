@@ -279,6 +279,215 @@ function SetupPageHeader({
   );
 }
 
+interface GraphNode {
+  id: string;
+  label: string;
+  type: string;
+  col: number;
+  row: number;
+}
+
+interface GraphEdge {
+  from: string;
+  to: string;
+}
+
+function parseWorkflowMap(diagram: string): { nodes: GraphNode[]; edges: GraphEdge[] } | null {
+  const lines = diagram.split('\n').map((l) => l.replace(/^\/\/\s?/, ''));
+
+  // Parse NODE INDEX: lines like "  PropertyName                  nodeType"
+  const nodeIndex = new Map<string, string>();
+  let inNodeIndex = false;
+  for (const line of lines) {
+    if (line.trim().startsWith('NODE INDEX')) { inNodeIndex = true; continue; }
+    if (line.trim().startsWith('ROUTING MAP')) { inNodeIndex = false; continue; }
+    if (line.trim().startsWith('──') || line.trim().startsWith('Property name')) continue;
+    if (!inNodeIndex) continue;
+    const match = line.match(/^\s*(\S+)\s{2,}(\S+)/);
+    if (match) nodeIndex.set(match[1], match[2]);
+  }
+
+  // Parse ROUTING MAP: indented "→ NodeName" lines
+  const edges: GraphEdge[] = [];
+  const parentStack: string[] = [];
+  let inRouting = false;
+  const orderedNames: string[] = [];
+  for (const line of lines) {
+    if (line.trim().startsWith('ROUTING MAP')) { inRouting = true; continue; }
+    if (line.trim().startsWith('</workflow-map>')) break;
+    if (!inRouting) continue;
+    if (line.trim().startsWith('──') || !line.trim()) continue;
+
+    const arrowMatch = line.match(/^(\s*)→\s*(\S+)/);
+    if (arrowMatch) {
+      const depth = Math.floor(arrowMatch[1].length / 2);
+      const name = arrowMatch[2];
+      orderedNames.push(name);
+      if (depth <= parentStack.length && parentStack.length > 0) {
+        parentStack.length = depth;
+      }
+      if (parentStack.length > 0) {
+        edges.push({ from: parentStack[parentStack.length - 1], to: name });
+      }
+      parentStack.push(name);
+    } else {
+      // Root node (no arrow)
+      const rootMatch = line.match(/^\s*(\S+)\s*$/);
+      if (rootMatch) {
+        parentStack.length = 0;
+        parentStack.push(rootMatch[1]);
+        orderedNames.push(rootMatch[1]);
+      }
+    }
+  }
+
+  if (orderedNames.length === 0) return null;
+
+  // Build graph nodes — position by layer (column) from edges
+  const layerMap = new Map<string, number>();
+  for (const name of orderedNames) {
+    if (!layerMap.has(name)) layerMap.set(name, 0);
+  }
+  // Forward pass: each target is at least source+1
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const e of edges) {
+      const s = layerMap.get(e.from) ?? 0;
+      const t = layerMap.get(e.to) ?? 0;
+      if (t <= s) {
+        layerMap.set(e.to, s + 1);
+        changed = true;
+      }
+    }
+  }
+  // Group by column, assign rows
+  const columns = new Map<number, string[]>();
+  for (const name of orderedNames) {
+    const col = layerMap.get(name) ?? 0;
+    if (!columns.has(col)) columns.set(col, []);
+    if (!columns.get(col)!.includes(name)) columns.get(col)!.push(name);
+  }
+
+  const nodes: GraphNode[] = [];
+  for (const [col, names] of columns) {
+    names.forEach((name, row) => {
+      nodes.push({ id: name, label: name, type: nodeIndex.get(name) ?? '', col, row });
+    });
+  }
+
+  return { nodes, edges };
+}
+
+// Node type → color palette
+const NODE_COLORS: Record<string, string> = {
+  manualTrigger: '#7c3aed', scheduleTrigger: '#7c3aed', webhook: '#7c3aed',
+  set: '#059669', code: '#059669', functionItem: '#059669',
+  httpRequest: '#2563eb', slack: '#e11d48', telegram: '#0EA5E9',
+  gmail: '#ea580c', googleSheets: '#16a34a', openWeatherMap: '#0284c7',
+  nasa: '#7c3aed', if: '#d97706', switch: '#d97706', merge: '#6366f1',
+};
+
+function nodeColor(type: string): string {
+  return NODE_COLORS[type] ?? '#6366f1';
+}
+
+const NODE_W = 140;
+const NODE_H = 52;
+const COL_GAP = 60;
+const ROW_GAP = 24;
+const PAD = 16;
+
+function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | null {
+  const graph = React.useMemo(() => parseWorkflowMap(diagram), [diagram]);
+  if (!graph || graph.nodes.length === 0) return <pre className="workflowDiagram">{diagram}</pre>;
+
+  const maxCol = Math.max(...graph.nodes.map((n) => n.col));
+  const maxRowPerCol = new Map<number, number>();
+  for (const n of graph.nodes) {
+    maxRowPerCol.set(n.col, Math.max(maxRowPerCol.get(n.col) ?? 0, n.row));
+  }
+  const maxRow = Math.max(...maxRowPerCol.values());
+
+  const svgW = PAD * 2 + (maxCol + 1) * NODE_W + maxCol * COL_GAP;
+  const svgH = PAD * 2 + (maxRow + 1) * NODE_H + maxRow * ROW_GAP;
+
+  const pos = (n: GraphNode) => ({
+    x: PAD + n.col * (NODE_W + COL_GAP),
+    y: PAD + n.row * (NODE_H + ROW_GAP),
+  });
+
+  return (
+    <svg
+      className="workflowGraph"
+      viewBox={`0 0 ${svgW} ${svgH}`}
+      width={svgW}
+      height={svgH}
+    >
+      <defs>
+        <marker id="wf-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6" fill="#94a3b8" />
+        </marker>
+      </defs>
+      {graph.edges.map((e, i) => {
+        const src = graph.nodes.find((n) => n.id === e.from);
+        const tgt = graph.nodes.find((n) => n.id === e.to);
+        if (!src || !tgt) return null;
+        const sp = pos(src);
+        const tp = pos(tgt);
+        const x1 = sp.x + NODE_W;
+        const y1 = sp.y + NODE_H / 2;
+        const x2 = tp.x;
+        const y2 = tp.y + NODE_H / 2;
+        const cx = (x1 + x2) / 2;
+        return (
+          <path
+            key={`e${i}`}
+            d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
+            fill="none"
+            stroke="#cbd5e1"
+            strokeWidth={2}
+            markerEnd="url(#wf-arrow)"
+          />
+        );
+      })}
+      {graph.nodes.map((n) => {
+        const p = pos(n);
+        const color = nodeColor(n.type);
+        return (
+          <g key={n.id}>
+            <rect
+              x={p.x} y={p.y}
+              width={NODE_W} height={NODE_H}
+              rx={10} ry={10}
+              fill="white"
+              stroke={color}
+              strokeWidth={2}
+            />
+            <text
+              x={p.x + NODE_W / 2} y={p.y + 20}
+              textAnchor="middle"
+              fontSize={11}
+              fontWeight={600}
+              fill="#1e293b"
+            >
+              {n.label.length > 18 ? `${n.label.slice(0, 16)}…` : n.label}
+            </text>
+            <text
+              x={p.x + NODE_W / 2} y={p.y + 36}
+              textAnchor="middle"
+              fontSize={9}
+              fill="#94a3b8"
+            >
+              {n.type}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 function WorkflowHeader({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
   return (
     <div className="workflowCard">
@@ -292,7 +501,9 @@ function WorkflowHeader({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
         </a>
       </div>
       {embed.diagram ? (
-        <pre className="workflowDiagram">{embed.diagram}</pre>
+        <div className="workflowGraphWrap">
+          <WorkflowGraph diagram={embed.diagram} />
+        </div>
       ) : null}
     </div>
   );
