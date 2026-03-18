@@ -584,6 +584,11 @@ class WebUiGateway implements Gateway {
       if (key.toLowerCase() === 'host') {
         continue;
       }
+      // Ask n8n for uncompressed responses so we can rewrite HTML without
+      // having to decompress the body ourselves.
+      if (key.toLowerCase() === 'accept-encoding') {
+        continue;
+      }
       forwardHeaders[key] = value;
     }
 
