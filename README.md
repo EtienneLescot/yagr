@@ -32,19 +32,6 @@
 </div>
 
 
-> <table>
-> <tr>
-> <td width="108" align="center">
-> <img src="res/logo.png" alt="n8n-as-code logo" width="84">
-> </td>
-> <td>
-> <strong>Yagr is built on top of n8n-as-code today.</strong><br>
-> Yagr rely on the underlying n8n-as-code technology, workflow GitOps model, schema grounding, and editor tooling<br><br>
-> <a href="https://github.com/EtienneLescot/n8n-as-code">Open the n8n-as-code repository</a>
-> </td>
-> </tr>
-> </table>
-
 
 ## Quick Start
 
@@ -94,6 +81,19 @@ npm run yagr:start
 ```
 
 The repository dev scripts intentionally use `.yagr-test-workspace` so local development does not pollute your real Yagr home.
+
+> <table>
+> <tr>
+> <td width="108" align="center">
+> <img src="res/logo.png" alt="n8n-as-code logo" width="84">
+> </td>
+> <td>
+> <strong>Yagr is built on top of n8n-as-code</strong><br>
+> Yagr rely on the underlying n8n-as-code technology, workflow GitOps model, schema grounding, and editor tooling<br><br>
+> <a href="https://github.com/EtienneLescot/n8n-as-code">Open the n8n-as-code repository</a>
+> </td>
+> </tr>
+> </table>
 
 Read next if you want more than the fast path:
 
