@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import { evaluateCompletionGate } from '../dist/runtime/completion-gate.js';
 import { analyzeRunOutcome } from '../dist/runtime/outcome.js';
-import { wrapToolsWithRuntimeHooks } from '../dist/runtime/policy-hooks.js';
+import { createWorkflowPresentationGuardHook, wrapToolsWithRuntimeHooks } from '../dist/runtime/policy-hooks.js';
 import { collectRequiredActions } from '../dist/runtime/required-actions.js';
 import {
   sanitizeAssistantOutput,
@@ -43,6 +46,43 @@ test('beforeTool hook can block execution with a structured required action', as
   assert.equal(result.ok, false);
   assert.equal(result.blocked, true);
   assert.equal(result.requiredAction.kind, 'permission');
+});
+
+test('workflow presentation is blocked until the workflow exists locally', async () => {
+  const previousHome = process.env.YAGR_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-policy-hook-'));
+  process.env.YAGR_HOME = tempRoot;
+
+  try {
+    const wrappedTools = wrapToolsWithRuntimeHooks(
+      {
+        presentWorkflowResult: {
+          description: 'present workflow',
+          parameters: undefined,
+          execute: async () => ({ presented: true }),
+        },
+      },
+      [createWorkflowPresentationGuardHook()],
+      () => ({ runId: 'run-1', phase: 'plan', state: 'running' }),
+    );
+
+    const result = await wrappedTools.presentWorkflowResult.execute({
+      workflowId: 'remote-only-workflow',
+      workflowUrl: 'http://localhost:5678/workflow/remote-only-workflow',
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.blocked, true);
+    assert.equal(result.requiredAction.kind, 'external');
+    assert.match(result.error, /must be pulled locally/i);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.YAGR_HOME;
+    } else {
+      process.env.YAGR_HOME = previousHome;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('later successful retry clears an earlier unresolved n8nac failure', () => {

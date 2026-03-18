@@ -46,6 +46,8 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
   assert.match(prompt, /requestRequiredAction tool/i);
   assert.match(prompt, /Keep final user-facing summaries concise/i);
   assert.match(prompt, /Do not paste the full workflow file contents/i);
+  assert.match(prompt, /remote n8n instance, you MUST run n8nac pull/i);
+  assert.match(prompt, /Do not present remote-only workflows from memory/i);
 });
 
 test('system prompt includes later AGENTS sections beyond the old truncation boundary', () => {

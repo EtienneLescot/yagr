@@ -1,5 +1,6 @@
 import { tool } from 'ai';
 import type { YagrAgentState, YagrRunPhase, YagrRuntimeContext, YagrRuntimeHook } from '../types.js';
+import { resolveLocalWorkflowDiagram } from '../tools/present-workflow-result.js';
 
 type ToolLike = {
   description?: string;
@@ -9,6 +10,45 @@ type ToolLike = {
 };
 
 type ToolMap = Record<string, ToolLike>;
+
+function buildWorkflowPresentationRequiredAction(workflowId: string) {
+  return {
+    id: `pull-workflow-${workflowId}`,
+    kind: 'external' as const,
+    title: 'Pull workflow before presenting it',
+    message: `Pull workflow ${workflowId} before calling presentWorkflowResult so the card uses the canonical local workflow-map.`,
+    detail: 'This workflow is not currently available as a local .workflow.ts file in the active Yagr workspace or Yagr home. Run n8nac pull for the workflow ID first, then present it.',
+    resumable: true,
+  };
+}
+
+export function createWorkflowPresentationGuardHook(): YagrRuntimeHook {
+  return {
+    beforeTool: async ({ toolName, args }) => {
+      if (toolName !== 'presentWorkflowResult' || !args || typeof args !== 'object') {
+        return;
+      }
+
+      const workflowId = typeof (args as { workflowId?: unknown }).workflowId === 'string'
+        ? (args as { workflowId: string }).workflowId
+        : undefined;
+
+      if (!workflowId || resolveLocalWorkflowDiagram(workflowId)) {
+        return;
+      }
+
+      return {
+        allowed: false,
+        message: `Workflow ${workflowId} must be pulled locally before it can be presented.`,
+        requiredAction: buildWorkflowPresentationRequiredAction(workflowId),
+      };
+    },
+  };
+}
+
+export function createDefaultRuntimeHooks(): YagrRuntimeHook[] {
+  return [createWorkflowPresentationGuardHook()];
+}
 
 export function wrapToolsWithRuntimeHooks<T extends ToolMap>(
   tools: T,
