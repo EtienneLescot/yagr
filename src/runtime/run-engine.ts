@@ -30,6 +30,46 @@ const EXECUTE_MAX_STEPS = 10;
 const EXECUTE_RECOVERY_MAX_STEPS = 6;
 const MAX_EXECUTION_ATTEMPTS = 3;
 const PHASE_ORDER: YagrRunPhase[] = ['inspect', 'plan', 'edit', 'validate', 'sync', 'verify', 'summarize'];
+const STREAM_FILTER_HOLDBACK = 256;
+
+const INTERNAL_PROMPT_PATTERNS = [
+  /Yagr internal phase:\s*(?:inspect|execute)\.\s*/g,
+  /Yagr internal recovery pass \d+\.\s*/g,
+  /Analyze the request and gather only the context needed to execute it correctly\.\s*/g,
+  /Use tools to inspect the workspace, existing workflow files, workspace instructions, examples, and n8nac workspace status when needed\.\s*/g,
+  /Favor correctness over speed in this phase\. If an example or rule is likely to determine the right implementation, read it before acting\.\s*/g,
+  /Do not claim completion in this phase\.\s*/g,
+  /Complete the task end-to-end using the gathered context\.\s*/g,
+  /When appropriate, author or edit workflow files, validate them, sync them, verify them, and then summarize what changed\.\s*/g,
+  /Ask the user only when a specific missing value blocks execution\.\s*/g,
+  /Do not summarize yet\.\s*/g,
+  /Inspect the failing tool output, correct the local files or command arguments, and retry the necessary steps now\.\s*/g,
+  /Only stop if a genuine blocker remains that cannot be resolved locally in this run\.\s*/g,
+  /Actions en echec:[^\n]*(?:\n|$)/g,
+  /Etapes non confirmees:[^\n]*(?:\n|$)/g,
+  /Original request:[^\n]*(?:\n|$)/g,
+];
+
+type AssistantStreamFilterState = {
+  rawText: string;
+  pendingRaw: string;
+  visibleText: string;
+  emittedVisibleChars: number;
+};
+
+class RepetitiveAssistantOutputError extends Error {
+  constructor(
+    message: string,
+    readonly partialText: string,
+  ) {
+    super(message);
+    this.name = 'RepetitiveAssistantOutputError';
+  }
+}
+
+function isRepetitiveAssistantOutputError(error: unknown): error is RepetitiveAssistantOutputError {
+  return error instanceof RepetitiveAssistantOutputError;
+}
 
 type ExecuteRunResult = {
   result: YagrRunResult;
@@ -86,6 +126,127 @@ function createPhasePrompt(phase: 'inspect' | 'execute', userPrompt: string): st
     'Ask the user only when a specific missing value blocks execution.',
     `Original request: ${userPrompt}`,
   ].join('\n');
+}
+
+function trimAssistantVisibleText(text: string, maxChars = 12_000): string {
+  return text.length <= maxChars ? text : text.slice(-maxChars);
+}
+
+function hasRepeatedSuffix(text: string, minimumBlockSize = 180, maximumBlockSize = 4_000): boolean {
+  const maxCandidateSize = Math.min(Math.floor(text.length / 2), maximumBlockSize);
+  if (maxCandidateSize < minimumBlockSize) {
+    return false;
+  }
+
+  for (let blockSize = maxCandidateSize; blockSize >= minimumBlockSize; blockSize -= 20) {
+    const suffix = text.slice(-blockSize);
+    const previous = text.slice(-(blockSize * 2), -blockSize);
+    if (suffix === previous) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function stripInternalPromptScaffolding(text: string): string {
+  let next = text;
+
+  for (const pattern of INTERNAL_PROMPT_PATTERNS) {
+    next = next.replace(pattern, '');
+  }
+
+  return next;
+}
+
+export function sanitizeAssistantOutput(text: string): string {
+  return stripInternalPromptScaffolding(text)
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .join('\n')
+    .trim();
+}
+
+export function shouldAbortForInternalPromptLeak(rawText: string, visibleText = ''): boolean {
+  const internalMarkerCount = (rawText.match(/Yagr internal (?:phase|recovery pass)/g) ?? []).length;
+  if (internalMarkerCount < 2) {
+    return false;
+  }
+
+  return sanitizeAssistantOutput(visibleText).length === 0;
+}
+
+export function shouldAbortForRepetitiveAssistantOutput(visibleText: string): boolean {
+  const normalized = visibleText.trim();
+  if (normalized.length < 240) {
+    return false;
+  }
+
+  if (hasRepeatedSuffix(normalized)) {
+    return true;
+  }
+
+  const repeatedWorkflowBundle = [
+    'Final workflow content:',
+    'Final workflow status:',
+    'Final workflow URL:',
+  ].every((marker) => normalized.indexOf(marker) !== -1 && normalized.indexOf(marker) !== normalized.lastIndexOf(marker));
+
+  return repeatedWorkflowBundle;
+}
+
+function appendVisibleAssistantText(state: AssistantStreamFilterState, text: string): void {
+  if (!text) {
+    return;
+  }
+
+  state.visibleText = trimAssistantVisibleText(`${state.visibleText}${text}`);
+
+  if (shouldAbortForRepetitiveAssistantOutput(state.visibleText)) {
+    throw new RepetitiveAssistantOutputError(
+      'Run stopped after repeated final response output. The model kept repeating the same completion block instead of finishing.',
+      sanitizeAssistantOutput(state.visibleText),
+    );
+  }
+}
+
+function createAssistantStreamFilterState(): AssistantStreamFilterState {
+  return {
+    rawText: '',
+    pendingRaw: '',
+    visibleText: '',
+    emittedVisibleChars: 0,
+  };
+}
+
+function consumeAssistantTextDelta(state: AssistantStreamFilterState, delta: string): string {
+  state.rawText += delta;
+  state.pendingRaw += delta;
+
+  if (shouldAbortForInternalPromptLeak(state.rawText)) {
+    throw new Error('Run stopped after repeated internal prompt leakage. The model kept echoing Yagr internal instructions instead of progressing.');
+  }
+
+  if (state.pendingRaw.length <= STREAM_FILTER_HOLDBACK) {
+    return '';
+  }
+
+  const processable = state.pendingRaw.slice(0, -STREAM_FILTER_HOLDBACK);
+  state.pendingRaw = state.pendingRaw.slice(-STREAM_FILTER_HOLDBACK);
+
+  const safeText = stripInternalPromptScaffolding(processable);
+  appendVisibleAssistantText(state, safeText);
+  state.emittedVisibleChars += safeText.length;
+  return safeText;
+}
+
+function flushAssistantTextDelta(state: AssistantStreamFilterState): string {
+  const safeText = sanitizeAssistantOutput(state.pendingRaw);
+  state.pendingRaw = '';
+  appendVisibleAssistantText(state, safeText);
+  state.emittedVisibleChars += safeText.length;
+  return safeText;
 }
 
 function buildJournalEntry(entry: Omit<YagrRunJournalEntry, 'timestamp'>): YagrRunJournalEntry {
@@ -241,20 +402,7 @@ async function ensureFinalText(
   completionAccepted: boolean,
 ): Promise<string> {
   const groundedSummary = buildGroundedSummary(prompt, finishReason, journal, requiredActions);
-  const sanitizedText = existingText
-    .split('\n')
-    .filter((line) => {
-      const trimmed = line.trim();
-      return trimmed.length > 0
-        && !trimmed.startsWith('Yagr internal phase:')
-        && trimmed !== 'think silently.'
-        && trimmed !== 'Complete the task end-to-end using the gathered context.'
-        && trimmed !== 'When appropriate, author or edit workflow files, validate them, sync them, verify them, and then summarize what changed.'
-        && trimmed !== 'Ask the user only when a specific missing value blocks execution.'
-        && !trimmed.startsWith('Original request:');
-    })
-    .join('\n')
-    .trim();
+  const sanitizedText = sanitizeAssistantOutput(existingText);
 
   if (!completionAccepted) {
     return groundedSummary;
@@ -437,85 +585,81 @@ async function executePhase(
 }> {
   throwIfAborted(options.abortSignal);
 
-  if (options.onTextDelta || options.onStepFinish || options.onPhaseChange || options.onJournalEntry) {
-    const result = streamText({
-      abortSignal: options.abortSignal,
-      model: createLanguageModel(options),
-      system: systemPrompt,
-      tools,
-      messages,
-      maxSteps,
-      toolCallStreaming: true,
-      onStepFinish: async (stepResult) => {
-        await recordStep(state, options, {
-          stepType: stepResult.stepType,
-          finishReason: String(stepResult.finishReason),
-          toolCalls: stepResult.toolCalls.map((toolCall) => ({
-            toolName: toolCall.toolName,
-            args: toolCall.args,
-          })),
-          toolResults: stepResult.toolResults.map((toolResult) => ({
-            toolName: toolResult.toolName,
-            result: toolResult.result,
-          })),
-          text: stepResult.text,
-        });
-      },
-    });
+  let recordedSteps = 0;
+  const recordedToolNames = new Set<string>();
 
-    for await (const textDelta of result.textStream) {
-      throwIfAborted(options.abortSignal);
-      await options.onTextDelta?.(textDelta);
-    }
-
-    const response = await result.response;
-    const resolved = await Promise.all([
-      result.text,
-      result.finishReason,
-      result.steps,
-      result.toolCalls,
-    ]);
-
-    return {
-      text: resolved[0],
-      finishReason: String(resolved[1]),
-      steps: resolved[2].length,
-      toolCalls: resolved[3].map((toolCall) => ({ toolName: toolCall.toolName })),
-      responseMessages: response.messages,
-    };
-  }
-
-  const result = await generateText({
+  const result = streamText({
     abortSignal: options.abortSignal,
     model: createLanguageModel(options),
     system: systemPrompt,
     tools,
     messages,
     maxSteps,
+    toolCallStreaming: true,
+    onStepFinish: async (stepResult) => {
+      recordedSteps += 1;
+      for (const toolCall of stepResult.toolCalls) {
+        recordedToolNames.add(toolCall.toolName);
+      }
+
+      await recordStep(state, options, {
+        stepType: stepResult.stepType,
+        finishReason: String(stepResult.finishReason),
+        toolCalls: stepResult.toolCalls.map((toolCall) => ({
+          toolName: toolCall.toolName,
+          args: toolCall.args,
+        })),
+        toolResults: stepResult.toolResults.map((toolResult) => ({
+          toolName: toolResult.toolName,
+          result: toolResult.result,
+        })),
+        text: stepResult.text,
+      });
+    },
   });
 
-  for (const step of result.steps) {
-    await recordStep(state, options, {
-      stepType: step.stepType,
-      finishReason: String(step.finishReason),
-      toolCalls: step.toolCalls.map((toolCall) => ({
-        toolName: toolCall.toolName,
-        args: toolCall.args,
-      })),
-      toolResults: step.toolResults.map((toolResult) => ({
-        toolName: toolResult.toolName,
-        result: toolResult.result,
-      })),
-      text: step.text,
-    });
+  const streamState = createAssistantStreamFilterState();
+  try {
+    for await (const textDelta of result.textStream) {
+      throwIfAborted(options.abortSignal);
+      const safeDelta = consumeAssistantTextDelta(streamState, textDelta);
+      if (safeDelta) {
+        await options.onTextDelta?.(safeDelta);
+      }
+    }
+  } catch (error) {
+    if (!isRepetitiveAssistantOutputError(error)) {
+      throw error;
+    }
+
+    return {
+      text: error.partialText,
+      finishReason: 'stop',
+      steps: recordedSteps,
+      toolCalls: [...recordedToolNames].map((toolName) => ({ toolName })),
+      responseMessages: [],
+    };
   }
 
+  const trailingDelta = flushAssistantTextDelta(streamState);
+  if (trailingDelta) {
+    await options.onTextDelta?.(trailingDelta);
+  }
+
+  const response = await result.response;
+  const resolved = await Promise.all([
+    result.text,
+    result.finishReason,
+    result.steps,
+    result.toolCalls,
+  ]);
+
   return {
-    text: result.text,
-    finishReason: String(result.finishReason),
-    steps: result.steps.length,
-    toolCalls: result.toolCalls.map((toolCall) => ({ toolName: toolCall.toolName })),
-    responseMessages: result.response.messages,
+    text: sanitizeAssistantOutput(resolved[0]),
+    finishReason: String(resolved[1]),
+    steps: resolved[2].length,
+    toolCalls: resolved[3].map((toolCall) => ({ toolName: toolCall.toolName })),
+    responseMessages: response.messages,
   };
 }
 
@@ -646,11 +790,11 @@ export class YagrRunEngine {
         await recordStep(state, options, {
           stepType: step.stepType,
           finishReason: String(step.finishReason),
-          toolCalls: step.toolCalls.map((toolCall) => ({
+          toolCalls: step.toolCalls.map((toolCall: { toolName: string; args: unknown }) => ({
             toolName: toolCall.toolName,
             args: toolCall.args,
           })),
-          toolResults: step.toolResults.map((toolResult) => ({
+          toolResults: step.toolResults.map((toolResult: { toolName: string; result: unknown }) => ({
             toolName: toolResult.toolName,
             result: toolResult.result,
           })),

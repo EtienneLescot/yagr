@@ -524,10 +524,10 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
     >
       <defs>
         <marker id="wf-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-          <path d="M0,0 L8,3 L0,6" fill="#94a3b8" />
+          <path d="M0,0 L8,3 L0,6" fill="var(--workflow-graph-edge)" />
         </marker>
         <marker id="wf-loop-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-          <path d="M0,0 L8,3 L0,6" fill="#f59e0b" />
+          <path d="M0,0 L8,3 L0,6" fill="var(--workflow-graph-loop)" />
         </marker>
       </defs>
       {graph.edges.map((e, i) => {
@@ -549,7 +549,7 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
               key={`e${i}`}
               d={`M${x1},${y1} C${x1},${cpY} ${x2},${cpY} ${x2},${y2}`}
               fill="none"
-              stroke="#f59e0b"
+              stroke="var(--workflow-graph-loop)"
               strokeWidth={1.5}
               strokeDasharray="5 3"
               markerEnd="url(#wf-loop-arrow)"
@@ -566,7 +566,7 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
             key={`e${i}`}
             d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
             fill="none"
-            stroke="#cbd5e1"
+            stroke="var(--workflow-graph-edge)"
             strokeWidth={2}
             markerEnd="url(#wf-arrow)"
           />
@@ -581,7 +581,7 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
               x={p.x} y={p.y}
               width={NODE_W} height={NODE_H}
               rx={10} ry={10}
-              fill="white"
+              fill="var(--workflow-graph-node-bg)"
               stroke={color}
               strokeWidth={2}
             />
@@ -590,7 +590,7 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
               textAnchor="middle"
               fontSize={11}
               fontWeight={600}
-              fill="#1e293b"
+              fill="var(--workflow-graph-node-text)"
             >
               {n.label.length > 18 ? `${n.label.slice(0, 16)}…` : n.label}
             </text>
@@ -598,7 +598,7 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
               x={p.x + NODE_W / 2} y={p.y + 36}
               textAnchor="middle"
               fontSize={9}
-              fill="#94a3b8"
+              fill="var(--workflow-graph-node-muted)"
             >
               {n.type}
             </text>

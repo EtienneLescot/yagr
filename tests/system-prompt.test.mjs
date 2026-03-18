@@ -6,6 +6,30 @@ import test from 'node:test';
 
 import { buildSystemPrompt } from '../dist/prompt/build-system-prompt.js';
 
+function withTempInstructionRoots(tempDir, callback) {
+  const previousHome = process.env.YAGR_HOME;
+  const previousLaunchCwd = process.env.YAGR_LAUNCH_CWD;
+
+  process.env.YAGR_HOME = tempDir;
+  process.env.YAGR_LAUNCH_CWD = tempDir;
+
+  try {
+    return callback();
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.YAGR_HOME;
+    } else {
+      process.env.YAGR_HOME = previousHome;
+    }
+
+    if (previousLaunchCwd === undefined) {
+      delete process.env.YAGR_LAUNCH_CWD;
+    } else {
+      process.env.YAGR_LAUNCH_CWD = previousLaunchCwd;
+    }
+  }
+}
+
 test('system prompt includes generic coding-agent baseline and defers domain rules to workspace instructions', () => {
   const prompt = buildSystemPrompt({ name: 'test-engine' });
 
@@ -20,6 +44,8 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
   assert.match(prompt, /explicit linkage is present/i);
   assert.match(prompt, /verify them with the most relevant available checks/i);
   assert.match(prompt, /requestRequiredAction tool/i);
+  assert.match(prompt, /Keep final user-facing summaries concise/i);
+  assert.match(prompt, /Do not paste the full workflow file contents/i);
 });
 
 test('system prompt includes later AGENTS sections beyond the old truncation boundary', () => {
@@ -35,7 +61,7 @@ test('system prompt includes later AGENTS sections beyond the old truncation bou
     );
 
     process.chdir(tempDir);
-    const prompt = buildSystemPrompt({ name: 'test-engine' });
+    const prompt = withTempInstructionRoots(tempDir, () => buildSystemPrompt({ name: 'test-engine' }));
 
     assert.match(prompt, /Critical Example/);
     assert.match(prompt, /AiAgent\.uses\(\{ ai_languageModel: this\.OpenaiModel\.output \}\)/);
@@ -54,7 +80,7 @@ test('system prompt inlines short AGENTS files without extra scaffolding', () =>
     fs.writeFileSync(path.join(tempDir, 'AGENTS.md'), '# Short Rules\nUse exact examples.\n', 'utf8');
 
     process.chdir(tempDir);
-    const prompt = buildSystemPrompt({ name: 'test-engine' });
+    const prompt = withTempInstructionRoots(tempDir, () => buildSystemPrompt({ name: 'test-engine' }));
 
     assert.match(prompt, /# Short Rules/);
     assert.doesNotMatch(prompt, /truncated/);

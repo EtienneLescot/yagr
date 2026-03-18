@@ -18,6 +18,17 @@
   --violet-deep: #18222c;
   --rose: #e63d7a;
   --shadow: 0 8px 20px rgba(12, 16, 31, 0.06);
+  --workflow-card-bg: rgba(255, 255, 255, 0.88);
+  --workflow-card-bg-subtle: rgba(247, 252, 252, 0.92);
+  --workflow-card-border: rgba(142, 168, 178, 0.42);
+  --workflow-title-ink: #10202a;
+  --workflow-badge-ink: #f8fcfc;
+  --workflow-badge-bg: linear-gradient(135deg, #345766, #80bbc7);
+  --workflow-graph-edge: #9eb4c1;
+  --workflow-graph-loop: #d38a17;
+  --workflow-graph-node-bg: rgba(255, 255, 255, 0.98);
+  --workflow-graph-node-text: #1e293b;
+  --workflow-graph-node-muted: #64748b;
   font-family: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
 }
 
@@ -40,6 +51,17 @@
     --violet: #80bbc7;
     --violet-deep: #80bbc7;
     --shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+    --workflow-card-bg: rgba(20, 29, 38, 0.94);
+    --workflow-card-bg-subtle: rgba(16, 24, 32, 0.96);
+    --workflow-card-border: rgba(128, 187, 199, 0.26);
+    --workflow-title-ink: #edf3f5;
+    --workflow-badge-ink: #0e171d;
+    --workflow-badge-bg: linear-gradient(135deg, #a7d9e3, #7ab5c1);
+    --workflow-graph-edge: #5f7b89;
+    --workflow-graph-loop: #f3b24b;
+    --workflow-graph-node-bg: rgba(24, 34, 44, 0.98);
+    --workflow-graph-node-text: #edf3f5;
+    --workflow-graph-node-muted: #9fb1b8;
   }
 }
 
@@ -61,6 +83,17 @@
   --violet: #456874;
   --violet-deep: #18222c;
   --shadow: 0 8px 20px rgba(12, 16, 31, 0.06);
+  --workflow-card-bg: rgba(255, 255, 255, 0.88);
+  --workflow-card-bg-subtle: rgba(247, 252, 252, 0.92);
+  --workflow-card-border: rgba(142, 168, 178, 0.42);
+  --workflow-title-ink: #10202a;
+  --workflow-badge-ink: #f8fcfc;
+  --workflow-badge-bg: linear-gradient(135deg, #345766, #80bbc7);
+  --workflow-graph-edge: #9eb4c1;
+  --workflow-graph-loop: #d38a17;
+  --workflow-graph-node-bg: rgba(255, 255, 255, 0.98);
+  --workflow-graph-node-text: #1e293b;
+  --workflow-graph-node-muted: #64748b;
 }
 
 :root[data-theme-mode='dark'] {
@@ -81,6 +114,17 @@
   --violet: #80bbc7;
   --violet-deep: #80bbc7;
   --shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+  --workflow-card-bg: rgba(20, 29, 38, 0.94);
+  --workflow-card-bg-subtle: rgba(16, 24, 32, 0.96);
+  --workflow-card-border: rgba(128, 187, 199, 0.26);
+  --workflow-title-ink: #edf3f5;
+  --workflow-badge-ink: #0e171d;
+  --workflow-badge-bg: linear-gradient(135deg, #a7d9e3, #7ab5c1);
+  --workflow-graph-edge: #5f7b89;
+  --workflow-graph-loop: #f3b24b;
+  --workflow-graph-node-bg: rgba(24, 34, 44, 0.98);
+  --workflow-graph-node-text: #edf3f5;
+  --workflow-graph-node-muted: #9fb1b8;
 }
 
 * { box-sizing: border-box; }
@@ -1100,8 +1144,9 @@ button {
 .workflowCard {
   margin-top: 0.75rem;
   border-radius: 12px;
-  background: var(--surface-elevated, rgba(255, 255, 255, 0.88));
-  border: 1px solid var(--border, var(--panel-border));
+  background: var(--workflow-card-bg);
+  border: 1px solid var(--workflow-card-border);
+  box-shadow: 0 12px 28px rgba(12, 16, 31, 0.12);
   overflow: hidden;
 }
 
@@ -1129,13 +1174,14 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   white-space: nowrap;
-  color: #fff;
-  background: linear-gradient(135deg, var(--violet-deep), var(--blue-deep));
+  color: var(--workflow-badge-ink);
+  background: var(--workflow-badge-bg);
 }
 
 .workflowTitle {
   font-size: 0.9rem;
   font-weight: 500;
+  color: var(--workflow-title-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1148,9 +1194,9 @@ button {
 
 .workflowGraphWrap {
   padding: 0.75rem 1rem;
-  border-top: 1px solid var(--border, var(--panel-border));
+  border-top: 1px solid var(--workflow-card-border);
   overflow-x: auto;
-  background: var(--surface-elevated, rgba(247, 252, 252, 0.92));
+  background: var(--workflow-card-bg-subtle);
   /* set a max-height so very tall graphs don't overflow vertically */
   max-height: 640px;
   overflow-y: auto;
@@ -1159,4 +1205,9 @@ button {
 .workflowGraph {
   display: block;
   /* no max-width: 100% — let the SVG keep its intrinsic width so overflow-x: auto can scroll */
+}
+
+.workflowDiagram {
+  margin: 0;
+  color: var(--workflow-title-ink);
 }

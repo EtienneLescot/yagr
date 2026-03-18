@@ -18,6 +18,7 @@ interface N8nCredentialStore {
 
 export class YagrN8nConfigService {
   private readonly globalStore: Conf<N8nCredentialStore>;
+  private readonly compatibilityStore: Conf<N8nCredentialStore>;
   private readonly localConfigPath: string;
   private readonly legacyCredentialsPath: string;
 
@@ -28,9 +29,14 @@ export class YagrN8nConfigService {
       cwd: paths.homeDir,
       configName: 'n8n-credentials',
     });
+    this.compatibilityStore = new Conf<N8nCredentialStore>({
+      projectName: 'n8nac',
+      configName: 'credentials',
+    });
     this.localConfigPath = paths.n8nConfigPath;
     this.legacyCredentialsPath = paths.legacyN8nCredentialsPath;
     this.migrateLegacyCredentials();
+    this.syncCompatibilityCredentials();
   }
 
   getLocalConfig(): YagrN8nLocalConfig {
@@ -66,13 +72,23 @@ export class YagrN8nConfigService {
 
   getApiKey(host: string): string | undefined {
     const credentials = this.globalStore.get('hosts') ?? {};
-    return credentials[this.normalizeHost(host)];
+    const normalizedHost = this.normalizeHost(host);
+    if (credentials[normalizedHost]) {
+      return credentials[normalizedHost];
+    }
+
+    const compatibilityCredentials = this.compatibilityStore.get('hosts') ?? {};
+    return compatibilityCredentials[normalizedHost];
   }
 
   saveApiKey(host: string, apiKey: string): void {
     const credentials = this.globalStore.get('hosts') ?? {};
-    credentials[this.normalizeHost(host)] = apiKey;
+    const compatibilityCredentials = this.compatibilityStore.get('hosts') ?? {};
+    const normalizedHost = this.normalizeHost(host);
+    credentials[normalizedHost] = apiKey;
+    compatibilityCredentials[normalizedHost] = apiKey;
     this.globalStore.set('hosts', credentials);
+    this.compatibilityStore.set('hosts', compatibilityCredentials);
   }
 
   clearLocalConfig(): void {
@@ -83,6 +99,7 @@ export class YagrN8nConfigService {
 
   clearAllApiKeys(): void {
     this.globalStore.set('hosts', {});
+    this.compatibilityStore.set('hosts', {});
   }
 
   async getOrCreateInstanceIdentifier(host: string): Promise<string> {
@@ -139,5 +156,21 @@ export class YagrN8nConfigService {
     } catch {
       // Ignore malformed legacy files and start fresh in the Yagr home.
     }
+  }
+
+  private syncCompatibilityCredentials(): void {
+    const homeHosts = this.globalStore.get('hosts') ?? {};
+    const compatibilityHosts = this.compatibilityStore.get('hosts') ?? {};
+    const mergedHosts = {
+      ...compatibilityHosts,
+      ...homeHosts,
+    };
+
+    if (Object.keys(mergedHosts).length === 0) {
+      return;
+    }
+
+    this.globalStore.set('hosts', mergedHosts);
+    this.compatibilityStore.set('hosts', mergedHosts);
   }
 }
