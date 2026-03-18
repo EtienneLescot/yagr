@@ -7,7 +7,7 @@ import {
   getDisplayProjectName,
   type IProject,
 } from 'n8nac';
-import { YagrConfigService } from './config/yagr-config-service.js';
+import { normalizeGatewaySurfaces, YagrConfigService } from './config/yagr-config-service.js';
 import { getYagrHomeDir } from './config/yagr-home.js';
 import { getGatewaySupervisorStatus } from './gateway/manager.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
@@ -68,10 +68,12 @@ export function buildYagrSetupStatus(input: {
 export function getYagrSetupStatus(
   yagrConfigService = new YagrConfigService(),
   n8nConfigService = new N8nConfigService(),
+  options: { activeSurfaces?: GatewaySurface[] } = {},
 ): YagrSetupStatus {
   const yagrConfig = yagrConfigService.getLocalConfig();
   const n8nConfig = n8nConfigService.getLocalConfig();
   const gatewayStatus = getGatewaySupervisorStatus(yagrConfigService);
+  const activeSurfaces = normalizeGatewaySurfaces(options.activeSurfaces);
 
   const n8nConfigured = Boolean(
     n8nConfig.host
@@ -89,11 +91,14 @@ export function getYagrSetupStatus(
     llmConfigured = false;
   }
 
+  const enabledSurfaces = Array.from(new Set([...gatewayStatus.enabledSurfaces, ...activeSurfaces]));
+  const startableSurfaces = Array.from(new Set([...gatewayStatus.startableSurfaces, ...activeSurfaces]));
+
   return buildYagrSetupStatus({
     n8nConfigured,
     llmConfigured,
-    enabledSurfaces: gatewayStatus.enabledSurfaces,
-    startableSurfaces: gatewayStatus.startableSurfaces,
+    enabledSurfaces,
+    startableSurfaces,
   });
 }
 
