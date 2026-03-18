@@ -36,6 +36,7 @@ export type YagrToolEvent =
       workflowId: string;
       url: string;
       title?: string;
+      diagram?: string;
     };
 
 export interface ToolExecutionObserver {

@@ -15,7 +15,7 @@ type ChatStreamEvent =
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
-  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; title?: string };
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; title?: string; diagram?: string };
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -281,14 +281,19 @@ function SetupPageHeader({
 
 function WorkflowHeader({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
   return (
-    <div className="workflowHeader">
-      <div className="workflowHeaderLeft">
-        <span className="workflowBadge">Workflow</span>
-        <span className="workflowTitle">{embed.title ?? `Workflow ${embed.workflowId}`}</span>
+    <div className="workflowCard">
+      <div className="workflowHeader">
+        <div className="workflowHeaderLeft">
+          <span className="workflowBadge">Workflow</span>
+          <span className="workflowTitle">{embed.title ?? `Workflow ${embed.workflowId}`}</span>
+        </div>
+        <a className="primaryButton" href={embed.url} target="_blank" rel="noreferrer">
+          Open in n8n
+        </a>
       </div>
-      <a className="primaryButton" href={embed.url} target="_blank" rel="noreferrer">
-        Open in n8n
-      </a>
+      {embed.diagram ? (
+        <pre className="workflowDiagram">{embed.diagram}</pre>
+      ) : null}
     </div>
   );
 }
@@ -956,6 +961,7 @@ function App() {
               workflowId: streamEvent.workflowId,
               url: streamEvent.url,
               title: streamEvent.title,
+              diagram: streamEvent.diagram,
             },
           });
           return;
