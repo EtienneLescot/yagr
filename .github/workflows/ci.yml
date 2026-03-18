@@ -17,16 +17,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 10
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build all packages
+      - name: Build project
         run: npm run build
 
       - name: Run tests
