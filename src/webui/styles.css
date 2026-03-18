@@ -310,6 +310,15 @@ button {
 
 .dangerButton { color: #d94778; }
 
+.stopButton {
+  min-width: 7.25rem;
+}
+
+.stopButtonSymbol {
+  font-size: 0.88rem;
+  line-height: 1;
+}
+
 .primaryButton:hover,
 .ghostButton:hover,
 .linkButton:hover {
