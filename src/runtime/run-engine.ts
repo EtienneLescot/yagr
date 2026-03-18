@@ -22,7 +22,7 @@ import { buildTools } from '../tools/index.js';
 import { evaluateCompletionGate } from './completion-gate.js';
 import { compactConversationContext } from './context-compaction.js';
 import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outcome.js';
-import { wrapToolsWithRuntimeHooks } from './policy-hooks.js';
+import { createDefaultRuntimeHooks, wrapToolsWithRuntimeHooks } from './policy-hooks.js';
 import { blockingStateForRequiredActions, collectRequiredActions } from './required-actions.js';
 
 const INSPECT_MAX_STEPS = 4;
@@ -747,10 +747,11 @@ export class YagrRunEngine {
       content: prompt,
     };
     const systemPrompt = buildSystemPrompt(this.engine);
+    const runtimeHooks = [...createDefaultRuntimeHooks(), ...(options.runtimeHooks ?? [])];
     const baseTools = buildTools(this.engine, {
       onToolEvent: withRuntimeToolEvents(state, options),
     });
-    const tools = wrapToolsWithRuntimeHooks(baseTools as any, options.runtimeHooks, () => ({
+    const tools = wrapToolsWithRuntimeHooks(baseTools as any, runtimeHooks, () => ({
       runId: state.runId,
       phase: state.currentPhase,
       state: state.currentAgentState,
@@ -880,7 +881,7 @@ export class YagrRunEngine {
         successfulValidate: Boolean(analyzeRunOutcome(state.journal).successfulValidate),
         successfulPush: Boolean(analyzeRunOutcome(state.journal).successfulPush),
         unresolvedFailureCount: analyzeRunOutcome(state.journal).unresolvedFailedActions.length,
-        hooks: options.runtimeHooks,
+        hooks: runtimeHooks,
         context: buildRuntimeContext(state),
       });
 

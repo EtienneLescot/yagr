@@ -383,8 +383,17 @@ interface GraphEdge {
   isLoop?: boolean;
 }
 
+function normalizeWorkflowMapLine(line: string): string {
+  return line
+    .replace(/^\s*\/\*+\s?/, '')
+    .replace(/^\s*\*\/?\s?/, '')
+    .replace(/^\s*\/\/?\s?/, '')
+    .replace(/\s*\*\/\s*$/, '')
+    .trimEnd();
+}
+
 function parseWorkflowMap(diagram: string): { nodes: GraphNode[]; edges: GraphEdge[] } | null {
-  const lines = diagram.split('\n').map((l) => l.replace(/^\/\/\s?/, ''));
+  const lines = diagram.split('\n').map(normalizeWorkflowMapLine);
 
   // Parse NODE INDEX: lines like "  PropertyName                  nodeType"
   const nodeIndex = new Map<string, string>();
@@ -392,7 +401,7 @@ function parseWorkflowMap(diagram: string): { nodes: GraphNode[]; edges: GraphEd
   for (const line of lines) {
     if (line.trim().startsWith('NODE INDEX')) { inNodeIndex = true; continue; }
     if (line.trim().startsWith('ROUTING MAP')) { inNodeIndex = false; continue; }
-    if (line.trim().startsWith('──') || line.trim().startsWith('Property name')) continue;
+    if (/^[\s\-_=─]+$/.test(line.trim()) || line.trim().startsWith('Property name')) continue;
     if (!inNodeIndex) continue;
     const match = line.match(/^\s*(\S+)\s{2,}(\S+)/);
     if (match) nodeIndex.set(match[1], match[2]);
@@ -405,13 +414,14 @@ function parseWorkflowMap(diagram: string): { nodes: GraphNode[]; edges: GraphEd
   const orderedNames: string[] = [];
   for (const line of lines) {
     if (line.trim().startsWith('ROUTING MAP')) { inRouting = true; continue; }
-    if (line.trim().startsWith('</workflow-map>') || line.trim().startsWith('AI CONNECTIONS')) break;
+    if (line.trim().startsWith('<workflow-map>') || line.trim().startsWith('</workflow-map>')) continue;
+    if (line.trim().startsWith('AI CONNECTIONS')) break;
     if (!inRouting) continue;
-    if (line.trim().startsWith('──') || !line.trim()) continue;
+    if (/^[\s\-_=─]+$/.test(line.trim()) || !line.trim()) continue;
 
     const isLoop = line.includes('(↩ loop)');
     // Match ".out(N) → NodeName" (alternate output branches) as well as plain "→ NodeName"
-    const arrowMatch = line.match(/^(\s*)\.out\(\d+\)\s+→\s*(\S+)/) ?? line.match(/^(\s*)→\s*(\S+)/);
+    const arrowMatch = line.match(/^(\s*)\.out\(\d+\)\s+(?:→|->)\s*(\S+)/) ?? line.match(/^(\s*)(?:→|->)\s*(\S+)/);
     if (arrowMatch) {
       const depth = Math.floor(arrowMatch[1].length / 2);
       const name = arrowMatch[2];
