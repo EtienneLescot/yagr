@@ -47,7 +47,7 @@ const WEB_UI_HTML = `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Yagr Web UI</title>
-    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/styles.css" />
     <script defer src="/app.js"></script>
   </head>
   <body>
@@ -192,8 +192,8 @@ class WebUiGateway implements Gateway {
       return;
     }
 
-    if (method === 'GET' && url.pathname === '/app.css') {
-      await this.sendStaticAsset(response, 'app.css', 'text/css; charset=utf-8');
+    if (method === 'GET' && (url.pathname === '/styles.css' || url.pathname === '/app.css')) {
+      await this.sendStaticAsset(response, 'styles.css', 'text/css; charset=utf-8');
       return;
     }
 

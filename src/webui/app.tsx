@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { useWebUiStore } from './store.js';
+import { useWebUiStore, type ConfigSnapshot } from './store.js';
 
 type ApiError = { error?: string };
 
@@ -23,7 +23,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function useNotice() {
-  return React.useEffectEvent((message: string, tone: 'info' | 'error' = 'info') => {
+  return React.useCallback((message: string, tone: 'info' | 'error' = 'info') => {
     const notice = document.createElement('div');
     notice.className = 'notice';
     notice.textContent = message;
@@ -32,7 +32,7 @@ function useNotice() {
     }
     document.body.appendChild(notice);
     window.setTimeout(() => notice.remove(), 3600);
-  });
+  }, []);
 }
 
 function App() {
@@ -70,7 +70,7 @@ function App() {
 
   const [chatInput, setChatInput] = React.useState('');
 
-  const hydrate = React.useEffectEvent((nextSnapshot: typeof snapshot extends undefined ? never : NonNullable<typeof snapshot>) => {
+  const hydrate = React.useCallback((nextSnapshot: ConfigSnapshot) => {
     setSnapshot(nextSnapshot);
     setN8nHost(nextSnapshot.n8n.host ?? '');
     setN8nApiKey('');
@@ -82,9 +82,9 @@ function App() {
     setBaseUrl(nextSnapshot.yagr.baseUrl ?? '');
     setEnableTelegram(nextSnapshot.gatewayStatus.enabledSurfaces.includes('telegram'));
     setTelegramBotToken('');
-  });
+  }, [setSnapshot]);
 
-  const refreshConfig = React.useEffectEvent(async () => {
+  const refreshConfig = React.useCallback(async () => {
     setBusyLabel('Refreshing state...');
     try {
       const nextSnapshot = await request<any>('/api/config');
@@ -97,13 +97,13 @@ function App() {
     } finally {
       setBusyLabel(undefined);
     }
-  });
+  }, [hydrate, notify, setBusyLabel, setError]);
 
   React.useEffect(() => {
     void refreshConfig();
   }, [refreshConfig]);
 
-  const onLoadProjects = React.useEffectEvent(async () => {
+  const onLoadProjects = async () => {
     setBusyLabel('Loading n8n projects...');
     try {
       const result = await request<{ projects: Array<{ id: string; name: string }>; selectedProjectId?: string }>('/api/n8n/projects', {
@@ -120,9 +120,9 @@ function App() {
     } finally {
       setBusyLabel(undefined);
     }
-  });
+  };
 
-  const onSaveN8n = React.useEffectEvent(async () => {
+  const onSaveN8n = async () => {
     setBusyLabel('Saving orchestrator connection...');
     try {
       const result = await request<{ warning?: string; snapshot: any }>('/api/config/n8n', {
@@ -136,9 +136,9 @@ function App() {
     } finally {
       setBusyLabel(undefined);
     }
-  });
+  };
 
-  const onLoadModels = React.useEffectEvent(async () => {
+  const onLoadModels = async () => {
     setBusyLabel('Loading models...');
     try {
       const result = await request<{ models: string[] }>('/api/llm/models', {
@@ -152,9 +152,9 @@ function App() {
     } finally {
       setBusyLabel(undefined);
     }
-  });
+  };
 
-  const onSaveLlm = React.useEffectEvent(async () => {
+  const onSaveLlm = async () => {
     setBusyLabel('Saving model config...');
     try {
       const result = await request<{ snapshot: any }>('/api/config/llm', {
@@ -168,9 +168,9 @@ function App() {
     } finally {
       setBusyLabel(undefined);
     }
-  });
+  };
 
-  const onSaveSurfaces = React.useEffectEvent(async () => {
+  const onSaveSurfaces = async () => {
     setBusyLabel('Saving surfaces...');
     try {
       const enabledSurfaces = [enableTelegram ? 'telegram' : null].filter(Boolean);
@@ -185,9 +185,9 @@ function App() {
     } finally {
       setBusyLabel(undefined);
     }
-  });
+  };
 
-  const onConfigureTelegram = React.useEffectEvent(async () => {
+  const onConfigureTelegram = async () => {
     setBusyLabel('Configuring Telegram...');
     try {
       const result = await request<{ snapshot: any }>('/api/telegram/configure', {
@@ -201,9 +201,9 @@ function App() {
     } finally {
       setBusyLabel(undefined);
     }
-  });
+  };
 
-  const onResetTelegram = React.useEffectEvent(async () => {
+  const onResetTelegram = async () => {
     setBusyLabel('Resetting Telegram...');
     try {
       const result = await request<{ snapshot: any }>('/api/telegram/reset', {
@@ -217,9 +217,9 @@ function App() {
     } finally {
       setBusyLabel(undefined);
     }
-  });
+  };
 
-  const onResetChat = React.useEffectEvent(async () => {
+  const onResetChat = async () => {
     setBusyLabel('Resetting conversation...');
     try {
       await request('/api/chat/reset', {
@@ -233,9 +233,9 @@ function App() {
     } finally {
       setBusyLabel(undefined);
     }
-  });
+  };
 
-  const onSendMessage = React.useEffectEvent(async (event: React.FormEvent) => {
+  const onSendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
     const trimmed = chatInput.trim();
     if (!trimmed) {
@@ -263,7 +263,7 @@ function App() {
     } finally {
       setBusyLabel(undefined);
     }
-  });
+  };
 
   const setupMissing = snapshot?.setupStatus.missingSteps.join(', ') || 'No missing steps';
   const telegramLink = snapshot?.telegram.deepLink;
