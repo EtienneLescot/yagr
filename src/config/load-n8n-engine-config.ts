@@ -1,6 +1,6 @@
-import { ConfigService } from 'n8nac';
 import type { N8nEngineConfig } from '../types.js';
 import { N8nEngine } from '../engine/n8n-engine.js';
+import { YagrN8nConfigService } from './n8n-config-service.js';
 
 function missingFieldError(field: string): Error {
   return new Error(
@@ -8,7 +8,7 @@ function missingFieldError(field: string): Error {
   );
 }
 
-export async function loadN8nEngineConfig(configService = new ConfigService()): Promise<N8nEngineConfig> {
+export async function loadN8nEngineConfig(configService = new YagrN8nConfigService()): Promise<N8nEngineConfig> {
   const localConfig = configService.getLocalConfig();
 
   if (!localConfig.host) {
@@ -46,7 +46,7 @@ export async function loadN8nEngineConfig(configService = new ConfigService()): 
 }
 
 export async function createN8nEngineFromWorkspace(
-  configService = new ConfigService(),
+  configService = new YagrN8nConfigService(),
 ): Promise<N8nEngine> {
   const config = await loadN8nEngineConfig(configService);
   return new N8nEngine(config);
