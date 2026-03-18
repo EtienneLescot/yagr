@@ -46,19 +46,6 @@ yagr start
 
 Yagr persists this state in the Yagr home, so you do not need to recreate setup per repo.
 
-## Repository development flow
-
-If you are working from this monorepo instead of using the published package:
-
-```bash
-npm install
-npm run build
-npm run yagr:onboard
-npm run yagr:start
-```
-
-The dev scripts target `.yagr-test-workspace` on purpose so local development stays isolated from your real `~/.yagr` home.
-
 ## Runtime home
 
 User-facing Yagr defaults to `~/.yagr`.
@@ -89,3 +76,5 @@ Continue with:
 - [Usage overview](/yagr/docs/usage)
 - [Telegram setup](/yagr/docs/usage/telegram)
 - [Commands reference](/yagr/docs/reference/commands)
+
+If you are contributing from the repository instead of using the published package, use the development flow documented in the root README.
