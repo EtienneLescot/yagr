@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.5](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.4...yagr@v0.2.5) (2026-03-18)
+
+
+### Bug Fixes
+
+* update Node.js version to 24 and add environment inspection steps in release workflow ([ae9f4b3](https://github.com/EtienneLescot/yagr/commit/ae9f4b37f4a665dece4a0e3cfdeaa0aaff77804e))
+
 ## [0.2.4](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.3...yagr@v0.2.4) (2026-03-18)
 
 
