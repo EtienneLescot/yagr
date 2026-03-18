@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import './config/init-yagr-home.js';
+import os from 'node:os';
 import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js';
+import { buildYagrCleanupPlan, resetYagrLocalState, type YagrResetScope } from './config/local-state.js';
 import { YagrConfigService } from './config/yagr-config-service.js';
+import { getYagrPaths } from './config/yagr-home.js';
 import { getGatewaySupervisorStatus, runGatewaySupervisor, runGatewaySurfaces } from './gateway/manager.js';
 import {
   getTelegramGatewayStatus,
@@ -25,7 +28,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [
 ];
 
 interface ParsedArgs {
-  command?: 'config-show' | 'config-reset' | 'setup' | 'start' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
+  command?: 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
   startTarget?: 'webui' | 'tui';
   prompt?: string;
   interactive: boolean;
@@ -34,6 +37,9 @@ interface ParsedArgs {
   maxSteps?: number;
   showThinking: boolean;
   showExecution: boolean;
+  yes: boolean;
+  dryRun: boolean;
+  resetScope?: YagrResetScope;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -41,6 +47,8 @@ function parseArgs(argv: string[]): ParsedArgs {
     interactive: false,
     showThinking: true,
     showExecution: true,
+    yes: false,
+    dryRun: false,
   };
 
   let startIndex = 0;
@@ -53,6 +61,21 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (argv[0] === 'config' && argv[1] === 'reset') {
     parsed.command = 'config-reset';
     return parsed;
+  }
+
+  if (argv[0] === 'paths') {
+    parsed.command = 'paths';
+    return parsed;
+  }
+
+  if (argv[0] === 'reset') {
+    parsed.command = 'reset';
+    startIndex = 1;
+  }
+
+  if (argv[0] === 'uninstall') {
+    parsed.command = 'uninstall';
+    startIndex = 1;
   }
 
   if (argv[0] === 'setup' || argv[0] === 'onboard') {
@@ -160,6 +183,27 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (arg === '--yes') {
+      parsed.yes = true;
+      continue;
+    }
+
+    if (arg === '--dry-run') {
+      parsed.dryRun = true;
+      continue;
+    }
+
+    if (arg === '--scope') {
+      const value = argv[index + 1];
+      if (value === 'config' || value === 'config+creds' || value === 'full') {
+        parsed.resetScope = value;
+        index += 1;
+        continue;
+      }
+
+      throw new Error('Invalid value for --scope. Use one of: config, config+creds, full.');
+    }
+
     if (!parsed.prompt) {
       parsed.prompt = arg;
       continue;
@@ -238,6 +282,55 @@ async function main(): Promise<void> {
   const configService = new YagrConfigService();
 
   if (args.command) {
+    if (args.command === 'paths') {
+      const cleanupPlan = buildYagrCleanupPlan('full');
+      const payload = {
+        launchDir: cleanupPlan.paths.launchDir,
+        homeDir: cleanupPlan.paths.homeDir,
+        os: process.platform,
+        files: {
+          yagrConfig: cleanupPlan.paths.yagrConfigPath,
+          yagrCredentials: cleanupPlan.paths.yagrCredentialsPath,
+          n8nConfig: cleanupPlan.paths.n8nConfigPath,
+          n8nCredentials: cleanupPlan.paths.n8nCredentialsPath,
+        },
+        legacy: {
+          yagrCredentials: cleanupPlan.paths.legacyYagrCredentialsPath,
+          n8nCredentials: cleanupPlan.paths.legacyN8nCredentialsPath,
+        },
+        workspace: {
+          managed: cleanupPlan.workspacePaths,
+          preservedExternal: cleanupPlan.preservedWorkspacePaths,
+        },
+      };
+
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      return;
+    }
+
+    if (args.command === 'reset' || args.command === 'uninstall') {
+      const scope = args.command === 'uninstall' ? 'full' : (args.resetScope ?? 'config+creds');
+      if (!args.dryRun && !args.yes) {
+        throw new Error('Refusing to remove local state without --yes. Use --dry-run to preview the cleanup plan.');
+      }
+
+      const result = await resetYagrLocalState(scope, { dryRun: args.dryRun });
+      const payload = {
+        scope,
+        dryRun: args.dryRun,
+        deletePaths: result.plan.deletePaths,
+        preservedWorkspacePaths: result.plan.preservedWorkspacePaths,
+      };
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      if (args.command === 'uninstall') {
+        const packageManagerHint = os.platform() === 'win32'
+          ? 'npm uninstall -g @yagr/agent'
+          : 'npm uninstall -g @yagr/agent';
+        process.stdout.write(`CLI package remains installed. Remove it separately with: ${packageManagerHint}\n`);
+      }
+      return;
+    }
+
     if (args.command === 'config-show') {
       const localConfig = configService.getLocalConfig();
       const setupStatus = getYagrSetupStatus(configService);

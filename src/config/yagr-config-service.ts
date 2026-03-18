@@ -1,7 +1,6 @@
 import Conf from 'conf';
 import fs from 'node:fs';
-import path from 'node:path';
-import { ensureYagrHomeDir, getYagrHomeDir } from './yagr-home.js';
+import { ensureYagrHomeDir, getYagrPaths } from './yagr-home.js';
 import type { GatewaySurface } from '../gateway/types.js';
 import type { YagrModelProvider } from '../llm/create-language-model.js';
 
@@ -48,17 +47,28 @@ export interface YagrLocalConfig {
   telegram?: YagrTelegramConfig;
 }
 
+interface YagrCredentialStore {
+  providers?: Record<string, string>;
+  telegram?: {
+    botToken?: string;
+  };
+}
+
 export class YagrConfigService {
-  private readonly globalStore: Conf;
+  private readonly globalStore: Conf<YagrCredentialStore>;
   private readonly localConfigPath: string;
+  private readonly legacyCredentialsPath: string;
 
   constructor() {
+    const paths = getYagrPaths();
     ensureYagrHomeDir();
-    this.globalStore = new Conf({
-      projectName: 'yagr',
+    this.globalStore = new Conf<YagrCredentialStore>({
+      cwd: paths.homeDir,
       configName: 'credentials',
     });
-    this.localConfigPath = path.join(getYagrHomeDir(), 'yagr-config.json');
+    this.localConfigPath = paths.yagrConfigPath;
+    this.legacyCredentialsPath = paths.legacyYagrCredentialsPath;
+    this.migrateLegacyCredentials();
   }
 
   getLocalConfig(): YagrLocalConfig {
@@ -153,5 +163,29 @@ export class YagrConfigService {
 
   clearTelegramBotToken(): void {
     this.globalStore.delete('telegram.botToken');
+  }
+
+  private migrateLegacyCredentials(): void {
+    if (this.globalStore.path === this.legacyCredentialsPath) {
+      return;
+    }
+
+    const currentProviders = this.globalStore.get('providers') ?? {};
+    const currentBotToken = this.globalStore.get('telegram.botToken');
+    if ((Object.keys(currentProviders).length > 0 || currentBotToken) || !fs.existsSync(this.legacyCredentialsPath)) {
+      return;
+    }
+
+    try {
+      const content = JSON.parse(fs.readFileSync(this.legacyCredentialsPath, 'utf-8')) as YagrCredentialStore;
+      if (content.providers && Object.keys(content.providers).length > 0) {
+        this.globalStore.set('providers', content.providers);
+      }
+      if (content.telegram?.botToken) {
+        this.globalStore.set('telegram.botToken', content.telegram.botToken);
+      }
+    } catch {
+      // Ignore malformed legacy files and start fresh in the Yagr home.
+    }
   }
 }
