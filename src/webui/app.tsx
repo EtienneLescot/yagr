@@ -290,6 +290,7 @@ interface GraphNode {
 interface GraphEdge {
   from: string;
   to: string;
+  isLoop?: boolean;
 }
 
 function parseWorkflowMap(diagram: string): { nodes: GraphNode[]; edges: GraphEdge[] } | null {
@@ -307,29 +308,31 @@ function parseWorkflowMap(diagram: string): { nodes: GraphNode[]; edges: GraphEd
     if (match) nodeIndex.set(match[1], match[2]);
   }
 
-  // Parse ROUTING MAP: indented "→ NodeName" lines
+  // Parse ROUTING MAP: indented "→ NodeName" and ".out(N) → NodeName" lines
   const edges: GraphEdge[] = [];
   const parentStack: string[] = [];
   let inRouting = false;
   const orderedNames: string[] = [];
   for (const line of lines) {
     if (line.trim().startsWith('ROUTING MAP')) { inRouting = true; continue; }
-    if (line.trim().startsWith('</workflow-map>')) break;
+    if (line.trim().startsWith('</workflow-map>') || line.trim().startsWith('AI CONNECTIONS')) break;
     if (!inRouting) continue;
     if (line.trim().startsWith('──') || !line.trim()) continue;
 
-    const arrowMatch = line.match(/^(\s*)→\s*(\S+)/);
+    const isLoop = line.includes('(↩ loop)');
+    // Match ".out(N) → NodeName" (alternate output branches) as well as plain "→ NodeName"
+    const arrowMatch = line.match(/^(\s*)\.out\(\d+\)\s+→\s*(\S+)/) ?? line.match(/^(\s*)→\s*(\S+)/);
     if (arrowMatch) {
       const depth = Math.floor(arrowMatch[1].length / 2);
       const name = arrowMatch[2];
-      orderedNames.push(name);
+      if (!isLoop) orderedNames.push(name);
       if (depth <= parentStack.length && parentStack.length > 0) {
         parentStack.length = depth;
       }
       if (parentStack.length > 0) {
-        edges.push({ from: parentStack[parentStack.length - 1], to: name });
+        edges.push({ from: parentStack[parentStack.length - 1], to: name, isLoop });
       }
-      parentStack.push(name);
+      if (!isLoop) parentStack.push(name);
     } else {
       // Root node (no arrow)
       const rootMatch = line.match(/^\s*(\S+)\s*$/);
@@ -343,16 +346,19 @@ function parseWorkflowMap(diagram: string): { nodes: GraphNode[]; edges: GraphEd
 
   if (orderedNames.length === 0) return null;
 
-  // Build graph nodes — position by layer (column) from edges
+  // Build graph nodes — position by layer (column) from forward edges only (back-edges excluded to avoid infinite loop)
   const layerMap = new Map<string, number>();
   for (const name of orderedNames) {
     if (!layerMap.has(name)) layerMap.set(name, 0);
   }
-  // Forward pass: each target is at least source+1
+  const forwardEdges = edges.filter((e) => !e.isLoop);
+  // Forward pass: each target is at least source+1; bounded by O(V²) in the worst case for a DAG
   let changed = true;
-  while (changed) {
+  let iters = 0;
+  const maxIters = orderedNames.length * orderedNames.length + 1;
+  while (changed && iters++ < maxIters) {
     changed = false;
-    for (const e of edges) {
+    for (const e of forwardEdges) {
       const s = layerMap.get(e.from) ?? 0;
       const t = layerMap.get(e.to) ?? 0;
       if (t <= s) {
@@ -423,10 +429,14 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
       viewBox={`0 0 ${svgW} ${svgH}`}
       width={svgW}
       height={svgH}
+      style={{ overflow: 'visible' }}
     >
       <defs>
         <marker id="wf-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
           <path d="M0,0 L8,3 L0,6" fill="#94a3b8" />
+        </marker>
+        <marker id="wf-loop-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6" fill="#f59e0b" />
         </marker>
       </defs>
       {graph.edges.map((e, i) => {
@@ -435,6 +445,25 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
         if (!src || !tgt) return null;
         const sp = pos(src);
         const tp = pos(tgt);
+        if (e.isLoop) {
+          // Back-edge: arc below both nodes so it's visually distinct
+          const x1 = sp.x + NODE_W / 2;
+          const y1 = sp.y + NODE_H;
+          const x2 = tp.x + NODE_W / 2;
+          const y2 = tp.y + NODE_H;
+          const cpY = Math.max(sp.y, tp.y) + NODE_H + 36;
+          return (
+            <path
+              key={`e${i}`}
+              d={`M${x1},${y1} C${x1},${cpY} ${x2},${cpY} ${x2},${y2}`}
+              fill="none"
+              stroke="#f59e0b"
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
+              markerEnd="url(#wf-loop-arrow)"
+            />
+          );
+        }
         const x1 = sp.x + NODE_W;
         const y1 = sp.y + NODE_H / 2;
         const x2 = tp.x;
