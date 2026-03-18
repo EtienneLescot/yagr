@@ -13,6 +13,7 @@ import {
 import { YagrAgent } from './agent.js';
 import type { YagrModelProvider } from './llm/create-language-model.js';
 import { getYagrSetupStatus, runYagrSetup } from './setup.js';
+import { promptForStartAction, type StartLaunchAction } from './setup/start-launcher.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [
   'anthropic',
@@ -174,21 +175,35 @@ function parseArgs(argv: string[]): ParsedArgs {
   return parsed;
 }
 
-async function promptForStartTarget(): Promise<'webui' | 'tui' | undefined> {
+async function promptForStartActionWithFallback(): Promise<StartLaunchAction> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     return 'webui';
   }
 
-  const readline = await import('node:readline/promises');
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    process.stdout.write('  [1] Web UI   [2] Terminal UI\n');
-    const answer = await rl.question('  Launch → ');
-    const trimmed = answer.trim();
-    if (trimmed === '2' || trimmed.toLowerCase() === 'tui') return 'tui';
-    return 'webui';
-  } finally {
-    rl.close();
+  return promptForStartAction();
+}
+
+async function resolveStartTarget(args: ParsedArgs, configService: YagrConfigService): Promise<'webui' | 'tui' | undefined> {
+  if (args.startTarget) {
+    return args.startTarget;
+  }
+
+  for (;;) {
+    const action = await promptForStartActionWithFallback();
+
+    if (action === 'cancel') {
+      return undefined;
+    }
+
+    if (action === 'onboard') {
+      const completed = await runYagrSetup(configService);
+      if (!completed) {
+        return undefined;
+      }
+      continue;
+    }
+
+    return action;
   }
 }
 
@@ -253,22 +268,7 @@ async function main(): Promise<void> {
         return;
       }
 
-      if (process.stdin.isTTY && process.stdout.isTTY) {
-        const readline = await import('node:readline/promises');
-        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-        let startNow: boolean;
-        try {
-          const answer = await rl.question('Start Yagr now? [Y/n] ');
-          startNow = answer.trim().toLowerCase() !== 'n';
-        } finally {
-          rl.close();
-        }
-        if (!startNow) return;
-      } else {
-        return;
-      }
-
-      const startTarget = await promptForStartTarget();
+      const startTarget = await resolveStartTarget(args, configService);
       if (!startTarget) {
         return;
       }
@@ -324,7 +324,7 @@ async function main(): Promise<void> {
       }
     }
 
-    const startTarget = args.startTarget ?? await promptForStartTarget();
+    const startTarget = await resolveStartTarget(args, configService);
     if (!startTarget) {
       return;
     }

@@ -177,6 +177,10 @@ export async function runYagrSetup(
       return { surfaces: yagrConfigService.getEnabledGatewaySurfaces() };
     },
 
+    getTelegramToken() {
+      return yagrConfigService.getTelegramBotToken();
+    },
+
     async setupTelegram(token) {
       return resolveTelegramBotIdentity(token);
     },
