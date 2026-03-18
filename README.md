@@ -21,7 +21,7 @@
 [![Documentation](https://github.com/EtienneLescot/yagr/actions/workflows/docs.yml/badge.svg)](https://n8nascode.dev/)
 [![Yagr Docs](https://img.shields.io/badge/docs-yagr-black?logo=gitbook)](https://n8nascode.dev/yagr/docs/)
 [![orchestrator:n8n](https://img.shields.io/badge/orchestrator-n8n-FE5A16?logo=n8n&logoColor=white)](https://n8n.io/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 <br>
 
@@ -70,17 +70,6 @@ yagr start
 yagr gateway status
 yagr telegram onboarding
 ```
-
-If you are contributing from this repository instead of installing the product globally, use the repo-scoped dev flow:
-
-```bash
-npm install
-npm run build
-npm run yagr:onboard
-npm run yagr:start
-```
-
-The repository dev scripts intentionally use `.yagr-test-workspace` so local development does not pollute your real Yagr home.
 
 ### Inspect Or Reset Local State
 
@@ -260,6 +249,21 @@ Yagr stores that state in its own home so the product does not depend on whateve
 | **n8n-as-code** | Workflow GitOps, AI skill, schema grounding, VS Code extension, TypeScript workflows | [n8n-as-code page](https://n8nascode.dev/n8n-as-code/) |
 
 The previous root README for `n8n-as-code` is preserved as a dedicated product README in [products/n8n-as-code/README.md](products/n8n-as-code/README.md).
+
+---
+
+## Contributing And Development
+
+If you are contributing from this repository instead of installing the published package globally, use the repo-scoped development flow:
+
+```bash
+npm install
+npm run build
+npm run yagr:onboard
+npm run yagr:start
+```
+
+These development scripts intentionally target `.yagr-test-workspace` so local work does not pollute your real `~/.yagr` home.
 
 ---
 
