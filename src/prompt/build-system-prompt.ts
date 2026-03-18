@@ -45,9 +45,9 @@ export function buildSystemPrompt(engine: Engine): string {
 function loadWorkspaceInstructions(): string {
   const candidateFiles = ['AGENTS.md', 'AGENT.md'];
   const candidateRoots = Array.from(new Set([
-    getYagrHomeDir(),
-    getYagrLaunchDir(),
     process.cwd(),
+    getYagrLaunchDir(),
+    getYagrHomeDir(),
   ]));
 
   for (const candidateRoot of candidateRoots) {

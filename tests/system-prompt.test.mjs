@@ -89,3 +89,24 @@ test('system prompt inlines short AGENTS files without extra scaffolding', () =>
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('workspace AGENTS takes precedence over Yagr home AGENTS', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-prompt-'));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-'));
+  const previousCwd = process.cwd();
+
+  try {
+    fs.writeFileSync(path.join(tempDir, 'AGENTS.md'), '# Workspace Rules\nUse workspace instructions first.\n', 'utf8');
+    fs.writeFileSync(path.join(homeDir, 'AGENTS.md'), '# Home Rules\nDo not use me first.\n', 'utf8');
+
+    process.chdir(tempDir);
+    const prompt = withTempInstructionRoots(homeDir, () => buildSystemPrompt({ name: 'test-engine' }));
+
+    assert.match(prompt, /# Workspace Rules/);
+    assert.doesNotMatch(prompt, /# Home Rules/);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
