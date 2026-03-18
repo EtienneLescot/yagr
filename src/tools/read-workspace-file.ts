@@ -14,7 +14,16 @@ export function createReadWorkspaceFileTool(_observer?: ToolExecutionObserver) {
     }),
     execute: async ({ path: inputPath, startLine, endLine }) => {
       const targetPath = resolveWorkspacePath(inputPath);
-      const stats = fs.statSync(targetPath);
+      let stats: fs.Stats;
+      try {
+        stats = fs.statSync(targetPath);
+      } catch (error) {
+        return {
+          ok: false,
+          path: inputPath,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
 
       if (!stats.isFile()) {
         return {

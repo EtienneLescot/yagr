@@ -38,6 +38,18 @@ export function createSearchWorkspaceTool(_observer?: ToolExecutionObserver) {
     }),
     execute: async ({ query, path: inputPath, isRegexp, maxResults }) => {
       const targetPath = resolveWorkspacePath(inputPath);
+      try {
+        fs.statSync(targetPath);
+      } catch (error) {
+        return {
+          query,
+          matches: [],
+          ok: false,
+          path: inputPath,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+
       const files: string[] = [];
       visitFiles(targetPath, files);
 
@@ -81,6 +93,8 @@ export function createSearchWorkspaceTool(_observer?: ToolExecutionObserver) {
       }
 
       return {
+        ok: true,
+        path: relativeWorkspacePath(targetPath),
         query,
         matches,
       };
