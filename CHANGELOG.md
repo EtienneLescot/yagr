@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.6](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.5...yagr@v0.2.6) (2026-03-18)
+
+
+### Features
+
+* enhance workflow presentation logic to require local workflow existence and improve system prompt instructions ([efc3b92](https://github.com/EtienneLescot/yagr/commit/efc3b92c07fcf5f970fd48977ca2c792cb9c7e29))
+* enhance YagrN8nConfigService for compatibility with n8nac and improve output sanitization ([9f73f88](https://github.com/EtienneLescot/yagr/commit/9f73f88a67bf97a63e7a7efc4cdda0c0b8e8922d))
+
+
+### Bug Fixes
+
+* enhance completion gate logic to handle workflow failures and update related tests ([0a09703](https://github.com/EtienneLescot/yagr/commit/0a097036ec13c3932a4680329fc43fc4bd52e76d))
+* reorder candidateRoots in loadWorkspaceInstructions and simplify text delta handling in executePhase ([1055f89](https://github.com/EtienneLescot/yagr/commit/1055f894814f3eabf6d2f9ac7d7e5c4d86d0bf67))
+
 ## [0.2.5](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.4...yagr@v0.2.5) (2026-03-18)
 
 
