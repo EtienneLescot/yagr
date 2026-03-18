@@ -152,7 +152,7 @@ function HomepageHeader() {
               </div>
               <div className={styles.panelLabel}>Agent loop</div>
               <pre className={styles.commandBlock}>
-                <code>{`$ npm install -g yagr@latest
+                <code>{`$ npm install -g @yagr/agent@latest
 $ yagr onboard
 $ yagr start
 $ yagr telegram onboarding`}</code>

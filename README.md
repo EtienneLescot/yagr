@@ -17,8 +17,8 @@
 </tr>
 </table>
 
-[![CI](https://github.com/EtienneLescot/n8n-as-code/actions/workflows/ci.yml/badge.svg)](https://github.com/EtienneLescot/n8n-as-code/actions/workflows/ci.yml)
-[![Documentation](https://github.com/EtienneLescot/n8n-as-code/actions/workflows/docs.yml/badge.svg)](https://n8nascode.dev/)
+[![CI](https://github.com/EtienneLescot/yagr/actions/workflows/ci.yml/badge.svg)](https://github.com/EtienneLescot/yagr/actions/workflows/ci.yml)
+[![Documentation](https://github.com/EtienneLescot/yagr/actions/workflows/docs.yml/badge.svg)](https://n8nascode.dev/)
 [![Yagr Docs](https://img.shields.io/badge/docs-yagr-black?logo=gitbook)](https://n8nascode.dev/yagr/docs/)
 [![orchestrator:n8n](https://img.shields.io/badge/orchestrator-n8n-FE5A16?logo=n8n&logoColor=white)](https://n8n.io/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -40,7 +40,7 @@
 > <td>
 > <strong>Yagr is built on top of n8n-as-code today.</strong><br>
 > The repository now opens on Yagr first, but the underlying n8n-as-code technology, workflow GitOps model, schema grounding, and editor tooling remain first-class and continue to power the current runtime.<br><br>
-> <a href="products/n8n-as-code/README.md">Read the n8n-as-code README</a>
+> <a href="https://n8nascode.dev/n8n-as-code/">Read the n8n-as-code overview</a>
 > </td>
 > </tr>
 > </table>
@@ -53,7 +53,7 @@ If you want to see Yagr working before reading the full product story, start her
 ### 1. Install Yagr globally
 
 ```bash
-npm install -g yagr@latest
+npm install -g @yagr/agent@latest
 ```
 
 ### 2. Run onboarding once
@@ -88,7 +88,7 @@ If you are contributing from this repository instead of installing the product g
 
 ```bash
 npm install
-npm run build --workspace=packages/yagr
+npm run build
 npm run yagr:onboard
 npm run yagr:start
 ```

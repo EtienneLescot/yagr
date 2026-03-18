@@ -7,7 +7,7 @@ description: "Connect Yagr to its current orchestrator, model, and optional inte
 
 Yagr starts with a simple loop:
 
-1. Install `yagr`
+1. Install `@yagr/agent`
 2. Run `yagr onboard`
 3. Connect the agent to its current orchestrator, model, and optional messaging integrations
 4. Run `yagr start`
@@ -20,8 +20,8 @@ Under the hood, that setup is not the product goal. It is the bootstrap that let
 For normal product usage, install Yagr globally:
 
 ```bash
-npm install -g yagr@latest
-# or: pnpm add -g yagr@latest
+npm install -g @yagr/agent@latest
+# or: pnpm add -g @yagr/agent@latest
 ```
 
 Then run the onboarding flow once:
@@ -52,7 +52,7 @@ If you are working from this monorepo instead of using the published package:
 
 ```bash
 npm install
-npm run build --workspace=packages/yagr
+npm run build
 npm run yagr:onboard
 npm run yagr:start
 ```

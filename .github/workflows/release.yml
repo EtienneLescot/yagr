@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    branches: [ main, next ]
+    paths-ignore:
+      - 'docs/**'
+      - 'res/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+jobs:
+  release-please:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish-stable:
+    if: github.ref == 'refs/heads/main' && needs.release-please.outputs.release_created == 'true'
+    needs: release-please
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and test
+        run: npm test
+
+      - name: Publish stable package
+        run: npm publish --provenance --access public
+
+  publish-next:
+    if: github.ref == 'refs/heads/next'
+    runs-on: ubuntu-latest
+    environment:
+      name: next
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and test
+        run: npm test
+
+      - name: Compute next version
+        id: next-version
+        run: |
+          node --input-type=module <<'EOF' >> "$GITHUB_OUTPUT"
+          import fs from 'node:fs';
+
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const baseVersion = pkg.version.split('-')[0];
+          const nextVersion = `${baseVersion}-next.${process.env.GITHUB_RUN_NUMBER}.${process.env.GITHUB_RUN_ATTEMPT}`;
+
+          console.log(`version=${nextVersion}`);
+          EOF
+
+      - name: Set next package version
+        run: npm version --no-git-tag-version "${{ steps.next-version.outputs.version }}"
+
+      - name: Publish next package
+        run: npm publish --provenance --tag next --access public
