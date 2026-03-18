@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.0...yagr@v0.2.1) (2026-03-18)
+
+
+### Features
+
+* enhance setup status handling for active webui surfaces and update related tests ([54ba8e5](https://github.com/EtienneLescot/yagr/commit/54ba8e555daacb9f3a31ecf6de9d9a27e7cc2183))
+
 ## [0.2.0](https://github.com/EtienneLescot/yagr/compare/yagr@v0.1.0...yagr@v0.2.0) (2026-03-18)
 
 
