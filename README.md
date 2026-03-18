@@ -39,8 +39,8 @@
 > </td>
 > <td>
 > <strong>Yagr is built on top of n8n-as-code today.</strong><br>
-> The repository now opens on Yagr first, but the underlying n8n-as-code technology, workflow GitOps model, schema grounding, and editor tooling remain first-class and continue to power the current runtime.<br><br>
-> <a href="https://n8nascode.dev/n8n-as-code/">Read the n8n-as-code overview</a>
+> Yagr rely on the underlying n8n-as-code technology, workflow GitOps model, schema grounding, and editor tooling<br><br>
+> <a href="https://github.com/EtienneLescot/n8n-as-code">Open the n8n-as-code repository</a>
 > </td>
 > </tr>
 > </table>
