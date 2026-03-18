@@ -43,7 +43,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
           cache-dependency-path: '**/package-lock.json'
@@ -53,6 +53,14 @@ jobs:
 
       - name: Build and test
         run: npm test
+
+      - name: Inspect publish environment
+        run: |
+          node -v
+          npm -v
+          npm config get registry
+          npm config get @yagr:registry
+          npm config list
 
       - name: Publish stable package
         run: npm publish --provenance --access public
@@ -70,7 +78,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
           cache-dependency-path: '**/package-lock.json'
@@ -96,6 +104,14 @@ jobs:
 
       - name: Set next package version
         run: npm version --no-git-tag-version "${{ steps.next-version.outputs.version }}"
+
+      - name: Inspect publish environment
+        run: |
+          node -v
+          npm -v
+          npm config get registry
+          npm config get @yagr:registry
+          npm config list
 
       - name: Publish next package
         run: npm publish --provenance --tag next --access public
