@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.3...yagr@v0.2.4) (2026-03-18)
+
+
+### Bug Fixes
+
+* update documentation links and CNAME for new domain yagr.dev ([e35a2bc](https://github.com/EtienneLescot/yagr/commit/e35a2bc34b47971dc36974f6273d493d754b68a9))
+
 ## [0.2.3](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.2...yagr@v0.2.3) (2026-03-18)
 
 
