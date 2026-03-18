@@ -41,6 +41,7 @@ export interface ChatWorkflowEmbed {
   workflowId: string;
   url: string;
   title?: string;
+  diagram?: string;
 }
 
 export interface ChatMessage {
