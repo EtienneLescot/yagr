@@ -47,6 +47,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [
   'mistral',
   'openrouter',
 ];
+const ACTIVE_WEBUI_SURFACES = ['webui'] as const;
 
 const WEB_UI_HTML = `<!doctype html>
 <html lang="en">
@@ -340,7 +341,9 @@ class WebUiGateway implements Gateway {
         throw new Error('Message is required.');
       }
 
-      const setupStatus = getYagrSetupStatus(this.configService, new N8nConfigService());
+      const setupStatus = getYagrSetupStatus(this.configService, new N8nConfigService(), {
+        activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
+      });
       if (!setupStatus.ready) {
         throw new Error(`Yagr is not ready yet. Missing: ${setupStatus.missingSteps.join(', ')}.`);
       }
@@ -391,12 +394,14 @@ class WebUiGateway implements Gateway {
   private async buildSnapshot(): Promise<Record<string, unknown>> {
     const n8nService = new N8nConfigService();
     const n8nConfig = n8nService.getLocalConfig();
-    const setupStatus = getYagrSetupStatus(this.configService, n8nService);
+    const setupStatus = getYagrSetupStatus(this.configService, n8nService, {
+      activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
+    });
     const telegramStatus = getTelegramGatewayStatus(this.configService);
     const webUiStatus = getWebUiGatewayStatus(this.configService);
     const yagrConfig = this.configService.getLocalConfig();
-    const enabledSurfaces = this.configService.getEnabledGatewaySurfaces();
-    const startableSurfaces = enabledSurfaces.filter((surface) => surface === 'telegram' && telegramStatus.configured);
+    const enabledSurfaces = Array.from(new Set([...this.configService.getEnabledGatewaySurfaces(), ...ACTIVE_WEBUI_SURFACES]));
+    const startableSurfaces = enabledSurfaces.filter((surface) => surface === 'webui' || (surface === 'telegram' && telegramStatus.configured));
 
     let availableModels: string[] = [];
     if (yagrConfig.provider) {
@@ -562,7 +567,9 @@ class WebUiGateway implements Gateway {
   }
 
   private async handleStreamingChat(response: ServerResponse, sessionId: string, message: string): Promise<void> {
-    const setupStatus = getYagrSetupStatus(this.configService, new N8nConfigService());
+    const setupStatus = getYagrSetupStatus(this.configService, new N8nConfigService(), {
+      activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
+    });
     if (!setupStatus.ready) {
       this.sendJson(response, 400, { error: `Yagr is not ready yet. Missing: ${setupStatus.missingSteps.join(', ')}.` });
       return;
