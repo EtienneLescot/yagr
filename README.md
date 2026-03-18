@@ -18,8 +18,8 @@
 </table>
 
 [![CI](https://github.com/EtienneLescot/yagr/actions/workflows/ci.yml/badge.svg)](https://github.com/EtienneLescot/yagr/actions/workflows/ci.yml)
-[![Documentation](https://github.com/EtienneLescot/yagr/actions/workflows/docs.yml/badge.svg)](https://n8nascode.dev/yagr/docs/)
-[![Yagr Docs](https://img.shields.io/badge/docs-yagr-black?logo=gitbook)](https://n8nascode.dev/yagr/docs/)
+[![Documentation](https://github.com/EtienneLescot/yagr/actions/workflows/docs.yml/badge.svg)](https://yagr.dev/docs/)
+[![Yagr Docs](https://img.shields.io/badge/docs-yagr-black?logo=gitbook)](https://yagr.dev/)
 [![orchestrator:n8n](https://img.shields.io/badge/orchestrator-n8n-FE5A16?logo=n8n&logoColor=white)](https://n8n.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -27,7 +27,7 @@
 
 **Yagr is designed to sit above execution orchestrators.** Today it runs on top of n8n through the n8n-as-code stack. Tomorrow it can target a native Yagr runtime or other orchestrators without changing the product story.
 
-[**Read Yagr docs**](https://n8nascode.dev/yagr/docs/) · [**Open n8n-as-code**](https://n8nascode.dev/n8n-as-code/) · [**Workflow GitOps docs**](https://n8nascode.dev/docs/)
+[**Read Yagr docs**](https://yagr.dev/docs/) · [**Open n8n-as-code**](https://n8nascode.dev/n8n-as-code/) · [**Workflow GitOps docs**](https://n8nascode.dev/docs/)
 
 </div>
 
@@ -100,9 +100,8 @@ npm uninstall -g @yagr/agent
 
 Read next if you want more than the fast path:
 
-- [Yagr getting started](https://n8nascode.dev/yagr/docs/getting-started/)
-- [Yagr command reference](https://n8nascode.dev/yagr/docs/reference/commands/)
-- [n8n-as-code product page](https://n8nascode.dev/n8n-as-code/)
+- [Yagr getting started](https://yagr.dev/docs/getting-started/)
+- [Yagr command reference](https://yagr.dev/docs/reference/commands/)
 
 ---
 
@@ -245,7 +244,7 @@ Yagr stores that state in its own home so the product does not depend on whateve
 
 | Product | Role | Where to go |
 |---|---|---|
-| **Yagr** | Autonomous automation agent | [Yagr docs](https://n8nascode.dev/yagr/docs/) |
+| **Yagr** | Autonomous automation agent | [Yagr docs](https://yagr.dev/) |
 | **n8n-as-code** | Workflow GitOps, AI skill, schema grounding, VS Code extension, TypeScript workflows | [n8n-as-code page](https://n8nascode.dev/n8n-as-code/) |
 
 The previous root README for `n8n-as-code` is preserved as a dedicated product README in [products/n8n-as-code/README.md](products/n8n-as-code/README.md).
@@ -269,7 +268,7 @@ These development scripts intentionally target `.yagr-test-workspace` so local w
 
 ## Read Next
 
-- [Yagr overview](https://n8nascode.dev/yagr/docs/)
-- [Yagr getting started](https://n8nascode.dev/yagr/docs/getting-started/)
-- [n8n-as-code product page](https://n8nascode.dev/n8n-as-code/)
+- [Yagr overview](https://yagr.dev/)
+- [Yagr getting started](https://yagr.dev/docs/getting-started/)
+- [n8n-as-code repo](https://n8nascode.dev/n8n-as-code/)
 - [n8n-as-code documentation](https://n8nascode.dev/docs/)

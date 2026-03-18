@@ -44,6 +44,6 @@ The workflows it creates already are memory:
 
 ## Related guides
 
-- [Telegram](/yagr/docs/usage/telegram)
-- [TUI](/yagr/docs/usage/tui)
-- [Execution orchestrators](/yagr/docs/usage/n8n-backend)
+- [Telegram](/docs/usage/telegram)
+- [TUI](/docs/usage/tui)
+- [Execution orchestrators](/docs/usage/n8n-backend)

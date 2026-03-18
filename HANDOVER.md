@@ -194,7 +194,7 @@ Le build Docusaurus passe **sans aucun lien cassé**.
 1. **Ouvrir une PR** sur `EtienneLescot/n8n-as-code` : `fix/cli-debug-log-spam → next`
 2. **Configurer le CI** du repo `yagr` (`.github/workflows/release.yml` à nettoyer des entrées n8n-as-code)
 3. **Mettre à jour les dépendances Yagr** (`packages/yagr/package.json`) vers les dernières versions publiées de `@n8n-as-code/skills`, `@n8n-as-code/transformer`, `n8nac` si des nouvelles versions sont sorties depuis le freeze
-4. **Configurer `CNAME`** dans `docs/static/CNAME` si Yagr aura son propre domaine (actuellement `n8nascode.dev`)
+4. **Configurer `CNAME`** dans `docs/static/CNAME` pour le domaine Yagr (`yagr.dev`)
 5. **GitHub Pages** : activer sur le repo `yagr` en pointant sur le répertoire `/docs` ou une action de déploiement
 
 ---

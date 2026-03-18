@@ -73,8 +73,8 @@ yagr telegram onboarding
 
 Continue with:
 
-- [Usage overview](/yagr/docs/usage)
-- [Telegram setup](/yagr/docs/usage/telegram)
-- [Commands reference](/yagr/docs/reference/commands)
+- [Usage overview](/docs/usage)
+- [Telegram setup](/docs/usage/telegram)
+- [Commands reference](/docs/reference/commands)
 
 If you are contributing from the repository instead of using the published package, use the development flow documented in the root README.
