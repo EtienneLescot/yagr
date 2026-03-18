@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.1...yagr@v0.2.2) (2026-03-18)
+
+
+### Features
+
+* implement local state management with reset and cleanup functionality ([e7eca13](https://github.com/EtienneLescot/yagr/commit/e7eca13c5e7d67616a7d1c69ec320677231a0fab))
+
 ## [0.2.1](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.0...yagr@v0.2.1) (2026-03-18)
 
 
