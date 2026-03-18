@@ -156,6 +156,14 @@ export type YagrToolEvent =
       type: 'result';
       toolName: string;
       message: string;
+    }
+  | {
+      type: 'embed';
+      toolName: string;
+      kind: 'workflow';
+      workflowId: string;
+      url: string;
+      title?: string;
     };
 
 export interface YagrRunStep {

@@ -15,6 +15,7 @@ import { createSearchTemplatesTool } from './search-templates.js';
 import { createRequestRequiredActionTool } from './request-required-action.js';
 import { createSearchWorkspaceTool } from './search-workspace.js';
 import { createWriteWorkspaceFileTool } from './write-workspace-file.js';
+import { createPresentWorkflowResultTool } from './present-workflow-result.js';
 
 export function buildTools(engine: Engine, observer?: ToolExecutionObserver) {
   return {
@@ -33,5 +34,6 @@ export function buildTools(engine: Engine, observer?: ToolExecutionObserver) {
     replaceInWorkspaceFile: createReplaceInWorkspaceFileTool(observer),
     moveWorkspaceFile: createMoveWorkspaceFileTool(observer),
     deleteWorkspaceFile: createDeleteWorkspaceFileTool(observer),
+    presentWorkflowResult: createPresentWorkflowResultTool(observer),
   };
 }

@@ -33,6 +33,7 @@ export function buildSystemPrompt(engine: Engine): string {
     'After any side-effecting create or push step, quickly inspect whether you left orphan files, duplicate artifacts, or unintended duplicate remote resources. If you can confidently attribute them to the current run or prove they are redundant copies of the intended result, clean them up before declaring completion. Otherwise, raise a required action instead of guessing.',
     'Do not present the task as complete when validation, push, or verify actions have failed or remain unconfirmed after writing workflow files, unless a genuine external blocker still remains and you explain it concretely.',
     'If initialization or credentials are missing, ask only for the missing values, then perform the required setup steps yourself.',
+    'After successfully deploying or pushing a workflow to n8n, you MUST call the presentWorkflowResult tool with the workflowId and workflowUrl from the deploy/push result. This is mandatory — never skip it when a workflow URL is available.',
     'Prefer concrete edits and command execution over abstract planning, but think before acting so each tool call is justified by the current evidence.',
     workspaceInstructions,
   ].join(' ');
