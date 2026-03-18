@@ -712,32 +712,47 @@ class WebUiGateway implements Gateway {
       .replace(/((?:src|href|action|srcset|data-src|data-href)\s*=\s*")\/(?!\/)(?!n8n-proxy\/)/g, `$1${PROXY}/`)
       .replace(/((?:src|href|action|srcset|data-src|data-href)\s*=\s*')\/(?!\/)(?!n8n-proxy\/)/g, `$1${PROXY}/`);
 
-    // Inject a fetch / XMLHttpRequest patch that redirects absolute n8n API
-    // paths (e.g. /rest/…, /webhook/…, /types/…) through the proxy so they
-    // arrive at the correct Yagr route and are forwarded to n8n.
-    const patchScript = `<script>
-(function(){
+    // Import map: must appear before any <link rel="modulepreload"> or
+    // <script type="module"> so it is injected right after <head>.
+    // Maps absolute-path ES module specifiers so that dynamic
+    // import('/assets/…') calls inside n8n's Vite preload-helper are re-routed
+    // through the proxy without any JS interception.
+    const importMap = `<script type="importmap">{"imports":{"/assets/":"/n8n-proxy/assets/","/static/":"/n8n-proxy/static/","/icons/":"/n8n-proxy/icons/","/fonts/":"/n8n-proxy/fonts/"}}</script>`;
+
+    // Comprehensive network + DOM patch:
+    // - fetch / XHR: re-routes all absolute API paths
+    // - HTMLLinkElement.href, HTMLScriptElement.src, HTMLImageElement.src setters:
+    //   intercepts programmatic DOM mutations made by Vite's preload-helper
+    //   (e.g. link.href = '/assets/…') so they resolve through the proxy
+    // - Element.setAttribute: covers the setAttribute('href', …) fallback path
+    const patchScript = `<script>(function(){
   var P='/n8n-proxy';
-  function pfx(u){
-    return typeof u==='string' && u.startsWith('/') && !u.startsWith('//') && !u.startsWith(P);
-  }
+  function np(u){return typeof u==='string'&&u.startsWith('/')&&!u.startsWith('//')&&!u.startsWith(P);}
   var oF=window.fetch;
   window.fetch=function(i,o){
-    if(pfx(i)){i=P+i;}
+    if(np(i)){i=P+i;}
     else if(i&&typeof i==='object'&&typeof i.url==='string'){
-      try{var u=new URL(i.url,location.origin);if(pfx(u.pathname))i=new Request(P+u.pathname+u.search+u.hash,i);}catch(e){}
+      try{var u=new URL(i.url,location.origin);if(np(u.pathname))i=new Request(P+u.pathname+u.search+u.hash,i);}catch(e){}
     }
     return oF.call(this,i,o);
   };
   var oX=XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open=function(m,u){
-    if(pfx(u)) arguments[1]=P+u;
-    return oX.apply(this,arguments);
-  };
-})();
-</script>`;
+  XMLHttpRequest.prototype.open=function(m,u){if(np(u))arguments[1]=P+u;return oX.apply(this,arguments);};
+  function ps(proto,k){
+    var d=Object.getOwnPropertyDescriptor(proto,k);
+    if(!d||!d.set)return;
+    Object.defineProperty(proto,k,{get:d.get,set:function(v){if(np(v))v=P+v;d.set.call(this,v);},configurable:true,enumerable:true});
+  }
+  ps(HTMLLinkElement.prototype,'href');
+  ps(HTMLScriptElement.prototype,'src');
+  ps(HTMLImageElement.prototype,'src');
+  var oSA=Element.prototype.setAttribute;
+  Element.prototype.setAttribute=function(n,v){var nl=n.toLowerCase();if((nl==='src'||nl==='href'||nl==='action')&&np(v))v=P+v;return oSA.call(this,n,v);};
+})();</script>`;
 
-    result = result.replace('</head>', `${patchScript}</head>`);
+    // Inject both right after the opening <head> tag so the import map
+    // precedes all modulepreload links (required by the HTML spec).
+    result = result.replace(/(<head\b[^>]*>)/i, `$1${importMap}${patchScript}`);
     return result;
   }
 
