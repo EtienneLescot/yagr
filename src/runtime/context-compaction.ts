@@ -23,6 +23,7 @@ export interface CompactConversationInput {
   journal: YagrRunJournalEntry[];
   systemPrompt: string;
   budget: ContextBudget;
+  abortSignal?: AbortSignal;
   llmConfig?: YagrLanguageModelConfig;
   condense?: (prompt: string) => Promise<string>;
 }
@@ -185,6 +186,7 @@ async function generateCheckpointSummary(
   prompt: string,
   journal: YagrRunJournalEntry[],
   compactedMessages: CoreMessage[],
+  abortSignal?: AbortSignal,
   llmConfig?: YagrLanguageModelConfig,
   condense?: (prompt: string) => Promise<string>,
 ): Promise<{ summary: string; source: 'llm' | 'fallback'; fallbackReason?: string }> {
@@ -193,6 +195,7 @@ async function generateCheckpointSummary(
     const summary = condense
       ? (await condense(summaryPrompt)).trim()
       : (await generateText({
+          abortSignal,
           model: createLanguageModel(llmConfig),
           system: 'This is a context condensation operation. Do not call tools. Return only the checkpoint summary text.',
           messages: [
@@ -214,6 +217,10 @@ async function generateCheckpointSummary(
       fallbackReason: 'LLM condensation returned empty text.',
     };
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw error;
+    }
+
     return {
       summary: buildFallbackSummary(prompt, journal, compactedMessages),
       source: 'fallback',
@@ -243,6 +250,7 @@ export async function compactConversationContext(input: CompactConversationInput
     input.prompt,
     input.journal,
     compactedMessages,
+    input.abortSignal,
     input.llmConfig,
     input.condense,
   );

@@ -45,6 +45,28 @@ type RunState = {
   stepNumber: number;
 };
 
+function createAbortError(message = 'Yagr run stopped by user.'): Error {
+  const error = new Error(message);
+  error.name = 'AbortError';
+  return error;
+}
+
+function isAbortError(error: unknown): error is Error {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (!signal?.aborted) {
+    return;
+  }
+
+  if (signal.reason instanceof Error) {
+    throw signal.reason;
+  }
+
+  throw createAbortError(typeof signal.reason === 'string' && signal.reason ? signal.reason : undefined);
+}
+
 function createPhasePrompt(phase: 'inspect' | 'execute', userPrompt: string): string {
   if (phase === 'inspect') {
     return [
@@ -266,6 +288,8 @@ async function maybeCompactMessages(
   prompt: string,
   messages: CoreMessage[],
 ): Promise<CoreMessage[]> {
+  throwIfAborted(options.abortSignal);
+
   if (options.autoCompactContext === false) {
     return messages;
   }
@@ -276,6 +300,7 @@ async function maybeCompactMessages(
     prompt,
     journal: state.journal,
     systemPrompt,
+    abortSignal: options.abortSignal,
     budget: {
       contextWindowTokens: options.contextWindowTokens ?? modelProfile.contextWindowTokens,
       reservedOutputTokens: options.reservedOutputTokens ?? modelProfile.reservedOutputTokens,
@@ -410,8 +435,11 @@ async function executePhase(
   toolCalls: Array<{ toolName: string }>;
   responseMessages: CoreMessage[];
 }> {
+  throwIfAborted(options.abortSignal);
+
   if (options.onTextDelta || options.onStepFinish || options.onPhaseChange || options.onJournalEntry) {
     const result = streamText({
+      abortSignal: options.abortSignal,
       model: createLanguageModel(options),
       system: systemPrompt,
       tools,
@@ -436,6 +464,7 @@ async function executePhase(
     });
 
     for await (const textDelta of result.textStream) {
+      throwIfAborted(options.abortSignal);
       await options.onTextDelta?.(textDelta);
     }
 
@@ -457,6 +486,7 @@ async function executePhase(
   }
 
   const result = await generateText({
+    abortSignal: options.abortSignal,
     model: createLanguageModel(options),
     system: systemPrompt,
     tools,
@@ -594,6 +624,7 @@ export class YagrRunEngine {
     await transitionAgentState(state, options, 'running', 'Task execution started.');
 
     try {
+      throwIfAborted(options.abortSignal);
       await transitionPhase(state, options, 'inspect', 'started', 'Inspecting workspace and task context.');
 
       executionContext = await maybeCompactMessages(state, options, systemPrompt, prompt, executionContext);
@@ -603,6 +634,7 @@ export class YagrRunEngine {
         content: createPhasePrompt('inspect', prompt),
       };
       const inspectResult = await generateText({
+        abortSignal: options.abortSignal,
         model: createLanguageModel(options),
         system: systemPrompt,
         tools,
@@ -631,6 +663,7 @@ export class YagrRunEngine {
       }
 
       executionContext.push(inspectInstruction, ...inspectResult.response.messages);
+      throwIfAborted(options.abortSignal);
 
       await transitionPhase(state, options, 'plan', 'started', 'Preparing execution plan.');
       await transitionPhase(state, options, 'plan', 'completed', 'Execution plan ready.');
@@ -648,6 +681,7 @@ export class YagrRunEngine {
       let responseMessages: CoreMessage[] = [];
 
       for (let attemptNumber = 1; attemptNumber <= MAX_EXECUTION_ATTEMPTS; attemptNumber += 1) {
+        throwIfAborted(options.abortSignal);
         executeMessages = await maybeCompactMessages(state, options, systemPrompt, prompt, executeMessages);
 
         const phaseResult = await executePhase(
@@ -671,6 +705,8 @@ export class YagrRunEngine {
           break;
         }
 
+        throwIfAborted(options.abortSignal);
+
         await emitJournal(state, options, {
           type: 'phase',
           phase: state.currentPhase ?? 'plan',
@@ -690,6 +726,7 @@ export class YagrRunEngine {
 
       persistedMessages.push(...responseMessages);
       steps += inspectResult.steps.length;
+      throwIfAborted(options.abortSignal);
       const requiredActions = collectRequiredActions(state.journal);
       const completionDecision = await evaluateCompletionGate({
         text,
@@ -715,6 +752,7 @@ export class YagrRunEngine {
         });
       }
 
+      throwIfAborted(options.abortSignal);
       text = await ensureFinalText(options, prompt, finishReason, state.journal, text, completionDecision.requiredActions, completionDecision.accepted);
 
       if (state.currentPhase && state.currentPhase !== 'summarize') {
@@ -755,6 +793,19 @@ export class YagrRunEngine {
         persistedMessages,
       };
     } catch (error) {
+      if (isAbortError(error)) {
+        const abortMessage = error.message || 'Yagr run stopped by user.';
+        await transitionAgentState(state, options, 'stopped', abortMessage);
+        await emitJournal(state, options, {
+          type: 'run',
+          status: 'completed',
+          phase: state.currentPhase ?? undefined,
+          message: abortMessage,
+          runId: state.runId,
+        });
+        throw error;
+      }
+
       await transitionAgentState(state, options, 'failed_terminal', 'Task execution failed with a terminal blocker.');
       await emitJournal(state, options, {
         type: 'run',
