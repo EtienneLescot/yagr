@@ -134,7 +134,7 @@
 }
 
 .heroTitle {
-  max-width: 10ch;
+  max-width: 13ch;
   font-size: clamp(3rem, 7vw, 5.5rem);
   line-height: 0.92;
   word-break: normal;
@@ -143,8 +143,12 @@
   text-wrap: balance;
 }
 
+.heroLine {
+  display: block;
+  white-space: nowrap;
+}
+
 .heroAccent {
-  display: inline-block;
   color: #e63d7a;
   word-break: normal;
   overflow-wrap: normal;
@@ -184,6 +188,7 @@
   --yagr-slate: #456874;
   --yagr-night: #0d1020;
   --yagr-night-deep: #0d1020;
+  --yagr-glass-highlight: rgba(255, 255, 255, 0.62);
 }
 
 .yagrHeroBanner {
@@ -312,6 +317,28 @@
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(128, 187, 199, 0.22);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 20px rgba(13, 16, 32, 0.05);
+}
+
+.yagrHeroBanner .panelWindow,
+.yagrHeroBanner .panelCard,
+.yagrHome .quickStartIntro,
+.yagrHome .quickStartTerminal,
+.yagrHome .quickStartCard,
+.yagrHome .statCard,
+.yagrHome .entryCard,
+.yagrHome .workflowCard,
+.yagrHome .ctaCard,
+.yagrHeroBanner :global(.button).primaryButton,
+.yagrHeroBanner :global(.button).secondaryButton,
+.yagrHome :global(.button).primaryButton,
+.yagrHome :global(.button).ghostButton,
+.yagrHeroBanner .primaryButton,
+.yagrHeroBanner .secondaryButton,
+.yagrHome .primaryButton,
+.yagrHome .ghostButton {
+  background-clip: padding-box;
+  outline: 1px solid var(--yagr-glass-highlight);
+  outline-offset: -1px;
 }
 
 .yagrHeroBanner .heroPanel::before {
@@ -500,6 +527,10 @@
     max-width: none;
   }
 
+  .yagrHeroBanner .heroLine {
+    white-space: normal;
+  }
+
   .yagrHeroBanner .heroPanel {
     margin-top: 1rem;
   }
@@ -585,14 +616,33 @@
 .primaryButton,
 .secondaryButton,
 .ghostButton {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   border-radius: 999px;
-  border: none;
+  border: 1px solid transparent;
   font-weight: 700;
+  text-decoration: none;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.primaryButton::before,
+.secondaryButton::before,
+.ghostButton::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0) 48%);
+  pointer-events: none;
 }
 
 .primaryButton {
   background: linear-gradient(135deg, #ff3b7a 0%, #d92f68 100%);
+  border-color: rgba(169, 27, 82, 0.16);
   box-shadow: 0 14px 32px rgba(230, 61, 122, 0.24);
   color: #fff;
 }
@@ -619,6 +669,7 @@
 
 .primaryButton:hover {
   color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36), 0 18px 34px rgba(230, 61, 122, 0.22);
 }
 
 .heroPanel {

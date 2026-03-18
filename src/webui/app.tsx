@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWebUiStore, type ChatMessage, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot } from './store.js';
+import yagrLogoUrl from '../../docs/static/img/yagr-logo.png';
 
 type ApiError = { error?: string };
 type WebUiView = 'home' | 'setup';
@@ -45,7 +46,7 @@ function useNotice() {
     notice.className = 'notice';
     notice.textContent = message;
     if (tone === 'error') {
-      notice.style.background = 'linear-gradient(135deg, rgba(138, 28, 70, 0.96), rgba(78, 27, 143, 0.96))';
+      notice.style.background = 'linear-gradient(135deg, rgba(13, 16, 32, 0.96), rgba(121, 35, 73, 0.95), rgba(230, 61, 122, 0.92))';
     }
     document.body.appendChild(notice);
     window.setTimeout(() => notice.remove(), 3600);
@@ -207,10 +208,15 @@ function SessionSidebar({
   return (
     <aside className="sidebar sidebarHome">
       <section className="panel brandCard">
-        <div className="brandMark" aria-hidden="true" />
+        <img className="brandMark" src={yagrLogoUrl} alt="Yagr logo" />
         <div>
           <p className="eyebrow">Yagr Web UI</p>
-          <h1>(Y)our (A)gent (G)rounded in (R)eality.</h1>
+          <h1 className="brandTitle">
+            <span className="brandTitleLine">(Y)our</span>
+            <span className="brandTitleLine">(A)gent</span>
+            <span className="brandTitleLine brandTitleAccent">(G)rounded in</span>
+            <span className="brandTitleLine brandTitleAccent">(R)eality.</span>
+          </h1>
           <p className="lede">A focused chat surface with the heavy setup moved to its own page.</p>
         </div>
       </section>
