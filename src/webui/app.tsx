@@ -2,7 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useWebUiStore, type ChatMessage, type ChatProgressEntry, type ConfigSnapshot } from './store.js';
+import { useWebUiStore, type ChatMessage, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot } from './store.js';
 
 type ApiError = { error?: string };
 type WebUiView = 'home' | 'setup';
@@ -14,7 +14,8 @@ type ChatStreamEvent =
   | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string }
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; title?: string };
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -278,6 +279,20 @@ function SetupPageHeader({
   );
 }
 
+function WorkflowHeader({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
+  return (
+    <div className="workflowHeader">
+      <div className="workflowHeaderLeft">
+        <span className="workflowBadge">Workflow</span>
+        <span className="workflowTitle">{embed.title ?? `Workflow ${embed.workflowId}`}</span>
+      </div>
+      <a className="primaryButton" href={embed.url} target="_blank" rel="noreferrer">
+        Open in n8n
+      </a>
+    </div>
+  );
+}
+
 function MessageCard({ message, now }: { message: ChatMessage; now: number }): React.JSX.Element {
   const elapsed = message.streaming && message.startedAt ? formatElapsed(now - message.startedAt) : undefined;
   const visibleProgress = (message.progress ?? []).slice(-3);
@@ -336,6 +351,8 @@ function MessageCard({ message, now }: { message: ChatMessage; now: number }): R
             : (message.streaming ? 'The answer is being composed...' : '')}
         </div>
       ) : null}
+
+      {message.embed ? <WorkflowHeader embed={message.embed} /> : null}
     </article>
   );
 }
@@ -929,6 +946,18 @@ function App() {
             statusLabel: streamEvent.detail ?? streamEvent.title,
           });
           setBusyLabel(streamEvent.detail ?? streamEvent.title);
+          return;
+        }
+
+        if (streamEvent.type === 'embed') {
+          patchMessage(pendingId, {
+            embed: {
+              kind: streamEvent.kind,
+              workflowId: streamEvent.workflowId,
+              url: streamEvent.url,
+              title: streamEvent.title,
+            },
+          });
           return;
         }
 
