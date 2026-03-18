@@ -603,6 +603,7 @@ class WebUiGateway implements Gateway {
       },
       (proxyRes) => {
         const outHeaders: Record<string, string | string[]> = {};
+        let isHtml = false;
 
         for (const [key, value] of Object.entries(proxyRes.headers)) {
           if (value === undefined) {
@@ -624,6 +625,19 @@ class WebUiGateway implements Gateway {
               outHeaders[key] = directives.join('; ');
             }
             continue;
+          }
+
+          // Drop Content-Length for HTML because we will rewrite the body.
+          if (lk === 'content-length') {
+            const ct = proxyRes.headers['content-type'] ?? '';
+            if (typeof ct === 'string' && ct.includes('text/html')) {
+              isHtml = true;
+              continue;
+            }
+          }
+
+          if (lk === 'content-type' && typeof value === 'string' && value.includes('text/html')) {
+            isHtml = true;
           }
 
           if (lk === 'set-cookie') {
@@ -652,6 +666,19 @@ class WebUiGateway implements Gateway {
           outHeaders[key] = value as string | string[];
         }
 
+        if (isHtml) {
+          // Buffer the HTML body so we can rewrite absolute paths.
+          const chunks: Buffer[] = [];
+          proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk));
+          proxyRes.on('end', () => {
+            const raw = Buffer.concat(chunks).toString('utf-8');
+            const rewritten = this.rewriteN8nHtml(raw);
+            response.writeHead(proxyRes.statusCode ?? 200, outHeaders);
+            response.end(rewritten);
+          });
+          return;
+        }
+
         response.writeHead(proxyRes.statusCode ?? 200, outHeaders);
         proxyRes.pipe(response, { end: true });
       },
@@ -664,6 +691,49 @@ class WebUiGateway implements Gateway {
     });
 
     request.pipe(proxyReq, { end: true });
+  }
+
+  /**
+   * Buffer an HTML response from the proxied n8n instance, rewrite all
+   * absolute-path references (src="/", href="/", action="/", …) to be
+   * prefixed with /n8n-proxy, and inject a tiny fetch/XHR patch so that
+   * n8n's own JavaScript API calls are also routed through the proxy.
+   */
+  private rewriteN8nHtml(html: string): string {
+    // Rewrite HTML attributes: src="/…", href="/…", action="/…", srcset="/…"
+    // Do NOT rewrite protocol-relative URLs (//) or already-proxied paths.
+    const PROXY = '/n8n-proxy';
+    let result = html
+      .replace(/((?:src|href|action|srcset|data-src|data-href)\s*=\s*")\/(?!\/)(?!n8n-proxy\/)/g, `$1${PROXY}/`)
+      .replace(/((?:src|href|action|srcset|data-src|data-href)\s*=\s*')\/(?!\/)(?!n8n-proxy\/)/g, `$1${PROXY}/`);
+
+    // Inject a fetch / XMLHttpRequest patch that redirects absolute n8n API
+    // paths (e.g. /rest/…, /webhook/…, /types/…) through the proxy so they
+    // arrive at the correct Yagr route and are forwarded to n8n.
+    const patchScript = `<script>
+(function(){
+  var P='/n8n-proxy';
+  function pfx(u){
+    return typeof u==='string' && u.startsWith('/') && !u.startsWith('//') && !u.startsWith(P);
+  }
+  var oF=window.fetch;
+  window.fetch=function(i,o){
+    if(pfx(i)){i=P+i;}
+    else if(i&&typeof i==='object'&&typeof i.url==='string'){
+      try{var u=new URL(i.url,location.origin);if(pfx(u.pathname))i=new Request(P+u.pathname+u.search+u.hash,i);}catch(e){}
+    }
+    return oF.call(this,i,o);
+  };
+  var oX=XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open=function(m,u){
+    if(pfx(u)) arguments[1]=P+u;
+    return oX.apply(this,arguments);
+  };
+})();
+</script>`;
+
+    result = result.replace('</head>', `${patchScript}</head>`);
+    return result;
   }
 
   private sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
