@@ -18,7 +18,7 @@
 </table>
 
 [![CI](https://github.com/EtienneLescot/yagr/actions/workflows/ci.yml/badge.svg)](https://github.com/EtienneLescot/yagr/actions/workflows/ci.yml)
-[![Documentation](https://github.com/EtienneLescot/yagr/actions/workflows/docs.yml/badge.svg)](https://n8nascode.dev/)
+[![Documentation](https://github.com/EtienneLescot/yagr/actions/workflows/docs.yml/badge.svg)](https://n8nascode.dev/yagr/docs/)
 [![Yagr Docs](https://img.shields.io/badge/docs-yagr-black?logo=gitbook)](https://n8nascode.dev/yagr/docs/)
 [![orchestrator:n8n](https://img.shields.io/badge/orchestrator-n8n-FE5A16?logo=n8n&logoColor=white)](https://n8n.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
