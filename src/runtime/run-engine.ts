@@ -622,10 +622,7 @@ async function executePhase(
   try {
     for await (const textDelta of result.textStream) {
       throwIfAborted(options.abortSignal);
-      const safeDelta = consumeAssistantTextDelta(streamState, textDelta);
-      if (safeDelta) {
-        await options.onTextDelta?.(safeDelta);
-      }
+      consumeAssistantTextDelta(streamState, textDelta);
     }
   } catch (error) {
     if (!isRepetitiveAssistantOutputError(error)) {
@@ -641,10 +638,7 @@ async function executePhase(
     };
   }
 
-  const trailingDelta = flushAssistantTextDelta(streamState);
-  if (trailingDelta) {
-    await options.onTextDelta?.(trailingDelta);
-  }
+  flushAssistantTextDelta(streamState);
 
   const response = await result.response;
   const resolved = await Promise.all([
@@ -654,8 +648,13 @@ async function executePhase(
     result.toolCalls,
   ]);
 
+  const finalText = sanitizeAssistantOutput(resolved[0]);
+  if (finalText) {
+    await options.onTextDelta?.(finalText);
+  }
+
   return {
-    text: sanitizeAssistantOutput(resolved[0]),
+    text: finalText,
     finishReason: String(resolved[1]),
     steps: resolved[2].length,
     toolCalls: resolved[3].map((toolCall) => ({ toolName: toolCall.toolName })),
