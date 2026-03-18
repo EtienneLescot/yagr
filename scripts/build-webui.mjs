@@ -21,6 +21,7 @@ await build({
   minify: false,
   loader: {
     '.css': 'css',
+    '.png': 'dataurl',
   },
   define: {
     'process.env.NODE_ENV': '"production"',

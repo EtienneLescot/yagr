@@ -114,8 +114,10 @@ function HomepageHeader() {
             </div>
             <div className={styles.eyebrow}>Autonomous agent · deterministic workflows · orchestrator-ready</div>
             <Heading as="h1" className={styles.heroTitle}>
-              (Y)our (A)gent
-              <span className={styles.heroAccent}> (G)rounded in (R)eality.</span>
+              <span className={styles.heroLine}>(Y)our</span>
+              <span className={styles.heroLine}>(A)gent</span>
+              <span className={clsx(styles.heroLine, styles.heroAccent)}>(G)rounded in</span>
+              <span className={clsx(styles.heroLine, styles.heroAccent)}>(R)eality.</span>
             </Heading>
             <p className={styles.heroSubtitle}>
               Most agents disappear into ephemeral scripts and blind API calls. Yagr takes the opposite path: it uses
