@@ -609,6 +609,7 @@ class WebUiGateway implements Gateway {
       (proxyRes) => {
         const outHeaders: Record<string, string | string[]> = {};
         let isHtml = false;
+        let isCss = false;
 
         for (const [key, value] of Object.entries(proxyRes.headers)) {
           if (value === undefined) {
@@ -632,17 +633,22 @@ class WebUiGateway implements Gateway {
             continue;
           }
 
-          // Drop Content-Length for HTML because we will rewrite the body.
+          // Drop Content-Length for HTML/CSS because we will rewrite the body.
           if (lk === 'content-length') {
             const ct = proxyRes.headers['content-type'] ?? '';
             if (typeof ct === 'string' && ct.includes('text/html')) {
               isHtml = true;
               continue;
             }
+            if (typeof ct === 'string' && ct.includes('text/css')) {
+              isCss = true;
+              continue;
+            }
           }
 
-          if (lk === 'content-type' && typeof value === 'string' && value.includes('text/html')) {
-            isHtml = true;
+          if (lk === 'content-type' && typeof value === 'string') {
+            if (value.includes('text/html')) isHtml = true;
+            if (value.includes('text/css')) isCss = true;
           }
 
           if (lk === 'set-cookie') {
@@ -671,6 +677,28 @@ class WebUiGateway implements Gateway {
           outHeaders[key] = value as string | string[];
         }
 
+        // Login check: if n8n returns 401 for GET /rest/login, use the API
+        // key to call /api/v1/me and synthesize a successful login response so
+        // the n8n frontend boots without redirecting to the login page.
+        if (
+          proxyRes.statusCode === 401 &&
+          request.method === 'GET' &&
+          strippedPath === '/rest/login' &&
+          apiKey
+        ) {
+          proxyRes.resume();
+          this.fetchN8nUserViaApi(targetUrl.origin, apiKey)
+            .then((user) => {
+              response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              response.end(JSON.stringify({ data: { user } }));
+            })
+            .catch(() => {
+              response.writeHead(proxyRes.statusCode ?? 401, outHeaders);
+              response.end(JSON.stringify({ message: 'Unauthorized' }));
+            });
+          return;
+        }
+
         if (isHtml) {
           // Buffer the HTML body so we can rewrite absolute paths.
           const chunks: Buffer[] = [];
@@ -678,6 +706,18 @@ class WebUiGateway implements Gateway {
           proxyRes.on('end', () => {
             const raw = Buffer.concat(chunks).toString('utf-8');
             const rewritten = this.rewriteN8nHtml(raw);
+            response.writeHead(proxyRes.statusCode ?? 200, outHeaders);
+            response.end(rewritten);
+          });
+          return;
+        }
+
+        if (isCss) {
+          const chunks: Buffer[] = [];
+          proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk));
+          proxyRes.on('end', () => {
+            const raw = Buffer.concat(chunks).toString('utf-8');
+            const rewritten = this.rewriteN8nCss(raw);
             response.writeHead(proxyRes.statusCode ?? 200, outHeaders);
             response.end(rewritten);
           });
@@ -750,10 +790,60 @@ class WebUiGateway implements Gateway {
   Element.prototype.setAttribute=function(n,v){var nl=n.toLowerCase();if((nl==='src'||nl==='href'||nl==='action')&&np(v))v=P+v;return oSA.call(this,n,v);};
 })();</script>`;
 
+    // Rewrite CSS url() references inside inline <style> blocks.
+    result = result.replace(/url\(\s*(['"]?)\/(?!\/|n8n-proxy\/)/g, `url($1${PROXY}/`);
+
     // Inject both right after the opening <head> tag so the import map
     // precedes all modulepreload links (required by the HTML spec).
     result = result.replace(/(<head\b[^>]*>)/i, `$1${importMap}${patchScript}`);
     return result;
+  }
+
+  /**
+   * Rewrite absolute-path url() references inside a CSS body so that they
+   * resolve through the n8n reverse proxy.
+   */
+  private rewriteN8nCss(css: string): string {
+    return css.replace(/url\(\s*(['"]?)\/(?!\/|n8n-proxy\/)/g, `url($1/n8n-proxy/`);
+  }
+
+  /**
+   * Call the n8n public API `GET /api/v1/me` using an API key to retrieve
+   * the current user object.  Used as a fallback when `GET /rest/login`
+   * returns 401 (session-based auth) but we have a valid API key.
+   */
+  private fetchN8nUserViaApi(origin: string, apiKey: string): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const target = new URL('/api/v1/me', origin);
+      const requester = target.protocol === 'https:' ? httpsRequest : httpRequest;
+      const req = requester(
+        {
+          hostname: target.hostname,
+          port: target.port || (target.protocol === 'https:' ? 443 : 80),
+          path: target.pathname,
+          method: 'GET',
+          headers: { 'x-n8n-api-key': apiKey, accept: 'application/json' },
+          rejectUnauthorized: false,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => {
+            if (res.statusCode !== 200) {
+              reject(new Error(`/api/v1/me responded ${res.statusCode}`));
+              return;
+            }
+            try {
+              resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
+            } catch (e) {
+              reject(e);
+            }
+          });
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
   }
 
   private sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {

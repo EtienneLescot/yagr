@@ -311,7 +311,6 @@ function WorkflowEmbed({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Eleme
         src={proxyUrl}
         title={embed.title ?? `Workflow ${embed.workflowId}`}
         className="workflowEmbedFrame"
-        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-top-navigation allow-top-navigation-by-user-activation"
       />
     </div>
   );
