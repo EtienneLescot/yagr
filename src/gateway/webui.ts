@@ -1,20 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 import {
-  ConfigService as N8nConfigService,
   N8nApiClient,
   WorkspaceSetupService,
   getDisplayProjectName,
   type IProject,
 } from 'n8nac';
+import { Command } from 'commander';
+import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
 import { YagrAgent } from '../agent.js';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
-import { getYagrHomeDir } from '../config/yagr-home.js';
 import type { Engine } from '../engine/engine.js';
 import {
   createOnboardingToken,
@@ -32,8 +31,6 @@ import type {
   YagrToolEvent,
 } from '../types.js';
 import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
-
-const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -232,7 +229,7 @@ class WebUiGateway implements Gateway {
     if (method === 'POST' && url.pathname === '/api/n8n/projects') {
       const body = await this.readJson(request);
       const projects = await this.fetchN8nProjects(String(body.host ?? ''), body.apiKey ? String(body.apiKey) : undefined);
-      const current = new N8nConfigService().getLocalConfig();
+      const current = new YagrN8nConfigService().getLocalConfig();
       this.sendJson(response, 200, {
         projects: projects.map((project) => ({ id: project.id, name: getDisplayProjectName(project) })),
         selectedProjectId: current.projectId,
@@ -341,7 +338,7 @@ class WebUiGateway implements Gateway {
         throw new Error('Message is required.');
       }
 
-      const setupStatus = getYagrSetupStatus(this.configService, new N8nConfigService(), {
+      const setupStatus = getYagrSetupStatus(this.configService, new YagrN8nConfigService(), {
         activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
       });
       if (!setupStatus.ready) {
@@ -392,7 +389,7 @@ class WebUiGateway implements Gateway {
   }
 
   private async buildSnapshot(): Promise<Record<string, unknown>> {
-    const n8nService = new N8nConfigService();
+    const n8nService = new YagrN8nConfigService();
     const n8nConfig = n8nService.getLocalConfig();
     const setupStatus = getYagrSetupStatus(this.configService, n8nService, {
       activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
@@ -450,7 +447,7 @@ class WebUiGateway implements Gateway {
       throw new Error('n8n host is required.');
     }
 
-    const configService = new N8nConfigService();
+    const configService = new YagrN8nConfigService();
     const apiKey = apiKeyOverride ?? configService.getApiKey(normalizedHost);
     if (!apiKey) {
       throw new Error('No n8n API key available for that host.');
@@ -476,7 +473,7 @@ class WebUiGateway implements Gateway {
       throw new Error('Select an n8n project first.');
     }
 
-    const configService = new N8nConfigService();
+    const configService = new YagrN8nConfigService();
     const apiKey = input.apiKey?.trim() || configService.getApiKey(host);
     if (!apiKey) {
       throw new Error('An n8n API key is required.');
@@ -501,7 +498,7 @@ class WebUiGateway implements Gateway {
     WorkspaceSetupService.ensureWorkspaceFiles(syncFolder);
 
     try {
-      await runN8nacCommand(['update-ai']);
+      await refreshAiContext({ host, apiKey });
       return undefined;
     } catch (error) {
       return `Workspace saved, but AGENTS.md refresh failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -567,7 +564,7 @@ class WebUiGateway implements Gateway {
   }
 
   private async handleStreamingChat(response: ServerResponse, sessionId: string, message: string): Promise<void> {
-    const setupStatus = getYagrSetupStatus(this.configService, new N8nConfigService(), {
+    const setupStatus = getYagrSetupStatus(this.configService, new YagrN8nConfigService(), {
       activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
     });
     if (!setupStatus.ready) {
@@ -801,10 +798,7 @@ async function resolveTelegramBotIdentity(botToken: string): Promise<{ username:
   };
 }
 
-async function runN8nacCommand(args: string[]): Promise<void> {
-  const command = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  await execFileAsync(command, ['--yes', 'n8nac', ...args], {
-    cwd: getYagrHomeDir(),
-    env: process.env,
-  });
+async function refreshAiContext(credentials: { host: string; apiKey: string }): Promise<void> {
+  const updateAi = new UpdateAiCommand(new Command());
+  await updateAi.run({}, credentials);
 }
