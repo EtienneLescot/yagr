@@ -25,12 +25,13 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
   const reasons: string[] = [];
   const satisfiedRequiredActionIds = new Set(input.satisfiedRequiredActionIds ?? []);
   const requiredActions = input.requiredActions.filter((action) => !satisfiedRequiredActionIds.has(action.id));
+  const hasBlockingWorkflowFailures = input.hasWorkflowWrites && input.unresolvedFailureCount > 0;
 
   if (requiredActions.length > 0) {
     reasons.push('Required action is still open.');
   }
 
-  if (input.unresolvedFailureCount > 0) {
+  if (hasBlockingWorkflowFailures) {
     reasons.push('Unresolved tool failures remain in task state.');
   }
 
@@ -78,7 +79,7 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
       accepted: false,
       reasons,
       requiredActions,
-      state: input.unresolvedFailureCount > 0 ? 'failed_terminal' : 'running',
+      state: hasBlockingWorkflowFailures ? 'failed_terminal' : 'running',
     };
   }
 

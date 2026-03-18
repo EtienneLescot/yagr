@@ -1319,13 +1319,17 @@ function App() {
         }
 
         if (streamEvent.type === 'final') {
+          const statusLabel = streamEvent.finalState === 'stopped'
+            ? 'Stopped'
+            : streamEvent.finalState === 'failed_terminal'
+              ? 'Run failed'
+              : (streamEvent.requiredActions?.length ? 'Needs attention' : 'Completed');
+
           patchMessage(pendingId, {
             text: streamEvent.response,
             streaming: false,
             finalState: streamEvent.finalState,
-            statusLabel: streamEvent.finalState === 'stopped'
-              ? 'Stopped'
-              : (streamEvent.requiredActions?.length ? 'Needs attention' : 'Completed'),
+            statusLabel,
             phase: undefined,
           });
           setBusyLabel(undefined);

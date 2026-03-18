@@ -272,3 +272,36 @@ test('approved required action bypasses completion blocker', async () => {
   assert.equal(decision.state, 'completed');
   assert.equal(decision.requiredActions.length, 0);
 });
+
+test('completion gate does not fail terminally on exploratory n8nac failures without workflow writes', async () => {
+  const decision = await evaluateCompletionGate({
+    text: 'Je peux quand meme repondre sans n8n pour cette question.',
+    finishReason: 'stop',
+    requiredActions: [],
+    hasWorkflowWrites: false,
+    successfulValidate: false,
+    successfulPush: false,
+    unresolvedFailureCount: 1,
+    context: { runId: 'run-6', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, true);
+  assert.equal(decision.state, 'completed');
+  assert.equal(decision.requiredActions.length, 0);
+});
+
+test('completion gate still fails terminally on unresolved n8nac failures after workflow writes', async () => {
+  const decision = await evaluateCompletionGate({
+    text: 'Done.',
+    finishReason: 'stop',
+    requiredActions: [],
+    hasWorkflowWrites: true,
+    successfulValidate: false,
+    successfulPush: false,
+    unresolvedFailureCount: 1,
+    context: { runId: 'run-7', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, false);
+  assert.equal(decision.state, 'failed_terminal');
+});
