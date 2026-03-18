@@ -12,6 +12,32 @@ type RunResult = {
   timedOut: boolean;
 };
 
+const N8NAC_ACTIONS = [
+  'setup_check',
+  'init_auth',
+  'init_project',
+  'list',
+  'pull',
+  'push',
+  'verify',
+  'skills',
+  'validate',
+  'update_ai',
+  'resolve',
+  'skillsArgs',
+  'skillsArgv',
+] as const;
+
+type N8nAcAction = typeof N8NAC_ACTIONS[number];
+
+function normalizeN8nAcAction(action: N8nAcAction): Exclude<N8nAcAction, 'skillsArgs' | 'skillsArgv'> {
+  if (action === 'skillsArgs' || action === 'skillsArgv') {
+    return 'skills';
+  }
+
+  return action;
+}
+
 function splitArgv(input: string): string[] | null {
   const args: string[] = [];
   let current = '';
@@ -188,9 +214,9 @@ function isWorkspaceInitialized(): { initialized: boolean; configPath: string } 
 
 export function createN8nAcTool(observer?: ToolExecutionObserver) {
   return tool({
-    description: 'Run n8n-as-code workflow operations from the active workspace. Use this for init, list, pull, push, verify, skills search, validation, and AI context refresh.',
+    description: 'Run n8n-as-code workflow operations from the active workspace. For skills queries, use action="skills" with either skillsArgs as a single shell-like string or skillsArgv as an array of arguments.',
     parameters: z.object({
-      action: z.enum(['setup_check', 'init_auth', 'init_project', 'list', 'pull', 'push', 'verify', 'skills', 'validate', 'update_ai', 'resolve']),
+      action: z.enum(N8NAC_ACTIONS).describe('Primary n8nac action. Use skills for any n8nac skills subcommand; skillsArgs and skillsArgv are accepted as legacy aliases and normalize to skills.'),
       n8nHost: z.string().optional().describe('n8n host URL for init_auth.'),
       n8nApiKey: z.string().optional().describe('n8n API key for init_auth.'),
       projectId: z.string().optional().describe('n8n project ID for init_project.'),
@@ -221,6 +247,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       syncFolder,
       resolveMode,
     }) => {
+      action = normalizeN8nAcAction(action);
       const cwd = workspaceRoot();
 
       if (action === 'setup_check') {

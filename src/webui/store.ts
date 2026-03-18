@@ -40,6 +40,19 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   text: string;
+  streaming?: boolean;
+  phase?: string;
+  statusLabel?: string;
+  startedAt?: number;
+  finalState?: string;
+  progress?: ChatProgressEntry[];
+}
+
+export interface ChatProgressEntry {
+  id: string;
+  tone: 'info' | 'success' | 'error';
+  title: string;
+  detail?: string;
 }
 
 interface WebUiState {
@@ -56,6 +69,9 @@ interface WebUiState {
   setProjects: (projects: Array<{ id: string; name: string }>) => void;
   setAvailableModels: (models: string[]) => void;
   pushMessage: (message: ChatMessage) => void;
+  patchMessage: (id: string, patch: Partial<ChatMessage>) => void;
+  appendMessageText: (id: string, text: string) => void;
+  pushMessageProgress: (id: string, entry: ChatProgressEntry) => void;
   replaceMessage: (id: string, text: string, role?: ChatMessage['role']) => void;
   resetMessages: () => void;
 }
@@ -84,6 +100,35 @@ export const useWebUiStore = create<WebUiState>((set) => ({
   setProjects: (n8nProjects) => set({ n8nProjects }),
   setAvailableModels: (availableModels) => set({ availableModels }),
   pushMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  patchMessage: (id, patch) => set((state) => ({
+    messages: state.messages.map((message) => message.id === id ? { ...message, ...patch } : message),
+  })),
+  appendMessageText: (id, text) => set((state) => ({
+    messages: state.messages.map((message) => message.id === id ? { ...message, text: `${message.text}${text}` } : message),
+  })),
+  pushMessageProgress: (id, entry) => set((state) => ({
+    messages: state.messages.map((message) => {
+      if (message.id !== id) {
+        return message;
+      }
+
+      const previousEntry = message.progress?.[message.progress.length - 1];
+      if (
+        previousEntry
+        && previousEntry.tone === entry.tone
+        && previousEntry.title === entry.title
+        && previousEntry.detail === entry.detail
+      ) {
+        return message;
+      }
+
+      const nextProgress = [...(message.progress ?? []), entry].slice(-3);
+      return {
+        ...message,
+        progress: nextProgress,
+      };
+    }),
+  })),
   replaceMessage: (id, text, role) => set((state) => ({
     messages: state.messages.map((message) => message.id === id ? { ...message, text, role: role ?? message.role } : message),
   })),

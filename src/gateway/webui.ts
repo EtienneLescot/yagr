@@ -23,7 +23,14 @@ import {
 } from './telegram.js';
 import { getYagrSetupStatus } from '../setup.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
-import type { YagrModelProvider, YagrRunOptions } from '../types.js';
+import type {
+  YagrContextCompactionEvent,
+  YagrModelProvider,
+  YagrPhaseEvent,
+  YagrRunOptions,
+  YagrStateEvent,
+  YagrToolEvent,
+} from '../types.js';
 import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
 
 const execFileAsync = promisify(execFile);
@@ -66,6 +73,15 @@ interface WebUiConfigPayload {
   host?: string;
   port?: number;
 }
+
+type WebUiChatStreamEvent =
+  | { type: 'start'; sessionId: string; message: string }
+  | { type: 'phase'; phase: string; status: 'started' | 'completed'; message: string }
+  | { type: 'state'; state: string; message: string }
+  | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
+  | { type: 'text-delta'; delta: string }
+  | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
+  | { type: 'error'; error: string };
 
 function sanitizeHost(value: string | undefined): string {
   const trimmed = value?.trim();
@@ -342,6 +358,18 @@ class WebUiGateway implements Gateway {
       return;
     }
 
+    if (method === 'POST' && url.pathname === '/api/chat/stream') {
+      const body = await this.readJson(request);
+      const message = String(body.message ?? '').trim();
+      const sessionId = String(body.sessionId ?? randomUUID());
+      if (!message) {
+        throw new Error('Message is required.');
+      }
+
+      await this.handleStreamingChat(response, sessionId, message);
+      return;
+    }
+
     if (method === 'POST' && url.pathname === '/api/chat/reset') {
       const body = await this.readJson(request);
       const sessionId = String(body.sessionId ?? '');
@@ -526,6 +554,145 @@ class WebUiGateway implements Gateway {
     const assetPath = path.resolve(__dirname, '..', 'webui', fileName);
     const content = await readFile(assetPath, 'utf-8');
     this.sendText(response, 200, content, contentType);
+  }
+
+  private async handleStreamingChat(response: ServerResponse, sessionId: string, message: string): Promise<void> {
+    const setupStatus = getYagrSetupStatus(this.configService, new N8nConfigService());
+    if (!setupStatus.ready) {
+      this.sendJson(response, 400, { error: `Yagr is not ready yet. Missing: ${setupStatus.missingSteps.join(', ')}.` });
+      return;
+    }
+
+    response.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+
+    const writeEvent = (event: WebUiChatStreamEvent) => {
+      if (response.writableEnded || response.destroyed) {
+        return;
+      }
+
+      response.write(`${JSON.stringify(event)}\n`);
+    };
+
+    const pushPhaseEvent = (event: YagrPhaseEvent) => {
+      if (event.status !== 'started') {
+        return;
+      }
+
+      writeEvent({
+        type: 'phase',
+        phase: event.phase,
+        status: event.status,
+        message: event.message,
+      });
+    };
+
+    const pushStateEvent = (event: YagrStateEvent) => {
+      if (event.state === 'running' || event.state === 'streaming' || event.state === 'completed') {
+        return;
+      }
+
+      writeEvent({
+        type: 'state',
+        state: event.state,
+        message: event.message,
+      });
+    };
+
+    const pushToolEvent = (event: YagrToolEvent) => {
+      if (event.type === 'status') {
+        writeEvent({
+          type: 'progress',
+          tone: 'info',
+          title: event.toolName === 'reportProgress' ? 'Progress' : `Tool ${event.toolName}`,
+          detail: event.message,
+        });
+        return;
+      }
+
+      if (event.type === 'command-end') {
+        if (event.exitCode === 0) {
+          return;
+        }
+
+        writeEvent({
+          type: 'progress',
+          tone: 'error',
+          title: `${event.toolName} failed`,
+          detail: event.message,
+        });
+        return;
+      }
+    };
+
+    const pushCompactionEvent = (event: YagrContextCompactionEvent) => {
+      writeEvent({
+        type: 'progress',
+        tone: 'info',
+        title: 'Context compacted',
+        detail: `${event.messagesCompacted} messages folded to keep the run responsive.`,
+      });
+    };
+
+    try {
+      writeEvent({
+        type: 'start',
+        sessionId,
+        message: 'Run started. Inspecting workspace and request.',
+      });
+
+      const agent = await this.resolveAgent(sessionId);
+      const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
+      const result = await agent.run(message, {
+        ...this.options,
+        provider: resolvedConfig.provider,
+        model: resolvedConfig.model,
+        apiKey: resolvedConfig.apiKey,
+        baseUrl: resolvedConfig.baseUrl,
+        onPhaseChange: async (event) => {
+          pushPhaseEvent(event);
+          await this.options.onPhaseChange?.(event);
+        },
+        onStateChange: async (event) => {
+          pushStateEvent(event);
+          await this.options.onStateChange?.(event);
+        },
+        onToolEvent: async (event) => {
+          pushToolEvent(event);
+          await this.options.onToolEvent?.(event);
+        },
+        onCompaction: async (event) => {
+          pushCompactionEvent(event);
+          await this.options.onCompaction?.(event);
+        },
+        onTextDelta: async (delta) => {
+          writeEvent({ type: 'text-delta', delta });
+          await this.options.onTextDelta?.(delta);
+        },
+      });
+
+      writeEvent({
+        type: 'final',
+        sessionId,
+        response: result.text,
+        finalState: result.finalState,
+        requiredActions: result.requiredActions.map((action) => ({
+          title: action.title,
+          message: action.message,
+        })),
+      });
+    } catch (error) {
+      writeEvent({
+        type: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      response.end();
+    }
   }
 }
 
