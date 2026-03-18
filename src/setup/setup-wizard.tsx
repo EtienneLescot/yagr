@@ -1,6 +1,5 @@
 import type { IProject } from 'n8nac';
-import { Box, Text, render, useApp, useInput } from 'ink';
-import TextInput from 'ink-text-input';
+import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import type { GatewaySurface } from '../gateway/types.js';
 import type { YagrModelProvider } from '../llm/create-language-model.js';
@@ -18,13 +17,13 @@ const VALID_PROVIDERS: YagrModelProvider[] = [
 
 const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: string }> = [
   { value: 'telegram', label: 'Telegram', hint: 'Bot-based chat gateway' },
-  { value: 'whatsapp', label: 'WhatsApp', hint: 'Configuration only — runtime coming soon' },
+  { value: 'whatsapp', label: 'WhatsApp', hint: 'Configuration only - runtime coming soon' },
 ];
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export interface SetupCallbacks {
-  getN8nDefaults(): { url: string; apiKey?: string; projectId?: string; syncFolder?: string };
+  getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string };
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
   saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string }): Promise<void>;
   getLlmDefaults(): {
@@ -158,32 +157,181 @@ function SpinnerDisplay({ message, frame }: { message: string; frame: number }):
   );
 }
 
+function sanitizeTerminalInputChunk(input: string): string {
+  return input
+    .replace(/\u001B\[200~/g, '')
+    .replace(/\u001B\[201~/g, '')
+    .replace(/\r/g, '');
+}
+
+function getDisplayedModelOptions(models: string[]): string[] {
+  return [...models, '__custom__'];
+}
+
+function getVisibleWindow(total: number, cursor: number, maxVisible: number): { start: number; end: number } {
+  if (total <= maxVisible) {
+    return { start: 0, end: total };
+  }
+
+  const clampedCursor = Math.max(0, Math.min(cursor, total - 1));
+  const half = Math.floor(maxVisible / 2);
+  let start = Math.max(0, clampedCursor - half);
+  const maxStart = Math.max(0, total - maxVisible);
+  if (start > maxStart) {
+    start = maxStart;
+  }
+
+  return { start, end: Math.min(total, start + maxVisible) };
+}
+
+function getListViewportHeight(terminalRows: number, reservedRows: number): number {
+  return Math.max(2, terminalRows - reservedRows - 2);
+}
+
+function truncateTerminalLine(value: string, maxWidth: number): string {
+  if (maxWidth <= 0) {
+    return '';
+  }
+
+  if (value.length <= maxWidth) {
+    return value;
+  }
+
+  if (maxWidth === 1) {
+    return '…';
+  }
+
+  return `${value.slice(0, maxWidth - 1)}…`;
+}
+
+function WizardTextInput({
+  value,
+  onChange,
+  onSubmit,
+  placeholder,
+  mask,
+}: {
+  value: string;
+  onChange: (nextValue: string) => void;
+  onSubmit: (value: string) => void;
+  placeholder?: string;
+  mask?: string;
+}): JSX.Element {
+  const valueRef = useRef(value);
+  const cursorOffsetRef = useRef(value.length);
+  const [renderState, setRenderState] = useState({
+    value,
+    cursorOffset: value.length,
+  });
+
+  useEffect(() => {
+    valueRef.current = value;
+    cursorOffsetRef.current = Math.min(cursorOffsetRef.current, value.length);
+    setRenderState({
+      value,
+      cursorOffset: Math.min(cursorOffsetRef.current, value.length),
+    });
+  }, [value]);
+
+  useInput((input, key) => {
+    if (key.upArrow || key.downArrow || (key.ctrl && input === 'c') || key.tab || (key.shift && key.tab)) {
+      return;
+    }
+
+    const currentValue = valueRef.current;
+    const currentCursorOffset = cursorOffsetRef.current;
+
+    if (key.return) {
+      onSubmit(currentValue);
+      return;
+    }
+
+    let nextValue = currentValue;
+    let nextCursorOffset = currentCursorOffset;
+
+    if (key.leftArrow) {
+      nextCursorOffset = Math.max(0, currentCursorOffset - 1);
+    } else if (key.rightArrow) {
+      nextCursorOffset = Math.min(currentValue.length, currentCursorOffset + 1);
+    } else if (key.backspace || key.delete) {
+      if (currentCursorOffset > 0) {
+        nextValue = currentValue.slice(0, currentCursorOffset - 1) + currentValue.slice(currentCursorOffset);
+        nextCursorOffset = currentCursorOffset - 1;
+      }
+    } else {
+      const sanitizedInput = sanitizeTerminalInputChunk(input);
+      if (!sanitizedInput) {
+        return;
+      }
+      nextValue = currentValue.slice(0, currentCursorOffset) + sanitizedInput + currentValue.slice(currentCursorOffset);
+      nextCursorOffset = currentCursorOffset + sanitizedInput.length;
+    }
+
+    valueRef.current = nextValue;
+    cursorOffsetRef.current = nextCursorOffset;
+    setRenderState({ value: nextValue, cursorOffset: nextCursorOffset });
+
+    if (nextValue !== currentValue) {
+      onChange(nextValue);
+    }
+  });
+
+  const displayValue = mask ? mask.repeat(renderState.value.length) : renderState.value;
+
+  if (displayValue.length === 0) {
+    return <Text dimColor>{placeholder ?? ''}</Text>;
+  }
+
+  if (renderState.cursorOffset >= displayValue.length) {
+    return <Text>{displayValue}<Text inverse> </Text></Text>;
+  }
+
+  return (
+    <Text>
+      {displayValue.slice(0, renderState.cursorOffset)}
+      <Text inverse>{displayValue.charAt(renderState.cursorOffset)}</Text>
+      {displayValue.slice(renderState.cursorOffset + 1)}
+    </Text>
+  );
+}
+
 function SelectList<T>({
   options,
   cursor,
   getLabel,
   getHint,
+  maxVisibleRows,
+  maxLineWidth,
 }: {
   options: readonly T[];
   cursor: number;
   getLabel: (v: T) => string;
   getHint?: (v: T) => string | undefined;
+  maxVisibleRows?: number;
+  maxLineWidth?: number;
 }): JSX.Element {
+  const visibleRows = Math.max(1, maxVisibleRows ?? options.length);
+  const { start, end } = getVisibleWindow(options.length, cursor, visibleRows);
+  const visibleOptions = options.slice(start, end);
+  const availableWidth = maxLineWidth ?? Number.MAX_SAFE_INTEGER;
+
   return (
     <Box flexDirection="column" marginTop={0} marginBottom={0}>
-      {options.map((opt, i) => {
+      {start > 0 ? <Text dimColor>{truncateTerminalLine(`  ↑  ${start} more`, availableWidth)}</Text> : null}
+      {visibleOptions.map((opt, visibleIndex) => {
+        const i = start + visibleIndex;
         const active = i === cursor;
         const hint = getHint?.(opt);
+        const prefix = active ? `  ${CURSOR} ` : '    ';
+        const suffix = hint ? `  ${DOT}  ${hint}` : '';
+        const line = truncateTerminalLine(`${prefix}${getLabel(opt)}${suffix}`, availableWidth);
         return (
           <Box key={i}>
-            <Text color={active ? 'cyan' : undefined} bold={active}>
-              {active ? `  ${CURSOR} ` : `    `}
-            </Text>
-            <Text color={active ? 'cyan' : undefined} bold={active}>{getLabel(opt)}</Text>
-            {hint ? <Text dimColor>  {DOT}  {hint}</Text> : null}
+            <Text color={active ? 'cyan' : undefined} bold={active}>{line}</Text>
           </Box>
         );
       })}
+      {end < options.length ? <Text dimColor>{truncateTerminalLine(`  ↓  ${options.length - end} more`, availableWidth)}</Text> : null}
     </Box>
   );
 }
@@ -192,26 +340,37 @@ function MultiSelectList({
   options,
   cursor,
   selected,
+  maxVisibleRows,
+  maxLineWidth,
 }: {
   options: typeof SURFACE_OPTIONS;
   cursor: number;
   selected: GatewaySurface[];
+  maxVisibleRows?: number;
+  maxLineWidth?: number;
 }): JSX.Element {
+  const visibleRows = Math.max(1, maxVisibleRows ?? options.length);
+  const { start, end } = getVisibleWindow(options.length, cursor, visibleRows);
+  const visibleOptions = options.slice(start, end);
+  const availableWidth = maxLineWidth ?? Number.MAX_SAFE_INTEGER;
+
   return (
     <Box flexDirection="column" marginTop={0} marginBottom={0}>
-      {options.map((opt, i) => {
+      {start > 0 ? <Text dimColor>{truncateTerminalLine(`  ↑  ${start} more`, availableWidth)}</Text> : null}
+      {visibleOptions.map((opt, visibleIndex) => {
+        const i = start + visibleIndex;
         const active = i === cursor;
         const checked = selected.includes(opt.value);
+        const prefix = active ? `  ${CURSOR} ` : '    ';
+        const checkbox = checked ? '☑' : '☐';
+        const line = truncateTerminalLine(`${prefix}${checkbox}  ${opt.label}  ${DOT}  ${opt.hint}`, availableWidth);
         return (
           <Box key={opt.value}>
-            <Text color={active ? 'cyan' : undefined} bold={active}>
-              {active ? `  ${CURSOR} ` : `    `}
-            </Text>
-            <Text color={checked ? 'cyan' : undefined}>{checked ? '☑' : '☐'}  {opt.label}</Text>
-            <Text dimColor>  {DOT}  {opt.hint}</Text>
+            <Text color={active || checked ? 'cyan' : undefined} bold={active}>{line}</Text>
           </Box>
         );
       })}
+      {end < options.length ? <Text dimColor>{truncateTerminalLine(`  ↓  ${options.length - end} more`, availableWidth)}</Text> : null}
     </Box>
   );
 }
@@ -223,6 +382,7 @@ function SetupWizard({ callbacks, onDone }: {
   onDone: (result: SetupResult) => void;
 }): JSX.Element {
   const app = useApp();
+  const { stdout } = useStdout();
   const n8nDef = callbacks.getN8nDefaults();
   const llmDef = callbacks.getLlmDefaults();
   const surfDef = callbacks.getSurfaceDefaults();
@@ -231,8 +391,11 @@ function SetupWizard({ callbacks, onDone }: {
   const [textValue, setTextValue] = useState(n8nDef.url);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const asyncGuard = useRef(0);
+  const llmApiKeyDraftsRef = useRef<Partial<Record<YagrModelProvider, string>>>({});
+  const terminalRows = stdout?.rows ?? process.stdout.rows ?? 24;
+  const terminalColumns = stdout?.columns ?? process.stdout.columns ?? 80;
+  const listLineWidth = Math.max(12, terminalColumns - 6);
 
-  // Spinner tick for loading phases
   const isLoading = phase.kind === 'n8n-connecting' || phase.kind === 'n8n-saving'
     || phase.kind === 'llm-models-loading' || phase.kind === 'telegram-connecting';
 
@@ -242,20 +405,16 @@ function SetupWizard({ callbacks, onDone }: {
     return () => clearInterval(id);
   }, [isLoading]);
 
-  // Exit helper
   const cancel = useCallback((reason: string) => {
     setPhase({ kind: 'cancelled', reason });
     setTimeout(() => { onDone({ ok: false }); app.exit(); }, 500);
   }, [app, onDone]);
 
-  // Ctrl+C globally
   useInput((_input, key) => {
     if (key.ctrl && _input === 'c') {
       cancel('Setup cancelled.');
     }
   });
-
-  // ── Async transitions ──────────────────────────────────────────────────────
 
   useEffect(() => {
     if (phase.kind !== 'n8n-connecting') return;
@@ -307,7 +466,8 @@ function SetupWizard({ callbacks, onDone }: {
       try {
         const models = await callbacks.fetchModels(phase.provider, phase.apiKey);
         if (guard !== asyncGuard.current) return;
-        const idx = models.indexOf(phase.defModel);
+        const displayedOptions = getDisplayedModelOptions(models);
+        const idx = displayedOptions.indexOf(phase.defModel);
         setPhase({
           kind: 'llm-model',
           provider: phase.provider, apiKey: phase.apiKey,
@@ -337,7 +497,6 @@ function SetupWizard({ callbacks, onDone }: {
           telegram: { token: phase.token, username: identity.username },
         });
         const telegramDeepLink = `https://t.me/${identity.username}`;
-        // Find saved n8n/llm for summary (approximate — wizard is done)
         setPhase({ kind: 'done', n8nHost: '', n8nProject: '', provider: '', model: '', surfaces: phase.surfaces, telegramDeepLink });
         setTimeout(() => { onDone({ ok: true, telegramDeepLink }); app.exit(); }, 800);
       } catch (err) {
@@ -348,13 +507,11 @@ function SetupWizard({ callbacks, onDone }: {
     })();
   }, [phase.kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Input handlers (text submit) ──────────────────────────────────────────
-
   const handleN8nUrlSubmit = useCallback((value: string) => {
     const url = value.trim().replace(/^['"]|['"]$/g, '');
     if (!url) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'n8n-url' }>, err: 'A URL is required.' })); return; }
     try { new URL(url); } catch { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'n8n-url' }>, err: 'Enter a valid URL.' })); return; }
-    const existing = callbacks.getN8nDefaults().apiKey;
+    const existing = callbacks.getN8nDefaults(url).apiKey;
     if (existing) {
       setPhase({ kind: 'n8n-reuse-apikey', url, existing, cursor: 0 });
     } else {
@@ -378,6 +535,7 @@ function SetupWizard({ callbacks, onDone }: {
   const handleLlmApiKeySubmit = useCallback((provider: YagrModelProvider) => (value: string) => {
     const key = value.trim();
     if (!key) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'llm-apikey' }>, err: 'API key is required.' })); return; }
+    llmApiKeyDraftsRef.current[provider] = key;
     const defModel = llmDef.getDefaultModel(provider);
     setPhase({ kind: 'llm-models-loading', provider, apiKey: key, defModel });
   }, [llmDef]);
@@ -398,15 +556,12 @@ function SetupWizard({ callbacks, onDone }: {
     setPhase({ kind: 'telegram-connecting', surfaces, token });
   }, []);
 
-  // ── Select keyboard handlers ───────────────────────────────────────────────
-
   const handleSelectKey = useCallback((input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean; escape: boolean }) => {
     if (phase.kind === 'n8n-reuse-apikey') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
       else if (key.return) {
         if (phase.cursor === 0) {
-          // reuse → go straight to connecting
           setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: phase.existing });
         } else {
           setPhase({ kind: 'n8n-apikey', url: phase.url });
@@ -426,12 +581,12 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(VALID_PROVIDERS.length - 1, phase.cursor + 1) });
       else if (key.return) {
         const provider = VALID_PROVIDERS[phase.cursor];
-        const existing = llmDef.getApiKey(provider);
+        const existing = llmApiKeyDraftsRef.current[provider] ?? llmDef.getApiKey(provider);
         if (existing) {
           setPhase({ kind: 'llm-reuse-apikey', provider, existing, cursor: 0 });
         } else {
           setPhase({ kind: 'llm-apikey', provider });
-          setTextValue('');
+          setTextValue(llmApiKeyDraftsRef.current[provider] ?? '');
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-reuse-apikey') {
@@ -440,14 +595,15 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.return) {
         if (phase.cursor === 0) {
           const defModel = llmDef.getDefaultModel(phase.provider);
+          llmApiKeyDraftsRef.current[phase.provider] = phase.existing;
           setPhase({ kind: 'llm-models-loading', provider: phase.provider, apiKey: phase.existing, defModel });
         } else {
           setPhase({ kind: 'llm-apikey', provider: phase.provider });
-          setTextValue('');
+          setTextValue(llmApiKeyDraftsRef.current[phase.provider] ?? '');
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-model') {
-      const allOptions = [...phase.models, '__custom__'];
+      const allOptions = getDisplayedModelOptions(phase.models);
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(allOptions.length - 1, phase.cursor + 1) });
       else if (key.return) {
@@ -506,15 +662,13 @@ function SetupWizard({ callbacks, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-reuse-apikey', 'llm-model', 'surfaces', 'telegram-reuse-token'].includes(phase.kind);
-  const isTextPhase = ['n8n-url', 'n8n-apikey', 'n8n-syncfolder', 'llm-apikey', 'llm-baseurl', 'telegram-token'].includes(phase.kind);
+  const isSelectPhase = ['n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+    || (phase.kind === 'llm-model' && phase.models.length > 0);
 
   useInput((input, key) => {
-    if (key.ctrl && input === 'c') return; // handled globally above
+    if (key.ctrl && input === 'c') return;
     if (isSelectPhase) handleSelectKey(input, key);
   }, { isActive: isSelectPhase });
-
-  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
@@ -525,14 +679,12 @@ function SetupWizard({ callbacks, onDone }: {
 
   function renderPhase(): JSX.Element {
     switch (phase.kind) {
-
-      // ── N8n URL ─────────────────────────────────────────────────────────
       case 'n8n-url':
         return (
           <Box flexDirection="column">
             <FieldLabel label="Instance URL" />
             <Box marginLeft={2}>
-              <TextInput
+              <WizardTextInput
                 value={textValue}
                 onChange={setTextValue}
                 onSubmit={handleN8nUrlSubmit}
@@ -544,7 +696,6 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── N8n reuse API key ───────────────────────────────────────────────
       case 'n8n-reuse-apikey':
         return (
           <Box flexDirection="column">
@@ -554,18 +705,19 @@ function SetupWizard({ callbacks, onDone }: {
               options={['Keep the saved key', 'Enter a new key'] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
+              maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+              maxLineWidth={listLineWidth}
             />
             <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
 
-      // ── N8n API key ─────────────────────────────────────────────────────
       case 'n8n-apikey':
         return (
           <Box flexDirection="column">
             <FieldLabel label="n8n API key" />
             <Box marginLeft={2}>
-              <TextInput
+              <WizardTextInput
                 value={textValue}
                 onChange={setTextValue}
                 onSubmit={handleN8nApiKeySubmit(phase.url)}
@@ -578,7 +730,6 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── N8n connecting ──────────────────────────────────────────────────
       case 'n8n-connecting':
         return (
           <Box flexDirection="column">
@@ -586,11 +737,7 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── N8n project selection ───────────────────────────────────────────
-      case 'n8n-project': {
-        const projectLabels = phase.projects.map((p) =>
-          p.name ?? p.id,
-        );
+      case 'n8n-project':
         return (
           <Box flexDirection="column">
             <FieldLabel label="n8n project" />
@@ -600,19 +747,19 @@ function SetupWizard({ callbacks, onDone }: {
               cursor={phase.cursor}
               getLabel={(p) => p.name ?? p.id}
               getHint={(p) => p.id}
+              maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+              maxLineWidth={listLineWidth}
             />
             <HintBar hints={['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel']} />
           </Box>
         );
-      }
 
-      // ── N8n sync folder ─────────────────────────────────────────────────
       case 'n8n-syncfolder':
         return (
           <Box flexDirection="column">
             <FieldLabel label="Local workflow sync folder" />
             <Box marginLeft={2}>
-              <TextInput
+              <WizardTextInput
                 value={textValue}
                 onChange={setTextValue}
                 onSubmit={handleSyncFolderSubmit(phase.url, phase.apiKey, phase.project)}
@@ -624,7 +771,6 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── N8n saving ──────────────────────────────────────────────────────
       case 'n8n-saving':
         return (
           <Box flexDirection="column">
@@ -632,7 +778,6 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── LLM provider ────────────────────────────────────────────────────
       case 'llm-provider':
         return (
           <Box flexDirection="column">
@@ -642,12 +787,13 @@ function SetupWizard({ callbacks, onDone }: {
               cursor={phase.cursor}
               getLabel={(v) => v}
               getHint={(v) => v === phase.initial ? 'currently configured' : undefined}
+              maxVisibleRows={getListViewportHeight(terminalRows, 10)}
+              maxLineWidth={listLineWidth}
             />
             <HintBar hints={['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel']} />
           </Box>
         );
 
-      // ── LLM reuse API key ───────────────────────────────────────────────
       case 'llm-reuse-apikey':
         return (
           <Box flexDirection="column">
@@ -657,20 +803,24 @@ function SetupWizard({ callbacks, onDone }: {
               options={['Keep the saved key', 'Enter a new key'] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
+              maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+              maxLineWidth={listLineWidth}
             />
             <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
 
-      // ── LLM API key ─────────────────────────────────────────────────────
       case 'llm-apikey':
         return (
           <Box flexDirection="column">
             <FieldLabel label={`${phase.provider} API key`} />
             <Box marginLeft={2}>
-              <TextInput
+              <WizardTextInput
                 value={textValue}
-                onChange={setTextValue}
+                onChange={(nextValue) => {
+                  setTextValue(nextValue);
+                  llmApiKeyDraftsRef.current[phase.provider] = nextValue;
+                }}
                 onSubmit={handleLlmApiKeySubmit(phase.provider)}
                 mask="●"
                 placeholder="your-api-key"
@@ -681,7 +831,6 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── LLM models loading ──────────────────────────────────────────────
       case 'llm-models-loading':
         return (
           <Box flexDirection="column">
@@ -689,15 +838,14 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── LLM model selection ─────────────────────────────────────────────
       case 'llm-model': {
-        const modelOptions = [...phase.models.slice(0, 50), '__custom__'];
+        const modelOptions = getDisplayedModelOptions(phase.models);
         return (
           <Box flexDirection="column">
             <FieldLabel label={`Default model  ·  ${phase.provider}`} />
             {phase.models.length === 0 ? (
               <Box marginLeft={2}>
-                <TextInput
+                <WizardTextInput
                   value={textValue}
                   onChange={setTextValue}
                   onSubmit={(v) => {
@@ -720,6 +868,8 @@ function SetupWizard({ callbacks, onDone }: {
                 cursor={phase.cursor}
                 getLabel={(v) => v === '__custom__' ? '⌨  enter manually…' : v}
                 getHint={(v) => v === phase.defModel ? 'recommended' : undefined}
+                maxVisibleRows={getListViewportHeight(terminalRows, 10)}
+                maxLineWidth={listLineWidth}
               />
             )}
             <HintBar hints={phase.models.length > 0 ? ['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel'] : ['Enter ↵  confirm', 'Ctrl+C  cancel']} />
@@ -727,14 +877,13 @@ function SetupWizard({ callbacks, onDone }: {
         );
       }
 
-      // ── LLM base URL ────────────────────────────────────────────────────
       case 'llm-baseurl':
         return (
           <Box flexDirection="column">
             <FieldLabel label={`${phase.provider} base URL`} />
             <Text dimColor>  Leave empty to use the default endpoint</Text>
             <Box marginLeft={2}>
-              <TextInput
+              <WizardTextInput
                 value={textValue}
                 onChange={setTextValue}
                 onSubmit={handleBaseUrlSubmit(phase.provider, phase.apiKey, phase.model)}
@@ -746,7 +895,6 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── Surfaces selection ──────────────────────────────────────────────
       case 'surfaces':
         return (
           <Box flexDirection="column">
@@ -757,13 +905,14 @@ function SetupWizard({ callbacks, onDone }: {
                 options={SURFACE_OPTIONS}
                 cursor={phase.cursor}
                 selected={phase.selected}
+                maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+                maxLineWidth={listLineWidth}
               />
             </Box>
             <HintBar hints={['↑↓  move', 'Space  toggle', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
 
-      // ── Telegram reuse token ────────────────────────────────────────────
       case 'telegram-reuse-token':
         return (
           <Box flexDirection="column">
@@ -773,19 +922,22 @@ function SetupWizard({ callbacks, onDone }: {
               options={['Keep the saved token', 'Enter a new token'] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
+              maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+              maxLineWidth={listLineWidth}
             />
             <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
 
-      // ── Telegram token ──────────────────────────────────────────────────
       case 'telegram-token':
         return (
           <Box flexDirection="column">
             <FieldLabel label="Telegram bot token" />
-            <Text dimColor>  Create a bot via @BotFather and paste the token here</Text>
+            <Text dimColor>  Open Telegram, search for @BotFather, then start a chat.</Text>
+            <Text dimColor>  Run /newbot, choose a bot name, then choose a unique username ending in "bot".</Text>
+            <Text dimColor>  BotFather will reply with an HTTP API token like "123456789:ABCdef...". Paste that token here.</Text>
             <Box marginLeft={2}>
-              <TextInput
+              <WizardTextInput
                 value={textValue}
                 onChange={setTextValue}
                 onSubmit={handleTelegramTokenSubmit(phase.surfaces)}
@@ -798,7 +950,6 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── Telegram connecting ─────────────────────────────────────────────
       case 'telegram-connecting':
         return (
           <Box flexDirection="column">
@@ -806,7 +957,6 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── Done ────────────────────────────────────────────────────────────
       case 'done':
         return (
           <Box flexDirection="column">
@@ -824,7 +974,6 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── Cancelled ───────────────────────────────────────────────────────
       case 'cancelled':
         return (
           <Box>
@@ -832,7 +981,6 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      // ── Error ───────────────────────────────────────────────────────────
       case 'error':
         return (
           <Box>
