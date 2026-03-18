@@ -4,7 +4,19 @@ export {
   createN8nEngineFromWorkspace,
   loadN8nEngineConfig,
 } from './config/load-n8n-engine-config.js';
+export {
+  buildYagrCleanupPlan,
+  resetYagrLocalState,
+} from './config/local-state.js';
+export { YagrN8nConfigService } from './config/n8n-config-service.js';
 export { YagrConfigService } from './config/yagr-config-service.js';
+export {
+  getYagrHomeDir,
+  getYagrLaunchDir,
+  getYagrPaths,
+  resolveLegacyConfStorePath,
+  resolveYagrHomeDir,
+} from './config/yagr-home.js';
 export { runCliGateway } from './gateway/cli.js';
 export {
   buildGatewaySupervisorStatus,
@@ -67,6 +79,8 @@ export type { GatewayRuntimeHandle, GatewaySurface } from './gateway/types.js';
 export type { GatewaySupervisorStatus, GatewaySurfaceStatus } from './gateway/manager.js';
 export type { WebUiGatewayStatus } from './gateway/webui.js';
 export type { YagrSetupStatus } from './setup.js';
+export type { YagrResetScope, YagrCleanupPlan, YagrResetResult } from './config/local-state.js';
+export type { YagrN8nLocalConfig } from './config/n8n-config-service.js';
 
 export type {
   CredentialRequirement,
@@ -106,3 +120,4 @@ export type {
   YagrTelegramConfig,
   YagrTelegramLinkedChat,
 } from './config/yagr-config-service.js';
+export type { YagrPaths } from './config/yagr-home.js';

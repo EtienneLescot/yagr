@@ -1,21 +1,18 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import {
-  ConfigService as N8nConfigService,
   N8nApiClient,
   WorkspaceSetupService,
   getDisplayProjectName,
   type IProject,
 } from 'n8nac';
+import { Command } from 'commander';
+import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
 import { normalizeGatewaySurfaces, YagrConfigService } from './config/yagr-config-service.js';
-import { getYagrHomeDir } from './config/yagr-home.js';
+import { YagrN8nConfigService } from './config/n8n-config-service.js';
 import { getGatewaySupervisorStatus } from './gateway/manager.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
 import type { GatewaySurface } from './gateway/types.js';
 import { resolveLanguageModelConfig, resolveModelName, resolveModelProvider, type YagrModelProvider } from './llm/create-language-model.js';
 import { runSetupWizard, type SetupCallbacks } from './setup/setup-wizard.js';
-
-const execFileAsync = promisify(execFile);
 
 const VALID_PROVIDERS: YagrModelProvider[] = [
   'anthropic',
@@ -67,7 +64,7 @@ export function buildYagrSetupStatus(input: {
 
 export function getYagrSetupStatus(
   yagrConfigService = new YagrConfigService(),
-  n8nConfigService = new N8nConfigService(),
+  n8nConfigService = new YagrN8nConfigService(),
   options: { activeSurfaces?: GatewaySurface[] } = {},
 ): YagrSetupStatus {
   const yagrConfig = yagrConfigService.getLocalConfig();
@@ -104,7 +101,7 @@ export function getYagrSetupStatus(
 
 export async function runYagrSetup(
   yagrConfigService = new YagrConfigService(),
-  n8nConfigService = new N8nConfigService(),
+  n8nConfigService = new YagrN8nConfigService(),
 ): Promise<boolean> {
   const callbacks: SetupCallbacks = {
     getN8nDefaults(urlOverride?: string) {
@@ -142,7 +139,7 @@ export async function runYagrSetup(
       });
       WorkspaceSetupService.ensureWorkspaceFiles(syncFolder);
       try {
-        await runN8nacCommand(['update-ai']);
+        await refreshAiContext({ host: url, apiKey });
       } catch (err) {
         process.stderr.write(`Warning: AGENTS.md refresh failed: ${err instanceof Error ? err.message : String(err)}\n`);
       }
@@ -221,12 +218,9 @@ export async function runYagrSetup(
   return result.ok;
 }
 
-async function runN8nacCommand(args: string[]): Promise<void> {
-  const command = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  await execFileAsync(command, ['--yes', 'n8nac', ...args], {
-    cwd: getYagrHomeDir(),
-    env: process.env,
-  });
+async function refreshAiContext(credentials: { host: string; apiKey: string }): Promise<void> {
+  const updateAi = new UpdateAiCommand(new Command());
+  await updateAi.run({}, credentials);
 }
 
 function getBaseUrlForProvider(provider: YagrModelProvider): string | undefined {

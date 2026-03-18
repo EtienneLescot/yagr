@@ -82,6 +82,20 @@ npm run yagr:start
 
 The repository dev scripts intentionally use `.yagr-test-workspace` so local development does not pollute your real Yagr home.
 
+### Inspect Or Reset Local State
+
+```bash
+yagr paths
+yagr reset --dry-run
+yagr reset --scope full --yes
+```
+
+To remove the global CLI package itself:
+
+```bash
+npm uninstall -g @yagr/agent
+```
+
 > <table>
 > <tr>
 > <td width="108" align="center">
