@@ -102,11 +102,12 @@ export async function runYagrSetup(
   n8nConfigService = new N8nConfigService(),
 ): Promise<boolean> {
   const callbacks: SetupCallbacks = {
-    getN8nDefaults() {
+    getN8nDefaults(urlOverride?: string) {
       const cfg = n8nConfigService.getLocalConfig();
+      const hostForKey = urlOverride ?? cfg.host;
       return {
         url: sanitizeInputValue(cfg.host) ?? 'http://localhost:5678',
-        apiKey: cfg.host ? n8nConfigService.getApiKey(cfg.host) : undefined,
+        apiKey: hostForKey ? n8nConfigService.getApiKey(hostForKey) : undefined,
         projectId: cfg.projectId,
         syncFolder: cfg.syncFolder,
       };
