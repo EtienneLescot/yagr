@@ -11,7 +11,7 @@ const config: Config = {
 
 
   // Set the production url of your site here
-  url: 'https://n8nascode.dev',
+  url: 'https://yagr.dev',
   // Custom domains are served from the site root on GitHub Pages.
   baseUrl: '/',
 
@@ -45,7 +45,7 @@ const config: Config = {
         docs: {
           path: 'yagr-docs',
           sidebarPath: './sidebars.yagr.ts',
-          routeBasePath: 'yagr/docs',
+          routeBasePath: 'docs',
           editUrl: 'https://github.com/EtienneLescot/yagr/tree/main/docs/',
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
@@ -70,7 +70,7 @@ const config: Config = {
         language: ['en'],
         highlightSearchTermsOnTargetPage: true,
         explicitSearchResultPath: true,
-        docsRouteBasePath: ['/yagr/docs'],
+        docsRouteBasePath: ['/docs'],
       },
     ],
   ],
@@ -108,7 +108,7 @@ const config: Config = {
       },
       items: [
         {
-          to: '/yagr/docs/getting-started',
+          to: '/docs/getting-started',
           position: 'left',
           label: 'Docs',
         },
@@ -127,11 +127,11 @@ const config: Config = {
           items: [
             {
               label: 'Getting Started',
-              to: '/yagr/docs/getting-started',
+              to: '/docs/getting-started',
             },
             {
               label: 'CLI Reference',
-              to: '/yagr/docs/reference/commands',
+              to: '/docs/reference/commands',
             },
           ],
         },

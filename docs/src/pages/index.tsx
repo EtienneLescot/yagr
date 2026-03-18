@@ -57,13 +57,13 @@ const entryPoints = [
   {
     title: 'For automation intent',
     text: 'Start from what you want to automate, not from raw node wiring. Yagr should be the product layer that translates that intent.',
-    link: '/yagr/docs/getting-started',
+    link: '/docs/getting-started',
     cta: 'Read the Yagr starting point',
   },
   {
     title: 'For remote interaction',
     text: 'Use Telegram as one gateway into the same agent loop, with setup-managed credentials, onboarding links, and linked chats.',
-    link: '/yagr/docs/usage/telegram',
+    link: '/docs/usage/telegram',
     cta: 'See the Telegram flow',
   },
   {
@@ -133,7 +133,7 @@ function HomepageHeader() {
             <div className={styles.buttons}>
               <Link
                 className={clsx('button button--lg', styles.primaryButton)}
-                to="/yagr/docs/getting-started">
+                to="/docs/getting-started">
                 Start with Yagr
               </Link>
               <Link
@@ -235,10 +235,10 @@ yagr start`}</code>
                 <div className={styles.quickStartActions}>
                   <Link
                     className={clsx('button button--lg', styles.primaryButton)}
-                    to="/yagr/docs/getting-started">
+                    to="/docs/getting-started">
                     Open the getting started guide
                   </Link>
-                  <Link className={styles.inlineLink} to="/yagr/docs/reference/commands">
+                  <Link className={styles.inlineLink} to="/docs/reference/commands">
                     See all CLI commands
                   </Link>
                 </div>
@@ -340,7 +340,7 @@ yagr start`}</code>
               <div className={styles.buttons}>
                 <Link
                   className={clsx('button button--lg', styles.primaryButton)}
-                  to="/yagr/docs/getting-started">
+                  to="/docs/getting-started">
                   Read the Yagr guide
                 </Link>
                 <Link
