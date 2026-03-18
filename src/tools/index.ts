@@ -17,3 +17,4 @@ export { createNodeInfoTool } from './node-info.js';
 export { createSearchNodesTool } from './search-nodes.js';
 export { createSearchTemplatesTool } from './search-templates.js';
 export { createValidateWorkflowTool } from './validate.js';
+export { createPresentWorkflowResultTool } from './present-workflow-result.js';

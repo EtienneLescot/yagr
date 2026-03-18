@@ -36,6 +36,13 @@ export interface ConfigSnapshot {
   availableModels: string[];
 }
 
+export interface ChatWorkflowEmbed {
+  kind: 'workflow';
+  workflowId: string;
+  url: string;
+  title?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -46,6 +53,7 @@ export interface ChatMessage {
   startedAt?: number;
   finalState?: string;
   progress?: ChatProgressEntry[];
+  embed?: ChatWorkflowEmbed;
 }
 
 export interface ChatProgressEntry {

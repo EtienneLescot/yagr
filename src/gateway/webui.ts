@@ -81,7 +81,8 @@ type WebUiChatStreamEvent =
   | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string }
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; title?: string };
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -640,6 +641,17 @@ class WebUiGateway implements Gateway {
           tone: 'error',
           title: `${event.toolName} failed`,
           detail: event.message,
+        });
+        return;
+      }
+
+      if (event.type === 'embed') {
+        writeEvent({
+          type: 'embed',
+          kind: event.kind,
+          workflowId: event.workflowId,
+          url: event.url,
+          title: event.title,
         });
         return;
       }

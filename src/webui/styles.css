@@ -680,3 +680,50 @@ button {
     width: 100%;
   }
 }
+
+/* ── Workflow header card ──────────────────────────────────── */
+
+.workflowHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 12px;
+  background: var(--surface-elevated, #f5f5f5);
+  border: 1px solid var(--border, #e0e0e0);
+}
+
+.workflowHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.workflowBadge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #6366f1);
+}
+
+.workflowTitle {
+  font-size: 0.9rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflowHeader .primaryButton {
+  flex-shrink: 0;
+  width: auto;
+}
