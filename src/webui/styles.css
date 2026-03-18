@@ -732,15 +732,15 @@ button {
   width: auto;
 }
 
-.workflowDiagram {
-  margin: 0;
+.workflowGraphWrap {
   padding: 0.75rem 1rem;
   border-top: 1px solid var(--border, #e0e0e0);
-  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: var(--text-muted, #666);
-  background: var(--surface-elevated, #fafafa);
-  white-space: pre;
   overflow-x: auto;
+  background: var(--surface-elevated, #fafafa);
+}
+
+.workflowGraph {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
