@@ -2,7 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useWebUiStore, type ChatMessage, type ChatProgressEntry, type ConfigSnapshot } from './store.js';
+import { useWebUiStore, type ChatMessage, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot } from './store.js';
 
 type ApiError = { error?: string };
 type WebUiView = 'home' | 'setup';
@@ -12,6 +12,7 @@ type ChatStreamEvent =
   | { type: 'phase'; phase: string; status: 'started' | 'completed'; message: string }
   | { type: 'state'; state: string; message: string }
   | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; title?: string }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string };
@@ -278,6 +279,44 @@ function SetupPageHeader({
   );
 }
 
+function WorkflowEmbed({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
+  const [refreshKey, setRefreshKey] = React.useState(0);
+  // The proxy URL strips X-Frame-Options / frame-ancestors so the browser
+  // accepts the same-origin embed.  The direct n8n URL is kept for the
+  // "Open in n8n" fallback link.
+  const proxyUrl = `/n8n-proxy/workflow/${embed.workflowId}`;
+
+  return (
+    <div className="workflowEmbed">
+      <div className="workflowEmbedHeader">
+        <div className="workflowEmbedMeta">
+          <span className="messageBadge phaseBadge">Workflow</span>
+          <span className="workflowEmbedTitle">{embed.title ?? `Workflow ${embed.workflowId}`}</span>
+        </div>
+        <div className="workflowEmbedActions">
+          <button
+            className="ghostButton"
+            type="button"
+            onClick={() => setRefreshKey((k) => k + 1)}
+          >
+            Refresh
+          </button>
+          <a className="primaryButton" href={embed.url} target="_blank" rel="noreferrer">
+            Open in n8n
+          </a>
+        </div>
+      </div>
+      <iframe
+        key={refreshKey}
+        src={proxyUrl}
+        title={embed.title ?? `Workflow ${embed.workflowId}`}
+        className="workflowEmbedFrame"
+        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-top-navigation allow-top-navigation-by-user-activation"
+      />
+    </div>
+  );
+}
+
 function MessageCard({ message, now }: { message: ChatMessage; now: number }): React.JSX.Element {
   const elapsed = message.streaming && message.startedAt ? formatElapsed(now - message.startedAt) : undefined;
   const visibleProgress = (message.progress ?? []).slice(-3);
@@ -336,6 +375,8 @@ function MessageCard({ message, now }: { message: ChatMessage; now: number }): R
             : (message.streaming ? 'The answer is being composed...' : '')}
         </div>
       ) : null}
+
+      {message.embed ? <WorkflowEmbed embed={message.embed} /> : null}
     </article>
   );
 }
@@ -929,6 +970,18 @@ function App() {
             statusLabel: streamEvent.detail ?? streamEvent.title,
           });
           setBusyLabel(streamEvent.detail ?? streamEvent.title);
+          return;
+        }
+
+        if (streamEvent.type === 'embed') {
+          patchMessage(pendingId, {
+            embed: {
+              kind: streamEvent.kind,
+              workflowId: streamEvent.workflowId,
+              url: streamEvent.url,
+              title: streamEvent.title,
+            },
+          });
           return;
         }
 

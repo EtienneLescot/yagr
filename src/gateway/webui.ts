@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -79,6 +80,7 @@ type WebUiChatStreamEvent =
   | { type: 'phase'; phase: string; status: 'started' | 'completed'; message: string }
   | { type: 'state'; state: string; message: string }
   | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; title?: string }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string };
@@ -206,6 +208,11 @@ class WebUiGateway implements Gateway {
   private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const method = request.method ?? 'GET';
     const url = new URL(request.url ?? '/', this.status.url);
+
+    if (url.pathname.startsWith('/n8n-proxy')) {
+      await this.handleN8nProxy(request, response, url);
+      return;
+    }
 
     if (method === 'GET' && url.pathname === '/') {
       this.sendText(response, 200, WEB_UI_HTML, 'text/html; charset=utf-8');
@@ -538,6 +545,127 @@ class WebUiGateway implements Gateway {
     return JSON.parse(Buffer.concat(chunks).toString('utf-8')) as Record<string, unknown>;
   }
 
+  /**
+   * Transparent reverse proxy to the configured n8n instance.
+   *
+   * Strips X-Frame-Options and frame-ancestors to allow the workflow
+   * editor to be embedded in an iframe served from the Yagr Web UI
+   * (same origin from the browser's perspective).
+   *
+   * Rewrites Set-Cookie so credentials acquired through the proxy
+   * stay scoped to the Yagr origin and are forwarded on subsequent
+   * proxied requests.
+   */
+  private async handleN8nProxy(request: IncomingMessage, response: ServerResponse, proxyUrl: URL): Promise<void> {
+    const n8nService = new N8nConfigService();
+    const n8nConfig = n8nService.getLocalConfig();
+
+    if (!n8nConfig.host) {
+      this.sendJson(response, 503, { error: 'n8n host not configured.' });
+      return;
+    }
+
+    const strippedPath = proxyUrl.pathname.slice('/n8n-proxy'.length) || '/';
+    let targetUrl: URL;
+
+    try {
+      targetUrl = new URL(`${strippedPath}${proxyUrl.search}`, n8nConfig.host.replace(/\/$/, ''));
+    } catch {
+      this.sendJson(response, 400, { error: 'Invalid proxy target.' });
+      return;
+    }
+
+    const apiKey = n8nService.getApiKey(n8nConfig.host);
+    const isHttps = targetUrl.protocol === 'https:';
+    const requester = isHttps ? httpsRequest : httpRequest;
+
+    const forwardHeaders: Record<string, string | string[] | undefined> = {};
+    for (const [key, value] of Object.entries(request.headers)) {
+      if (key.toLowerCase() === 'host') {
+        continue;
+      }
+      forwardHeaders[key] = value;
+    }
+
+    if (apiKey) {
+      forwardHeaders['x-n8n-api-key'] = apiKey;
+    }
+
+    const proxyReq = requester(
+      {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port || (isHttps ? 443 : 80),
+        path: `${targetUrl.pathname}${targetUrl.search}`,
+        method: request.method ?? 'GET',
+        headers: forwardHeaders,
+        // Allow self-signed certificates for local n8n instances.
+        rejectUnauthorized: false,
+      },
+      (proxyRes) => {
+        const outHeaders: Record<string, string | string[]> = {};
+
+        for (const [key, value] of Object.entries(proxyRes.headers)) {
+          if (value === undefined) {
+            continue;
+          }
+
+          const lk = key.toLowerCase();
+
+          if (lk === 'x-frame-options') {
+            continue;
+          }
+
+          if (lk === 'content-security-policy' && typeof value === 'string') {
+            const directives = value
+              .split(';')
+              .map((d) => d.trim())
+              .filter((d) => !d.toLowerCase().startsWith('frame-ancestors'));
+            if (directives.length > 0) {
+              outHeaders[key] = directives.join('; ');
+            }
+            continue;
+          }
+
+          if (lk === 'set-cookie') {
+            const cookies = (Array.isArray(value) ? value : [value]) as string[];
+            outHeaders[key] = cookies.map((cookie) =>
+              cookie
+                .replace(/;\s*domain=[^;,]*/gi, '')
+                .replace(/;\s*path=\//gi, '; Path=/n8n-proxy/')
+                .replace(/;\s*secure/gi, ''),
+            );
+            continue;
+          }
+
+          if (lk === 'location' && typeof value === 'string') {
+            try {
+              const redirectTarget = new URL(value, targetUrl.origin);
+              if (redirectTarget.origin === targetUrl.origin) {
+                outHeaders[key] = `/n8n-proxy${redirectTarget.pathname}${redirectTarget.search}`;
+                continue;
+              }
+            } catch {
+              // leave Location as-is if it cannot be parsed
+            }
+          }
+
+          outHeaders[key] = value as string | string[];
+        }
+
+        response.writeHead(proxyRes.statusCode ?? 200, outHeaders);
+        proxyRes.pipe(response, { end: true });
+      },
+    );
+
+    proxyReq.on('error', (err) => {
+      if (!response.headersSent) {
+        this.sendJson(response, 502, { error: `n8n proxy failed: ${err.message}` });
+      }
+    });
+
+    request.pipe(proxyReq, { end: true });
+  }
+
   private sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
     response.writeHead(statusCode, {
       'Content-Type': 'application/json; charset=utf-8',
@@ -640,6 +768,17 @@ class WebUiGateway implements Gateway {
           tone: 'error',
           title: `${event.toolName} failed`,
           detail: event.message,
+        });
+        return;
+      }
+
+      if (event.type === 'embed') {
+        writeEvent({
+          type: 'embed',
+          kind: event.kind,
+          workflowId: event.workflowId,
+          url: event.url,
+          title: event.title,
         });
         return;
       }

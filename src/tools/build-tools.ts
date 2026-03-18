@@ -4,6 +4,7 @@ import { createDeleteWorkspaceFileTool } from './delete-workspace-file.js';
 import { createListDirectoryTool } from './list-directory.js';
 import { createListWorkflowsTool } from './list-workflows.js';
 import { createManageWorkflowTool } from './manage-workflow.js';
+import { createPresentWorkflowResultTool } from './present-workflow-result.js';
 import { createMoveWorkspaceFileTool } from './move-workspace-file.js';
 import { createN8nAcTool } from './n8nac.js';
 import { createNodeInfoTool } from './node-info.js';
@@ -33,5 +34,6 @@ export function buildTools(engine: Engine, observer?: ToolExecutionObserver) {
     replaceInWorkspaceFile: createReplaceInWorkspaceFileTool(observer),
     moveWorkspaceFile: createMoveWorkspaceFileTool(observer),
     deleteWorkspaceFile: createDeleteWorkspaceFileTool(observer),
+    presentWorkflowResult: createPresentWorkflowResultTool(observer),
   };
 }

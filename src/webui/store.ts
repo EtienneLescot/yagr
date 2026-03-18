@@ -46,6 +46,7 @@ export interface ChatMessage {
   startedAt?: number;
   finalState?: string;
   progress?: ChatProgressEntry[];
+  embed?: ChatWorkflowEmbed;
 }
 
 export interface ChatProgressEntry {
@@ -53,6 +54,13 @@ export interface ChatProgressEntry {
   tone: 'info' | 'success' | 'error';
   title: string;
   detail?: string;
+}
+
+export interface ChatWorkflowEmbed {
+  kind: 'workflow';
+  workflowId: string;
+  url: string;
+  title?: string;
 }
 
 interface WebUiState {
