@@ -36,6 +36,7 @@ export interface SetupCallbacks {
   fetchModels(provider: YagrModelProvider, apiKey: string): Promise<string[]>;
   saveLlmConfig(p: { provider: YagrModelProvider; apiKey: string; model: string; baseUrl?: string }): void;
   getSurfaceDefaults(): { surfaces: GatewaySurface[] };
+  getTelegramToken(): string | undefined;
   setupTelegram(token: string): Promise<{ username: string }>;
   saveSurfaces(p: { surfaces: GatewaySurface[]; telegram?: { token: string; username: string } }): void;
 }
@@ -631,9 +632,7 @@ function SetupWizard({ callbacks, onDone }: {
       } else if (key.return) {
         const surfaces = phase.selected;
         if (surfaces.includes('telegram')) {
-          const existingToken = callbacks.getSurfaceDefaults().surfaces.includes('telegram')
-            ? (callbacks as any).getTelegramToken?.() as string | undefined
-            : undefined;
+          const existingToken = callbacks.getTelegramToken();
           if (existingToken) {
             setPhase({ kind: 'telegram-reuse-token', surfaces, existing: existingToken, cursor: 0 });
           } else {
