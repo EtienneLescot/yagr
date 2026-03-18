@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.2...yagr@v0.2.3) (2026-03-18)
+
+
+### Bug Fixes
+
+* update documentation link to point to the correct Yagr docs ([a7fdd70](https://github.com/EtienneLescot/yagr/commit/a7fdd705ec37f8035ec360d394ecd258c3019645))
+
 ## [0.2.2](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.1...yagr@v0.2.2) (2026-03-18)
 
 
