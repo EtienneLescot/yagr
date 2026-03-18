@@ -1,11 +1,23 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { useWebUiStore, type ConfigSnapshot } from './store.js';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { useWebUiStore, type ChatMessage, type ChatProgressEntry, type ConfigSnapshot } from './store.js';
 
 type ApiError = { error?: string };
+type WebUiView = 'home' | 'setup';
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+type ChatStreamEvent =
+  | { type: 'start'; sessionId: string; message: string }
+  | { type: 'phase'; phase: string; status: 'started' | 'completed'; message: string }
+  | { type: 'state'; state: string; message: string }
+  | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
+  | { type: 'text-delta'; delta: string }
+  | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
+  | { type: 'error'; error: string };
+
+async function request<T>(targetPath: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(targetPath, {
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
@@ -35,6 +47,544 @@ function useNotice() {
   }, []);
 }
 
+function phaseLabel(phase: string | undefined): string {
+  switch (phase) {
+    case 'inspect': return 'Inspecting';
+    case 'plan': return 'Planning';
+    case 'edit': return 'Editing';
+    case 'validate': return 'Validating';
+    case 'sync': return 'Syncing';
+    case 'verify': return 'Verifying';
+    case 'summarize': return 'Summarizing';
+    default: return 'Working';
+  }
+}
+
+function formatElapsed(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`;
+}
+
+function currentViewFromLocation(): WebUiView {
+  return window.location.hash === '#setup' ? 'setup' : 'home';
+}
+
+function setViewInLocation(view: WebUiView): void {
+  const nextHash = view === 'setup' ? '#setup' : '#home';
+  if (window.location.hash !== nextHash) {
+    window.location.hash = nextHash;
+  }
+}
+
+async function streamJsonLines(
+  targetPath: string,
+  init: RequestInit,
+  onEvent: (event: ChatStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch(targetPath, {
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/x-ndjson',
+      ...(init.headers ?? {}),
+    },
+    ...init,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    const data = text ? JSON.parse(text) as ApiError : undefined;
+    throw new Error(data?.error ?? response.statusText);
+  }
+
+  if (!response.body) {
+    throw new Error('Streaming response body is unavailable.');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+
+    let separatorIndex = buffer.indexOf('\n');
+    while (separatorIndex !== -1) {
+      const line = buffer.slice(0, separatorIndex).trim();
+      buffer = buffer.slice(separatorIndex + 1);
+
+      if (line) {
+        onEvent(JSON.parse(line) as ChatStreamEvent);
+      }
+
+      separatorIndex = buffer.indexOf('\n');
+    }
+  }
+
+  const trailing = buffer.trim();
+  if (trailing) {
+    onEvent(JSON.parse(trailing) as ChatStreamEvent);
+  }
+}
+
+function useWebUiView(): [WebUiView, (view: WebUiView) => void] {
+  const [view, setView] = React.useState<WebUiView>(() => currentViewFromLocation());
+
+  React.useEffect(() => {
+    const onHashChange = () => {
+      setView(currentViewFromLocation());
+    };
+
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  const updateView = React.useCallback((nextView: WebUiView) => {
+    setViewInLocation(nextView);
+    setView(nextView);
+  }, []);
+
+  return [view, updateView];
+}
+
+function runtimeSummary(snapshot?: ConfigSnapshot): string {
+  if (!snapshot) {
+    return 'Loading runtime state...';
+  }
+
+  if (!snapshot.setupStatus.ready) {
+    return `Missing ${snapshot.setupStatus.missingSteps.join(', ')}`;
+  }
+
+  return 'Ready';
+}
+
+function buildStreamingPreview(text: string): string[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return lines.slice(-3).map((line) => line.length > 140 ? `${line.slice(0, 137).trimEnd()}...` : line);
+}
+
+function MarkdownBody({ text }: { text: string }): React.JSX.Element {
+  return (
+    <div className="markdownBody">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function SessionSidebar({
+  snapshot,
+  busyLabel,
+  onOpenSetup,
+}: {
+  snapshot?: ConfigSnapshot;
+  busyLabel?: string;
+  onOpenSetup: () => void;
+}): React.JSX.Element {
+  return (
+    <aside className="sidebar sidebarHome">
+      <section className="panel brandCard">
+        <div className="brandMark" aria-hidden="true" />
+        <div>
+          <p className="eyebrow">Yagr Web UI</p>
+          <h1>(Y)our (A)gent (G)rounded in (R)eality.</h1>
+          <p className="lede">A focused chat surface with the heavy setup moved to its own page.</p>
+        </div>
+      </section>
+
+      <section className="panel sessionPanel">
+        <div className="sectionHeader">
+          <div>
+            <p className="eyebrow">Session</p>
+            <h2>Runtime at a glance</h2>
+          </div>
+          <button className="primaryButton" type="button" onClick={onOpenSetup}>Open setup</button>
+        </div>
+
+        <div className="sessionFacts">
+          <article className="factCard">
+            <span className="infoLabel">Status</span>
+            <strong>{runtimeSummary(snapshot)}</strong>
+            <span className="muted">{busyLabel ?? 'Idle'}</span>
+          </article>
+          <article className="factCard">
+            <span className="infoLabel">Model</span>
+            <strong>{snapshot?.yagr.model ?? 'Not configured'}</strong>
+            <span className="muted">{snapshot?.yagr.provider ?? 'No provider saved'}</span>
+          </article>
+          <article className="factCard">
+            <span className="infoLabel">n8n project</span>
+            <strong>{snapshot?.n8n.projectName ?? 'Not configured'}</strong>
+            <span className="muted">{snapshot?.n8n.syncFolder ?? 'No sync folder'}</span>
+          </article>
+          <article className="factCard">
+            <span className="infoLabel">Surfaces</span>
+            <strong>{snapshot?.gatewayStatus.enabledSurfaces.length ?? 0} enabled</strong>
+            <span className="muted">Telegram chats: {snapshot?.telegram.linkedChats.length ?? 0}</span>
+          </article>
+        </div>
+      </section>
+    </aside>
+  );
+}
+
+function SetupPageHeader({
+  snapshot,
+  onBack,
+  onRefresh,
+}: {
+  snapshot?: ConfigSnapshot;
+  onBack: () => void;
+  onRefresh: () => void;
+}): React.JSX.Element {
+  return (
+    <section className="panel setupHero">
+      <div>
+        <p className="eyebrow">Setup</p>
+        <h1>Runtime configuration</h1>
+        <p className="lede">A dedicated page for orchestrator, model selection, and optional messaging surfaces.</p>
+      </div>
+      <div className="chatHeroActions">
+        <button className="ghostButton" type="button" onClick={onBack}>Back to chat</button>
+        <button className="ghostButton" type="button" onClick={onRefresh}>Refresh state</button>
+      </div>
+      <div className="setupHeroMeta">
+        <span className="messageBadge phaseBadge">{snapshot?.setupStatus.ready ? 'Runtime ready' : 'Needs onboarding'}</span>
+        <span className="messageBadge quietBadge">{snapshot?.webui.url ?? '-'}</span>
+      </div>
+    </section>
+  );
+}
+
+function MessageCard({ message, now }: { message: ChatMessage; now: number }): React.JSX.Element {
+  const elapsed = message.streaming && message.startedAt ? formatElapsed(now - message.startedAt) : undefined;
+  const visibleProgress = (message.progress ?? []).slice(-3);
+  const previewLines = message.streaming ? buildStreamingPreview(message.text) : [];
+  const showProgress = message.streaming || message.finalState === 'failed_terminal';
+  const showBody = !message.streaming || (previewLines.length === 0 && visibleProgress.length === 0);
+
+  return (
+    <article className={`message ${message.role}${message.streaming ? ' streaming' : ''}`}>
+      <div className="messageTopline">
+        <div className="messageRole">{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Yagr' : 'System'}</div>
+        {message.role === 'assistant' && (message.phase || message.statusLabel || elapsed) ? (
+          <div className="messageBadges">
+            {message.phase ? <span className="messageBadge phaseBadge">{phaseLabel(message.phase)}</span> : null}
+            {message.statusLabel ? <span className="messageBadge">{message.statusLabel}</span> : null}
+            {elapsed ? <span className="messageBadge quietBadge">{elapsed}</span> : null}
+          </div>
+        ) : null}
+      </div>
+
+      {message.role === 'assistant' && message.streaming ? (
+        <div className="workbench compactWorkbench">
+          <div className="workGlyph" aria-hidden="true">
+            <span className="workGlyphCore" />
+            <span className="workGlyphRing workGlyphRingA" />
+            <span className="workGlyphRing workGlyphRingB" />
+          </div>
+          <div className="workMeta">
+            <strong>{message.statusLabel ?? 'Yagr is working'}</strong>
+            <span className="muted">Compact live trace, without dumping the full internal reasoning.</span>
+          </div>
+        </div>
+      ) : null}
+
+      {showProgress && visibleProgress.length > 0 ? (
+        <div className="progressTicker">
+          {visibleProgress.map((entry) => (
+            <div key={entry.id} className={`progressTickerEntry ${entry.tone}`}>
+              <span className="progressDot" aria-hidden="true" />
+              <span>{entry.detail ?? entry.title}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {message.streaming && previewLines.length > 0 ? (
+        <div className="streamPreview">
+          {previewLines.map((line, index) => <div key={`${message.id}:preview:${index}`}>{line}</div>)}
+        </div>
+      ) : null}
+
+      {showBody ? (
+        <div className={`messageText${!message.text && message.streaming ? ' placeholder' : ''}`}>
+          {message.text
+            ? <MarkdownBody text={message.text} />
+            : (message.streaming ? 'The answer is being composed...' : '')}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function HomePage({
+  snapshot,
+  messages,
+  now,
+  busyLabel,
+  chatInput,
+  onChatInputChange,
+  onSendMessage,
+  onRefresh,
+  onResetChat,
+  onOpenSetup,
+  chatLogRef,
+}: {
+  snapshot?: ConfigSnapshot;
+  messages: ChatMessage[];
+  now: number;
+  busyLabel?: string;
+  chatInput: string;
+  onChatInputChange: (value: string) => void;
+  onSendMessage: (event: React.FormEvent) => void;
+  onRefresh: () => void;
+  onResetChat: () => void;
+  onOpenSetup: () => void;
+  chatLogRef: React.RefObject<HTMLDivElement | null>;
+}): React.JSX.Element {
+  return (
+    <div className="shell shellHome">
+      <SessionSidebar snapshot={snapshot} busyLabel={busyLabel} onOpenSetup={onOpenSetup} />
+
+      <main className="chatStage">
+        <section className="panel chatHero">
+          <div>
+            <p className="eyebrow">Conversation</p>
+            <h2>Talk to Yagr without living inside setup.</h2>
+            <p className="lede">The conversation stays focused on the run, while setup has its own dedicated route.</p>
+          </div>
+          <div className="chatHeroActions">
+            <button className="ghostButton" type="button" onClick={onOpenSetup}>Setup</button>
+            <button className="ghostButton" type="button" onClick={onRefresh}>Refresh state</button>
+            <button className="ghostButton" type="button" onClick={onResetChat}>Reset chat</button>
+          </div>
+        </section>
+
+        <section className="panel chatPanel chatPanelSingleScroll">
+          <div className="chatLog" ref={chatLogRef}>
+            {messages.map((message) => <MessageCard key={message.id} message={message} now={now} />)}
+          </div>
+
+          <form className="composer composerDocked" onSubmit={(event) => void onSendMessage(event)}>
+            <textarea
+              value={chatInput}
+              onChange={(event) => onChatInputChange(event.target.value)}
+              rows={4}
+              placeholder="Ask Yagr to inspect, create, validate, or evolve an automation..."
+            />
+            <div className="composerActions">
+              <span className="muted">{busyLabel ?? 'Runtime idle'}</span>
+              <button className="primaryButton" type="submit">Send</button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function SetupPage({
+  snapshot,
+  n8nProjects,
+  availableModels,
+  n8nHost,
+  n8nApiKey,
+  n8nProjectId,
+  n8nSyncFolder,
+  provider,
+  llmApiKey,
+  model,
+  baseUrl,
+  enableTelegram,
+  telegramBotToken,
+  onN8nHostChange,
+  onN8nApiKeyChange,
+  onN8nProjectIdChange,
+  onN8nSyncFolderChange,
+  onProviderChange,
+  onLlmApiKeyChange,
+  onModelChange,
+  onBaseUrlChange,
+  onEnableTelegramChange,
+  onTelegramBotTokenChange,
+  onLoadProjects,
+  onSaveN8n,
+  onLoadModels,
+  onSaveLlm,
+  onSaveSurfaces,
+  onConfigureTelegram,
+  onResetTelegram,
+  onBack,
+  onRefresh,
+}: {
+  snapshot?: ConfigSnapshot;
+  n8nProjects: Array<{ id: string; name: string }>;
+  availableModels: string[];
+  n8nHost: string;
+  n8nApiKey: string;
+  n8nProjectId: string;
+  n8nSyncFolder: string;
+  provider: string;
+  llmApiKey: string;
+  model: string;
+  baseUrl: string;
+  enableTelegram: boolean;
+  telegramBotToken: string;
+  onN8nHostChange: (value: string) => void;
+  onN8nApiKeyChange: (value: string) => void;
+  onN8nProjectIdChange: (value: string) => void;
+  onN8nSyncFolderChange: (value: string) => void;
+  onProviderChange: (value: string) => void;
+  onLlmApiKeyChange: (value: string) => void;
+  onModelChange: (value: string) => void;
+  onBaseUrlChange: (value: string) => void;
+  onEnableTelegramChange: (value: boolean) => void;
+  onTelegramBotTokenChange: (value: string) => void;
+  onLoadProjects: () => void;
+  onSaveN8n: () => void;
+  onLoadModels: () => void;
+  onSaveLlm: () => void;
+  onSaveSurfaces: () => void;
+  onConfigureTelegram: () => void;
+  onResetTelegram: () => void;
+  onBack: () => void;
+  onRefresh: () => void;
+}): React.JSX.Element {
+  const telegramLink = snapshot?.telegram.deepLink;
+
+  return (
+    <div className="shell shellSetup">
+      <main className="setupStage">
+        <SetupPageHeader snapshot={snapshot} onBack={onBack} onRefresh={onRefresh} />
+
+        <div className="setupScroll">
+          <div className="setupGrid">
+            <section className="panel formPanel">
+              <div className="sectionHeader">
+                <p className="eyebrow">Current orchestrator</p>
+                <button className="ghostButton" type="button" onClick={onLoadProjects}>Load projects</button>
+              </div>
+              <label>
+                <span>Instance URL</span>
+                <input value={n8nHost} onChange={(event) => onN8nHostChange(event.target.value)} type="url" placeholder="https://your-n8n.example.com" />
+              </label>
+              <label>
+                <span>API key</span>
+                <input value={n8nApiKey} onChange={(event) => onN8nApiKeyChange(event.target.value)} type="password" placeholder="Leave empty to reuse saved key" />
+              </label>
+              <label>
+                <span>Project</span>
+                <select value={n8nProjectId} onChange={(event) => onN8nProjectIdChange(event.target.value)}>
+                  <option value="">Load projects first</option>
+                  {n8nProjects.map((project) => (
+                    <option key={project.id} value={project.id}>{project.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Local sync folder</span>
+                <input value={n8nSyncFolder} onChange={(event) => onN8nSyncFolderChange(event.target.value)} type="text" placeholder="workflows" />
+              </label>
+              <button className="primaryButton" type="button" onClick={onSaveN8n}>Save orchestrator</button>
+              <p className="hint">This writes the current n8n connection used by onboarding and by the runtime.</p>
+            </section>
+
+            <section className="panel formPanel">
+              <div className="sectionHeader">
+                <p className="eyebrow">LLM</p>
+                <button className="ghostButton" type="button" onClick={onLoadModels}>Load models</button>
+              </div>
+              <label>
+                <span>Provider</span>
+                <select value={provider} onChange={(event) => onProviderChange(event.target.value)}>
+                  {(snapshot?.yagr.providers ?? []).map((entry) => (
+                    <option key={entry.provider} value={entry.provider}>{entry.provider}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>API key</span>
+                <input value={llmApiKey} onChange={(event) => onLlmApiKeyChange(event.target.value)} type="password" placeholder="Leave empty to reuse saved key" />
+              </label>
+              <label>
+                <span>Model</span>
+                <input value={model} onChange={(event) => onModelChange(event.target.value)} type="text" list="llm-model-list" placeholder="gpt-5.1 / claude / gemini..." />
+                <datalist id="llm-model-list">
+                  {availableModels.map((entry) => <option key={entry} value={entry} />)}
+                </datalist>
+              </label>
+              <label>
+                <span>Base URL</span>
+                <input value={baseUrl} onChange={(event) => onBaseUrlChange(event.target.value)} type="url" placeholder="Optional custom base URL" />
+              </label>
+              <button className="primaryButton" type="button" onClick={onSaveLlm}>Save model config</button>
+            </section>
+
+            <section className="panel formPanel">
+              <p className="eyebrow">Optional integrations</p>
+              <label className="checkboxRow">
+                <input checked={enableTelegram} onChange={(event) => onEnableTelegramChange(event.target.checked)} type="checkbox" />
+                <span>Telegram</span>
+              </label>
+              <label className="checkboxRow disabledRow">
+                <input type="checkbox" disabled />
+                <span>WhatsApp soon</span>
+              </label>
+              <button className="primaryButton" type="button" onClick={onSaveSurfaces}>Save surfaces</button>
+              <p className="hint">The Web UI and TUI are always available. This section only controls extra messaging integrations.</p>
+            </section>
+
+            <section className="panel formPanel">
+              <div className="sectionHeader">
+                <p className="eyebrow">Telegram</p>
+                <button className="ghostButton dangerButton" type="button" onClick={onResetTelegram}>Reset</button>
+              </div>
+              <label>
+                <span>Bot token</span>
+                <input value={telegramBotToken} onChange={(event) => onTelegramBotTokenChange(event.target.value)} type="password" placeholder="123456:ABC..." />
+              </label>
+              <button className="primaryButton" type="button" onClick={onConfigureTelegram}>Configure Telegram</button>
+              <div className="infoList">
+                <div>
+                  <span className="infoLabel">Bot</span>
+                  <strong>{snapshot?.telegram.botUsername ?? 'Not configured'}</strong>
+                </div>
+                <div>
+                  <span className="infoLabel">Linked chats</span>
+                  <strong>{snapshot?.telegram.linkedChats.length ?? 0}</strong>
+                </div>
+                <div>
+                  <span className="infoLabel">Onboarding</span>
+                  {telegramLink ? <a className="linkButton" href={telegramLink} target="_blank" rel="noreferrer">Open onboarding link</a> : <span className="muted">Unavailable</span>}
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
 function App() {
   const {
     sessionId,
@@ -49,11 +599,16 @@ function App() {
     setProjects,
     setAvailableModels,
     pushMessage,
-    replaceMessage,
+    patchMessage,
+    appendMessageText,
+    pushMessageProgress,
     resetMessages,
   } = useWebUiStore();
 
   const notify = useNotice();
+  const [view, setView] = useWebUiView();
+  const chatLogRef = React.useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = React.useRef(true);
 
   const [n8nHost, setN8nHost] = React.useState('');
   const [n8nApiKey, setN8nApiKey] = React.useState('');
@@ -69,6 +624,44 @@ function App() {
   const [telegramBotToken, setTelegramBotToken] = React.useState('');
 
   const [chatInput, setChatInput] = React.useState('');
+  const [now, setNow] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    if (!messages.some((message) => message.streaming)) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [messages]);
+
+  React.useEffect(() => {
+    const chatLog = chatLogRef.current;
+    if (!chatLog) {
+      return undefined;
+    }
+
+    const handleScroll = () => {
+      const distanceFromBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight;
+      stickToBottomRef.current = distanceFromBottom < 72;
+    };
+
+    handleScroll();
+    chatLog.addEventListener('scroll', handleScroll);
+    return () => chatLog.removeEventListener('scroll', handleScroll);
+  }, [view]);
+
+  React.useLayoutEffect(() => {
+    const chatLog = chatLogRef.current;
+    if (!chatLog || !stickToBottomRef.current) {
+      return;
+    }
+
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }, [messages]);
 
   const hydrate = React.useCallback((nextSnapshot: ConfigSnapshot) => {
     setSnapshot(nextSnapshot);
@@ -87,7 +680,7 @@ function App() {
   const refreshConfig = React.useCallback(async () => {
     setBusyLabel('Refreshing state...');
     try {
-      const nextSnapshot = await request<any>('/api/config');
+      const nextSnapshot = await request<ConfigSnapshot>('/api/config');
       hydrate(nextSnapshot);
       setError(undefined);
     } catch (error) {
@@ -125,7 +718,7 @@ function App() {
   const onSaveN8n = async () => {
     setBusyLabel('Saving orchestrator connection...');
     try {
-      const result = await request<{ warning?: string; snapshot: any }>('/api/config/n8n', {
+      const result = await request<{ warning?: string; snapshot: ConfigSnapshot }>('/api/config/n8n', {
         method: 'POST',
         body: JSON.stringify({ host: n8nHost, apiKey: n8nApiKey || undefined, projectId: n8nProjectId, syncFolder: n8nSyncFolder }),
       });
@@ -157,7 +750,7 @@ function App() {
   const onSaveLlm = async () => {
     setBusyLabel('Saving model config...');
     try {
-      const result = await request<{ snapshot: any }>('/api/config/llm', {
+      const result = await request<{ snapshot: ConfigSnapshot }>('/api/config/llm', {
         method: 'POST',
         body: JSON.stringify({ provider, apiKey: llmApiKey || undefined, model, baseUrl: baseUrl || undefined }),
       });
@@ -174,7 +767,7 @@ function App() {
     setBusyLabel('Saving surfaces...');
     try {
       const enabledSurfaces = [enableTelegram ? 'telegram' : null].filter(Boolean);
-      const result = await request<{ snapshot: any }>('/api/config/surfaces', {
+      const result = await request<{ snapshot: ConfigSnapshot }>('/api/config/surfaces', {
         method: 'POST',
         body: JSON.stringify({ enabledSurfaces }),
       });
@@ -190,7 +783,7 @@ function App() {
   const onConfigureTelegram = async () => {
     setBusyLabel('Configuring Telegram...');
     try {
-      const result = await request<{ snapshot: any }>('/api/telegram/configure', {
+      const result = await request<{ snapshot: ConfigSnapshot }>('/api/telegram/configure', {
         method: 'POST',
         body: JSON.stringify({ botToken: telegramBotToken }),
       });
@@ -206,7 +799,7 @@ function App() {
   const onResetTelegram = async () => {
     setBusyLabel('Resetting Telegram...');
     try {
-      const result = await request<{ snapshot: any }>('/api/telegram/reset', {
+      const result = await request<{ snapshot: ConfigSnapshot }>('/api/telegram/reset', {
         method: 'POST',
         body: JSON.stringify({}),
       });
@@ -244,193 +837,176 @@ function App() {
 
     const pendingId = crypto.randomUUID();
     pushMessage({ id: crypto.randomUUID(), role: 'user', text: trimmed });
-    pushMessage({ id: pendingId, role: 'assistant', text: 'Working...' });
+    pushMessage({
+      id: pendingId,
+      role: 'assistant',
+      text: '',
+      streaming: true,
+      phase: 'inspect',
+      statusLabel: 'Starting run...',
+      startedAt: Date.now(),
+      progress: [],
+    });
     setChatInput('');
     setBusyLabel('Yagr is working...');
+    stickToBottomRef.current = true;
 
     try {
-      const result = await request<{ response: string; requiredActions?: Array<{ title: string; message: string }> }>('/api/chat', {
+      await streamJsonLines('/api/chat/stream', {
         method: 'POST',
         body: JSON.stringify({ sessionId, message: trimmed }),
+      }, (streamEvent) => {
+        if (streamEvent.type === 'start') {
+          patchMessage(pendingId, { statusLabel: streamEvent.message, phase: 'inspect' });
+          setBusyLabel(streamEvent.message);
+          return;
+        }
+
+        if (streamEvent.type === 'phase') {
+          if (streamEvent.status === 'started') {
+            patchMessage(pendingId, {
+              phase: streamEvent.phase,
+              statusLabel: streamEvent.message,
+            });
+            pushMessageProgress(pendingId, {
+              id: crypto.randomUUID(),
+              tone: 'info',
+              title: phaseLabel(streamEvent.phase),
+              detail: streamEvent.message,
+            });
+            setBusyLabel(streamEvent.message);
+          }
+          return;
+        }
+
+        if (streamEvent.type === 'state') {
+          if (streamEvent.state === 'failed_terminal' || streamEvent.state === 'resumable') {
+            pushMessageProgress(pendingId, {
+              id: crypto.randomUUID(),
+              tone: streamEvent.state === 'failed_terminal' ? 'error' : 'info',
+              title: streamEvent.state === 'failed_terminal' ? 'Run failed' : 'Needs attention',
+              detail: streamEvent.message,
+            });
+          }
+          patchMessage(pendingId, { statusLabel: streamEvent.message });
+          setBusyLabel(streamEvent.message);
+          return;
+        }
+
+        if (streamEvent.type === 'progress') {
+          pushMessageProgress(pendingId, {
+            id: crypto.randomUUID(),
+            tone: streamEvent.tone,
+            title: streamEvent.title,
+            detail: streamEvent.detail,
+          });
+          patchMessage(pendingId, {
+            phase: streamEvent.phase ?? undefined,
+            statusLabel: streamEvent.detail ?? streamEvent.title,
+          });
+          setBusyLabel(streamEvent.detail ?? streamEvent.title);
+          return;
+        }
+
+        if (streamEvent.type === 'text-delta') {
+          appendMessageText(pendingId, streamEvent.delta);
+          return;
+        }
+
+        if (streamEvent.type === 'final') {
+          patchMessage(pendingId, {
+            text: streamEvent.response,
+            streaming: false,
+            finalState: streamEvent.finalState,
+            statusLabel: streamEvent.requiredActions?.length ? 'Needs attention' : 'Completed',
+            phase: undefined,
+          });
+          setBusyLabel(undefined);
+          if (streamEvent.requiredActions?.length) {
+            notify('Yagr returned required actions. Review the response details.', 'error');
+          }
+          return;
+        }
+
+        patchMessage(pendingId, {
+          role: 'system',
+          text: streamEvent.error,
+          streaming: false,
+          finalState: 'failed_terminal',
+          statusLabel: 'Run failed',
+          phase: undefined,
+        });
+        setBusyLabel(undefined);
+        notify(streamEvent.error, 'error');
       });
-      replaceMessage(pendingId, result.response);
-      if (result.requiredActions?.length) {
-        notify('Yagr returned required actions. Review the response details.', 'error');
-      }
     } catch (error) {
-      replaceMessage(pendingId, error instanceof Error ? error.message : String(error), 'system');
+      patchMessage(pendingId, {
+        role: 'system',
+        text: error instanceof Error ? error.message : String(error),
+        streaming: false,
+        finalState: 'failed_terminal',
+        statusLabel: 'Run failed',
+        phase: undefined,
+      });
       notify(error instanceof Error ? error.message : String(error), 'error');
     } finally {
       setBusyLabel(undefined);
     }
   };
 
-  const setupMissing = snapshot?.setupStatus.missingSteps.join(', ') || 'No missing steps';
-  const telegramLink = snapshot?.telegram.deepLink;
+  if (view === 'setup') {
+    return (
+      <SetupPage
+        snapshot={snapshot}
+        n8nProjects={n8nProjects}
+        availableModels={availableModels}
+        n8nHost={n8nHost}
+        n8nApiKey={n8nApiKey}
+        n8nProjectId={n8nProjectId}
+        n8nSyncFolder={n8nSyncFolder}
+        provider={provider}
+        llmApiKey={llmApiKey}
+        model={model}
+        baseUrl={baseUrl}
+        enableTelegram={enableTelegram}
+        telegramBotToken={telegramBotToken}
+        onN8nHostChange={setN8nHost}
+        onN8nApiKeyChange={setN8nApiKey}
+        onN8nProjectIdChange={setN8nProjectId}
+        onN8nSyncFolderChange={setN8nSyncFolder}
+        onProviderChange={setProvider}
+        onLlmApiKeyChange={setLlmApiKey}
+        onModelChange={setModel}
+        onBaseUrlChange={setBaseUrl}
+        onEnableTelegramChange={setEnableTelegram}
+        onTelegramBotTokenChange={setTelegramBotToken}
+        onLoadProjects={() => void onLoadProjects()}
+        onSaveN8n={() => void onSaveN8n()}
+        onLoadModels={() => void onLoadModels()}
+        onSaveLlm={() => void onSaveLlm()}
+        onSaveSurfaces={() => void onSaveSurfaces()}
+        onConfigureTelegram={() => void onConfigureTelegram()}
+        onResetTelegram={() => void onResetTelegram()}
+        onBack={() => setView('home')}
+        onRefresh={() => void refreshConfig()}
+      />
+    );
+  }
 
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="brandCard panel">
-          <div className="brandMark" aria-hidden="true" />
-          <div>
-            <p className="eyebrow">Yagr Web UI</p>
-            <h1>(Y)our (A)gent (G)rounded in (R)eality.</h1>
-            <p className="lede">Configure the runtime, wire Telegram, and chat with the same Yagr agent from a clean local surface.</p>
-          </div>
-        </div>
-
-        <div className="statusGrid">
-          <article className="panel statusPanel">
-            <p className="eyebrow">Runtime</p>
-            <div className="metricRow">
-              <strong>{snapshot?.setupStatus.ready ? 'Ready' : 'Needs onboarding'}</strong>
-              <span className="muted">{setupMissing}</span>
-            </div>
-          </article>
-          <article className="panel statusPanel">
-            <p className="eyebrow">Launch</p>
-            <div className="metricRow">
-              <strong>Web UI and TUI available</strong>
-              <span className="muted">{snapshot?.webui.url ?? '-'}</span>
-            </div>
-          </article>
-        </div>
-
-        <section className="panel formPanel">
-          <div className="sectionHeader">
-            <p className="eyebrow">Current orchestrator</p>
-            <button className="ghostButton" type="button" onClick={() => void onLoadProjects()}>Load projects</button>
-          </div>
-          <label>
-            <span>Instance URL</span>
-            <input value={n8nHost} onChange={(event) => setN8nHost(event.target.value)} type="url" placeholder="https://your-n8n.example.com" />
-          </label>
-          <label>
-            <span>API key</span>
-            <input value={n8nApiKey} onChange={(event) => setN8nApiKey(event.target.value)} type="password" placeholder="Leave empty to reuse saved key" />
-          </label>
-          <label>
-            <span>Project</span>
-            <select value={n8nProjectId} onChange={(event) => setN8nProjectId(event.target.value)}>
-              <option value="">Load projects first</option>
-              {n8nProjects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Local sync folder</span>
-            <input value={n8nSyncFolder} onChange={(event) => setN8nSyncFolder(event.target.value)} type="text" placeholder="workflows" />
-          </label>
-          <button className="primaryButton" type="button" onClick={() => void onSaveN8n()}>Save orchestrator</button>
-          <p className="hint">This writes the current n8n-based orchestrator connection that onboarding uses today.</p>
-        </section>
-
-        <section className="panel formPanel">
-          <div className="sectionHeader">
-            <p className="eyebrow">LLM</p>
-            <button className="ghostButton" type="button" onClick={() => void onLoadModels()}>Load models</button>
-          </div>
-          <label>
-            <span>Provider</span>
-            <select value={provider} onChange={(event) => setProvider(event.target.value)}>
-              {(snapshot?.yagr.providers ?? []).map((entry) => (
-                <option key={entry.provider} value={entry.provider}>{entry.provider}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>API key</span>
-            <input value={llmApiKey} onChange={(event) => setLlmApiKey(event.target.value)} type="password" placeholder="Leave empty to reuse saved key" />
-          </label>
-          <label>
-            <span>Model</span>
-            <input value={model} onChange={(event) => setModel(event.target.value)} type="text" list="llm-model-list" placeholder="gpt-5.1 / claude / gemini..." />
-            <datalist id="llm-model-list">
-              {availableModels.map((entry) => <option key={entry} value={entry} />)}
-            </datalist>
-          </label>
-          <label>
-            <span>Base URL</span>
-            <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} type="url" placeholder="Optional custom base URL" />
-          </label>
-          <button className="primaryButton" type="button" onClick={() => void onSaveLlm()}>Save model config</button>
-        </section>
-
-        <section className="panel formPanel">
-          <p className="eyebrow">Optional integrations</p>
-          <label className="checkboxRow">
-            <input checked={enableTelegram} onChange={(event) => setEnableTelegram(event.target.checked)} type="checkbox" />
-            <span>Telegram</span>
-          </label>
-          <label className="checkboxRow disabledRow">
-            <input type="checkbox" disabled />
-            <span>WhatsApp soon</span>
-          </label>
-          <button className="primaryButton" type="button" onClick={() => void onSaveSurfaces()}>Save surfaces</button>
-          <p className="hint">The Web UI and TUI are always available. This section only controls extra messaging integrations.</p>
-        </section>
-
-        <section className="panel formPanel">
-          <div className="sectionHeader">
-            <p className="eyebrow">Telegram</p>
-            <button className="ghostButton dangerButton" type="button" onClick={() => void onResetTelegram()}>Reset</button>
-          </div>
-          <label>
-            <span>Bot token</span>
-            <input value={telegramBotToken} onChange={(event) => setTelegramBotToken(event.target.value)} type="password" placeholder="123456:ABC..." />
-          </label>
-          <button className="primaryButton" type="button" onClick={() => void onConfigureTelegram()}>Configure Telegram</button>
-          <div className="infoList">
-            <div>
-              <span className="infoLabel">Bot</span>
-              <strong>{snapshot?.telegram.botUsername ?? 'Not configured'}</strong>
-            </div>
-            <div>
-              <span className="infoLabel">Linked chats</span>
-              <strong>{snapshot?.telegram.linkedChats.length ?? 0}</strong>
-            </div>
-            <div>
-              <span className="infoLabel">Onboarding</span>
-              {telegramLink ? <a className="linkButton" href={telegramLink} target="_blank" rel="noreferrer">Open onboarding link</a> : <span className="muted">Unavailable</span>}
-            </div>
-          </div>
-        </section>
-      </aside>
-
-      <main className="chatColumn">
-        <section className="chatHero panel">
-          <div>
-            <p className="eyebrow">Conversation</p>
-            <h2>Chat with Yagr while tuning the runtime.</h2>
-            <p className="lede">The same agent loop is available here: update the backend, switch provider or model, link Telegram, then ask Yagr to work.</p>
-          </div>
-          <div className="chatHeroActions">
-            <button className="ghostButton" type="button" onClick={() => void refreshConfig()}>Refresh state</button>
-            <button className="ghostButton" type="button" onClick={() => void onResetChat()}>Reset chat</button>
-          </div>
-        </section>
-
-        <section className="panel chatPanel">
-          <div className="chatLog">
-            {messages.map((message) => (
-              <article key={message.id} className={`message ${message.role}`}>
-                <div className="messageRole">{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Yagr' : 'System'}</div>
-                <div className="messageText">{message.text}</div>
-              </article>
-            ))}
-          </div>
-          <form className="composer" onSubmit={(event) => void onSendMessage(event)}>
-            <textarea value={chatInput} onChange={(event) => setChatInput(event.target.value)} rows={4} placeholder="Ask Yagr to inspect, create, validate, or evolve an automation..." />
-            <div className="composerActions">
-              <span className="muted">{busyLabel ?? 'Runtime idle'}</span>
-              <button className="primaryButton" type="submit">Send</button>
-            </div>
-          </form>
-        </section>
-      </main>
-    </div>
+    <HomePage
+      snapshot={snapshot}
+      messages={messages}
+      now={now}
+      busyLabel={busyLabel}
+      chatInput={chatInput}
+      onChatInputChange={setChatInput}
+      onSendMessage={onSendMessage}
+      onRefresh={() => void refreshConfig()}
+      onResetChat={() => void onResetChat()}
+      onOpenSetup={() => setView('setup')}
+      chatLogRef={chatLogRef}
+    />
   );
 }
 
