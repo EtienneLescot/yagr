@@ -5,6 +5,11 @@ import { evaluateCompletionGate } from '../dist/runtime/completion-gate.js';
 import { analyzeRunOutcome } from '../dist/runtime/outcome.js';
 import { wrapToolsWithRuntimeHooks } from '../dist/runtime/policy-hooks.js';
 import { collectRequiredActions } from '../dist/runtime/required-actions.js';
+import {
+  sanitizeAssistantOutput,
+  shouldAbortForInternalPromptLeak,
+  shouldAbortForRepetitiveAssistantOutput,
+} from '../dist/runtime/run-engine.js';
 
 test('beforeTool hook can block execution with a structured required action', async () => {
   const wrappedTools = wrapToolsWithRuntimeHooks(
@@ -82,6 +87,69 @@ test('later successful retry clears an earlier unresolved n8nac failure', () => 
 
   assert.equal(outcome.unresolvedFailedActions.length, 0);
   assert.ok(outcome.successfulValidate);
+});
+
+test('setup_check is ignored in observed n8nac failures', () => {
+  const journal = [
+    {
+      timestamp: '2026-03-18T10:00:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'setup check',
+      phase: 'plan',
+      stepNumber: 1,
+      step: {
+        stepNumber: 1,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'plan',
+        text: '',
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'setup_check' } }],
+        toolResults: [{ toolName: 'n8nac', result: { initialized: false } }],
+      },
+    },
+  ];
+
+  const outcome = analyzeRunOutcome(journal);
+
+  assert.equal(outcome.failedActions.length, 0);
+  assert.equal(outcome.unresolvedFailedActions.length, 0);
+});
+
+test('assistant output sanitization removes leaked internal execution scaffolding', () => {
+  const leaked = [
+    'Yagr internal phase: execute.',
+    'Complete the task end-to-end using the gathered context.',
+    'When appropriate, author or edit workflow files, validate them, sync them, verify them, and then summarize what changed.',
+    'Ask the user only when a specific missing value blocks execution.',
+    'Original request: Est-ce que tu pourrais me faire un petit workflow "Hello World"?',
+    'Workflow cree: hello-world.workflow.ts',
+  ].join('\n');
+
+  assert.equal(sanitizeAssistantOutput(leaked), 'Workflow cree: hello-world.workflow.ts');
+});
+
+test('repeated leaked internal prompts trigger a loop abort signal', () => {
+  const repeatedLeak = [
+    'Yagr internal phase: execute.',
+    'Original request: hello',
+    'Yagr internal phase: execute.',
+    'Original request: hello',
+  ].join('\n');
+
+  assert.equal(shouldAbortForInternalPromptLeak(repeatedLeak), true);
+  assert.equal(shouldAbortForInternalPromptLeak(repeatedLeak, 'Debut de reponse visible.'), false);
+});
+
+test('repeated final workflow bundle triggers repetitive output abort signal', () => {
+  const bundle = [
+    'Final workflow content:\nimport { workflow } from \'@n8n-as-code/transformer\';',
+    'Final workflow status: Deployed and verified.',
+    'Final workflow URL: http://localhost:5678/workflow/abc123.',
+  ].join('\n\n');
+
+  assert.equal(shouldAbortForRepetitiveAssistantOutput(`${bundle}\n\n${bundle}`), true);
+  assert.equal(shouldAbortForRepetitiveAssistantOutput(bundle), false);
 });
 
 test('successful push counts as validate and verify evidence for completion gating', async () => {

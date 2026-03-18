@@ -69,6 +69,10 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
 
       if (toolCall.toolName === 'n8nac') {
         const action = asString(args?.action) ?? 'unknown';
+        if (action === 'setup_check') {
+          continue;
+        }
+
         n8nacActions.push({
           action,
           success: (asNumber(result?.exitCode) ?? 1) === 0,

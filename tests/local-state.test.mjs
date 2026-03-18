@@ -64,6 +64,39 @@ test('config services migrate legacy credential stores into the Yagr home', asyn
   });
 });
 
+test('YagrN8nConfigService mirrors saved api keys into the n8nac compatibility store', async () => {
+  await withTempYagrEnv(async ({ xdgDir }) => {
+    const n8nConfigService = new YagrN8nConfigService();
+    const legacyCredentialsPath = path.join(xdgDir, 'n8nac-nodejs', 'credentials.json');
+
+    n8nConfigService.saveApiKey('https://n8n.example.com', 'n8n-key');
+
+    assert.equal(n8nConfigService.getApiKey('https://n8n.example.com'), 'n8n-key');
+    assert.equal(fs.existsSync(legacyCredentialsPath), true);
+    assert.equal(
+      JSON.parse(fs.readFileSync(legacyCredentialsPath, 'utf-8')).hosts['https://n8n.example.com'],
+      'n8n-key',
+    );
+  });
+});
+
+test('YagrN8nConfigService backfills the n8nac compatibility store from centralized credentials', async () => {
+  await withTempYagrEnv(async ({ xdgDir }) => {
+    const paths = getYagrPaths();
+    const legacyCredentialsPath = path.join(xdgDir, 'n8nac-nodejs', 'credentials.json');
+    fs.writeFileSync(paths.n8nCredentialsPath, JSON.stringify({ hosts: { 'https://n8n.example.com': 'n8n-key' } }));
+
+    const n8nConfigService = new YagrN8nConfigService();
+
+    assert.equal(n8nConfigService.getApiKey('https://n8n.example.com'), 'n8n-key');
+    assert.equal(fs.existsSync(legacyCredentialsPath), true);
+    assert.equal(
+      JSON.parse(fs.readFileSync(legacyCredentialsPath, 'utf-8')).hosts['https://n8n.example.com'],
+      'n8n-key',
+    );
+  });
+});
+
 test('buildYagrCleanupPlan preserves external workflow directories on full reset', async () => {
   await withTempYagrEnv(async () => {
     const externalWorkspace = path.join(os.tmpdir(), `yagr-external-${Date.now()}`);

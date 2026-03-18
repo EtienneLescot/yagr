@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
 
@@ -105,7 +106,7 @@ function runN8nac(
   return new Promise((resolve) => {
     const child = spawn('npx', ['--yes', 'n8nac', ...args], {
       cwd,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...getN8nacProcessEnv(env) },
       stdio: 'pipe',
     });
 
@@ -157,6 +158,35 @@ function runN8nac(
       finish({ stdout, stderr, exitCode: exitCode ?? 1, timedOut });
     });
   });
+}
+
+export function getN8nacProcessEnv(env: NodeJS.ProcessEnv = {}, configService = new YagrN8nConfigService()): NodeJS.ProcessEnv {
+  const nextEnv = { ...env };
+
+  if (nextEnv.N8N_HOST && nextEnv.N8N_API_KEY) {
+    return nextEnv;
+  }
+
+  const localConfig = configService.getLocalConfig();
+  const host = localConfig.host?.trim();
+  if (!host) {
+    return nextEnv;
+  }
+
+  const apiKey = configService.getApiKey(host);
+  if (!apiKey) {
+    return nextEnv;
+  }
+
+  if (!nextEnv.N8N_HOST) {
+    nextEnv.N8N_HOST = host;
+  }
+
+  if (!nextEnv.N8N_API_KEY) {
+    nextEnv.N8N_API_KEY = apiKey;
+  }
+
+  return nextEnv;
 }
 
 async function runObservedN8nac(
