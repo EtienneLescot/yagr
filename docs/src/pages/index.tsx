@@ -109,10 +109,9 @@ function HomepageHeader() {
               <img src={yagrLogoUrl} alt="Yagr logo" className={styles.heroLogo} />
               <div>
                 <div className={styles.heroBrandName}>Yagr</div>
-                <div className={styles.heroBrandTag}>(Y)our (A)gent (G)rounded in (R)eality</div>
+                <div className={styles.heroBrandTag}>Autonomous agent · deterministic workflows · orchestrator-ready</div>
               </div>
             </div>
-            <div className={styles.eyebrow}>Autonomous agent · deterministic workflows · orchestrator-ready</div>
             <Heading as="h1" className={styles.heroTitle}>
               <span className={styles.heroLine}>(Y)our</span>
               <span className={styles.heroLine}>(A)gent</span>
@@ -220,6 +219,19 @@ export default function Home(): ReactNode {
                 </div>
               </div>
               <div className={styles.quickStartTerminal}>
+                <div className={styles.quickStartTerminalBar} aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <pre className={styles.quickStartCode}>
+                  <code>{`npm install -g @yagr/agent
+yagr onboard
+yagr start`}</code>
+                </pre>
+                <p className={styles.quickStartNote}>
+                  Install the CLI, run the onboarding once, then start the local agent runtime from its own home.
+                </p>
                 <div className={styles.quickStartActions}>
                   <Link
                     className={clsx('button button--lg', styles.primaryButton)}
@@ -268,7 +280,7 @@ export default function Home(): ReactNode {
             <div className={styles.entryHeader}>
               <p className={styles.sectionEyebrow}>How the repository is now organized</p>
               <Heading as="h2" className={styles.sectionTitle}>
-                Yagr as the agent product, n8n-as-code as the engineering substrate.
+                Yagr as the agent product, <span className={styles.noWrap}>n8n-as-code</span> as the engineering substrate.
               </Heading>
             </div>
             <div className={styles.entryGrid}>

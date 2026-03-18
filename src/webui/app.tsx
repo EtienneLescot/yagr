@@ -7,6 +7,9 @@ import yagrLogoUrl from '../../docs/static/img/yagr-logo.png';
 
 type ApiError = { error?: string };
 type WebUiView = 'home' | 'setup';
+type ThemeMode = 'system' | 'light' | 'dark';
+
+const THEME_STORAGE_KEY = 'yagr:webui-theme';
 
 type ChatStreamEvent =
   | { type: 'start'; sessionId: string; message: string }
@@ -82,6 +85,15 @@ function setViewInLocation(view: WebUiView): void {
   if (window.location.hash !== nextHash) {
     window.location.hash = nextHash;
   }
+}
+
+function readThemeMode(): ThemeMode {
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === 'system' || stored === 'light' || stored === 'dark' ? stored : 'system';
+}
+
+function applyThemeMode(mode: ThemeMode): void {
+  document.documentElement.dataset.themeMode = mode;
 }
 
 async function streamJsonLines(
@@ -196,20 +208,87 @@ function MarkdownBody({ text }: { text: string }): React.JSX.Element {
   );
 }
 
+function ThemeSelector({
+  value,
+  onChange,
+}: {
+  value: ThemeMode;
+  onChange: (mode: ThemeMode) => void;
+}): React.JSX.Element {
+  const nextThemeMode: Record<ThemeMode, ThemeMode> = {
+    system: 'light',
+    light: 'dark',
+    dark: 'system',
+  };
+
+  const themeLabels: Record<ThemeMode, string> = {
+    system: 'Use system theme',
+    light: 'Use light theme',
+    dark: 'Use dark theme',
+  };
+
+  const nextMode = nextThemeMode[value];
+  const nextLabel = themeLabels[nextMode];
+
+  return (
+    <div className="themeControl">
+      <button
+        aria-label={nextLabel}
+        className="themeButton"
+        title={nextLabel}
+        type="button"
+        onClick={() => onChange(nextMode)}
+      >
+        <ThemeIcon mode={value} />
+      </button>
+    </div>
+  );
+}
+
+function ThemeIcon({ mode }: { mode: ThemeMode }): React.JSX.Element {
+  if (mode === 'light') {
+    return (
+      <svg className="themeIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.25" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M12 2.5v2.5M12 19v2.5M21.5 12H19M5 12H2.5M18.72 5.28l-1.77 1.77M7.05 16.95l-1.77 1.77M18.72 18.72l-1.77-1.77M7.05 7.05L5.28 5.28" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      </svg>
+    );
+  }
+
+  if (mode === 'dark') {
+    return (
+      <svg className="themeIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14.5 3.25a8.75 8.75 0 1 0 6.25 15.5A9.75 9.75 0 0 1 14.5 3.25Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.8" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="themeIcon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3.25a8.75 8.75 0 1 0 0 17.5Z" fill="currentColor" />
+      <path d="M12 3.25a8.75 8.75 0 1 1 0 17.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
 function SessionSidebar({
   snapshot,
   busyLabel,
   onOpenSetup,
+  themeMode,
+  onThemeModeChange,
 }: {
   snapshot?: ConfigSnapshot;
   busyLabel?: string;
   onOpenSetup: () => void;
+  themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
 }): React.JSX.Element {
   return (
     <aside className="sidebar sidebarHome">
       <section className="panel brandCard">
         <img className="brandMark" src={yagrLogoUrl} alt="Yagr logo" />
-        <div>
+        <div className="brandCopy">
           <p className="eyebrow">Yagr Web UI</p>
           <h1 className="brandTitle">
             <span className="brandTitleLine">(Y)our</span>
@@ -217,8 +296,8 @@ function SessionSidebar({
             <span className="brandTitleLine brandTitleAccent">(G)rounded in</span>
             <span className="brandTitleLine brandTitleAccent">(R)eality.</span>
           </h1>
-          <p className="lede">A focused chat surface with the heavy setup moved to its own page.</p>
         </div>
+        <ThemeSelector value={themeMode} onChange={onThemeModeChange} />
       </section>
 
       <section className="panel sessionPanel">
@@ -261,10 +340,14 @@ function SetupPageHeader({
   snapshot,
   onBack,
   onRefresh,
+  themeMode,
+  onThemeModeChange,
 }: {
   snapshot?: ConfigSnapshot;
   onBack: () => void;
   onRefresh: () => void;
+  themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
 }): React.JSX.Element {
   return (
     <section className="panel setupHero">
@@ -274,6 +357,7 @@ function SetupPageHeader({
         <p className="lede">A dedicated page for orchestrator, model selection, and optional messaging surfaces.</p>
       </div>
       <div className="chatHeroActions">
+        <ThemeSelector value={themeMode} onChange={onThemeModeChange} />
         <button className="ghostButton" type="button" onClick={onBack}>Back to chat</button>
         <button className="ghostButton" type="button" onClick={onRefresh}>Refresh state</button>
       </div>
@@ -620,10 +704,11 @@ function HomePage({
   onChatInputChange,
   onSendMessage,
   onStopRun,
-  onRefresh,
   onResetChat,
   onOpenSetup,
   chatLogRef,
+  themeMode,
+  onThemeModeChange,
 }: {
   snapshot?: ConfigSnapshot;
   messages: ChatMessage[];
@@ -634,29 +719,23 @@ function HomePage({
   onChatInputChange: (value: string) => void;
   onSendMessage: (event: React.FormEvent) => void;
   onStopRun: () => void;
-  onRefresh: () => void;
   onResetChat: () => void;
   onOpenSetup: () => void;
   chatLogRef: React.RefObject<HTMLDivElement | null>;
+  themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
 }): React.JSX.Element {
   return (
     <div className="shell shellHome">
-      <SessionSidebar snapshot={snapshot} busyLabel={busyLabel} onOpenSetup={onOpenSetup} />
+      <SessionSidebar
+        snapshot={snapshot}
+        busyLabel={busyLabel}
+        onOpenSetup={onOpenSetup}
+        themeMode={themeMode}
+        onThemeModeChange={onThemeModeChange}
+      />
 
       <main className="chatStage">
-        <section className="panel chatHero">
-          <div>
-            <p className="eyebrow">Conversation</p>
-            <h2>Talk to Yagr without living inside setup.</h2>
-            <p className="lede">The conversation stays focused on the run, while setup has its own dedicated route.</p>
-          </div>
-          <div className="chatHeroActions">
-            <button className="ghostButton" type="button" onClick={onOpenSetup}>Setup</button>
-            <button className="ghostButton" type="button" onClick={onRefresh}>Refresh state</button>
-            <button className="ghostButton" type="button" onClick={onResetChat}>Reset chat</button>
-          </div>
-        </section>
-
         <section className="panel chatPanel chatPanelSingleScroll">
           <div className="chatLog" ref={chatLogRef}>
             {messages.map((message) => <MessageCard key={message.id} message={message} now={now} />)}
@@ -677,7 +756,10 @@ function HomePage({
                   <span>Stop</span>
                 </button>
               ) : (
-                <button className="primaryButton" type="submit">Send</button>
+                <div className="composerButtonGroup">
+                  <button className="ghostButton resetChatButton" type="button" onClick={onResetChat}>Reset chat</button>
+                  <button className="primaryButton" type="submit">Send</button>
+                </div>
               )}
             </div>
           </form>
@@ -720,6 +802,8 @@ function SetupPage({
   onResetTelegram,
   onBack,
   onRefresh,
+  themeMode,
+  onThemeModeChange,
 }: {
   snapshot?: ConfigSnapshot;
   n8nProjects: Array<{ id: string; name: string }>;
@@ -753,13 +837,21 @@ function SetupPage({
   onResetTelegram: () => void;
   onBack: () => void;
   onRefresh: () => void;
+  themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
 }): React.JSX.Element {
   const telegramLink = snapshot?.telegram.deepLink;
 
   return (
     <div className="shell shellSetup">
       <main className="setupStage">
-        <SetupPageHeader snapshot={snapshot} onBack={onBack} onRefresh={onRefresh} />
+        <SetupPageHeader
+          snapshot={snapshot}
+          onBack={onBack}
+          onRefresh={onRefresh}
+          themeMode={themeMode}
+          onThemeModeChange={onThemeModeChange}
+        />
 
         <div className="setupScroll">
           <div className="setupGrid">
@@ -892,6 +984,7 @@ function App() {
 
   const notify = useNotice();
   const [view, setView] = useWebUiView();
+  const [themeMode, setThemeMode] = React.useState<ThemeMode>(() => readThemeMode());
   const chatLogRef = React.useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = React.useRef(true);
   const activeStreamRef = React.useRef<AbortController | null>(null);
@@ -912,6 +1005,11 @@ function App() {
   const [chatInput, setChatInput] = React.useState('');
   const [now, setNow] = React.useState(() => Date.now());
   const runActive = React.useMemo(() => messages.some((message) => message.streaming), [messages]);
+
+  React.useEffect(() => {
+    applyThemeMode(themeMode);
+    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+  }, [themeMode]);
 
   React.useEffect(() => {
     if (!messages.some((message) => message.streaming)) {
@@ -1319,6 +1417,8 @@ function App() {
         onResetTelegram={() => void onResetTelegram()}
         onBack={() => setView('home')}
         onRefresh={() => void refreshConfig()}
+        themeMode={themeMode}
+        onThemeModeChange={setThemeMode}
       />
     );
   }
@@ -1334,10 +1434,11 @@ function App() {
       onChatInputChange={setChatInput}
       onSendMessage={onSendMessage}
       onStopRun={onStopRun}
-      onRefresh={() => void refreshConfig()}
       onResetChat={() => void onResetChat()}
       onOpenSetup={() => setView('setup')}
       chatLogRef={chatLogRef}
+      themeMode={themeMode}
+      onThemeModeChange={setThemeMode}
     />
   );
 }

@@ -88,12 +88,14 @@
 }
 
 .heroBrandTag {
-  color: #6a3750;
+  max-width: 34rem;
+  margin-top: 0.25rem;
+  color: #6b8d98;
   font-family: 'IBM Plex Sans', 'Avenir Next', 'Segoe UI', sans-serif;
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
 }
 
 .heroCopy::after {
@@ -277,18 +279,18 @@
 .yagrHome :global(.button).primaryButton,
 .yagrHeroBanner .primaryButton,
 .yagrHome .primaryButton {
-  background: linear-gradient(135deg, var(--yagr-night-deep) 0%, #17223d 55%, var(--yagr-cyan) 100%);
-  box-shadow: 0 14px 32px rgba(26, 30, 43, 0.2);
+  background: linear-gradient(135deg, #12182a 0%, #1f3144 56%, #7fb9c5 100%);
+  box-shadow: 0 14px 34px rgba(12, 16, 31, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   color: #f7fbfb;
-  border: 1px solid rgba(12, 16, 31, 0.22);
+  border: 1px solid rgba(140, 198, 211, 0.22);
 }
 
 .yagrHeroBanner :global(.button).secondaryButton,
 .yagrHeroBanner .secondaryButton {
-  border: 1px solid rgba(128, 187, 199, 0.34);
-  box-shadow: 0 10px 24px rgba(128, 187, 199, 0.12);
-  color: var(--yagr-night);
-  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(184, 236, 239, 0.26);
+  box-shadow: 0 10px 24px rgba(12, 16, 31, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  color: #f6fbfb;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(221, 238, 242, 0.1));
 }
 
 .yagrHome :global(.button).ghostButton,
@@ -303,7 +305,7 @@
 .yagrHeroBanner .primaryButton:hover,
 .yagrHome .primaryButton:hover {
   color: #ffffff;
-  background: linear-gradient(135deg, #0d1020 0%, #17223d 55%, #80bbc7 100%);
+  background: linear-gradient(135deg, #101523 0%, #21374a 58%, #9adbe3 100%);
 }
 
 .yagrHeroBanner :global(.button).secondaryButton:hover,
@@ -327,15 +329,7 @@
 .yagrHome .statCard,
 .yagrHome .entryCard,
 .yagrHome .workflowCard,
-.yagrHome .ctaCard,
-.yagrHeroBanner :global(.button).primaryButton,
-.yagrHeroBanner :global(.button).secondaryButton,
-.yagrHome :global(.button).primaryButton,
-.yagrHome :global(.button).ghostButton,
-.yagrHeroBanner .primaryButton,
-.yagrHeroBanner .secondaryButton,
-.yagrHome .primaryButton,
-.yagrHome .ghostButton {
+.yagrHome .ctaCard {
   background-clip: padding-box;
   outline: 1px solid var(--yagr-glass-highlight);
   outline-offset: -1px;
@@ -514,6 +508,243 @@
   background: linear-gradient(135deg, var(--yagr-night-deep) 0%, #16203c 38%, #2d5360 72%, var(--yagr-ice) 100%);
 }
 
+.yagrHome,
+.yagrHeroBanner {
+  --yagr-bg-page: #f5f7f8;
+  --yagr-bg-soft: #edf2f4;
+  --yagr-bg-hero: #eef3f4;
+  --yagr-surface: #ffffff;
+  --yagr-surface-soft: #f4f7f8;
+  --yagr-surface-dark: #18222c;
+  --yagr-surface-dark-soft: #22313d;
+  --yagr-border: #c9d4d9;
+  --yagr-border-strong: #8ea3ad;
+  --yagr-text: #0f1820;
+  --yagr-text-muted: #4b616b;
+  --yagr-text-on-dark: #f3f7f8;
+  --yagr-accent: #456874;
+  --yagr-accent-soft: #d8e3e7;
+  --yagr-button-primary-bg: #18222c;
+  --yagr-button-primary-border: #2c3f4a;
+  --yagr-button-secondary-bg: #ffffff;
+  --yagr-button-secondary-border: #8ea3ad;
+  --yagr-button-secondary-text: #0f1820;
+}
+
+:global([data-theme='dark']) .yagrHome,
+:global([data-theme='dark']) .yagrHeroBanner {
+  --yagr-bg-page: #0f151c;
+  --yagr-bg-soft: #131c25;
+  --yagr-bg-hero: #121a23;
+  --yagr-surface: #18222c;
+  --yagr-surface-soft: #1d2833;
+  --yagr-surface-dark: #0f151c;
+  --yagr-surface-dark-soft: #16212b;
+  --yagr-border: #2d3f4c;
+  --yagr-border-strong: #4d6975;
+  --yagr-text: #edf3f5;
+  --yagr-text-muted: #9fb1b8;
+  --yagr-text-on-dark: #edf3f5;
+  --yagr-accent: #80bbc7;
+  --yagr-accent-soft: #23343d;
+  --yagr-button-primary-bg: #80bbc7;
+  --yagr-button-primary-border: #9ecdd7;
+  --yagr-button-secondary-bg: #18222c;
+  --yagr-button-secondary-border: #4d6975;
+  --yagr-button-secondary-text: #edf3f5;
+}
+
+.yagrHeroBanner,
+.yagrHome .quickStartSection,
+.yagrHome .proofSection,
+.yagrHome .entrySection,
+.yagrHome .workflowSection {
+  background: var(--yagr-bg-page);
+  color: var(--yagr-text);
+}
+
+.yagrHome .proofSection,
+.yagrHome .workflowSection {
+  background: var(--yagr-bg-soft);
+}
+
+.yagrHome .ctaSection {
+  background: var(--yagr-surface-dark);
+  color: var(--yagr-text-on-dark);
+}
+
+.yagrHeroBanner::before,
+.yagrHeroBanner::after,
+.yagrHeroBanner .heroPanel::before,
+.yagrHeroBanner .heroPanel::after,
+.yagrHeroBanner .panelWindow::before,
+.yagrHome .ctaCard::before,
+.yagrHome .ctaCard::after,
+.yagrHome .entryCard::after,
+.proofSection::before {
+  display: none;
+}
+
+.yagrHeroBanner .heroBrandName,
+.yagrHeroBanner .heroAccent,
+.yagrHome .sectionTitle,
+.yagrHome .ctaTitle,
+.yagrHome .statCard strong,
+.yagrHome .statLabel,
+.yagrHome .entryCard h3,
+.yagrHome .workflowCard h3,
+.yagrHome .quickStartCard strong,
+.yagrHome .quickStartCard span {
+  color: var(--yagr-text);
+}
+
+.yagrHeroBanner .heroBrandTag,
+.yagrHeroBanner .heroSubtitle,
+.yagrHome .sectionLead,
+.yagrHome .ctaLead,
+.yagrHome .statDetail,
+.yagrHome .entryCard p,
+.yagrHome .workflowCard p,
+.yagrHome .quickStartCard p,
+.yagrHome .heroPill,
+.yagrHome .inlineLink {
+  color: var(--yagr-text-muted);
+}
+
+.yagrHeroBanner .eyebrow,
+.yagrHome .sectionEyebrow,
+.yagrHome .heroPill {
+  background: var(--yagr-surface-soft);
+  border-color: var(--yagr-border);
+  box-shadow: none;
+}
+
+.yagrHeroBanner .heroCopy::after,
+.yagrHeroBanner .panelCard::before,
+.yagrHome .quickStartCard::before,
+.yagrHome .statCard::before,
+.yagrHome .workflowCard span,
+.yagrHome .entryCard::before {
+  background: var(--yagr-accent);
+}
+
+.yagrHeroBanner .heroCopy::after {
+  box-shadow: none;
+}
+
+.yagrHeroBanner .panelWindow,
+.yagrHome .quickStartTerminal,
+.yagrHome .ctaCard {
+  background: var(--yagr-surface-dark);
+  border-color: var(--yagr-border-strong);
+  box-shadow: none;
+  outline: none;
+}
+
+.yagrHeroBanner .commandBlock,
+.yagrHome .quickStartCode,
+.yagrHeroBanner .panelCard {
+  background: var(--yagr-surface-dark-soft);
+  border-color: var(--yagr-border-strong);
+}
+
+.yagrHeroBanner .panelLabel,
+.yagrHome .quickStartNote,
+.yagrHome .ctaLead,
+.yagrHeroBanner .panelCard p,
+.yagrHeroBanner .commandBlock code,
+.yagrHome .quickStartCode code,
+.yagrHome .quickStartNote code,
+.yagrHome .quickStartTerminal .inlineLink,
+.yagrHome .ctaTitle,
+.yagrHome .ctaCard .sectionEyebrow {
+  color: var(--yagr-text-on-dark);
+}
+
+.yagrHome .quickStartIntro,
+.yagrHome .quickStartTerminal,
+.yagrHome .quickStartCard,
+.yagrHome .statCard,
+.yagrHome .entryCard,
+.yagrHome .workflowCard,
+.yagrHome .ctaCard {
+  background: var(--yagr-surface);
+  border-color: var(--yagr-border);
+  box-shadow: none;
+  outline: none;
+}
+
+.yagrHome .quickStartTerminal,
+.yagrHome .ctaCard {
+  background: var(--yagr-surface-dark);
+}
+
+.yagrHome .statIcon {
+  background: var(--yagr-accent-soft);
+}
+
+.yagrHome .workflowStack::before {
+  background: var(--yagr-border-strong);
+}
+
+.primaryButton,
+.secondaryButton,
+.ghostButton {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+.primaryButton::before,
+.secondaryButton::before,
+.ghostButton::before,
+.primaryButton::after,
+.secondaryButton::after,
+.ghostButton::after {
+  content: none;
+}
+
+.primaryButton,
+.yagrHeroBanner :global(.button).primaryButton,
+.yagrHome :global(.button).primaryButton,
+.yagrHeroBanner .primaryButton,
+.yagrHome .primaryButton {
+  background: var(--yagr-button-primary-bg);
+  border-color: var(--yagr-button-primary-border);
+  color: var(--yagr-text-on-dark);
+}
+
+.secondaryButton,
+.yagrHeroBanner :global(.button).secondaryButton,
+.yagrHeroBanner .secondaryButton {
+  background: var(--yagr-button-secondary-bg);
+  border-color: var(--yagr-button-secondary-border);
+  color: var(--yagr-button-secondary-text);
+}
+
+.ghostButton,
+.yagrHome :global(.button).ghostButton,
+.yagrHome .ghostButton {
+  background: transparent;
+  border-color: var(--yagr-border-strong);
+  color: var(--yagr-text-on-dark);
+}
+
+.primaryButton:hover,
+.secondaryButton:hover,
+.ghostButton:hover,
+.yagrHeroBanner :global(.button).primaryButton:hover,
+.yagrHome :global(.button).primaryButton:hover,
+.yagrHeroBanner .primaryButton:hover,
+.yagrHome .primaryButton:hover,
+.yagrHeroBanner :global(.button).secondaryButton:hover,
+.yagrHeroBanner .secondaryButton:hover,
+.yagrHome :global(.button).ghostButton:hover,
+.yagrHome .ghostButton:hover {
+  box-shadow: none;
+  filter: brightness(0.96);
+}
+
 @media screen and (max-width: 1180px) {
   .yagrHeroBanner .heroGrid {
     grid-template-columns: 1fr;
@@ -625,7 +856,7 @@
   text-decoration: none;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  box-shadow: 0 12px 28px rgba(12, 16, 31, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.22);
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
@@ -636,27 +867,38 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0) 48%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 42%);
+  pointer-events: none;
+}
+
+.primaryButton::after,
+.secondaryButton::after,
+.ghostButton::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   pointer-events: none;
 }
 
 .primaryButton {
-  background: linear-gradient(135deg, #ff3b7a 0%, #d92f68 100%);
-  border-color: rgba(169, 27, 82, 0.16);
-  box-shadow: 0 14px 32px rgba(230, 61, 122, 0.24);
+  background: linear-gradient(135deg, #12182a 0%, #1f3144 56%, #7fb9c5 100%);
+  border-color: rgba(140, 198, 211, 0.22);
+  box-shadow: 0 14px 34px rgba(12, 16, 31, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   color: #fff;
 }
 
 .secondaryButton {
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(31, 122, 230, 0.14);
-  color: #1e2d42;
-  box-shadow: 0 10px 24px rgba(31, 122, 230, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(221, 238, 242, 0.1));
+  border: 1px solid rgba(184, 236, 239, 0.26);
+  color: #f6fbfb;
+  box-shadow: 0 10px 24px rgba(12, 16, 31, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .ghostButton {
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(184, 236, 239, 0.06));
+  border: 1px solid rgba(184, 236, 239, 0.24);
   color: #fff;
 }
 
@@ -665,11 +907,12 @@
 .ghostButton:hover {
   color: inherit;
   transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 16px 36px rgba(12, 16, 31, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.24);
 }
 
 .primaryButton:hover {
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36), 0 18px 34px rgba(230, 61, 122, 0.22);
+  background: linear-gradient(135deg, #101523 0%, #21374a 58%, #9adbe3 100%);
 }
 
 .heroPanel {
@@ -987,7 +1230,7 @@
 
 .proofHeader,
 .entryHeader {
-  max-width: 48rem;
+  max-width: 64rem;
   margin-bottom: 2rem;
 }
 
@@ -996,6 +1239,21 @@
   font-size: clamp(2.2rem, 4vw, 3.5rem);
   line-height: 1;
   color: #1b2533;
+}
+
+.proofHeader .sectionTitle,
+.entryHeader .sectionTitle,
+.workflowLayout > div .sectionTitle,
+.ctaTitle {
+  max-width: 24ch;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  text-wrap: balance;
+}
+
+.noWrap {
+  white-space: nowrap;
 }
 
 .statsGrid,
@@ -1575,4 +1833,118 @@
     flex-direction: column;
     gap: 0.5rem;
   }
+}
+
+.yagrHeroBanner :global(.button).primaryButton,
+.yagrHome :global(.button).primaryButton,
+.yagrHeroBanner .primaryButton,
+.yagrHome .primaryButton,
+.yagrHeroBanner :global(.button).secondaryButton,
+.yagrHome :global(.button).secondaryButton,
+.yagrHeroBanner .secondaryButton,
+.yagrHome .secondaryButton,
+.yagrHeroBanner :global(.button).ghostButton,
+.yagrHome :global(.button).ghostButton,
+.yagrHeroBanner .ghostButton,
+.yagrHome .ghostButton {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background-image: none;
+  box-shadow: none;
+}
+
+.yagrHeroBanner :global(.button).primaryButton::before,
+.yagrHome :global(.button).primaryButton::before,
+.yagrHeroBanner .primaryButton::before,
+.yagrHome .primaryButton::before,
+.yagrHeroBanner :global(.button).secondaryButton::before,
+.yagrHome :global(.button).secondaryButton::before,
+.yagrHeroBanner .secondaryButton::before,
+.yagrHome .secondaryButton::before,
+.yagrHeroBanner :global(.button).ghostButton::before,
+.yagrHome :global(.button).ghostButton::before,
+.yagrHeroBanner .ghostButton::before,
+.yagrHome .ghostButton::before,
+.yagrHeroBanner :global(.button).primaryButton::after,
+.yagrHome :global(.button).primaryButton::after,
+.yagrHeroBanner .primaryButton::after,
+.yagrHome .primaryButton::after,
+.yagrHeroBanner :global(.button).secondaryButton::after,
+.yagrHome :global(.button).secondaryButton::after,
+.yagrHeroBanner .secondaryButton::after,
+.yagrHome .secondaryButton::after,
+.yagrHeroBanner :global(.button).ghostButton::after,
+.yagrHome :global(.button).ghostButton::after,
+.yagrHeroBanner .ghostButton::after,
+.yagrHome .ghostButton::after {
+  content: none;
+}
+
+.yagrHeroBanner :global(.button).primaryButton,
+.yagrHome :global(.button).primaryButton,
+.yagrHeroBanner .primaryButton,
+.yagrHome .primaryButton {
+  background: var(--yagr-button-primary-bg);
+  border: 1px solid var(--yagr-button-primary-border);
+  color: var(--yagr-text-on-dark);
+}
+
+.yagrHeroBanner :global(.button).secondaryButton,
+.yagrHome :global(.button).secondaryButton,
+.yagrHeroBanner .secondaryButton,
+.yagrHome .secondaryButton {
+  background: var(--yagr-button-secondary-bg);
+  border: 1px solid var(--yagr-button-secondary-border);
+  color: var(--yagr-button-secondary-text);
+}
+
+.yagrHeroBanner :global(.button).ghostButton,
+.yagrHome :global(.button).ghostButton,
+.yagrHeroBanner .ghostButton,
+.yagrHome .ghostButton {
+  background: transparent;
+  border: 1px solid var(--yagr-border-strong);
+  color: var(--yagr-text-on-dark);
+}
+
+.yagrHeroBanner :global(.button).primaryButton:hover,
+.yagrHome :global(.button).primaryButton:hover,
+.yagrHeroBanner .primaryButton:hover,
+.yagrHome .primaryButton:hover,
+.yagrHeroBanner :global(.button).primaryButton:focus-visible,
+.yagrHome :global(.button).primaryButton:focus-visible,
+.yagrHeroBanner .primaryButton:focus-visible,
+.yagrHome .primaryButton:focus-visible {
+  background: var(--yagr-button-primary-border);
+  border-color: var(--yagr-button-primary-border);
+  color: var(--yagr-text-on-dark);
+  filter: none;
+}
+
+.yagrHeroBanner :global(.button).secondaryButton:hover,
+.yagrHome :global(.button).secondaryButton:hover,
+.yagrHeroBanner .secondaryButton:hover,
+.yagrHome .secondaryButton:hover,
+.yagrHeroBanner :global(.button).secondaryButton:focus-visible,
+.yagrHome :global(.button).secondaryButton:focus-visible,
+.yagrHeroBanner .secondaryButton:focus-visible,
+.yagrHome .secondaryButton:focus-visible {
+  background: var(--yagr-surface-soft);
+  border-color: var(--yagr-border-strong);
+  color: var(--yagr-text);
+  filter: none;
+}
+
+.yagrHeroBanner :global(.button).ghostButton:hover,
+.yagrHome :global(.button).ghostButton:hover,
+.yagrHeroBanner .ghostButton:hover,
+.yagrHome .ghostButton:hover,
+.yagrHeroBanner :global(.button).ghostButton:focus-visible,
+.yagrHome :global(.button).ghostButton:focus-visible,
+.yagrHeroBanner .ghostButton:focus-visible,
+.yagrHome .ghostButton:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--yagr-border-strong);
+  color: var(--yagr-text-on-dark);
+  filter: none;
 }
