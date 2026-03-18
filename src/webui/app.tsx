@@ -16,6 +16,10 @@ type ChatStreamEvent =
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string };
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
 async function request<T>(targetPath: string, init?: RequestInit): Promise<T> {
   const response = await fetch(targetPath, {
     headers: {
@@ -341,9 +345,11 @@ function HomePage({
   messages,
   now,
   busyLabel,
+  runActive,
   chatInput,
   onChatInputChange,
   onSendMessage,
+  onStopRun,
   onRefresh,
   onResetChat,
   onOpenSetup,
@@ -353,9 +359,11 @@ function HomePage({
   messages: ChatMessage[];
   now: number;
   busyLabel?: string;
+  runActive: boolean;
   chatInput: string;
   onChatInputChange: (value: string) => void;
   onSendMessage: (event: React.FormEvent) => void;
+  onStopRun: () => void;
   onRefresh: () => void;
   onResetChat: () => void;
   onOpenSetup: () => void;
@@ -393,7 +401,14 @@ function HomePage({
             />
             <div className="composerActions">
               <span className="muted">{busyLabel ?? 'Runtime idle'}</span>
-              <button className="primaryButton" type="submit">Send</button>
+              {runActive ? (
+                <button className="ghostButton dangerButton stopButton" type="button" onClick={onStopRun}>
+                  <span className="stopButtonSymbol" aria-hidden="true">■</span>
+                  <span>Stop</span>
+                </button>
+              ) : (
+                <button className="primaryButton" type="submit">Send</button>
+              )}
             </div>
           </form>
         </section>
@@ -609,6 +624,7 @@ function App() {
   const [view, setView] = useWebUiView();
   const chatLogRef = React.useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = React.useRef(true);
+  const activeStreamRef = React.useRef<AbortController | null>(null);
 
   const [n8nHost, setN8nHost] = React.useState('');
   const [n8nApiKey, setN8nApiKey] = React.useState('');
@@ -625,6 +641,7 @@ function App() {
 
   const [chatInput, setChatInput] = React.useState('');
   const [now, setNow] = React.useState(() => Date.now());
+  const runActive = React.useMemo(() => messages.some((message) => message.streaming), [messages]);
 
   React.useEffect(() => {
     if (!messages.some((message) => message.streaming)) {
@@ -830,6 +847,10 @@ function App() {
 
   const onSendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (activeStreamRef.current) {
+      return;
+    }
+
     const trimmed = chatInput.trim();
     if (!trimmed) {
       return;
@@ -850,10 +871,13 @@ function App() {
     setChatInput('');
     setBusyLabel('Yagr is working...');
     stickToBottomRef.current = true;
+    const abortController = new AbortController();
+    activeStreamRef.current = abortController;
 
     try {
       await streamJsonLines('/api/chat/stream', {
         method: 'POST',
+        signal: abortController.signal,
         body: JSON.stringify({ sessionId, message: trimmed }),
       }, (streamEvent) => {
         if (streamEvent.type === 'start') {
@@ -918,7 +942,9 @@ function App() {
             text: streamEvent.response,
             streaming: false,
             finalState: streamEvent.finalState,
-            statusLabel: streamEvent.requiredActions?.length ? 'Needs attention' : 'Completed',
+            statusLabel: streamEvent.finalState === 'stopped'
+              ? 'Stopped'
+              : (streamEvent.requiredActions?.length ? 'Needs attention' : 'Completed'),
             phase: undefined,
           });
           setBusyLabel(undefined);
@@ -940,19 +966,40 @@ function App() {
         notify(streamEvent.error, 'error');
       });
     } catch (error) {
-      patchMessage(pendingId, {
-        role: 'system',
-        text: error instanceof Error ? error.message : String(error),
-        streaming: false,
-        finalState: 'failed_terminal',
-        statusLabel: 'Run failed',
-        phase: undefined,
-      });
-      notify(error instanceof Error ? error.message : String(error), 'error');
+      if (isAbortError(error)) {
+        const currentMessage = useWebUiStore.getState().messages.find((message) => message.id === pendingId);
+        patchMessage(pendingId, {
+          text: currentMessage?.text.trim() ? currentMessage.text : 'Run stopped.',
+          streaming: false,
+          finalState: 'stopped',
+          statusLabel: 'Stopped',
+          phase: undefined,
+        });
+      } else {
+        patchMessage(pendingId, {
+          role: 'system',
+          text: error instanceof Error ? error.message : String(error),
+          streaming: false,
+          finalState: 'failed_terminal',
+          statusLabel: 'Run failed',
+          phase: undefined,
+        });
+        notify(error instanceof Error ? error.message : String(error), 'error');
+      }
     } finally {
+      activeStreamRef.current = null;
       setBusyLabel(undefined);
     }
   };
+
+  const onStopRun = React.useCallback(() => {
+    if (!activeStreamRef.current) {
+      return;
+    }
+
+    setBusyLabel('Stopping run...');
+    activeStreamRef.current.abort();
+  }, [setBusyLabel]);
 
   if (view === 'setup') {
     return (
@@ -999,9 +1046,11 @@ function App() {
       messages={messages}
       now={now}
       busyLabel={busyLabel}
+      runActive={runActive}
       chatInput={chatInput}
       onChatInputChange={setChatInput}
       onSendMessage={onSendMessage}
+      onStopRun={onStopRun}
       onRefresh={() => void refreshConfig()}
       onResetChat={() => void onResetChat()}
       onOpenSetup={() => setView('setup')}

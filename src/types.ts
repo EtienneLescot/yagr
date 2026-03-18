@@ -97,6 +97,7 @@ export type YagrAgentState =
   | 'idle'
   | 'running'
   | 'streaming'
+  | 'stopped'
   | 'waiting_for_permission'
   | 'waiting_for_input'
   | 'compacting'
@@ -249,6 +250,7 @@ export interface YagrDisplayOptions {
 }
 
 export interface YagrRunOptions extends YagrLanguageModelConfig {
+  abortSignal?: AbortSignal;
   maxSteps?: number;
   rememberConversation?: boolean;
   autoCompactContext?: boolean;

@@ -83,6 +83,10 @@ type WebUiChatStreamEvent =
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string };
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
 function sanitizeHost(value: string | undefined): string {
   const trimmed = value?.trim();
   return trimmed || DEFAULT_HOST;
@@ -570,6 +574,18 @@ class WebUiGateway implements Gateway {
       'X-Accel-Buffering': 'no',
     });
 
+    const abortController = new AbortController();
+    let runFinished = false;
+    let streamedText = '';
+
+    const handleConnectionClose = () => {
+      if (!runFinished && !abortController.signal.aborted) {
+        abortController.abort();
+      }
+    };
+
+    response.on('close', handleConnectionClose);
+
     const writeEvent = (event: WebUiChatStreamEvent) => {
       if (response.writableEnded || response.destroyed) {
         return;
@@ -670,10 +686,13 @@ class WebUiGateway implements Gateway {
           await this.options.onCompaction?.(event);
         },
         onTextDelta: async (delta) => {
+          streamedText += delta;
           writeEvent({ type: 'text-delta', delta });
           await this.options.onTextDelta?.(delta);
         },
+        abortSignal: abortController.signal,
       });
+      runFinished = true;
 
       writeEvent({
         type: 'final',
@@ -686,11 +705,23 @@ class WebUiGateway implements Gateway {
         })),
       });
     } catch (error) {
-      writeEvent({
-        type: 'error',
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (isAbortError(error)) {
+        runFinished = true;
+        writeEvent({
+          type: 'final',
+          sessionId,
+          response: streamedText,
+          finalState: 'stopped',
+          requiredActions: [],
+        });
+      } else {
+        writeEvent({
+          type: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     } finally {
+      response.off('close', handleConnectionClose);
       response.end();
     }
   }
