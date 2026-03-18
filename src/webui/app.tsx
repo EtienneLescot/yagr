@@ -414,9 +414,11 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
     maxRowPerCol.set(n.col, Math.max(maxRowPerCol.get(n.col) ?? 0, n.row));
   }
   const maxRow = Math.max(...maxRowPerCol.values());
+  const hasLoopEdges = graph.edges.some((e) => e.isLoop);
 
   const svgW = PAD * 2 + (maxCol + 1) * NODE_W + maxCol * COL_GAP;
-  const svgH = PAD * 2 + (maxRow + 1) * NODE_H + maxRow * ROW_GAP;
+  // add vertical room for loop arcs that draw below the bottom-most node row
+  const svgH = PAD * 2 + (maxRow + 1) * NODE_H + maxRow * ROW_GAP + (hasLoopEdges ? 80 : 0);
 
   const pos = (n: GraphNode) => ({
     x: PAD + n.col * (NODE_W + COL_GAP),
@@ -429,7 +431,6 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
       viewBox={`0 0 ${svgW} ${svgH}`}
       width={svgW}
       height={svgH}
-      style={{ overflow: 'visible' }}
     >
       <defs>
         <marker id="wf-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
@@ -446,12 +447,13 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
         const sp = pos(src);
         const tp = pos(tgt);
         if (e.isLoop) {
-          // Back-edge: arc below both nodes so it's visually distinct
+          // Back-edge: arc along the bottom of the SVG so it never cuts through other nodes
           const x1 = sp.x + NODE_W / 2;
           const y1 = sp.y + NODE_H;
           const x2 = tp.x + NODE_W / 2;
           const y2 = tp.y + NODE_H;
-          const cpY = Math.max(sp.y, tp.y) + NODE_H + 36;
+          // Route all loop arcs to the same baseline at the bottom of the SVG
+          const cpY = svgH - 20;
           return (
             <path
               key={`e${i}`}

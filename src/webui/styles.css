@@ -737,10 +737,12 @@ button {
   border-top: 1px solid var(--border, #e0e0e0);
   overflow-x: auto;
   background: var(--surface-elevated, #fafafa);
+  /* set a max-height so very tall graphs don't overflow vertically */
+  max-height: 640px;
+  overflow-y: auto;
 }
 
 .workflowGraph {
   display: block;
-  max-width: 100%;
-  height: auto;
+  /* no max-width: 100% — let the SVG keep its intrinsic width so overflow-x: auto can scroll */
 }
