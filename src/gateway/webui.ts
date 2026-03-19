@@ -14,7 +14,7 @@ import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
 import { YagrAgent } from '../agent.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
-import { getYagrN8nWorkspaceDir, syncGeneratedN8nSkillFile } from '../config/yagr-home.js';
+import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import type { Engine } from '../engine/engine.js';
 import {
   createOnboardingToken,
@@ -502,7 +502,7 @@ class WebUiGateway implements Gateway {
       await refreshAiContext({ host, apiKey });
       return undefined;
     } catch (error) {
-      return `Workspace saved, but the n8n skill refresh failed: ${error instanceof Error ? error.message : String(error)}`;
+      return `Workspace saved, but the n8n workspace instructions refresh failed: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
 
@@ -806,7 +806,6 @@ async function refreshAiContext(credentials: { host: string; apiKey: string }): 
   try {
     process.chdir(getYagrN8nWorkspaceDir());
     await updateAi.run({}, credentials);
-    syncGeneratedN8nSkillFile(getYagrN8nWorkspaceDir());
   } finally {
     process.chdir(previousCwd);
   }

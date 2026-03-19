@@ -8,7 +8,7 @@ import { Command } from 'commander';
 import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
 import { normalizeGatewaySurfaces, YagrConfigService } from './config/yagr-config-service.js';
 import { YagrN8nConfigService } from './config/n8n-config-service.js';
-import { getYagrN8nWorkspaceDir, syncGeneratedN8nSkillFile } from './config/yagr-home.js';
+import { getYagrN8nWorkspaceDir } from './config/yagr-home.js';
 import { getGatewaySupervisorStatus } from './gateway/manager.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
 import type { GatewaySurface } from './gateway/types.js';
@@ -142,7 +142,7 @@ export async function runYagrSetup(
       try {
         await refreshAiContext({ host: url, apiKey });
       } catch (err) {
-        process.stderr.write(`Warning: n8n skill refresh failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        process.stderr.write(`Warning: n8n workspace instructions refresh failed: ${err instanceof Error ? err.message : String(err)}\n`);
       }
     },
 
@@ -219,6 +219,23 @@ export async function runYagrSetup(
   return result.ok;
 }
 
+export async function refreshN8nWorkspaceInstructionsFromSavedConfig(
+  n8nConfigService = new YagrN8nConfigService(),
+): Promise<boolean> {
+  const config = n8nConfigService.getLocalConfig();
+  if (!config.host) {
+    return false;
+  }
+
+  const apiKey = n8nConfigService.getApiKey(config.host);
+  if (!apiKey) {
+    return false;
+  }
+
+  await refreshAiContext({ host: config.host, apiKey });
+  return true;
+}
+
 async function refreshAiContext(credentials: { host: string; apiKey: string }): Promise<void> {
   const updateAi = new UpdateAiCommand(new Command());
   const previousCwd = process.cwd();
@@ -226,7 +243,6 @@ async function refreshAiContext(credentials: { host: string; apiKey: string }): 
   try {
     process.chdir(getYagrN8nWorkspaceDir());
     await updateAi.run({}, credentials);
-    syncGeneratedN8nSkillFile(getYagrN8nWorkspaceDir());
   } finally {
     process.chdir(previousCwd);
   }

@@ -30,17 +30,17 @@ function withTempInstructionRoots(tempDir, callback) {
   }
 }
 
-function writeMandatorySkill(homeDir, content) {
-  const skillDir = path.join(homeDir, 'n8n-architect');
-  fs.mkdirSync(skillDir, { recursive: true });
-  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), content, 'utf8');
+function writeWorkspaceInstructions(homeDir, content) {
+  const workspaceDir = path.join(homeDir, 'n8n-workspace');
+  fs.mkdirSync(workspaceDir, { recursive: true });
+  fs.writeFileSync(path.join(workspaceDir, 'AGENTS.md'), content, 'utf8');
 }
 
 test('system prompt includes generic coding-agent baseline and defers domain rules to workspace instructions', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-prompt-'));
 
   try {
-    writeMandatorySkill(tempDir, '# Mandatory Skill\nremote n8n instance, you MUST run n8nac pull\nDo not present remote-only workflows from memory\n');
+    writeWorkspaceInstructions(tempDir, '# Workspace Rules\nremote n8n instance, you MUST run n8nac pull\nDo not present remote-only workflows from memory\n');
     const prompt = withTempInstructionRoots(tempDir, () => buildSystemPrompt({ name: 'test-engine' }));
 
     assert.match(prompt, /You are Yagr, a local coding agent\./);
@@ -56,7 +56,6 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
     assert.match(prompt, /requestRequiredAction tool/i);
     assert.match(prompt, /Keep final user-facing summaries concise/i);
     assert.match(prompt, /Do not paste the full workflow file contents/i);
-    assert.match(prompt, /Mandatory n8n\/n8nac operating instructions:/);
     assert.match(prompt, /remote n8n instance, you MUST run n8nac pull/i);
     assert.match(prompt, /Do not present remote-only workflows from memory/i);
   } finally {
@@ -69,12 +68,10 @@ test('system prompt includes later AGENTS sections beyond the old truncation bou
   const previousCwd = process.cwd();
 
   try {
-    writeMandatorySkill(tempDir, '# Mandatory Skill\nUse the n8n skill layer.\n');
     const filler = 'A'.repeat(12_500);
-    fs.writeFileSync(
-      path.join(tempDir, 'AGENTS.md'),
+    writeWorkspaceInstructions(
+      tempDir,
       `${filler}\n### Critical Example\nAiAgent.uses({ ai_languageModel: this.OpenaiModel.output })\n`,
-      'utf8',
     );
 
     process.chdir(tempDir);
@@ -89,13 +86,12 @@ test('system prompt includes later AGENTS sections beyond the old truncation bou
   }
 });
 
-test('system prompt inlines short AGENTS files without extra scaffolding', () => {
+test('system prompt inlines short workspace AGENTS files without extra scaffolding', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-prompt-'));
   const previousCwd = process.cwd();
 
   try {
-    writeMandatorySkill(tempDir, '# Mandatory Skill\nUse the n8n skill layer.\n');
-    fs.writeFileSync(path.join(tempDir, 'AGENTS.md'), '# Short Rules\nUse exact examples.\n', 'utf8');
+    writeWorkspaceInstructions(tempDir, '# Short Rules\nUse exact examples.\n');
 
     process.chdir(tempDir);
     const prompt = withTempInstructionRoots(tempDir, () => buildSystemPrompt({ name: 'test-engine' }));
@@ -108,20 +104,38 @@ test('system prompt inlines short AGENTS files without extra scaffolding', () =>
   }
 });
 
-test('workspace AGENTS is distinct from the mandatory Yagr home n8n skill', () => {
+test('workspace AGENTS is distinct from Yagr home instructions', () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-'));
+  const previousCwd = process.cwd();
+
+  try {
+    writeWorkspaceInstructions(homeDir, '# Workspace Rules\nUse workspace instructions first.\n');
+    fs.writeFileSync(path.join(homeDir, 'AGENTS.md'), '# Home Notes\nKeep responses terse.\n', 'utf8');
+
+    process.chdir(homeDir);
+    const prompt = withTempInstructionRoots(homeDir, () => buildSystemPrompt({ name: 'test-engine' }));
+
+    assert.match(prompt, /# Workspace Rules/);
+    assert.match(prompt, /# Home Notes/);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('home AGENTS does not replace missing workspace instructions', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-prompt-'));
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-'));
   const previousCwd = process.cwd();
 
   try {
-    fs.writeFileSync(path.join(tempDir, 'AGENTS.md'), '# Workspace Rules\nUse workspace instructions first.\n', 'utf8');
-    writeMandatorySkill(homeDir, '# Home Skill\nMandatory n8n operating layer.\n');
+    fs.writeFileSync(path.join(homeDir, 'AGENTS.md'), '# Home Notes\nPersonal reminders only.\n', 'utf8');
 
     process.chdir(tempDir);
     const prompt = withTempInstructionRoots(homeDir, () => buildSystemPrompt({ name: 'test-engine' }));
 
-    assert.match(prompt, /# Workspace Rules/);
-    assert.match(prompt, /# Home Skill/);
+    assert.match(prompt, /# Home Notes/);
+    assert.doesNotMatch(prompt, /Follow these workspace instructions when relevant: # Home Notes/);
   } finally {
     process.chdir(previousCwd);
     fs.rmSync(tempDir, { recursive: true, force: true });
