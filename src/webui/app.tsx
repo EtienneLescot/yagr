@@ -444,6 +444,10 @@ function parseWorkflowMap(diagram: string): { nodes: GraphNode[]; edges: GraphEd
     }
   }
 
+  if (orderedNames.length === 0) {
+    orderedNames.push(...nodeIndex.keys());
+  }
+
   if (orderedNames.length === 0) return null;
 
   // Build graph nodes — position by layer (column) from forward edges only (back-edges excluded to avoid infinite loop)
