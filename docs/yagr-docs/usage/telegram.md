@@ -34,6 +34,12 @@ Telegram configuration is stored by Yagr itself. It is not meant to depend on ad
 
 ## Linking chats
 
-After setup, share the onboarding link or QR code and press **Start** in Telegram. Yagr stores linked chats in its runtime configuration.
+No extra step is needed after setup. When someone messages the bot for the first time, Yagr replies with a deep link. They click it, press **Start** in Telegram, and Yagr stores the linked chat automatically.
 
-That linked chat is then just another place where intent can enter the agent loop and be turned into workflows.
+If you need to share the link manually (for example to onboard a second chat or to resend the link):
+
+```bash
+yagr telegram onboarding
+```
+
+Linked chats are persisted in the Yagr runtime configuration. That linked chat is then just another place where intent can enter the agent loop and be turned into workflows.

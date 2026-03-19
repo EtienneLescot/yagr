@@ -9,9 +9,9 @@ Yagr starts with a simple loop:
 
 1. Install `@yagr/agent`
 2. Run `yagr onboard`
-3. Connect the agent to its current orchestrator, model, and optional messaging integrations
-4. Run `yagr start`
-5. Choose the Web UI or the TUI, then optionally add Telegram later
+3. Connect the agent to its orchestrator, model, and optional messaging integrations
+
+That is all that is required. After onboarding, Yagr is operational. If you configured Telegram, the bot already handles chat linking automatically when someone messages it. Use `yagr tui` or `yagr webui` to open an interactive session at any time.
 
 Under the hood, that setup is not the product goal. It is the bootstrap that lets Yagr do its actual job: translate intent into workflows and operate them over time.
 
@@ -30,10 +30,18 @@ Then run the onboarding flow once:
 yagr onboard
 ```
 
-After onboarding, start the runtime with:
+After onboarding, start Telegram and other configured gateways in the background:
 
 ```bash
 yagr start
+```
+
+This spawns a background daemon and returns your terminal. From there:
+
+```bash
+yagr tui        # open a terminal chat session
+yagr webui      # open the local web interface
+yagr stop       # stop the background gateway
 ```
 
 ## What onboarding covers
@@ -61,13 +69,19 @@ This matters because Yagr should remember the operational context around the wor
 
 ## After onboarding
 
-The main commands you will keep using are:
+The commands you will keep using are:
 
 ```bash
-yagr start
-yagr start webui
-yagr start tui
-yagr gateway status
+yagr start          # start gateways in the background
+yagr tui            # open a terminal chat session
+yagr webui          # open the local web interface
+yagr stop           # stop the background gateway
+yagr gateway status # check whether a daemon is currently running
+```
+
+If you need to re-share the Telegram onboarding link (for example when linking a new chat manually):
+
+```bash
 yagr telegram onboarding
 ```
 
