@@ -643,8 +643,8 @@ class WebUiGateway implements Gateway {
 
         writeEvent({
           type: 'progress',
-          tone: 'error',
-          title: `${event.toolName} failed`,
+          tone: 'info',
+          title: 'Correcting commands',
           detail: event.message,
         });
         return;

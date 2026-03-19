@@ -85,6 +85,41 @@ test('workflow presentation is blocked until the workflow exists locally', async
   }
 });
 
+test('workflow presentation is allowed when the caller already provides a diagram', async () => {
+  const previousHome = process.env.YAGR_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-policy-hook-'));
+  process.env.YAGR_HOME = tempRoot;
+
+  try {
+    const wrappedTools = wrapToolsWithRuntimeHooks(
+      {
+        presentWorkflowResult: {
+          description: 'present workflow',
+          parameters: undefined,
+          execute: async () => ({ presented: true }),
+        },
+      },
+      [createWorkflowPresentationGuardHook()],
+      () => ({ runId: 'run-1', phase: 'plan', state: 'running' }),
+    );
+
+    const result = await wrappedTools.presentWorkflowResult.execute({
+      workflowId: 'remote-only-workflow',
+      workflowUrl: 'http://localhost:5678/workflow/remote-only-workflow',
+      diagram: '<workflow-map>\nROUTING MAP\nStart\n</workflow-map>',
+    });
+
+    assert.equal(result.presented, true);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.YAGR_HOME;
+    } else {
+      process.env.YAGR_HOME = previousHome;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('later successful retry clears an earlier unresolved n8nac failure', () => {
   const journal = [
     {

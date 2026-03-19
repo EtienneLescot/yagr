@@ -33,6 +33,14 @@ export function createWorkflowPresentationGuardHook(): YagrRuntimeHook {
         ? (args as { workflowId: string }).workflowId
         : undefined;
 
+      const providedDiagram = typeof (args as { diagram?: unknown }).diagram === 'string'
+        ? (args as { diagram: string }).diagram.trim()
+        : '';
+
+      if (providedDiagram) {
+        return;
+      }
+
       if (!workflowId || resolveLocalWorkflowDiagram(workflowId)) {
         return;
       }
