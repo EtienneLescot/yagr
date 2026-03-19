@@ -65,6 +65,7 @@ type Phase =
   | { kind: 'n8n-syncfolder'; url: string; apiKey: string; project: IProject; def: string; err?: string }
   | { kind: 'n8n-saving'; url: string; apiKey: string; project: IProject; syncFolder: string; log?: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
+  | { kind: 'llm-reuse-config'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
   | { kind: 'llm-reuse-apikey'; provider: YagrModelProvider; existing: string; cursor: number }
   | { kind: 'llm-apikey'; provider: YagrModelProvider; err?: string }
   | { kind: 'llm-models-loading'; provider: YagrModelProvider; apiKey: string; defModel: string | undefined }
@@ -451,6 +452,14 @@ function SetupWizard({ callbacks, onDone }: {
         await callbacks.saveN8nConfig({ url: phase.url, apiKey: phase.apiKey, project: phase.project, syncFolder: phase.syncFolder });
         if (guard !== asyncGuard.current) return;
         const llmProvider = llmDef.provider;
+        if (llmProvider) {
+          const existingApiKey = llmDef.getApiKey(llmProvider);
+          const existingModel = llmDef.getDefaultModel(llmProvider);
+          if (existingApiKey && existingModel) {
+            setPhase({ kind: 'llm-reuse-config', provider: llmProvider, apiKey: existingApiKey, model: existingModel, cursor: 0 });
+            return;
+          }
+        }
         setPhase({ kind: 'llm-provider', initial: llmProvider, cursor: llmProvider ? VALID_PROVIDERS.indexOf(llmProvider) : 0 });
       } catch (err) {
         if (guard !== asyncGuard.current) return;
@@ -577,6 +586,18 @@ function SetupWizard({ callbacks, onDone }: {
         setPhase({ kind: 'n8n-syncfolder', url: phase.url, apiKey: phase.apiKey, project, def: n8nDef.syncFolder ?? 'workflows' });
         setTextValue(n8nDef.syncFolder ?? 'workflows');
       } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'llm-reuse-config') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      else if (key.return) {
+        if (phase.cursor === 0) {
+          llmApiKeyDraftsRef.current[phase.provider] = phase.apiKey;
+          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model, baseUrl: llmDef.getBaseUrl(phase.provider) });
+          setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
+        } else {
+          setPhase({ kind: 'llm-provider', initial: phase.provider, cursor: VALID_PROVIDERS.indexOf(phase.provider) });
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-provider') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(VALID_PROVIDERS.length - 1, phase.cursor + 1) });
@@ -666,7 +687,7 @@ function SetupWizard({ callbacks, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'llm-model' && phase.models.length > 0);
 
   useInput((input, key) => {
@@ -779,6 +800,22 @@ function SetupWizard({ callbacks, onDone }: {
         return (
           <Box flexDirection="column">
             <SpinnerDisplay message="Saving n8n configuration and refreshing workspace…" frame={spinnerFrame} />
+          </Box>
+        );
+
+      case 'llm-reuse-config':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="LLM configuration" />
+            <Text dimColor>  Currently configured: {phase.provider} / {phase.model}</Text>
+            <SelectList
+              options={['Keep current configuration', 'Change provider or model'] as const}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
 
