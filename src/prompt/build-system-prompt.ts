@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getYagrLaunchDir, getYagrPaths } from '../config/yagr-home.js';
+import { resolveWorkflowDir, YagrN8nConfigService } from '../config/n8n-config-service.js';
 import type { Engine } from '../engine/engine.js';
 
 export interface InstructionContentSnapshot {
@@ -23,6 +24,7 @@ export function buildSystemPrompt(engine: Engine): string {
 export function buildSystemPromptSnapshot(engine: Engine): SystemPromptSnapshot {
   const homeInstructions = loadHomeInstructions();
   const workspaceInstructions = loadWorkspaceInstructions();
+  const workflowDir = resolveActiveWorkflowDir();
 
   return {
     systemPrompt: [
@@ -59,6 +61,7 @@ export function buildSystemPromptSnapshot(engine: Engine): SystemPromptSnapshot 
       'If a workflow exists only on the remote n8n instance, you MUST run n8nac pull for that workflow ID before presenting it. Do not present remote-only workflows from memory, earlier tool output, or inferred metadata alone; materialize the local .workflow.ts file first, then extract the canonical workflow-map header from that file.',
       'Keep final user-facing summaries concise. Do not paste the full workflow file contents, full ASCII diagram block, or repeated workflow metadata in the final response unless the user explicitly asks for the full content.',
       'Prefer concrete edits and command execution over abstract planning, but think before acting so each tool call is justified by the current evidence.',
+      workflowDir ? `The active n8n workflow directory is ${workflowDir}. All new .workflow.ts files MUST be created inside this directory, never in any parent folder or workspace root.` : '',
       homeInstructions ? `Yagr home instructions and memory: ${homeInstructions.content}` : '',
       workspaceInstructions ? `Follow these workspace instructions when relevant: ${workspaceInstructions.content}` : '',
     ].filter(Boolean).join(' '),
@@ -69,6 +72,15 @@ export function buildSystemPromptSnapshot(engine: Engine): SystemPromptSnapshot 
 
 function fingerprintInstructionContent(content: string): string {
   return createHash('sha256').update(content).digest('hex');
+}
+
+function resolveActiveWorkflowDir(): string | undefined {
+  try {
+    const config = new YagrN8nConfigService().getLocalConfig();
+    return resolveWorkflowDir(config) ?? undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function readInstructionFile(candidatePath: string): InstructionContentSnapshot | undefined {

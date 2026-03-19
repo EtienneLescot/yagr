@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { YagrN8nConfigService, resolveWorkflowDir } from '../config/n8n-config-service.js';
+import { YagrN8nConfigService, resolveWorkflowDir, type YagrN8nLocalConfig } from '../config/n8n-config-service.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
 
@@ -232,7 +232,7 @@ function isWorkspaceInitialized(): { initialized: boolean; configPath: string; w
 
   try {
     const raw = fs.readFileSync(configPath, 'utf-8');
-    const config = JSON.parse(raw) as { projectId?: string; projectName?: string };
+    const config = JSON.parse(raw) as YagrN8nLocalConfig;
     const workflowDir = resolveWorkflowDir(config);
     return {
       initialized: Boolean(config.projectId && config.projectName),
