@@ -244,7 +244,7 @@ async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
 
   const child = spawn(
     process.execPath,
-    [process.argv[1], 'gateway-start', ...extraArgs],
+    [process.argv[1], 'gateway', 'start', ...extraArgs],
     {
       detached: true,
       stdio: 'ignore',
