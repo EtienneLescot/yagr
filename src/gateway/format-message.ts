@@ -33,7 +33,8 @@ export function formatWorkflowLinkPlain(embed: WorkflowEmbed): string {
 
 export function formatWorkflowLinkHtml(embed: WorkflowEmbed): string {
   const label = escapeHtml(embed.title ?? `Workflow ${embed.workflowId}`);
-  return `🔗 <a href="${escapeHtml(embed.url)}">${label}</a>`;
+  const url = escapeHtml(embed.url);
+  return `🔗 <b>${label}</b>\n<a href="${url}">${url}</a>`;
 }
 
 export function formatWorkflowLinkTerminal(embed: WorkflowEmbed): string {
