@@ -936,10 +936,6 @@ function SetupPage({
                 <input checked={enableTelegram} onChange={(event) => onEnableTelegramChange(event.target.checked)} type="checkbox" />
                 <span>Telegram</span>
               </label>
-              <label className="checkboxRow disabledRow">
-                <input type="checkbox" disabled />
-                <span>WhatsApp soon</span>
-              </label>
               <button className="primaryButton" type="button" onClick={onSaveSurfaces}>Save surfaces</button>
               <p className="hint">The Web UI and TUI are always available. This section only controls extra messaging integrations.</p>
             </section>
