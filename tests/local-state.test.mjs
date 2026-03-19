@@ -119,6 +119,7 @@ test('buildYagrCleanupPlan preserves external workflow directories on full reset
 test('resetYagrLocalState removes active and legacy config stores for config+creds scope', async () => {
   await withTempYagrEnv(async ({ xdgDir, homeDir }) => {
     const paths = getYagrPaths();
+    fs.mkdirSync(paths.n8nWorkspaceDir, { recursive: true });
     fs.writeFileSync(paths.yagrConfigPath, JSON.stringify({ provider: 'openai' }));
     fs.writeFileSync(paths.yagrCredentialsPath, JSON.stringify({ providers: { openai: 'key' } }));
     fs.writeFileSync(paths.n8nConfigPath, JSON.stringify({ syncFolder: 'workflows' }));
