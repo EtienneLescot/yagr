@@ -95,6 +95,12 @@ npm uninstall -g @yagr/agent
 > </tr>
 > </table>
 
+---
+
+> **⚠ n8n version compatibility** — The node schema bundled with n8n-as-code is built against the **latest stable release of n8n**. For best results, keep your n8n instance up to date. Using an outdated instance may cause generated workflows to reference node type-versions not yet supported by your instance, which n8n renders as broken nodes in the canvas.
+
+---
+
 Read next if you want more than the fast path:
 
 - [Yagr getting started](https://yagr.dev/docs/getting-started/)
