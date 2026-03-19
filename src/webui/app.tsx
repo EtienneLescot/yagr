@@ -1337,7 +1337,9 @@ function App() {
             ? 'Stopped'
             : streamEvent.finalState === 'failed_terminal'
               ? 'Run failed'
-              : (streamEvent.requiredActions?.length ? 'Needs attention' : 'Completed');
+              : streamEvent.finalState === 'completed'
+                ? 'Completed'
+                : 'Needs attention';
 
           patchMessage(pendingId, {
             text: streamEvent.response,

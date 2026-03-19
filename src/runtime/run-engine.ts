@@ -451,12 +451,17 @@ async function ensureFinalText(
   existingText: string,
   requiredActions: YagrRequiredAction[],
   completionAccepted: boolean,
+  completionReasons: string[],
 ): Promise<string> {
   const groundedSummary = buildGroundedSummary(prompt, finishReason, journal, requiredActions);
   const sanitizedText = sanitizeAssistantOutput(existingText);
 
   if (!completionAccepted) {
-    return groundedSummary;
+    if (groundedSummary) {
+      return groundedSummary;
+    }
+
+    return completionReasons[0] ?? 'Run stopped before producing a grounded result.';
   }
 
   if (!sanitizedText) {
@@ -948,7 +953,7 @@ export class YagrRunEngine {
       }
 
       throwIfAborted(options.abortSignal);
-      text = await ensureFinalText(options, prompt, finishReason, state.journal, text, completionDecision.requiredActions, completionDecision.accepted);
+      text = await ensureFinalText(options, prompt, finishReason, state.journal, text, completionDecision.requiredActions, completionDecision.accepted, completionDecision.reasons);
 
       if (state.currentPhase && state.currentPhase !== 'summarize') {
         await transitionPhase(state, options, state.currentPhase, 'completed', `${state.currentPhase} phase completed.`);
