@@ -663,6 +663,7 @@ button {
   padding: 0.9rem 1rem;
   background: linear-gradient(135deg, rgba(184,236,239,0.16), rgba(69,104,116,0.08));
   border: 1px solid var(--panel-border);
+  animation: workbenchBreath 2.8s ease-in-out infinite;
 }
 
 .compactWorkbench {
@@ -682,24 +683,39 @@ button {
   place-items: center;
 }
 
+/* Pulsing center dot */
 .workGlyphCore {
-  width: 0.9rem;
-  height: 0.9rem;
+  position: relative;
+  z-index: 1;
+  width: 0.72rem;
+  height: 0.72rem;
   border-radius: 999px;
   background: linear-gradient(135deg, var(--blue-deep), var(--violet));
-  box-shadow: 0 0 0 0 rgba(128, 187, 199, 0.26);
-  animation: workPulse 1.6s ease-in-out infinite;
+  animation: workCorePulse 2s ease-in-out infinite;
 }
 
 .workGlyphRing {
   position: absolute;
-  inset: 0;
   border-radius: 999px;
-  border: 1px solid rgba(69, 104, 116, 0.22);
 }
 
-.workGlyphRingA { animation: workOrbit 2.2s linear infinite; }
-.workGlyphRingB { inset: 0.34rem; border-color: rgba(128, 187, 199, 0.34); animation: workOrbitReverse 2.8s linear infinite; }
+/* Outer arc spinner */
+.workGlyphRingA {
+  inset: 0;
+  border: 2px solid transparent;
+  border-top-color: var(--blue-deep);
+  border-right-color: color-mix(in srgb, var(--blue-deep) 36%, transparent);
+  animation: workSpin 1s linear infinite;
+}
+
+/* Inner arc spinner, counter-rotating */
+.workGlyphRingB {
+  inset: 0.48rem;
+  border: 1.5px solid transparent;
+  border-bottom-color: color-mix(in srgb, var(--violet) 80%, transparent);
+  border-left-color: color-mix(in srgb, var(--violet) 28%, transparent);
+  animation: workSpinReverse 1.5s linear infinite;
+}
 
 .progressTicker {
   display: grid;
@@ -1045,19 +1061,36 @@ button {
   box-shadow: none;
 }
 
-@keyframes workPulse {
-  0%, 100% { transform: scale(0.92); box-shadow: 0 0 0 0 rgba(128, 187, 199, 0.18); }
-  50% { transform: scale(1); box-shadow: 0 0 0 12px rgba(128, 187, 199, 0); }
+@keyframes workCorePulse {
+  0%, 100% {
+    opacity: 0.75;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue-deep) 14%, transparent),
+                0 0 6px color-mix(in srgb, var(--blue-deep) 28%, transparent);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue-deep) 22%, transparent),
+                0 0 13px color-mix(in srgb, var(--blue-deep) 52%, transparent);
+  }
 }
 
-@keyframes workOrbit {
-  from { transform: rotate(0deg); }
+@keyframes workSpin {
   to { transform: rotate(360deg); }
 }
 
-@keyframes workOrbitReverse {
-  from { transform: rotate(360deg); }
-  to { transform: rotate(0deg); }
+@keyframes workSpinReverse {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes workbenchBreath {
+  0%, 100% {
+    border-color: var(--panel-border);
+    box-shadow: none;
+  }
+  50% {
+    border-color: color-mix(in srgb, var(--blue-deep) 50%, var(--panel-border));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue-deep) 8%, transparent);
+  }
 }
 
 @media (max-width: 1120px) {
