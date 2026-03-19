@@ -5,7 +5,7 @@ import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js
 import { buildYagrCleanupPlan, resetYagrLocalState, type YagrResetScope } from './config/local-state.js';
 import { YagrConfigService } from './config/yagr-config-service.js';
 import { getYagrPaths } from './config/yagr-home.js';
-import { getGatewaySupervisorStatus, runGatewaySupervisor, runGatewaySurfaces, startGatewaySurfacesInBackground } from './gateway/manager.js';
+import { getGatewaySupervisorStatus, getGatewayRunningBanner, runGatewaySupervisor, runGatewaySurfaces } from './gateway/manager.js';
 import {
   getTelegramGatewayStatus,
   resetTelegramGateway,
@@ -16,7 +16,6 @@ import {
 import { YagrAgent } from './agent.js';
 import type { YagrModelProvider } from './llm/create-language-model.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrSetup } from './setup.js';
-import { promptForStartAction, type StartLaunchAction } from './setup/start-launcher.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [
   'anthropic',
@@ -28,7 +27,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [
 ];
 
 interface ParsedArgs {
-  command?: 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
+  command?: 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
   startTarget?: 'webui' | 'tui';
   prompt?: string;
   interactive: boolean;
@@ -76,6 +75,21 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (argv[0] === 'uninstall') {
     parsed.command = 'uninstall';
     startIndex = 1;
+  }
+
+  if (argv[0] === 'stop') {
+    parsed.command = 'stop';
+    return parsed;
+  }
+
+  if (argv[0] === 'tui') {
+    parsed.command = 'tui';
+    return parsed;
+  }
+
+  if (argv[0] === 'webui') {
+    parsed.command = 'webui';
+    return parsed;
   }
 
   if (argv[0] === 'setup' || argv[0] === 'onboard') {
@@ -219,79 +233,98 @@ function parseArgs(argv: string[]): ParsedArgs {
   return parsed;
 }
 
-async function promptForStartActionWithFallback(): Promise<StartLaunchAction> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    return 'webui';
+async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
+  const { spawn } = await import('node:child_process');
+  const { writeGatewayPid } = await import('./config/gateway-daemon.js');
+
+  const extraArgs: string[] = [];
+  if (args.provider) extraArgs.push('--provider', args.provider);
+  if (args.model) extraArgs.push('--model', args.model);
+  if (args.maxSteps) extraArgs.push('--max-steps', String(args.maxSteps));
+
+  const child = spawn(
+    process.execPath,
+    [process.argv[1], 'gateway-start', ...extraArgs],
+    {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env },
+    },
+  );
+
+  child.unref();
+
+  if (!child.pid) {
+    throw new Error('Failed to spawn gateway daemon.');
   }
 
-  return promptForStartAction();
+  writeGatewayPid(child.pid);
+  return child.pid;
 }
 
-async function resolveStartTarget(args: ParsedArgs, configService: YagrConfigService): Promise<'webui' | 'tui' | undefined> {
-  if (args.startTarget) {
-    return args.startTarget;
+async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  await refreshN8nWorkspaceInstructionsAtLaunch();
+  const supervisorStatus = getGatewaySupervisorStatus(configService);
+
+  if (supervisorStatus.startableSurfaces.length === 0) {
+    process.stdout.write([
+      '',
+      'Yagr is configured.',
+      'No messaging gateways are enabled yet.',
+      '  \u00b7 Run `yagr tui`     to open a terminal chat session.',
+      '  \u00b7 Run `yagr webui`   to open the web interface.',
+      '  \u00b7 Run `yagr setup`   to configure Telegram or other gateways.',
+      '',
+    ].join('\n'));
+    return;
   }
 
-  for (;;) {
-    const action = await promptForStartActionWithFallback();
+  const { isGatewayRunning, getGatewayLogPath } = await import('./config/gateway-daemon.js');
 
-    if (action === 'cancel') {
-      return undefined;
-    }
-
-    if (action === 'onboard') {
-      const completed = await runYagrSetup(configService);
-      if (!completed) {
-        return undefined;
-      }
-      continue;
-    }
-
-    return action;
+  const running = isGatewayRunning();
+  if (running.running) {
+    process.stdout.write(`Gateway already running (PID ${running.pid}).\n`);
+    process.stdout.write(getGatewayRunningBanner(configService, running.pid));
+    return;
   }
+
+  process.stdout.write('Starting Yagr gateway...\n');
+  const pid = await spawnGatewayDaemon(args);
+
+  // Give the daemon time to connect and fail fast if broken
+  await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+
+  try {
+    process.kill(pid, 0);
+  } catch {
+    const { clearGatewayPid } = await import('./config/gateway-daemon.js');
+    clearGatewayPid();
+    throw new Error(`Gateway daemon failed to start. Check logs: ${getGatewayLogPath()}`);
+  }
+
+  process.stdout.write(getGatewayRunningBanner(configService, pid));
 }
 
-function getBackgroundGatewaySurfaces(configService: YagrConfigService) {
-  const status = getGatewaySupervisorStatus(configService);
-  return status.startableSurfaces.filter((id) => id !== 'webui');
-}
-
-async function runTui(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  const bgSurfaces = getBackgroundGatewaySurfaces(configService);
+async function runTui(args: ParsedArgs): Promise<void> {
   const engine = await createN8nEngineFromWorkspace();
-  const engineResolver = () => Promise.resolve(engine);
-
-  const stopBgGateways = bgSurfaces.length > 0
-    ? await startGatewaySurfacesInBackground(bgSurfaces, engineResolver, {
-        provider: args.provider,
-        model: args.model,
-        maxSteps: args.maxSteps,
-      }, configService)
-    : async () => {};
-
   const agent = new YagrAgent(engine);
   const { runCliGateway } = await import('./gateway/cli.js');
 
-  try {
-    await runCliGateway(agent, {
-      prompt: args.prompt,
-      interactive: true,
-      provider: args.provider,
-      model: args.model,
-      maxSteps: args.maxSteps,
-      display: {
-        showThinking: args.showThinking,
-        showExecution: args.showExecution,
-      },
-    });
-  } finally {
-    await stopBgGateways();
-  }
+  await runCliGateway(agent, {
+    prompt: args.prompt,
+    interactive: true,
+    provider: args.provider,
+    model: args.model,
+    maxSteps: args.maxSteps,
+    display: {
+      showThinking: args.showThinking,
+      showExecution: args.showExecution,
+    },
+  });
 }
 
 async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  const bgSurfaces = getBackgroundGatewaySurfaces(configService);
-  await runGatewaySurfaces(['webui', ...bgSurfaces], async () => await createN8nEngineFromWorkspace(), {
+  await runGatewaySurfaces(['webui'], async () => await createN8nEngineFromWorkspace(), {
     provider: args.provider,
     model: args.model,
     maxSteps: args.maxSteps,
@@ -389,18 +422,7 @@ async function main(): Promise<void> {
       if (!completed) {
         return;
       }
-
-      const startTarget = await resolveStartTarget(args, configService);
-      if (!startTarget) {
-        return;
-      }
-
-      if (startTarget === 'webui') {
-        await runWebUi(args, configService);
-        return;
-      }
-
-      await runTui(args, configService);
+      await runGatewayOrFallback(args, configService);
       return;
     }
 
@@ -428,6 +450,22 @@ async function main(): Promise<void> {
     }
   }
 
+  if (args.command === 'stop') {
+    const { isGatewayRunning, clearGatewayPid } = await import('./config/gateway-daemon.js');
+    const running = isGatewayRunning();
+    if (!running.running || !running.pid) {
+      process.stdout.write('No gateway is currently running.\n');
+      return;
+    }
+
+    process.kill(running.pid, 'SIGTERM');
+    // Give the process a moment to clean up, then ensure PID file is gone
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    clearGatewayPid();
+    process.stdout.write(`Gateway stopped (PID ${running.pid}).\n`);
+    return;
+  }
+
   if (args.command === 'gateway-start') {
     await refreshN8nWorkspaceInstructionsAtLaunch();
     await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
@@ -447,19 +485,46 @@ async function main(): Promise<void> {
       }
     }
 
-    const startTarget = await resolveStartTarget(args, configService);
-    if (!startTarget) {
+    if (args.startTarget === 'tui') {
+      await refreshN8nWorkspaceInstructionsAtLaunch();
+      await runTui(args);
       return;
     }
 
-    if (startTarget === 'webui') {
+    if (args.startTarget === 'webui') {
       await refreshN8nWorkspaceInstructionsAtLaunch();
       await runWebUi(args, configService);
       return;
     }
 
+    // No explicit target — start all configured gateways
+    await runGatewayOrFallback(args, configService);
+    return;
+  }
+
+  if (args.command === 'tui') {
+    const status = getYagrSetupStatus(configService);
+    if (!status.ready) {
+      const completed = await runYagrSetup(configService);
+      if (!completed) {
+        return;
+      }
+    }
     await refreshN8nWorkspaceInstructionsAtLaunch();
-    await runTui(args, configService);
+    await runTui(args);
+    return;
+  }
+
+  if (args.command === 'webui') {
+    const status = getYagrSetupStatus(configService);
+    if (!status.ready) {
+      const completed = await runYagrSetup(configService);
+      if (!completed) {
+        return;
+      }
+    }
+    await refreshN8nWorkspaceInstructionsAtLaunch();
+    await runWebUi(args, configService);
     return;
   }
 

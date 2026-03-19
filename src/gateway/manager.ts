@@ -273,6 +273,36 @@ export async function runGatewaySurfaces(
   });
 }
 
+function buildRunningBanner(configService: YagrConfigService, startableSurfaces: GatewaySurface[], pid?: number): string {
+  const RULE = '─'.repeat(54);
+  const lines: string[] = ['', RULE, '  Yagr is running.' + (pid ? `  (PID ${pid})` : ''), ''];
+
+  const tgStatus = getTelegramGatewayStatus(configService);
+  if (tgStatus.configured && tgStatus.botUsername && startableSurfaces.includes('telegram')) {
+    lines.push(`  · Telegram:   open @${tgStatus.botUsername} in Telegram`);
+  }
+
+  if (startableSurfaces.includes('webui')) {
+    const webUiStatus = getWebUiGatewayStatus(configService);
+    lines.push(`  · Web UI:     ${webUiStatus.url}`);
+  } else {
+    lines.push('  · Web UI:     yagr webui  (starts a local web session)');
+  }
+
+  lines.push('  · Terminal:   yagr tui');
+  lines.push('');
+  lines.push('  To stop: yagr stop');
+  lines.push(RULE);
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+export function getGatewayRunningBanner(configService = new YagrConfigService(), pid?: number): string {
+  const status = getGatewaySupervisorStatus(configService);
+  return buildRunningBanner(configService, status.startableSurfaces, pid);
+}
+
 export async function runGatewaySupervisor(
   engineResolver: () => Promise<Engine>,
   options: YagrRunOptions = {},
@@ -318,9 +348,18 @@ export async function runGatewaySupervisor(
     }
   }
 
+  process.stdout.write(buildRunningBanner(configService, status.startableSurfaces, undefined));
+
   await new Promise<void>((resolve) => {
     const stop = async () => {
       await stopRuntimeHandles(runtimes);
+      // Clean up PID file if it points to this process
+      try {
+        const { readGatewayPid, clearGatewayPid } = await import('../config/gateway-daemon.js');
+        if (readGatewayPid() === process.pid) {
+          clearGatewayPid();
+        }
+      } catch { /* ignore */ }
       resolve();
     };
 
