@@ -6,8 +6,6 @@ import test from 'node:test';
 import {
   getYagrHomeDir,
   getYagrLaunchDir,
-  getYagrN8nSkillDir,
-  getYagrN8nSkillPath,
   getYagrN8nWorkspaceDir,
   getYagrPaths,
   resolveLegacyConfStorePath,
@@ -65,8 +63,7 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
     const paths = getYagrPaths();
     assert.equal(paths.homeDir, path.resolve(getYagrLaunchDir(), '.yagr-test-workspace'));
     assert.equal(paths.n8nWorkspaceDir, path.join(paths.homeDir, 'n8n-workspace'));
-    assert.equal(paths.n8nSkillDir, path.join(paths.homeDir, 'n8n-architect'));
-    assert.equal(paths.n8nSkillPath, path.join(paths.n8nSkillDir, 'SKILL.md'));
+    assert.equal(paths.workspaceInstructionsPath, path.join(paths.n8nWorkspaceDir, 'AGENTS.md'));
     assert.equal(paths.yagrConfigPath, path.join(paths.homeDir, 'yagr-config.json'));
     assert.equal(paths.yagrCredentialsPath, path.join(paths.homeDir, 'credentials.json'));
     assert.equal(paths.n8nConfigPath, path.join(paths.n8nWorkspaceDir, 'n8nac-config.json'));
@@ -80,15 +77,13 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
   }
 });
 
-test('explicit n8n workspace and skill helpers resolve under YAGR_HOME', () => {
+test('explicit n8n workspace helper resolves under YAGR_HOME', () => {
   const previousYagrHome = process.env.YAGR_HOME;
   process.env.YAGR_HOME = '.yagr-test-workspace';
 
   try {
     const homeDir = path.resolve(getYagrLaunchDir(), '.yagr-test-workspace');
     assert.equal(getYagrN8nWorkspaceDir(), path.join(homeDir, 'n8n-workspace'));
-    assert.equal(getYagrN8nSkillDir(), path.join(homeDir, 'n8n-architect'));
-    assert.equal(getYagrN8nSkillPath(), path.join(homeDir, 'n8n-architect', 'SKILL.md'));
   } finally {
     if (previousYagrHome !== undefined) {
       process.env.YAGR_HOME = previousYagrHome;

@@ -15,7 +15,7 @@ import {
 } from './gateway/telegram.js';
 import { YagrAgent } from './agent.js';
 import type { YagrModelProvider } from './llm/create-language-model.js';
-import { getYagrSetupStatus, runYagrSetup } from './setup.js';
+import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrSetup } from './setup.js';
 import { promptForStartAction, type StartLaunchAction } from './setup/start-launcher.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [
@@ -277,6 +277,14 @@ async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Pro
   }, configService);
 }
 
+async function refreshN8nWorkspaceInstructionsAtLaunch(): Promise<void> {
+  try {
+    await refreshN8nWorkspaceInstructionsFromSavedConfig();
+  } catch (error) {
+    process.stderr.write(`Warning: n8n workspace instructions refresh failed during launch: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const configService = new YagrConfigService();
@@ -400,6 +408,7 @@ async function main(): Promise<void> {
   }
 
   if (args.command === 'gateway-start') {
+    await refreshN8nWorkspaceInstructionsAtLaunch();
     await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
       provider: args.provider,
       model: args.model,
@@ -423,15 +432,18 @@ async function main(): Promise<void> {
     }
 
     if (startTarget === 'webui') {
+      await refreshN8nWorkspaceInstructionsAtLaunch();
       await runWebUi(args, configService);
       return;
     }
 
+    await refreshN8nWorkspaceInstructionsAtLaunch();
     await runTui(args);
     return;
   }
 
   if (args.command === 'telegram-start') {
+    await refreshN8nWorkspaceInstructionsAtLaunch();
     await runTelegramGateway(async () => await createN8nEngineFromWorkspace(), {
       provider: args.provider,
       model: args.model,
@@ -440,6 +452,7 @@ async function main(): Promise<void> {
     return;
   }
 
+  await refreshN8nWorkspaceInstructionsAtLaunch();
   const engine = await createN8nEngineFromWorkspace();
 
   const agent = new YagrAgent(engine);
