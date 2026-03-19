@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.9](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.8...yagr@v0.2.9) (2026-03-19)
+
+
+### Features
+
+* clarify n8n as the primary orchestrator and future support for additional orchestrators ([dffbd01](https://github.com/EtienneLescot/yagr/commit/dffbd01f95142bc3ecd6168cfac2b88f879ce57e))
+
+
+### Bug Fixes
+
+* add hyperlink to n8n in README for clarity ([6a8876b](https://github.com/EtienneLescot/yagr/commit/6a8876b80247ef47f7f7ec45f50f29cf785496dd))
+* remove outdated link to n8n-as-code in README ([ac62541](https://github.com/EtienneLescot/yagr/commit/ac6254188964d17db79fc99368efb9445d9d77ab))
+* remove WhatsApp checkbox from setup page as runtime is not yet available ([0172eb5](https://github.com/EtienneLescot/yagr/commit/0172eb5611fe042b26e068fc985d5a386e597964))
+* update n8n-as-code links in README for accuracy ([a0404fb](https://github.com/EtienneLescot/yagr/commit/a0404fb82f88aae6f9541a88445e85cffefe76c1))
+
 ## [0.2.8](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.7...yagr@v0.2.8) (2026-03-19)
 
 
