@@ -5,6 +5,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
 import type { YagrAgent } from '../agent.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
+import {
+  type WorkflowEmbed,
+  buildWorkflowFooterTerminal,
+  extractWorkflowEmbed,
+} from './format-message.js';
 import type {
   YagrAgentState,
   YagrContextCompactionEvent,
@@ -301,6 +306,90 @@ function IntermediateMessages({ entries }: { entries: FeedEntry[] }): JSX.Elemen
   );
 }
 
+// ---------------------------------------------------------------------------
+// TerminalMarkdown: light markdown rendering for assistant responses
+// ---------------------------------------------------------------------------
+
+type MdSegment =
+  | { kind: 'heading'; text: string }
+  | { kind: 'code'; text: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'bullet'; text: string };
+
+function parseMarkdownSegments(md: string): MdSegment[] {
+  const segments: MdSegment[] = [];
+  const lines = md.split('\n');
+  let inCode = false;
+  const codeBuf: string[] = [];
+
+  for (const line of lines) {
+    if (line.trimStart().startsWith('```')) {
+      if (inCode) {
+        segments.push({ kind: 'code', text: codeBuf.join('\n') });
+        codeBuf.length = 0;
+      }
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) { codeBuf.push(line); continue; }
+
+    const trimmed = line.trimStart();
+    if (/^#{1,6}\s/.test(trimmed)) {
+      segments.push({ kind: 'heading', text: trimmed.replace(/^#{1,6}\s+/, '') });
+    } else if (/^[-*]\s/.test(trimmed)) {
+      segments.push({ kind: 'bullet', text: trimmed.replace(/^[-*]\s+/, '') });
+    } else {
+      segments.push({ kind: 'text', text: line });
+    }
+  }
+  if (codeBuf.length > 0) {
+    segments.push({ kind: 'code', text: codeBuf.join('\n') });
+  }
+  return segments;
+}
+
+function stripInlineMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '$1')
+    .replace(/`([^`]+)`/g, '$1');
+}
+
+function TerminalMarkdown({ text }: { text: string }): JSX.Element {
+  const segments = useMemo(() => parseMarkdownSegments(text), [text]);
+
+  return (
+    <Box flexDirection="column">
+      {segments.map((seg, i) => {
+        switch (seg.kind) {
+          case 'heading':
+            return <Text key={i} color="green" bold>{stripInlineMarkdown(seg.text)}</Text>;
+          case 'code':
+            return (
+              <Box key={i} marginLeft={2} marginY={0}>
+                <Text color="gray">{seg.text}</Text>
+              </Box>
+            );
+          case 'bullet':
+            return <Text key={i} color="green">  • {stripInlineMarkdown(seg.text)}</Text>;
+          default:
+            return <Text key={i} color="green">{stripInlineMarkdown(seg.text)}</Text>;
+        }
+      })}
+    </Box>
+  );
+}
+
+function WorkflowEmbedFooter({ embeds }: { embeds: WorkflowEmbed[] }): JSX.Element | null {
+  if (embeds.length === 0) return null;
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text>{buildWorkflowFooterTerminal(embeds)}</Text>
+    </Box>
+  );
+}
+
 function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   const app = useApp();
   const { stdout } = useStdout();
@@ -319,6 +408,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   const [lastUserPrompt, setLastUserPrompt] = useState('');
   const [statusPulse, setStatusPulse] = useState(0);
   const [activeOperationText, setActiveOperationText] = useState('Pret pour une demande.');
+  const [workflowEmbeds, setWorkflowEmbeds] = useState<WorkflowEmbed[]>([]);
   const nextEntryIdRef = useRef(1);
   const commandBuffersRef = useRef({ stdout: '', stderr: '', command: '', toolName: '' });
   const workspaceLabel = useMemo(() => basename(getYagrN8nWorkspaceDir()), []);
@@ -414,9 +504,13 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
 
     if (event.type === 'embed' && event.kind === 'workflow') {
-      const label = event.title ? `${event.title} — ${event.url}` : event.url;
-      pushEntry('result', 'Workflow disponible', label, 'strong');
-      setActiveOperationText(`Workflow pret : ${event.url}`);
+      const embed = extractWorkflowEmbed(event);
+      if (embed) {
+        setWorkflowEmbeds((prev) => [...prev, embed]);
+        const label = embed.title ? `${embed.title} — ${embed.url}` : embed.url;
+        pushEntry('result', 'Workflow disponible', label, 'strong');
+        setActiveOperationText(`Workflow pret : ${embed.url}`);
+      }
     }
   }, [display.showThinking, pushEntry]);
 
@@ -439,6 +533,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     setPhaseStatusText('Analyse en cours...');
     setActiveOperationText('Analyse du workspace et des contraintes.');
     setLiveAssistantText('');
+    setWorkflowEmbeds([]);
 
     try {
       const result = await agent.run(prompt, {
@@ -538,6 +633,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
       setLatestAssistantText('');
       setLastUserPrompt('');
       setActiveOperationText('Pret pour une demande.');
+      setWorkflowEmbeds([]);
       commandBuffersRef.current = { stdout: '', stderr: '', command: '', toolName: '' };
       return;
     }
@@ -658,7 +754,10 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
             <Text color="green">{liveAssistantText}</Text>
           </Box>
         ) : latestAssistantText ? (
-          <Text color="green">{latestAssistantText}</Text>
+          <Box flexDirection="column">
+            <TerminalMarkdown text={latestAssistantText} />
+            <WorkflowEmbedFooter embeds={workflowEmbeds} />
+          </Box>
         ) : isRunning ? (
           <IntermediateMessages entries={recentIntermediateEntries} />
         ) : (

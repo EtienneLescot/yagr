@@ -5,6 +5,13 @@ import { YagrAgent } from '../agent.js';
 import { YagrConfigService, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
 import type { Engine } from '../engine/engine.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
+import {
+  type WorkflowEmbed,
+  buildWorkflowFooterHtml,
+  extractWorkflowEmbed,
+  markdownToTelegramHtml,
+  escapeHtml,
+} from './format-message.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
@@ -422,6 +429,18 @@ class TelegramGateway implements Gateway {
     }
   }
 
+  private async sendHtml(chatId: string, html: string): Promise<void> {
+    const parts = splitTelegramMessage(html);
+    for (const part of parts) {
+      try {
+        await this.bot.telegram.sendMessage(Number(chatId), part, { parse_mode: 'HTML' });
+      } catch {
+        // Fallback to plain text if HTML parsing fails
+        await this.bot.telegram.sendMessage(Number(chatId), part);
+      }
+    }
+  }
+
   private linkChat(chat: YagrTelegramLinkedChat): void {
     this.configService.updateLocalConfig((localConfig) => ({
       ...localConfig,
@@ -494,10 +513,17 @@ class TelegramGateway implements Gateway {
     this.runningChats.add(chatId);
     try {
       await reply('Yagr travaille...');
+
+      const embeds: WorkflowEmbed[] = [];
       const result = await (await this.getAgent(chatId)).run(prompt, {
         ...this.options,
         display: undefined,
         satisfiedRequiredActionIds: satisfiedRequiredActions.map((action) => action.id),
+        onToolEvent: async (event) => {
+          const embed = extractWorkflowEmbed(event);
+          if (embed) embeds.push(embed);
+          await this.options.onToolEvent?.(event);
+        },
       });
 
       if (result.requiredActions.length > 0) {
@@ -506,21 +532,23 @@ class TelegramGateway implements Gateway {
         this.pendingApprovals.delete(chatId);
       }
 
-      const sections = [result.text.trim()];
+      const htmlSections = [markdownToTelegramHtml(result.text.trim())];
+      const workflowFooter = buildWorkflowFooterHtml(embeds);
+      if (workflowFooter) {
+        htmlSections.push(workflowFooter);
+      }
       const requiredActionsText = formatRequiredActions(result.requiredActions);
       if (requiredActionsText) {
-        sections.push(requiredActionsText);
+        htmlSections.push(escapeHtml(requiredActionsText));
       }
 
-      const message = sections.filter(Boolean).join('\n\n');
-      if (!message) {
+      const htmlMessage = htmlSections.filter(Boolean).join('\n\n');
+      if (!htmlMessage) {
         await reply('Run termine, mais aucune reponse textuelle n’a ete produite.');
         return;
       }
 
-      for (const chunk of splitTelegramMessage(message)) {
-        await reply(chunk);
-      }
+      await this.sendHtml(chatId, htmlMessage);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await reply(`Run echoue: ${message}`);
