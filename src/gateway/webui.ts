@@ -12,7 +12,7 @@ import {
 import { Command } from 'commander';
 import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
 import { YagrAgent } from '../agent.js';
-import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { resolveWorkflowDir, YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import type { Engine } from '../engine/engine.js';
@@ -489,14 +489,18 @@ class WebUiGateway implements Gateway {
     configService.saveApiKey(host, apiKey);
     configService.saveBootstrapState(host, syncFolder);
     const instanceIdentifier = await configService.getOrCreateInstanceIdentifier(host);
+    const projectName = getDisplayProjectName(selectedProject);
     configService.saveLocalConfig({
       host,
       syncFolder,
       projectId: selectedProject.id,
-      projectName: getDisplayProjectName(selectedProject),
+      projectName,
       instanceIdentifier,
     });
-    WorkspaceSetupService.ensureWorkspaceFiles(syncFolder);
+    const workflowDir = resolveWorkflowDir({ syncFolder, instanceIdentifier, projectName });
+    if (workflowDir) {
+      WorkspaceSetupService.ensureWorkspaceFiles(workflowDir);
+    }
 
     try {
       await refreshAiContext({ host, apiKey });
