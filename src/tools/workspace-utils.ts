@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getYagrHomeDir } from '../config/yagr-home.js';
+import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 
 const DEFAULT_TEXT_LIMIT = 12_000;
 
 export function workspaceRoot(): string {
-  return getYagrHomeDir();
+  return getYagrN8nWorkspaceDir();
 }
 
 export function resolveWorkspacePath(targetPath = '.'): string {

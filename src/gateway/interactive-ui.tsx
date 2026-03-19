@@ -4,7 +4,7 @@ import TextInput from 'ink-text-input';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
 import type { YagrAgent } from '../agent.js';
-import { getYagrHomeDir } from '../config/yagr-home.js';
+import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import type {
   YagrAgentState,
   YagrContextCompactionEvent,
@@ -261,7 +261,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   const [activeOperationText, setActiveOperationText] = useState('Pret pour une demande.');
   const nextEntryIdRef = useRef(1);
   const commandBuffersRef = useRef({ stdout: '', stderr: '', command: '', toolName: '' });
-  const workspaceLabel = useMemo(() => basename(getYagrHomeDir()), []);
+  const workspaceLabel = useMemo(() => basename(getYagrN8nWorkspaceDir()), []);
 
   useEffect(() => {
     if (!isRunning) {

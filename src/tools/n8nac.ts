@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { syncGeneratedN8nSkillFile } from '../config/yagr-home.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
 
@@ -329,6 +330,9 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         }
 
         const refresh = await runObservedN8nac(observer, ['update-ai'], cwd);
+        if (refresh.exitCode === 0) {
+          syncGeneratedN8nSkillFile(cwd);
+        }
         return {
           exitCode: result.exitCode,
           timedOut: result.timedOut,
@@ -338,8 +342,8 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           aiContextStdout: truncateText(refresh.stdout),
           aiContextStderr: truncateText(refresh.stderr),
           next: refresh.exitCode === 0
-            ? 'Workspace initialized and AGENTS.md refreshed.'
-            : 'Workspace initialized, but AGENTS.md refresh failed. Inspect aiContextStderr.',
+            ? 'Workspace initialized and the n8n skill instructions were refreshed.'
+            : 'Workspace initialized, but the n8n skill refresh failed. Inspect aiContextStderr.',
         };
       }
 
@@ -432,6 +436,9 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
 
       if (action === 'update_ai') {
         const result = await runObservedN8nac(observer, ['update-ai'], cwd);
+        if (result.exitCode === 0) {
+          syncGeneratedN8nSkillFile(cwd);
+        }
         return {
           exitCode: result.exitCode,
           timedOut: result.timedOut,

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { getYagrHomeDir, getYagrLaunchDir } from '../config/yagr-home.js';
+import { getYagrLaunchDir, getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import type { ToolExecutionObserver } from './observer.js';
 import { emitToolEvent } from './observer.js';
 
@@ -66,7 +66,7 @@ function findWorkflowFileById(rootDir: string, workflowId: string): string | und
 }
 
 export function resolveLocalWorkflowDiagram(workflowId: string): string | undefined {
-  const candidateRoots = Array.from(new Set([getYagrHomeDir(), getYagrLaunchDir()]));
+  const candidateRoots = Array.from(new Set([getYagrN8nWorkspaceDir(), getYagrLaunchDir()]));
 
   for (const rootDir of candidateRoots) {
     const workflowFile = findWorkflowFileById(rootDir, workflowId);

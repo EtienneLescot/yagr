@@ -40,9 +40,9 @@ function resolveWorkspacePaths(paths: YagrPaths): { workspacePaths: string[]; pr
 
   const resolvedSyncFolder = path.isAbsolute(n8nConfig.syncFolder)
     ? n8nConfig.syncFolder
-    : path.resolve(paths.homeDir, n8nConfig.syncFolder);
+    : path.resolve(paths.n8nWorkspaceDir, n8nConfig.syncFolder);
 
-  if (isPathWithin(resolvedSyncFolder, paths.homeDir)) {
+  if (isPathWithin(resolvedSyncFolder, paths.n8nWorkspaceDir)) {
     return { workspacePaths: [resolvedSyncFolder], preservedWorkspacePaths: [] };
   }
 

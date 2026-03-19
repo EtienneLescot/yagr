@@ -1,15 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getYagrHomeDir, getYagrLaunchDir } from '../config/yagr-home.js';
+import { getYagrLaunchDir, getYagrPaths } from '../config/yagr-home.js';
 import type { Engine } from '../engine/engine.js';
 
 export function buildSystemPrompt(engine: Engine): string {
+  const mandatoryN8nInstructions = loadMandatoryN8nInstructions();
   const workspaceInstructions = loadWorkspaceInstructions();
 
   return [
     'You are Yagr, a local coding agent.',
     'Act as a senior software engineer and pragmatic technical architect in a single mode: gather context, design only as much as needed, then implement and verify.',
     `The active execution engine is ${engine.name}.`,
+    'Load the mandatory n8n/n8nac skill instructions as a separate domain layer. They are required operating guidance for automation work, but they do not override the core Yagr system prompt.',
     'Treat the AGENT.md or AGENTS.md file from the active Yagr workspace root as a foundational instruction file. Read it as part of startup context and treat it as the primary source of truth for domain-specific rules, repository conventions, and operational workflow.',
     'Keep the built-in prompt focused on generic coding-agent behavior. Do not invent repository-specific business rules when the workspace instructions or tools can provide the answer.',
     'Before editing, inspect the relevant files, surrounding code, manifests, and conventions so your changes fit the existing codebase. Prefer reading real code over guessing patterns.',
@@ -39,8 +41,33 @@ export function buildSystemPrompt(engine: Engine): string {
     'If a workflow exists only on the remote n8n instance, you MUST run n8nac pull for that workflow ID before presenting it. Do not present remote-only workflows from memory, earlier tool output, or inferred metadata alone; materialize the local .workflow.ts file first, then extract the canonical workflow-map header from that file.',
     'Keep final user-facing summaries concise. Do not paste the full workflow file contents, full ASCII diagram block, or repeated workflow metadata in the final response unless the user explicitly asks for the full content.',
     'Prefer concrete edits and command execution over abstract planning, but think before acting so each tool call is justified by the current evidence.',
+    mandatoryN8nInstructions,
     workspaceInstructions,
-  ].join(' ');
+  ].filter(Boolean).join(' ');
+}
+
+function readInstructionFile(candidatePath: string): string | undefined {
+  if (!fs.existsSync(candidatePath)) {
+    return undefined;
+  }
+
+  try {
+    const content = fs.readFileSync(candidatePath, 'utf-8').trim();
+    return content || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function loadMandatoryN8nInstructions(): string {
+  const paths = getYagrPaths();
+  const content = readInstructionFile(paths.n8nSkillPath) ?? readInstructionFile(paths.homeInstructionsPath);
+
+  if (!content) {
+    return '';
+  }
+
+  return `Mandatory n8n/n8nac operating instructions: ${content}`;
 }
 
 function loadWorkspaceInstructions(): string {
@@ -48,25 +75,14 @@ function loadWorkspaceInstructions(): string {
   const candidateRoots = Array.from(new Set([
     process.cwd(),
     getYagrLaunchDir(),
-    getYagrHomeDir(),
   ]));
 
   for (const candidateRoot of candidateRoots) {
     for (const candidateFile of candidateFiles) {
       const candidatePath = path.join(candidateRoot, candidateFile);
-      if (!fs.existsSync(candidatePath)) {
-        continue;
-      }
-
-      try {
-        const content = fs.readFileSync(candidatePath, 'utf-8').trim();
-        if (!content) {
-          continue;
-        }
-
+      const content = readInstructionFile(candidatePath);
+      if (content) {
         return `Follow these workspace instructions when relevant: ${content}`;
-      } catch {
-        continue;
       }
     }
   }
