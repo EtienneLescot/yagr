@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { buildSystemPrompt } from '../dist/prompt/build-system-prompt.js';
+import { buildSystemPrompt, buildSystemPromptSnapshot } from '../dist/prompt/build-system-prompt.js';
 
 function withTempInstructionRoots(tempDir, callback) {
   const previousHome = process.env.YAGR_HOME;
@@ -157,5 +157,22 @@ test('home AGENTS does not replace missing workspace instructions', () => {
     process.chdir(previousCwd);
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('system prompt snapshot fingerprint changes when workspace instructions change', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-prompt-'));
+
+  try {
+    writeWorkspaceInstructions(tempDir, '# Workspace Rules\nUse the first routing pattern.\n');
+    const firstSnapshot = withTempInstructionRoots(tempDir, () => buildSystemPromptSnapshot({ name: 'test-engine' }));
+
+    writeWorkspaceInstructions(tempDir, '# Workspace Rules\nUse the second routing pattern.\n');
+    const secondSnapshot = withTempInstructionRoots(tempDir, () => buildSystemPromptSnapshot({ name: 'test-engine' }));
+
+    assert.notEqual(firstSnapshot.workspaceInstructions?.fingerprint, secondSnapshot.workspaceInstructions?.fingerprint);
+    assert.match(secondSnapshot.systemPrompt, /Use the second routing pattern/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
