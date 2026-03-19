@@ -31,23 +31,18 @@ const MAX_EXECUTION_ATTEMPTS = 3;
 const PHASE_ORDER: YagrRunPhase[] = ['inspect', 'plan', 'edit', 'validate', 'sync', 'verify', 'summarize'];
 const STREAM_FILTER_HOLDBACK = 256;
 
-const INTERNAL_PROMPT_PATTERNS = [
-  /Yagr internal phase:\s*(?:inspect|execute)\.\s*/g,
-  /Yagr internal recovery pass \d+\.\s*/g,
-  /Analyze the request and gather only the context needed to execute it correctly\.\s*/g,
-  /Use tools to inspect the workspace, existing workflow files, workspace instructions, examples, and n8nac workspace status when needed\.\s*/g,
-  /Favor correctness over speed in this phase\. If an example or rule is likely to determine the right implementation, read it before acting\.\s*/g,
-  /Do not claim completion in this phase\.\s*/g,
-  /Complete the task end-to-end using the gathered context\.\s*/g,
-  /When appropriate, author or edit workflow files, validate them, sync them, verify them, and then summarize what changed\.\s*/g,
-  /Ask the user only when a specific missing value blocks execution\.\s*/g,
-  /Do not summarize yet\.\s*/g,
-  /Inspect the failing tool output, correct the local files or command arguments, and retry the necessary steps now\.\s*/g,
-  /Only stop if a genuine blocker remains that cannot be resolved locally in this run\.\s*/g,
-  /Actions en echec:[^\n]*(?:\n|$)/g,
-  /Etapes non confirmees:[^\n]*(?:\n|$)/g,
-  /Original request:[^\n]*(?:\n|$)/g,
-];
+/**
+ * Structural delimiters injected around every internal prompt (phase instructions,
+ * recovery prompts). The stream filter strips everything between an open and a close
+ * tag — one single regex, no coupling to the prompt wording.
+ */
+export const INTERNAL_TAG_OPEN = '\u200B\u27E8yagr:internal\u27E9\u200B';
+export const INTERNAL_TAG_CLOSE = '\u200B\u27E8/yagr:internal\u27E9\u200B';
+
+const INTERNAL_TAG_REGEX = new RegExp(
+  `${INTERNAL_TAG_OPEN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${INTERNAL_TAG_CLOSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+  'g',
+);
 
 type AssistantStreamFilterState = {
   rawText: string;
@@ -107,9 +102,13 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   throw createAbortError(typeof signal.reason === 'string' && signal.reason ? signal.reason : undefined);
 }
 
+function wrapInternal(text: string): string {
+  return `${INTERNAL_TAG_OPEN}${text}${INTERNAL_TAG_CLOSE}`;
+}
+
 function createPhasePrompt(phase: 'inspect' | 'execute', userPrompt: string): string {
   if (phase === 'inspect') {
-    return [
+    return wrapInternal([
       'Yagr internal phase: inspect.',
       'Analyze the request and gather only the context needed to execute it correctly.',
       'Use tools to inspect the workspace, existing workflow files, examples, and n8nac workspace status when needed.',
@@ -117,16 +116,16 @@ function createPhasePrompt(phase: 'inspect' | 'execute', userPrompt: string): st
       'Favor correctness over speed in this phase. If an example or rule is likely to determine the right implementation, read it before acting.',
       'Do not claim completion in this phase.',
       `Original request: ${userPrompt}`,
-    ].join('\n');
+    ].join('\n'));
   }
 
-  return [
+  return wrapInternal([
     'Yagr internal phase: execute.',
     'Complete the task end-to-end using the gathered context.',
     'When appropriate, author or edit workflow files, validate them, sync them, verify them, and then summarize what changed.',
     'Ask the user only when a specific missing value blocks execution.',
     `Original request: ${userPrompt}`,
-  ].join('\n');
+  ].join('\n'));
 }
 
 function trimAssistantVisibleText(text: string, maxChars = 12_000): string {
@@ -151,13 +150,7 @@ function hasRepeatedSuffix(text: string, minimumBlockSize = 180, maximumBlockSiz
 }
 
 function stripInternalPromptScaffolding(text: string): string {
-  let next = text;
-
-  for (const pattern of INTERNAL_PROMPT_PATTERNS) {
-    next = next.replace(pattern, '');
-  }
-
-  return next;
+  return text.replace(INTERNAL_TAG_REGEX, '');
 }
 
 export function sanitizeAssistantOutput(text: string): string {
@@ -220,8 +213,8 @@ export function sanitizeAssistantResponseMessages(messages: readonly CoreMessage
 }
 
 export function shouldAbortForInternalPromptLeak(rawText: string, visibleText = ''): boolean {
-  const internalMarkerCount = (rawText.match(/Yagr internal (?:phase|recovery pass)/g) ?? []).length;
-  if (internalMarkerCount < 2) {
+  const tagCount = (rawText.match(INTERNAL_TAG_REGEX) ?? []).length;
+  if (tagCount < 2) {
     return false;
   }
 
@@ -234,17 +227,7 @@ export function shouldAbortForRepetitiveAssistantOutput(visibleText: string): bo
     return false;
   }
 
-  if (hasRepeatedSuffix(normalized)) {
-    return true;
-  }
-
-  const repeatedWorkflowBundle = [
-    'Final workflow content:',
-    'Final workflow status:',
-    'Final workflow URL:',
-  ].every((marker) => normalized.indexOf(marker) !== -1 && normalized.indexOf(marker) !== normalized.lastIndexOf(marker));
-
-  return repeatedWorkflowBundle;
+  return hasRepeatedSuffix(normalized);
 }
 
 function appendVisibleAssistantText(state: AssistantStreamFilterState, text: string): void {
@@ -443,32 +426,22 @@ function buildGroundedSummary(
   return lines.join('\n');
 }
 
-async function ensureFinalText(
-  _options: YagrRunOptions,
+function ensureFinalText(
   prompt: string,
   finishReason: string,
   journal: YagrRunJournalEntry[],
   existingText: string,
   requiredActions: YagrRequiredAction[],
   completionAccepted: boolean,
-  completionReasons: string[],
-): Promise<string> {
-  const groundedSummary = buildGroundedSummary(prompt, finishReason, journal, requiredActions);
+): string {
   const sanitizedText = sanitizeAssistantOutput(existingText);
 
-  if (!completionAccepted) {
-    if (groundedSummary) {
-      return groundedSummary;
-    }
-
-    return completionReasons[0] ?? 'Run stopped before producing a grounded result.';
+  if (completionAccepted && sanitizedText) {
+    return sanitizedText;
   }
 
-  if (!sanitizedText) {
-    return groundedSummary;
-  }
-
-  return sanitizedText;
+  return buildGroundedSummary(prompt, finishReason, journal, requiredActions)
+    || 'Run stopped before producing a grounded result.';
 }
 
 function buildRuntimeContext(state: RunState): YagrRuntimeContext {
@@ -616,13 +589,13 @@ function buildRecoveryPrompt(outcome: RunOutcome, attemptNumber: number): string
     missingChecks.length > 0 ? `Etapes non confirmees: ${missingChecks.join(', ')}.` : '',
   ].filter(Boolean).join(' ');
 
-  return [
+  return wrapInternal([
     `Yagr internal recovery pass ${attemptNumber}.`,
     issues,
     'Do not summarize yet.',
     'Inspect the failing tool output, correct the local files or command arguments, and retry the necessary steps now.',
     'Only stop if a genuine blocker remains that cannot be resolved locally in this run.',
-  ].join(' ');
+  ].join(' '));
 }
 
 async function executePhase(
@@ -955,7 +928,7 @@ export class YagrRunEngine {
       }
 
       throwIfAborted(options.abortSignal);
-      text = await ensureFinalText(options, prompt, finishReason, state.journal, text, completionDecision.requiredActions, completionDecision.accepted, completionDecision.reasons);
+      text = ensureFinalText(prompt, finishReason, state.journal, text, completionDecision.requiredActions, completionDecision.accepted);
 
       if (state.currentPhase && state.currentPhase !== 'summarize') {
         await transitionPhase(state, options, state.currentPhase, 'completed', `${state.currentPhase} phase completed.`);
