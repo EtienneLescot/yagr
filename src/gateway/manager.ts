@@ -155,6 +155,60 @@ async function stopRuntimeHandles(runtimes: GatewayRuntimeHandle[]): Promise<voi
   }));
 }
 
+/**
+ * Start the given gateway surfaces and return a `stop()` function for cleanup.
+ * Unlike `runGatewaySurfaces`, this does NOT block waiting for SIGINT — callers
+ * are responsible for calling `stop()` when they are done (e.g. after TUI exits).
+ */
+export async function startGatewaySurfacesInBackground(
+  surfaces: GatewaySurface[],
+  engineResolver: () => Promise<Engine>,
+  options: YagrRunOptions = {},
+  configService = new YagrConfigService(),
+): Promise<() => Promise<void>> {
+  const requestedSurfaces = Array.from(new Set(surfaces));
+  if (requestedSurfaces.length === 0) {
+    return async () => {};
+  }
+
+  const runtimes: GatewayRuntimeHandle[] = [];
+
+  for (const surface of requestedSurfaces) {
+    const descriptor = GATEWAY_DESCRIPTORS.find((entry) => entry.id === surface);
+    if (!descriptor?.createRuntime) {
+      continue;
+    }
+
+    const status = descriptor.getStatus(configService, true);
+    if (!status.implemented || !status.configured) {
+      process.stderr.write(`Warning: ${descriptor.label} gateway is not fully configured — skipping.\n`);
+      continue;
+    }
+
+    try {
+      const runtime = await descriptor.createRuntime(engineResolver, options, configService);
+      await runtime.gateway.start();
+      runtimes.push(runtime);
+
+      for (const line of runtime.startupMessages) {
+        process.stdout.write(`${line}\n`);
+      }
+
+      if (runtime.onboardingLink) {
+        process.stdout.write(`Onboarding link: ${runtime.onboardingLink}\n`);
+        qrcode.generate(runtime.onboardingLink, { small: true });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`Warning: Failed to start ${descriptor.label} gateway: ${message}\n`);
+    }
+  }
+
+  return async () => {
+    await Promise.allSettled(runtimes.map(async (r) => r.gateway.stop()));
+  };
+}
+
 export async function runGatewaySurfaces(
   surfaces: GatewaySurface[],
   engineResolver: () => Promise<Engine>,

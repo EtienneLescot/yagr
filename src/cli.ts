@@ -5,7 +5,7 @@ import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js
 import { buildYagrCleanupPlan, resetYagrLocalState, type YagrResetScope } from './config/local-state.js';
 import { YagrConfigService } from './config/yagr-config-service.js';
 import { getYagrPaths } from './config/yagr-home.js';
-import { getGatewaySupervisorStatus, runGatewaySupervisor, runGatewaySurfaces } from './gateway/manager.js';
+import { getGatewaySupervisorStatus, runGatewaySupervisor, runGatewaySurfaces, startGatewaySurfacesInBackground } from './gateway/manager.js';
 import {
   getTelegramGatewayStatus,
   resetTelegramGateway,
@@ -251,26 +251,47 @@ async function resolveStartTarget(args: ParsedArgs, configService: YagrConfigSer
   }
 }
 
-async function runTui(args: ParsedArgs): Promise<void> {
+function getBackgroundGatewaySurfaces(configService: YagrConfigService) {
+  const status = getGatewaySupervisorStatus(configService);
+  return status.startableSurfaces.filter((id) => id !== 'webui');
+}
+
+async function runTui(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  const bgSurfaces = getBackgroundGatewaySurfaces(configService);
   const engine = await createN8nEngineFromWorkspace();
+  const engineResolver = () => Promise.resolve(engine);
+
+  const stopBgGateways = bgSurfaces.length > 0
+    ? await startGatewaySurfacesInBackground(bgSurfaces, engineResolver, {
+        provider: args.provider,
+        model: args.model,
+        maxSteps: args.maxSteps,
+      }, configService)
+    : async () => {};
+
   const agent = new YagrAgent(engine);
   const { runCliGateway } = await import('./gateway/cli.js');
 
-  await runCliGateway(agent, {
-    prompt: args.prompt,
-    interactive: true,
-    provider: args.provider,
-    model: args.model,
-    maxSteps: args.maxSteps,
-    display: {
-      showThinking: args.showThinking,
-      showExecution: args.showExecution,
-    },
-  });
+  try {
+    await runCliGateway(agent, {
+      prompt: args.prompt,
+      interactive: true,
+      provider: args.provider,
+      model: args.model,
+      maxSteps: args.maxSteps,
+      display: {
+        showThinking: args.showThinking,
+        showExecution: args.showExecution,
+      },
+    });
+  } finally {
+    await stopBgGateways();
+  }
 }
 
 async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  await runGatewaySurfaces(['webui'], async () => await createN8nEngineFromWorkspace(), {
+  const bgSurfaces = getBackgroundGatewaySurfaces(configService);
+  await runGatewaySurfaces(['webui', ...bgSurfaces], async () => await createN8nEngineFromWorkspace(), {
     provider: args.provider,
     model: args.model,
     maxSteps: args.maxSteps,
@@ -379,7 +400,7 @@ async function main(): Promise<void> {
         return;
       }
 
-      await runTui(args);
+      await runTui(args, configService);
       return;
     }
 
@@ -438,7 +459,7 @@ async function main(): Promise<void> {
     }
 
     await refreshN8nWorkspaceInstructionsAtLaunch();
-    await runTui(args);
+    await runTui(args, configService);
     return;
   }
 
