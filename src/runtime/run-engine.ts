@@ -169,6 +169,56 @@ export function sanitizeAssistantOutput(text: string): string {
     .trim();
 }
 
+export function sanitizeAssistantMessageContent(content: CoreMessage['content']): CoreMessage['content'] {
+  if (typeof content === 'string') {
+    return sanitizeAssistantOutput(content);
+  }
+
+  if (!Array.isArray(content)) {
+    return content;
+  }
+
+  const sanitizedParts = content.flatMap((part) => {
+    if (!part || typeof part !== 'object') {
+      return [];
+    }
+
+    if ('type' in part && part.type === 'text' && 'text' in part && typeof part.text === 'string') {
+      const text = sanitizeAssistantOutput(part.text);
+      return text ? [{ ...part, text }] : [];
+    }
+
+    return [part];
+  });
+
+  return sanitizedParts as CoreMessage['content'];
+}
+
+export function sanitizeAssistantResponseMessages(messages: readonly CoreMessage[]): CoreMessage[] {
+  const sanitizedMessages: CoreMessage[] = [];
+
+  for (const message of messages) {
+    if (message.role !== 'assistant') {
+      sanitizedMessages.push(message);
+      continue;
+    }
+
+    const content = sanitizeAssistantMessageContent(message.content);
+
+    if (typeof content === 'string' && !content) {
+      continue;
+    }
+
+    if (Array.isArray(content) && content.length === 0) {
+      continue;
+    }
+
+    sanitizedMessages.push({ ...message, content } as CoreMessage);
+  }
+
+  return sanitizedMessages;
+}
+
 export function shouldAbortForInternalPromptLeak(rawText: string, visibleText = ''): boolean {
   const internalMarkerCount = (rawText.match(/Yagr internal (?:phase|recovery pass)/g) ?? []).length;
   if (internalMarkerCount < 2) {
@@ -807,7 +857,7 @@ export class YagrRunEngine {
         await transitionPhase(state, options, 'inspect', 'completed', 'Inspection completed.');
       }
 
-      executionContext.push(inspectInstruction, ...inspectResult.response.messages);
+      executionContext.push(...sanitizeAssistantResponseMessages(inspectResult.response.messages));
       throwIfAborted(options.abortSignal);
 
       await transitionPhase(state, options, 'plan', 'started', 'Preparing execution plan.');
@@ -842,7 +892,7 @@ export class YagrRunEngine {
         finishReason = phaseResult.finishReason;
         steps += phaseResult.steps;
         toolCalls = phaseResult.toolCalls;
-        responseMessages = [...responseMessages, ...phaseResult.responseMessages];
+        responseMessages = [...responseMessages, ...sanitizeAssistantResponseMessages(phaseResult.responseMessages)];
 
         const outcome = analyzeRunOutcome(state.journal);
         const requiredActions = collectRequiredActions(state.journal);
@@ -861,7 +911,7 @@ export class YagrRunEngine {
 
         executeMessages = [
           ...executeMessages,
-          ...phaseResult.responseMessages,
+          ...sanitizeAssistantResponseMessages(phaseResult.responseMessages),
           {
             role: 'user',
             content: buildRecoveryPrompt(outcome, attemptNumber + 1),

@@ -10,6 +10,7 @@ import { createWorkflowPresentationGuardHook, wrapToolsWithRuntimeHooks } from '
 import { collectRequiredActions } from '../dist/runtime/required-actions.js';
 import {
   sanitizeAssistantOutput,
+  sanitizeAssistantResponseMessages,
   shouldAbortForInternalPromptLeak,
   shouldAbortForRepetitiveAssistantOutput,
 } from '../dist/runtime/run-engine.js';
@@ -225,6 +226,61 @@ test('repeated final workflow bundle triggers repetitive output abort signal', (
 
   assert.equal(shouldAbortForRepetitiveAssistantOutput(`${bundle}\n\n${bundle}`), true);
   assert.equal(shouldAbortForRepetitiveAssistantOutput(bundle), false);
+});
+
+test('assistant response messages are sanitized before reuse across phases', () => {
+  const sanitized = sanitizeAssistantResponseMessages([
+    {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Yagr internal phase: inspect.\nOriginal request: hello\n' },
+        { type: 'text', text: 'Workflow cree: exotic.workflow.ts' },
+      ],
+    },
+    {
+      role: 'assistant',
+      content: 'Yagr internal phase: execute.\nOriginal request: hello\n',
+    },
+    {
+      role: 'tool',
+      content: [{ type: 'tool-result', toolCallId: 'call-1', toolName: 'listDirectory', result: { ok: true } }],
+    },
+  ]);
+
+  assert.equal(sanitized.length, 2);
+  assert.deepEqual(sanitized[0], {
+    role: 'assistant',
+    content: [
+      { type: 'text', text: 'Workflow cree: exotic.workflow.ts' },
+    ],
+  });
+  assert.equal(sanitized[1].role, 'tool');
+});
+
+test('sanitized inspect carry-over does not include the internal inspect control prompt', () => {
+  const inspectInstruction = {
+    role: 'user',
+    content: [
+      'Yagr internal phase: inspect.',
+      'Analyze the request and gather only the context needed to execute it correctly.',
+      'Original request: Est-ce que tu peux me faire un petit workflow exotique?',
+    ].join('\n'),
+  };
+
+  const inspectResponseMessages = sanitizeAssistantResponseMessages([
+    {
+      role: 'assistant',
+      content: 'Je vais inspecter les exemples disponibles.',
+    },
+  ]);
+
+  const executionContext = [
+    { role: 'user', content: 'Est-ce que tu peux me faire un petit workflow exotique?' },
+    ...inspectResponseMessages,
+  ];
+
+  assert.equal(executionContext.includes(inspectInstruction), false);
+  assert.equal(executionContext.some((message) => typeof message.content === 'string' && message.content.includes('Yagr internal phase: inspect.')), false);
 });
 
 test('successful push counts as validate and verify evidence for completion gating', async () => {
