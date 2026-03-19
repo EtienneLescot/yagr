@@ -292,4 +292,6 @@ export interface YagrRunResult {
   finalState: YagrAgentState;
   finalPhase: YagrRunPhase;
   journal: YagrRunJournalEntry[];
+  sessionInvalidated?: boolean;
+  sessionInvalidationReason?: string;
 }

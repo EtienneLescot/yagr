@@ -17,7 +17,6 @@ import type {
   YagrStateEvent,
   YagrToolEvent,
 } from '../types.js';
-import { buildSystemPrompt } from '../prompt/build-system-prompt.js';
 import { buildTools } from '../tools/index.js';
 import { evaluateCompletionGate } from './completion-gate.js';
 import { compactConversationContext } from './context-compaction.js';
@@ -74,6 +73,7 @@ function isRepetitiveAssistantOutputError(error: unknown): error is RepetitiveAs
 type ExecuteRunResult = {
   result: YagrRunResult;
   persistedMessages: CoreMessage[];
+  workspaceInstructionsMayHaveChanged: boolean;
 };
 
 type RunState = {
@@ -731,6 +731,7 @@ export class YagrRunEngine {
   constructor(
     private readonly engine: Engine,
     private readonly history: readonly CoreMessage[],
+    private readonly systemPrompt: string,
   ) {}
 
   async execute(prompt: string, options: YagrRunOptions = {}): Promise<ExecuteRunResult> {
@@ -747,7 +748,6 @@ export class YagrRunEngine {
       role: 'user',
       content: prompt,
     };
-    const systemPrompt = buildSystemPrompt(this.engine);
     const runtimeHooks = [...createDefaultRuntimeHooks(), ...(options.runtimeHooks ?? [])];
     const baseTools = buildTools(this.engine, {
       onToolEvent: withRuntimeToolEvents(state, options),
@@ -772,7 +772,7 @@ export class YagrRunEngine {
       throwIfAborted(options.abortSignal);
       await transitionPhase(state, options, 'inspect', 'started', 'Inspecting workspace and task context.');
 
-      executionContext = await maybeCompactMessages(state, options, systemPrompt, prompt, executionContext);
+      executionContext = await maybeCompactMessages(state, options, this.systemPrompt, prompt, executionContext);
 
       const inspectInstruction: CoreMessage = {
         role: 'user',
@@ -781,7 +781,7 @@ export class YagrRunEngine {
       const inspectResult = await generateText({
         abortSignal: options.abortSignal,
         model: createLanguageModel(options),
-        system: systemPrompt,
+        system: this.systemPrompt,
         tools,
         messages: [...executionContext, inspectInstruction],
         maxSteps: Math.min(options.maxSteps ?? 8, INSPECT_MAX_STEPS),
@@ -827,12 +827,12 @@ export class YagrRunEngine {
 
       for (let attemptNumber = 1; attemptNumber <= MAX_EXECUTION_ATTEMPTS; attemptNumber += 1) {
         throwIfAborted(options.abortSignal);
-        executeMessages = await maybeCompactMessages(state, options, systemPrompt, prompt, executeMessages);
+        executeMessages = await maybeCompactMessages(state, options, this.systemPrompt, prompt, executeMessages);
 
         const phaseResult = await executePhase(
           state,
           options,
-          systemPrompt,
+          this.systemPrompt,
           tools,
           executeMessages,
           attemptNumber === 1 ? (options.maxSteps ?? EXECUTE_MAX_STEPS) : Math.min(options.maxSteps ?? EXECUTE_MAX_STEPS, EXECUTE_RECOVERY_MAX_STEPS),
@@ -936,6 +936,7 @@ export class YagrRunEngine {
           journal: state.journal,
         },
         persistedMessages,
+        workspaceInstructionsMayHaveChanged: hasSuccessfulWorkspaceInstructionsRefresh(state.journal),
       };
     } catch (error) {
       if (isAbortError(error)) {
@@ -962,4 +963,40 @@ export class YagrRunEngine {
       throw error;
     }
   }
+}
+
+function hasSuccessfulWorkspaceInstructionsRefresh(journal: readonly YagrRunJournalEntry[]): boolean {
+  return journal.some((entry) => {
+    if (entry.type !== 'step' || !entry.step) {
+      return false;
+    }
+
+    const n8nacActions = entry.step.toolCalls
+      .filter((toolCall) => toolCall.toolName === 'n8nac' && toolCall.args && typeof toolCall.args === 'object')
+      .map((toolCall) => {
+        const action = (toolCall.args as { action?: unknown }).action;
+        return typeof action === 'string' ? action : undefined;
+      })
+      .filter((action): action is string => Boolean(action));
+
+    if (n8nacActions.includes('init_project')) {
+      return entry.step.toolResults.some((toolResult) => (
+        toolResult.toolName === 'n8nac'
+        && toolResult.result
+        && typeof toolResult.result === 'object'
+        && (toolResult.result as { aiContextRefreshed?: unknown }).aiContextRefreshed === true
+      ));
+    }
+
+    if (n8nacActions.includes('update_ai')) {
+      return entry.step.toolResults.some((toolResult) => (
+        toolResult.toolName === 'n8nac'
+        && toolResult.result
+        && typeof toolResult.result === 'object'
+        && (toolResult.result as { exitCode?: unknown }).exitCode === 0
+      ));
+    }
+
+    return false;
+  });
 }
