@@ -68,7 +68,8 @@ test('formatWorkflowLinkHtml outputs an anchor tag', () => {
     title: 'Test WF',
   });
   assert.match(result, /<b>Test WF<\/b>/);
-  assert.match(result, /<a href="https:\/\/n8n\.example\.com\/workflow\/abc">https:\/\/n8n\.example\.com\/workflow\/abc<\/a>/);
+  assert.match(result, /https:\/\/n8n\.example\.com\/workflow\/abc/);
+  assert.ok(!result.includes('<a '), 'URL should be bare text, not wrapped in <a>');
 });
 
 test('formatWorkflowLinkHtml escapes HTML in title', () => {
