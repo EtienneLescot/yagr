@@ -672,8 +672,8 @@ function MessageCard({ message, now }: { message: ChatMessage; now: number }): R
             <span className="workGlyphRing workGlyphRingB" />
           </div>
           <div className="workMeta">
-            <strong>{message.statusLabel ?? 'Yagr is working'}</strong>
-            <span className="muted">Compact live trace, without dumping the full internal reasoning.</span>
+            <strong>{message.statusLabel ?? 'Yagr is working…'}</strong>
+            <span className="muted">{elapsed ? `Running for ${elapsed}` : 'Thinking, planning, and executing…'}</span>
           </div>
         </div>
       ) : null}
