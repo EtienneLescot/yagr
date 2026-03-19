@@ -25,6 +25,7 @@ export function buildSystemPromptSnapshot(engine: Engine): SystemPromptSnapshot 
   const homeInstructions = loadHomeInstructions();
   const workspaceInstructions = loadWorkspaceInstructions();
   const workflowDir = resolveActiveWorkflowDir();
+  const n8nHost = resolveActiveN8nHost();
 
   return {
     systemPrompt: [
@@ -65,6 +66,7 @@ export function buildSystemPromptSnapshot(engine: Engine): SystemPromptSnapshot 
       'Keep final user-facing summaries concise. Do not paste the full workflow file contents, full ASCII diagram block, or repeated workflow metadata in the final response unless the user explicitly asks for the full content.',
       'Prefer concrete edits and command execution over abstract planning, but think before acting so each tool call is justified by the current evidence.',
       workflowDir ? `The active n8n workflow directory is ${workflowDir}. All new .workflow.ts files MUST be created inside this directory, never in any parent folder or workspace root.` : '',
+      n8nHost ? `The active n8n instance URL is ${n8nHost}. Always use this exact host when constructing workflow URLs, including when calling presentWorkflowResult.` : '',
       homeInstructions ? `Yagr home instructions and memory: ${homeInstructions.content}` : '',
       workspaceInstructions ? `Follow these workspace instructions when relevant: ${workspaceInstructions.content}` : '',
     ].filter(Boolean).join(' '),
@@ -81,6 +83,14 @@ function resolveActiveWorkflowDir(): string | undefined {
   try {
     const config = new YagrN8nConfigService().getLocalConfig();
     return resolveWorkflowDir(config) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveActiveN8nHost(): string | undefined {
+  try {
+    return new YagrN8nConfigService().getLocalConfig().host ?? undefined;
   } catch {
     return undefined;
   }

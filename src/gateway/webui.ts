@@ -502,6 +502,11 @@ class WebUiGateway implements Gateway {
       WorkspaceSetupService.ensureWorkspaceFiles(workflowDir);
     }
 
+    // Invalidate the cached engine and all agent sessions so the next request
+    // picks up a fresh engine built from the new config (new host, new API key).
+    this.enginePromise = undefined;
+    this.agents.clear();
+
     try {
       await refreshAiContext({ host, apiKey });
       return undefined;
