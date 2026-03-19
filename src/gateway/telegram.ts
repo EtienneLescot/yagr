@@ -385,7 +385,25 @@ class TelegramGateway implements Gateway {
       await this.executeRun(chatId, text, [], ctx.reply.bind(ctx));
     });
 
-    await this.bot.launch({ dropPendingUpdates: true });
+    // bot.launch() never resolves while running — start it without awaiting
+    // so the caller can proceed (print banner, wait for SIGINT, etc.)
+    this.bot.launch({ dropPendingUpdates: true }).catch((err) => {
+      if (!this.stopped) {
+        process.stderr.write(`Telegram gateway error: ${err instanceof Error ? err.message : String(err)}\n`);
+      }
+    });
+
+    // Give Telegraf a moment to connect and throw early if the token is invalid
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(resolve, 1500);
+      this.bot.telegram.getMe().then(() => {
+        clearTimeout(timeout);
+        resolve();
+      }).catch((err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
   }
 
   async stop(): Promise<void> {
