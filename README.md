@@ -27,7 +27,7 @@
 
 **Yagr is designed to sit above execution orchestrators.** n8n is the supported orchestrator today, and will remain the primary one. Support for additional orchestrators may be added later as an optional choice.
 
-[**Read Yagr docs**](https://yagr.dev/docs/) · [**Open n8n-as-code**](https://n8nascode.dev/n8n-as-code/) · [**Workflow GitOps docs**](https://n8nascode.dev/docs/)
+[**Read Yagr docs**](https://yagr.dev/docs/) · [**Open n8n-as-code**](https://github.com/EtienneLescot/n8n-as-code)
 
 </div>
 
@@ -287,5 +287,5 @@ These development scripts intentionally target `.yagr-test-workspace` so local w
 
 - [Yagr overview](https://yagr.dev/)
 - [Yagr getting started](https://yagr.dev/docs/getting-started/)
-- [n8n-as-code repo](https://n8nascode.dev/n8n-as-code/)
+- [n8n-as-code repo](https://github.com/EtienneLescot/n8n-as-code)
 - [n8n-as-code documentation](https://n8nascode.dev/docs/)
