@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.8](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.7...yagr@v0.2.8) (2026-03-19)
+
+
+### Features
+
+* add guardrails for workflow editing and duplication prevention in buildSystemPromptSnapshot ([dd8462e](https://github.com/EtienneLescot/yagr/commit/dd8462e2aec38defb10c44ab740dc3557e9ac04f))
+* add help and version commands to CLI and improve usage instructions ([d0a751f](https://github.com/EtienneLescot/yagr/commit/d0a751f43438623413f127b20cce3b3e9ee9fa2c))
+* enhance n8n compatibility checks and improve workflow instructions ([0c56675](https://github.com/EtienneLescot/yagr/commit/0c566754dd3e2fa63fe61c2e4dfe54649ea86994))
+* refine guardrails for workflow editing and improve clarity in instructions ([faaa5f7](https://github.com/EtienneLescot/yagr/commit/faaa5f7c1d0ad873379ce6ab35fb62b63d16d593))
+
 ## [0.2.7](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.6...yagr@v0.2.7) (2026-03-19)
 
 
