@@ -1,7 +1,8 @@
 import Conf from 'conf';
 import fs from 'node:fs';
-import { createFallbackInstanceIdentifier, resolveInstanceIdentifier } from 'n8nac';
-import { ensureYagrHomeDir, getYagrPaths } from './yagr-home.js';
+import path from 'node:path';
+import { createFallbackInstanceIdentifier, createProjectSlug, resolveInstanceIdentifier } from 'n8nac';
+import { ensureYagrHomeDir, getYagrN8nWorkspaceDir, getYagrPaths } from './yagr-home.js';
 
 export interface YagrN8nLocalConfig {
   host?: string;
@@ -14,6 +15,27 @@ export interface YagrN8nLocalConfig {
 
 interface N8nCredentialStore {
   hosts?: Record<string, string>;
+}
+
+/**
+ * Computes the fully-qualified workflow directory for the current config:
+ *   <syncFolder>/<instanceIdentifier>/<projectSlug>
+ *
+ * Returns undefined when any required field is missing (e.g. during bootstrap).
+ * This is the single source of truth for this path calculation.
+ */
+export function resolveWorkflowDir(config: YagrN8nLocalConfig): string | undefined {
+  const { syncFolder, instanceIdentifier, projectName } = config;
+  if (!syncFolder || !instanceIdentifier || !projectName) {
+    return undefined;
+  }
+
+  const workspaceDir = getYagrN8nWorkspaceDir();
+  const resolvedSyncFolder = path.isAbsolute(syncFolder)
+    ? syncFolder
+    : path.join(workspaceDir, syncFolder);
+
+  return path.join(resolvedSyncFolder, instanceIdentifier, createProjectSlug(projectName));
 }
 
 export class YagrN8nConfigService {

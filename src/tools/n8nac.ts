@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { YagrN8nConfigService, resolveWorkflowDir } from '../config/n8n-config-service.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
 
@@ -224,7 +224,7 @@ async function runObservedN8nac(
   return result;
 }
 
-function isWorkspaceInitialized(): { initialized: boolean; configPath: string } {
+function isWorkspaceInitialized(): { initialized: boolean; configPath: string; workflowDir?: string } {
   const configPath = resolveWorkspacePath('n8nac-config.json');
   if (!fs.existsSync(configPath)) {
     return { initialized: false, configPath: relativeWorkspacePath(configPath) };
@@ -233,9 +233,11 @@ function isWorkspaceInitialized(): { initialized: boolean; configPath: string } 
   try {
     const raw = fs.readFileSync(configPath, 'utf-8');
     const config = JSON.parse(raw) as { projectId?: string; projectName?: string };
+    const workflowDir = resolveWorkflowDir(config);
     return {
       initialized: Boolean(config.projectId && config.projectName),
       configPath: relativeWorkspacePath(configPath),
+      workflowDir: workflowDir ? relativeWorkspacePath(workflowDir) : undefined,
     };
   } catch {
     return { initialized: false, configPath: relativeWorkspacePath(configPath) };
@@ -286,7 +288,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           ...status,
           workspaceRoot: relativeWorkspacePath(cwd),
           next: status.initialized
-            ? 'Workspace is initialized. You can list, pull, edit, validate, push, and verify workflows.'
+            ? `Workspace is initialized. All workflow files (.workflow.ts) MUST be created and edited inside the workflow directory: ${status.workflowDir ?? 'the configured workflow directory'}. Do not write workflow files anywhere else. You can list, pull, edit, validate, push, and verify workflows.`
             : 'Workspace is not initialized. Ask for missing n8n credentials, then run init_auth followed by init_project.',
         };
       }

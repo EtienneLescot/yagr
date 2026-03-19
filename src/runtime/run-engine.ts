@@ -275,7 +275,7 @@ function consumeAssistantTextDelta(state: AssistantStreamFilterState, delta: str
   state.rawText += delta;
   state.pendingRaw += delta;
 
-  if (shouldAbortForInternalPromptLeak(state.rawText)) {
+  if (shouldAbortForInternalPromptLeak(state.rawText, state.visibleText)) {
     throw new Error('Run stopped after repeated internal prompt leakage. The model kept echoing Yagr internal instructions instead of progressing.');
   }
 

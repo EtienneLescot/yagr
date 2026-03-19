@@ -7,7 +7,7 @@ import {
 import { Command } from 'commander';
 import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
 import { normalizeGatewaySurfaces, YagrConfigService } from './config/yagr-config-service.js';
-import { YagrN8nConfigService } from './config/n8n-config-service.js';
+import { resolveWorkflowDir, YagrN8nConfigService } from './config/n8n-config-service.js';
 import { getYagrN8nWorkspaceDir } from './config/yagr-home.js';
 import { getGatewaySupervisorStatus } from './gateway/manager.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
@@ -130,15 +130,19 @@ export async function runYagrSetup(
       n8nConfigService.saveBootstrapState(url, syncFolder);
       const instanceIdentifier = await n8nConfigService.getOrCreateInstanceIdentifier(url);
       const currentConfig = n8nConfigService.getLocalConfig();
+      const projectName = getDisplayProjectName(project);
       n8nConfigService.saveLocalConfig({
         host: url,
         syncFolder,
         projectId: project.id,
-        projectName: getDisplayProjectName(project),
+        projectName,
         instanceIdentifier,
         customNodesPath: currentConfig.customNodesPath,
       });
-      WorkspaceSetupService.ensureWorkspaceFiles(syncFolder);
+      const workflowDir = resolveWorkflowDir({ syncFolder, instanceIdentifier, projectName });
+      if (workflowDir) {
+        WorkspaceSetupService.ensureWorkspaceFiles(workflowDir);
+      }
       try {
         await refreshAiContext({ host: url, apiKey });
       } catch (err) {
