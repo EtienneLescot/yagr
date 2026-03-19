@@ -10,7 +10,7 @@ Yagr is the automation agent layer of this repository.
 
 The product ambition is not just to wrap setup and runtime concerns more nicely. The ambition is to turn natural language into live automations on top of infrastructure that remains inspectable and reliable.
 
-Yagr is designed to sit above execution orchestrators. Today that means n8n through the existing n8n-as-code foundation. Tomorrow the same product surface can target a native Yagr runtime or other orchestrators. The user story stays the same: describe the automation you want, then let Yagr build, inspect, evolve, and operate it.
+Yagr is designed to sit above execution orchestrators. n8n is the supported orchestrator today, and will remain the primary one. Support for additional orchestrators may be added later as an optional choice. The user story stays the same: describe the automation you want, then let Yagr build, inspect, evolve, and operate it.
 
 ## Vision
 

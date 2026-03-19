@@ -25,7 +25,7 @@
 
 <br>
 
-**Yagr is designed to sit above execution orchestrators.** Today it runs on top of n8n through the n8n-as-code stack. Tomorrow it can target a native Yagr runtime or other orchestrators without changing the product story.
+**Yagr is designed to sit above execution orchestrators.** n8n is the supported orchestrator today, and will remain the primary one. Support for additional orchestrators may be added later as an optional choice.
 
 [**Read Yagr docs**](https://yagr.dev/docs/) · [**Open n8n-as-code**](https://n8nascode.dev/n8n-as-code/) · [**Workflow GitOps docs**](https://n8nascode.dev/docs/)
 
@@ -51,7 +51,7 @@ yagr onboard
 
 This connects three things:
 
-- your execution orchestrator connection, which is n8n today
+- your execution orchestrator connection, which is n8n
 - your default model
 - your optional messaging integrations, including Telegram
 
@@ -164,7 +164,7 @@ Generated workflows are not throwaway output. They are persisted intent that Yag
 
 ### Engine Boundary
 
-Yagr stays above the execution orchestrator. Today that means n8n through n8n-as-code. Tomorrow it can mean a native Yagr runtime or another orchestrator.
+Yagr stays above the execution orchestrator. n8n is the supported orchestrator today, and will remain the primary one. Support for additional orchestrators may be added later as an optional choice.
 
 </td>
 </tr>
@@ -207,8 +207,8 @@ Yagr stays above the execution orchestrator. Today that means n8n through n8n-as
 User intent
 	-> Yagr agent
 		-> Orchestrator interface
-			-> today: n8n via n8n-as-code
-			-> tomorrow: native Yagr runtime or other orchestrators
+			-> n8n via n8n-as-code (primary, long-term)
+			-> future: optional support for additional orchestrators
 				-> workflow is generated, validated, deployed
 					-> workflow becomes durable executable memory
 ```
@@ -239,7 +239,7 @@ Yagr stores that state in its own home so the product does not depend on whateve
 - **Yagr is the agent.** It should stay above the execution orchestrator.
 - **Gateways are not the brain.** Telegram and TUI are surfaces into the same agent loop.
 - **Workflows are memory and muscle.** They persist how the problem was solved and they execute it reliably over time.
-- **The orchestrator must stay swappable.** Today that orchestrator is n8n via n8n-as-code. Tomorrow it may be a native Yagr runtime or something else.
+- **n8n is the primary orchestrator.** It is the one Yagr supports today and will keep as its main backend. Support for additional orchestrators may be offered later as an optional choice — the product story does not change.
 
 ---
 
