@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import './config/init-yagr-home.js';
 import os from 'node:os';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js';
 import { buildYagrCleanupPlan, resetYagrLocalState, type YagrResetScope } from './config/local-state.js';
 import { YagrConfigService } from './config/yagr-config-service.js';
@@ -27,7 +29,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [
 ];
 
 interface ParsedArgs {
-  command?: 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
   startTarget?: 'webui' | 'tui';
   prompt?: string;
   interactive: boolean;
@@ -49,6 +51,21 @@ function parseArgs(argv: string[]): ParsedArgs {
     yes: false,
     dryRun: false,
   };
+
+  if (argv.length === 0) {
+    parsed.command = 'help';
+    return parsed;
+  }
+
+  if (argv[0] === '--help' || argv[0] === '-h') {
+    parsed.command = 'help';
+    return parsed;
+  }
+
+  if (argv[0] === '--version' || argv[0] === '-v' || argv[0] === '-V') {
+    parsed.command = 'version';
+    return parsed;
+  }
 
   let startIndex = 0;
 
@@ -339,8 +356,69 @@ async function refreshN8nWorkspaceInstructionsAtLaunch(): Promise<void> {
   }
 }
 
+function getVersion(): string {
+  const pkgPath = fileURLToPath(new URL('../package.json', import.meta.url));
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version: string };
+  return pkg.version;
+}
+
+function printHelp(): void {
+  const help = `
+Usage: yagr <command> [options]
+       yagr [prompt]           Run agent with a one-shot prompt
+
+Commands:
+  setup                        Run the setup wizard
+  start [tui|webui]            Start configured gateway(s), or a specific UI
+  tui                          Open an interactive terminal chat session
+  webui                        Open the web interface
+  stop                         Stop the running gateway daemon
+
+  gateway start                Start the gateway supervisor in the foreground
+  gateway status               Show gateway status (JSON)
+
+  telegram setup               Configure the Telegram gateway
+  telegram start               Start the Telegram gateway in the foreground
+  telegram status              Show Telegram gateway status (JSON)
+  telegram onboarding          Show the Telegram onboarding/link URL
+  telegram reset               Remove Telegram gateway configuration
+
+  config show                  Show current configuration (JSON)
+  config reset                 Clear all configuration and stored credentials
+  paths                        Show Yagr data paths (JSON)
+  reset                        Reset local state (requires --yes)
+  uninstall                    Remove all local data (requires --yes)
+
+Agent options (for \`yagr [prompt]\` and most commands):
+  --provider <name>            AI provider: ${VALID_PROVIDERS.join(', ')}
+  --model <name>               Model name to use
+  --max-steps <n>              Maximum number of agent steps
+  --interactive, -i            Keep the session open after the prompt
+  --hide-thinking              Hide agent thinking output
+  --hide-execution             Hide tool execution output
+  --yes                        Auto-confirm destructive operations
+  --dry-run                    Preview without making changes
+
+Info:
+  --version, -v                Print version
+  --help, -h                   Show this help
+`;
+  process.stdout.write(help);
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+
+  if (args.command === 'version') {
+    process.stdout.write(`${getVersion()}\n`);
+    return;
+  }
+
+  if (args.command === 'help') {
+    printHelp();
+    return;
+  }
+
   const configService = new YagrConfigService();
 
   if (args.command) {
