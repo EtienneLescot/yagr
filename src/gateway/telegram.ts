@@ -229,7 +229,9 @@ export function createTelegramGatewayRuntime(
     gateway: new TelegramGateway(engineResolver, options, configService, botToken, onboardingToken),
     startupMessages: [
       `Yagr Telegram gateway listening as @${status.botUsername}. ${formatLinkedChatCount(linkedCount)}.`,
-      'Telegram transport is ready. The current orchestrator connection will be resolved on first message.',
+      linkedCount === 0
+        ? `Aucun chat lié. Lien d'onboarding : ${status.deepLink}`
+        : 'Telegram transport is ready. The current orchestrator connection will be resolved on first message.',
     ],
     onboardingLink: status.deepLink && linkedCount === 0 ? status.deepLink : undefined,
   };
@@ -253,13 +255,21 @@ class TelegramGateway implements Gateway {
     this.bot = new Telegraf(botToken);
   }
 
+  private buildDeepLink(): string {
+    const botUsername = this.configService.getLocalConfig().telegram?.botUsername ?? '';
+    return buildTelegramDeepLink(botUsername, this.onboardingToken);
+  }
+
   async start(): Promise<void> {
     this.bot.start(async (ctx) => {
       const payload = typeof ctx.payload === 'string' ? ctx.payload.trim() : '';
       const chatId = String(ctx.chat.id);
 
       if (payload !== this.onboardingToken) {
-        await ctx.reply('Ce bot n’est pas encore lie a cette conversation. Utilise le QR ou le lien genere par `yagr telegram setup`.');
+        const deepLink = this.buildDeepLink();
+        await ctx.reply(
+          `Ce lien est invalide ou expiré. Clique sur le lien ci-dessous pour lier ce chat, puis appuie sur Démarrer :\n${deepLink}`,
+        );
         return;
       }
 
@@ -278,7 +288,10 @@ class TelegramGateway implements Gateway {
     this.bot.command('status', async (ctx) => {
       const chatId = String(ctx.chat.id);
       if (!this.isLinkedChat(chatId)) {
-        await ctx.reply('Chat non lie. Utilise le QR ou le lien d’onboarding d’abord.');
+        const deepLink = this.buildDeepLink();
+        await ctx.reply(
+          `Chat non lié. Clique sur le lien ci-dessous puis appuie sur Démarrer :\n${deepLink}`,
+        );
         return;
       }
 
@@ -313,6 +326,18 @@ class TelegramGateway implements Gateway {
       await this.executeRun(chatId, 'Permission granted. Continue the current task and execute the previously blocked step now.', actions, ctx.reply.bind(ctx));
     });
 
+    this.bot.command('link', async (ctx) => {
+      if (this.isLinkedChat(String(ctx.chat.id))) {
+        await ctx.reply('Ce chat est déjà lié à Yagr. Tu peux me parler directement.');
+        return;
+      }
+
+      const deepLink = this.buildDeepLink();
+      await ctx.reply(
+        `Pour lier ce chat, clique sur le lien ci-dessous puis appuie sur Démarrer :\n${deepLink}`,
+      );
+    });
+
     this.bot.command('reset', async (ctx) => {
       const chatId = String(ctx.chat.id);
       this.agents.delete(chatId);
@@ -323,7 +348,10 @@ class TelegramGateway implements Gateway {
     this.bot.command('unlink', async (ctx) => {
       const chatId = String(ctx.chat.id);
       if (!this.isLinkedChat(chatId)) {
-        await ctx.reply('Ce chat n’est pas lie.');
+        const deepLink = this.buildDeepLink();
+        await ctx.reply(
+          `Ce chat n'est pas lié. Clique sur le lien ci-dessous pour le lier :\n${deepLink}`,
+        );
         return;
       }
 
@@ -346,7 +374,10 @@ class TelegramGateway implements Gateway {
       }
 
       if (!this.isLinkedChat(chatId)) {
-        await ctx.reply('Ce chat n’est pas encore lie. Utilise le QR ou le lien d’onboarding d’abord.');
+        const deepLink = this.buildDeepLink();
+        await ctx.reply(
+          `Ce chat n'est pas encore lié. Clique sur le lien ci-dessous puis appuie sur Démarrer :\n${deepLink}`,
+        );
         return;
       }
 
@@ -354,7 +385,7 @@ class TelegramGateway implements Gateway {
       await this.executeRun(chatId, text, [], ctx.reply.bind(ctx));
     });
 
-    await this.bot.launch({ dropPendingUpdates: false });
+    await this.bot.launch({ dropPendingUpdates: true });
   }
 
   async stop(): Promise<void> {
