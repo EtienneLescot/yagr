@@ -155,7 +155,7 @@ export async function runYagrSetup(
       return {
         provider: initialProvider,
         getApiKey: (prov) => yagrConfigService.getApiKey(prov),
-        getDefaultModel: (prov) => resolveModelName(prov, cfg.provider === prov ? cfg.model : undefined, yagrConfigService),
+        getDefaultModel: (prov) => cfg.provider === prov && cfg.model ? cfg.model : undefined,
         getBaseUrl: (prov) => cfg.provider === prov ? cfg.baseUrl : getBaseUrlForProvider(prov),
         needsBaseUrl: (prov) => ['groq', 'mistral', 'openrouter'].includes(prov),
       };
