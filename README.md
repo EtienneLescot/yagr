@@ -53,23 +53,20 @@ This connects three things:
 
 - your execution orchestrator connection, which is n8n today
 - your default model
-- your optional messaging integrations
+- your optional messaging integrations, including Telegram
 
-### 3. Start the agent
+After onboarding, Yagr is ready. If you configured Telegram during onboarding, anyone who messages your bot will receive an automatic link to connect their chat — no extra step needed.
 
-```bash
-yagr start
-```
-
-`yagr start` now lets you choose whether to open the Web UI or the TUI. If you want to skip the prompt, use `yagr start webui` or `yagr start tui`.
-
-After setup, the day-to-day loop is:
+### Day-to-day commands
 
 ```bash
-yagr start
-yagr gateway status
-yagr telegram onboarding
+yagr start      # start gateways in the background (Telegram, etc.)
+yagr tui        # open a terminal chat session
+yagr webui      # open the local web interface
+yagr stop       # stop the background gateway
 ```
+
+`yagr start` launches messaging gateways as a background daemon and returns to your shell. Use `yagr tui` or `yagr webui` at any time to open an interactive session directly.
 
 ### Inspect Or Reset Local State
 
@@ -248,6 +245,31 @@ Yagr stores that state in its own home so the product does not depend on whateve
 | **n8n-as-code** | Workflow GitOps, AI skill, schema grounding, VS Code extension, TypeScript workflows | [n8n-as-code page](https://n8nascode.dev/n8n-as-code/) |
 
 The previous root README for `n8n-as-code` is preserved as a dedicated product README in [products/n8n-as-code/README.md](products/n8n-as-code/README.md).
+
+---
+
+### Troubleshooting
+
+If gateways are not responding or something feels stuck:
+
+```bash
+yagr stop               # stop the background gateway daemon
+yagr gateway status     # check whether a daemon is currently running
+yagr start              # restart it
+```
+
+If you need to re-share the Telegram onboarding link (for example when linking a second chat):
+
+```bash
+yagr telegram onboarding
+```
+
+To reset everything and start over:
+
+```bash
+yagr reset --dry-run
+yagr reset --scope full --yes
+```
 
 ---
 
