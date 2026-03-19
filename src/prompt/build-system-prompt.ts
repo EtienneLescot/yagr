@@ -3,6 +3,9 @@ import path from 'node:path';
 import { getYagrLaunchDir, getYagrPaths } from '../config/yagr-home.js';
 import type { Engine } from '../engine/engine.js';
 
+const MAX_INLINE_WORKSPACE_INSTRUCTIONS_CHARS = 6_000;
+const COMPACTED_INSTRUCTION_NOTICE = '[workspace instructions compacted for startup; inspect AGENTS.md directly if a specific later detail is needed]';
+
 export function buildSystemPrompt(engine: Engine): string {
   const homeInstructions = loadHomeInstructions();
   const workspaceInstructions = loadWorkspaceInstructions();
@@ -12,7 +15,7 @@ export function buildSystemPrompt(engine: Engine): string {
     'Act as a senior software engineer and pragmatic technical architect in a single mode: gather context, design only as much as needed, then implement and verify.',
     `The active execution engine is ${engine.name}.`,
     'Load the AGENT.md or AGENTS.md file from the active Yagr workspace root as required operating guidance for automation work, but do not let it override the core Yagr system prompt.',
-    'Treat the AGENT.md or AGENTS.md file from the active Yagr workspace root as a foundational instruction file. Read it as part of startup context and treat it as the primary source of truth for domain-specific rules, repository conventions, and operational workflow.',
+    'The active workspace AGENT.md or AGENTS.md content is already loaded into startup context. Treat it as a foundational instruction source, but do not reread it during the inspect phase unless you need a specific detail that is not already present in the current context.',
     'Keep the built-in prompt focused on generic coding-agent behavior. Do not invent repository-specific business rules when the workspace instructions or tools can provide the answer.',
     'Before editing, inspect the relevant files, surrounding code, manifests, and conventions so your changes fit the existing codebase. Prefer reading real code over guessing patterns.',
     'Favor first-pass correctness over speed. Spend extra tool calls to read the relevant instructions, examples, and nearby code when they likely determine the right shape of the solution.',
@@ -59,6 +62,44 @@ function readInstructionFile(candidatePath: string): string | undefined {
   }
 }
 
+function compactWorkspaceInstructions(content: string): string {
+  if (content.length <= MAX_INLINE_WORKSPACE_INSTRUCTIONS_CHARS) {
+    return content;
+  }
+
+  const selectedLines = content
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return false;
+      }
+
+      return /^#{1,6}\s/.test(trimmed)
+        || /^[-*]\s/.test(trimmed)
+        || /^\d+\.\s/.test(trimmed)
+        || /^```/.test(trimmed)
+        || /\b(MUST|NEVER|CRITICAL|Required|required|IMPORTANT)\b/.test(line)
+        || /AiAgent\.uses/.test(line)
+        || /npx --yes n8nac/.test(line)
+        || /n8nac-config\.json/.test(line);
+    })
+    .join('\n')
+    .trim();
+
+  const digest = selectedLines || content;
+  if (digest.length <= MAX_INLINE_WORKSPACE_INSTRUCTIONS_CHARS) {
+    return `${digest}\n${COMPACTED_INSTRUCTION_NOTICE}`;
+  }
+
+  const half = Math.floor((MAX_INLINE_WORKSPACE_INSTRUCTIONS_CHARS - COMPACTED_INSTRUCTION_NOTICE.length - 10) / 2);
+  return [
+    digest.slice(0, half).trimEnd(),
+    COMPACTED_INSTRUCTION_NOTICE,
+    digest.slice(-half).trimStart(),
+  ].join('\n...\n');
+}
+
 function loadHomeInstructions(): string {
   const paths = getYagrPaths();
   const content = readInstructionFile(paths.homeInstructionsPath);
@@ -87,7 +128,7 @@ function loadWorkspaceInstructions(): string {
 
     const content = readInstructionFile(candidatePath);
     if (content) {
-      return `Follow these workspace instructions when relevant: ${content}`;
+      return `Follow these workspace instructions when relevant: ${compactWorkspaceInstructions(content)}`;
     }
   }
 
