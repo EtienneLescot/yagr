@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
-import TextInput from 'ink-text-input';
+import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
 import type { YagrAgent } from '../agent.js';
@@ -304,7 +304,7 @@ function IntermediateMessages({ entries }: { entries: FeedEntry[] }): JSX.Elemen
 function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   const app = useApp();
   const { stdout } = useStdout();
-  const [inputValue, setInputValue] = useState('');
+  const [inputVersion, setInputVersion] = useState(0);
   const [feed, setFeed] = useState<FeedEntry[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [currentState, setCurrentState] = useState<YagrAgentState>('idle');
@@ -513,13 +513,13 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
   }, [agent, approvedRequiredActionIds, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, handleCompaction, handleToolEvent, options, pushEntry]);
 
-  const submitPrompt = useCallback(async () => {
-    const prompt = inputValue.trim();
+  const submitPrompt = useCallback(async (rawPrompt: string) => {
+    const prompt = rawPrompt.trim();
     if (!prompt || isRunning) {
       return;
     }
 
-    setInputValue('');
+    setInputVersion((previous) => previous + 1);
 
     if (prompt === '/exit' || prompt === '/quit') {
       app.exit();
@@ -584,7 +584,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
 
     await runPrompt(prompt);
-  }, [agent, app, inputValue, isRunning, pendingRequiredActions, pushEntry, runPrompt]);
+  }, [agent, app, isRunning, pendingRequiredActions, pushEntry, runPrompt]);
 
   useInput((inputKey, key) => {
     if (key.ctrl && inputKey === 'c') {
@@ -679,14 +679,12 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
           <Box>
             <Text color="green">› </Text>
             <TextInput
-              value={inputValue}
-              onChange={setInputValue}
-              onSubmit={() => {
-                void submitPrompt();
+              key={`prompt-input-${inputVersion}`}
+              onSubmit={(value) => {
+                void submitPrompt(value);
               }}
               placeholder={isRunning ? 'Patiente pendant le run...' : 'Decris ce que tu veux automatiser'}
-              focus={!isRunning && !historyOpen}
-              showCursor={!isRunning && !historyOpen}
+              isDisabled={isRunning || historyOpen}
             />
           </Box>
         </Panel>
