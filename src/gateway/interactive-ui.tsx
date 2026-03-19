@@ -410,6 +410,13 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     if (event.type === 'result') {
       pushEntry('result', `Resultat ${event.toolName}`, event.message);
       setActiveOperationText(event.message);
+      return;
+    }
+
+    if (event.type === 'embed' && event.kind === 'workflow') {
+      const label = event.title ? `${event.title} — ${event.url}` : event.url;
+      pushEntry('result', 'Workflow disponible', label, 'strong');
+      setActiveOperationText(`Workflow pret : ${event.url}`);
     }
   }, [display.showThinking, pushEntry]);
 

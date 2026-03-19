@@ -121,7 +121,7 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
         title,
         diagram: resolvedDiagram,
       });
-      return { presented: true, workflowId };
+      return { presented: true, workflowId, workflowUrl, title: title ?? null };
     },
   });
 }
