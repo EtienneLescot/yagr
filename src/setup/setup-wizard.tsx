@@ -29,7 +29,7 @@ export interface SetupCallbacks {
   getLlmDefaults(): {
     provider?: YagrModelProvider;
     getApiKey(prov: YagrModelProvider): string | undefined;
-    getDefaultModel(prov: YagrModelProvider): string;
+    getDefaultModel(prov: YagrModelProvider): string | undefined;
     getBaseUrl(prov: YagrModelProvider): string | undefined;
     needsBaseUrl(prov: YagrModelProvider): boolean;
   };
@@ -67,8 +67,8 @@ type Phase =
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
   | { kind: 'llm-reuse-apikey'; provider: YagrModelProvider; existing: string; cursor: number }
   | { kind: 'llm-apikey'; provider: YagrModelProvider; err?: string }
-  | { kind: 'llm-models-loading'; provider: YagrModelProvider; apiKey: string; defModel: string }
-  | { kind: 'llm-model'; provider: YagrModelProvider; apiKey: string; models: string[]; defModel: string; cursor: number }
+  | { kind: 'llm-models-loading'; provider: YagrModelProvider; apiKey: string; defModel: string | undefined }
+  | { kind: 'llm-model'; provider: YagrModelProvider; apiKey: string; models: string[]; defModel: string | undefined; cursor: number }
   | { kind: 'llm-baseurl'; provider: YagrModelProvider; apiKey: string; model: string; def: string; err?: string }
   | { kind: 'surfaces'; cursor: number; selected: GatewaySurface[] }
   | { kind: 'telegram-reuse-token'; surfaces: GatewaySurface[]; existing: string; cursor: number }
@@ -468,7 +468,7 @@ function SetupWizard({ callbacks, onDone }: {
         const models = await callbacks.fetchModels(phase.provider, phase.apiKey);
         if (guard !== asyncGuard.current) return;
         const displayedOptions = getDisplayedModelOptions(models);
-        const idx = displayedOptions.indexOf(phase.defModel);
+        const idx = phase.defModel ? displayedOptions.indexOf(phase.defModel) : -1;
         setPhase({
           kind: 'llm-model',
           provider: phase.provider, apiKey: phase.apiKey,
@@ -609,7 +609,12 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(allOptions.length - 1, phase.cursor + 1) });
       else if (key.return) {
         const selected = allOptions[phase.cursor];
-        const model = selected === '__custom__' ? phase.defModel : selected;
+        if (selected === '__custom__') {
+          setPhase({ ...phase, models: [] });
+          setTextValue(phase.defModel ?? '');
+          return;
+        }
+        const model = selected;
         const needsUrl = llmDef.needsBaseUrl(phase.provider);
         if (needsUrl || llmDef.getBaseUrl(phase.provider)) {
           setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model, def: llmDef.getBaseUrl(phase.provider) ?? '' });
@@ -848,7 +853,8 @@ function SetupWizard({ callbacks, onDone }: {
                   value={textValue}
                   onChange={setTextValue}
                   onSubmit={(v) => {
-                    const m = v.trim() || phase.defModel;
+                    const m = v.trim() || phase.defModel || '';
+                    if (!m) return;
                     const needsUrl = llmDef.needsBaseUrl(phase.provider);
                     if (needsUrl || llmDef.getBaseUrl(phase.provider)) {
                       setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model: m, def: llmDef.getBaseUrl(phase.provider) ?? '' });
@@ -866,7 +872,7 @@ function SetupWizard({ callbacks, onDone }: {
                 options={modelOptions}
                 cursor={phase.cursor}
                 getLabel={(v) => v === '__custom__' ? '⌨  enter manually…' : v}
-                getHint={(v) => v === phase.defModel ? 'recommended' : undefined}
+                getHint={(v) => (phase.defModel && v === phase.defModel) ? 'previously selected' : undefined}
                 maxVisibleRows={getListViewportHeight(terminalRows, 10)}
                 maxLineWidth={listLineWidth}
               />
