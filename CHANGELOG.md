@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.2.7](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.6...yagr@v0.2.7) (2026-03-19)
+
+
+### Features
+
+* add ActiveRunIndicator component and enhance activity bar visualization ([00711b8](https://github.com/EtienneLescot/yagr/commit/00711b8c6cc8f2c749c718768761e7ad53d1cb92))
+* add llm-reuse-config phase to setup wizard for reusing LLM configurations ([a0dec91](https://github.com/EtienneLescot/yagr/commit/a0dec912788875edc4c1fe98275fcc92da5ef298))
+* add workflow message formatting utilities and integrate with Telegram and TUI ([6d08999](https://github.com/EtienneLescot/yagr/commit/6d08999b115a90cd2388b668588f7d784c1d96ce))
+* add workflow URL and title to the presented workflow result ([0a09c1f](https://github.com/EtienneLescot/yagr/commit/0a09c1ffcba676e6f7529b5d319253962505e8d3))
+* enhance command handling and gateway management in CLI ([f3a0a2d](https://github.com/EtienneLescot/yagr/commit/f3a0a2d095524812020910dc867c67bf3a077d40))
+* enhance HTML formatting for workflow links in formatWorkflowLinkHtml function ([e6ad19b](https://github.com/EtienneLescot/yagr/commit/e6ad19b0ce6af5a81c94a3183221d227b5eb7cff))
+* enhance loading indicators with pulsing animations and improved status messages ([10ddbcd](https://github.com/EtienneLescot/yagr/commit/10ddbcdcfe1d1bd9b8e49b102ea75510609a1ad9))
+* enhance n8n workspace handling by refreshing instructions at launch and updating file paths ([e829bbc](https://github.com/EtienneLescot/yagr/commit/e829bbcce2851da4a786a369067901d67a8e3123))
+* enhance recovery logic to detect unresolved deliberation during execution attempts ([a9ff357](https://github.com/EtienneLescot/yagr/commit/a9ff357e8d12898fad8ad03ef0369400bdb8b81d))
+* enhance Telegram bot onboarding and linking process with deep links ([e4efe88](https://github.com/EtienneLescot/yagr/commit/e4efe88bfc1edf68d453539316599066daa18e11))
+* enhance workflow directory resolution and update related configurations ([99d38b0](https://github.com/EtienneLescot/yagr/commit/99d38b0c031c4c8186a1c2377d8dca4a092f88bb))
+* enhance workspace instruction handling and improve command feedback messages ([9172dbb](https://github.com/EtienneLescot/yagr/commit/9172dbb3fab1c99ed9dc08c0618de722c6215746))
+* enhance YagrAgent to manage prompt snapshots and invalidate sessions on workspace instruction changes ([c8d56d9](https://github.com/EtienneLescot/yagr/commit/c8d56d98a6a158742f0ab304369df1f9d4a6c750))
+* implement background gateway surface management and enhance TUI launch process ([95b5e2f](https://github.com/EtienneLescot/yagr/commit/95b5e2fce73a6746eb550735c47b7fc5eee8e2fa))
+* implement internal tag system for prompt management and enhance output sanitization ([6c7dd46](https://github.com/EtienneLescot/yagr/commit/6c7dd4614626bd53c9a5d3c033e6828c4b6f2b3d))
+* implement sanitization for assistant response messages and add related tests ([02e673a](https://github.com/EtienneLescot/yagr/commit/02e673accdc7a61468c211420adbf7af80c27afc))
+* implement unresolved deliberation detection and update completion gate state handling ([9db6819](https://github.com/EtienneLescot/yagr/commit/9db681913b1c127a51370b2770ef6e1551e3529f))
+* integrate workflow directory resolution into system prompt and enhance n8n configuration handling ([2b5cb8f](https://github.com/EtienneLescot/yagr/commit/2b5cb8f3d891f2f637377cd52f6e7865300311f0))
+* refactor workspace handling to utilize n8n workspace directory and enhance skill file management ([978b39d](https://github.com/EtienneLescot/yagr/commit/978b39d570ba4add4a91296eaa624302dc731556))
+* remove workspace instruction compaction and update related tests for clarity ([1d74279](https://github.com/EtienneLescot/yagr/commit/1d742794298ab99c4d99916f68bcde3f31086969))
+* update dependencies and replace ink-text-input with @inkjs/ui ([0988e77](https://github.com/EtienneLescot/yagr/commit/0988e7735a4fc98f54d6263e11f77e81742417cb))
+* update event tone in WebUiGateway and enhance diagram handling in workflow presentation ([d1157c0](https://github.com/EtienneLescot/yagr/commit/d1157c0dfc17b39edbce8677cc99e5d942b1bde8))
+* update model handling in setup functions to support undefined values and improve logic clarity ([ec8ce63](https://github.com/EtienneLescot/yagr/commit/ec8ce63545ec9a95ab3d770128f0beabfa20b6dc))
+
+
+### Bug Fixes
+
+* correct argument order for gateway start command in spawn function ([6bd0864](https://github.com/EtienneLescot/yagr/commit/6bd0864e3bda6abfb726318bf10cd6828bcff894))
+* update formatWorkflowLinkHtml to return bare URL instead of anchor tag ([f7588d9](https://github.com/EtienneLescot/yagr/commit/f7588d97ca178bfa62115b543868db898bed4fa1))
+
 ## [0.2.6](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.5...yagr@v0.2.6) (2026-03-18)
 
 
