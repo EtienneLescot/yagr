@@ -17,7 +17,6 @@ const VALID_PROVIDERS: YagrModelProvider[] = [
 
 const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: string }> = [
   { value: 'telegram', label: 'Telegram', hint: 'Bot-based chat gateway' },
-  { value: 'whatsapp', label: 'WhatsApp', hint: 'Configuration only - runtime coming soon' },
 ];
 
 // ─── Public API ───────────────────────────────────────────────────────────────
