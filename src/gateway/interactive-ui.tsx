@@ -39,7 +39,27 @@ type InteractiveAppProps = {
   options: YagrRunOptions;
 };
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
+const BAR_WIDTH = 16;
+const BAR_CYCLE = (BAR_WIDTH - 1) * 2; // 30 ticks per back-and-forth
+const PULSE_CYCLE = BAR_CYCLE * SPINNER_FRAMES.length; // 120 — LCM of both animations
+
+const ACTIVITY_PHASES: Array<YagrPhaseEvent['phase']> = [
+  'inspect', 'plan', 'edit', 'validate', 'sync', 'verify', 'summarize',
+];
+
+function buildActivityBar(pulse: number): string {
+  const pos = pulse % BAR_CYCLE;
+  const ballPos = pos <= BAR_WIDTH - 1 ? pos : BAR_CYCLE - pos;
+  return Array.from({ length: BAR_WIDTH }, (_, i) => {
+    const dist = Math.abs(i - ballPos);
+    if (dist === 0) return '█';
+    if (dist === 1) return '▓';
+    if (dist === 2) return '▒';
+    if (dist === 3) return '░';
+    return '─';
+  }).join('');
+}
 
 function phaseLabel(phase: YagrPhaseEvent['phase'] | null): string {
   switch (phase) {
@@ -197,6 +217,46 @@ function Panel({
   );
 }
 
+function ActiveRunIndicator({
+  phase,
+  statusText,
+  pulse,
+}: {
+  phase: YagrPhaseEvent['phase'] | null;
+  statusText: string;
+  pulse: number;
+}): JSX.Element {
+  const spinnerChar = SPINNER_FRAMES[pulse % SPINNER_FRAMES.length];
+  const phaseIndex = phase ? ACTIVITY_PHASES.indexOf(phase) : -1;
+  const bar = buildActivityBar(pulse);
+  const dots = ACTIVITY_PHASES.map((_, i) => {
+    if (phaseIndex < 0) return '◇';
+    if (i < phaseIndex) return '◉';
+    if (i === phaseIndex) return '◆';
+    return '◇';
+  }).join(' ');
+  const phaseName = phase ? phaseLabel(phase) : '';
+
+  return (
+    <Box flexDirection="column">
+      <Box>
+        <Text color="yellow" bold>{spinnerChar} </Text>
+        <Text bold>{truncateText(statusText, 80)}</Text>
+      </Box>
+      <Box>
+        <Text dimColor>  ╰ </Text>
+        <Text color="cyan">{bar}</Text>
+        {phaseIndex >= 0 && (
+          <Text dimColor>  {phaseName} ({phaseIndex + 1}/{ACTIVITY_PHASES.length})</Text>
+        )}
+      </Box>
+      <Box>
+        <Text dimColor>      {dots}</Text>
+      </Box>
+    </Box>
+  );
+}
+
 function EmptyState(): JSX.Element {
   return (
     <Box flexDirection="column">
@@ -269,7 +329,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
 
     const timer = setInterval(() => {
-      setStatusPulse((previous) => (previous + 1) % SPINNER_FRAMES.length);
+      setStatusPulse((previous) => (previous + 1) % PULSE_CYCLE);
     }, 80);
 
     return () => clearInterval(timer);
@@ -549,7 +609,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     return truncateText(lastUserPrompt.replace(/\s+/g, ' ').trim(), Math.max(24, Math.floor(terminalWidth * 0.65)));
   }, [lastUserPrompt, terminalWidth]);
 
-  const spinnerFrame = isRunning ? SPINNER_FRAMES[statusPulse] : currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
+  const idleIcon = currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
   const statusText = isRunning ? activeOperationText : phaseStatusText;
   const mainTitle = historyOpen
     ? 'Historique complet'
@@ -602,7 +662,11 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
       <Box marginTop={1} width="100%">
         <Panel title="Prompt" subtitle={historyOpen ? 'ferme l’historique pour ecrire' : 'entree utilisateur'} color="cyan">
           <Box marginBottom={1} flexDirection="column">
-            <Text color={stateColor(currentState)}>{spinnerFrame} {statusText}</Text>
+            {isRunning ? (
+              <ActiveRunIndicator phase={currentPhase} statusText={statusText} pulse={statusPulse} />
+            ) : (
+              <Text color={stateColor(currentState)}>{idleIcon} {statusText}</Text>
+            )}
             <Text dimColor>{historyOpen ? 'Mode historique actif. Reviens avec Ctrl+Y ou Esc.' : 'Ctrl+Y pour basculer vers le transcript complet.'}</Text>
           </Box>
           <Box>
