@@ -21,7 +21,7 @@ import { buildTools } from '../tools/index.js';
 import { evaluateCompletionGate } from './completion-gate.js';
 import { compactConversationContext } from './context-compaction.js';
 import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outcome.js';
-import { createDefaultRuntimeHooks, looksLikeUnresolvedDeliberation, wrapToolsWithRuntimeHooks } from './policy-hooks.js';
+import { createDefaultRuntimeHooks, wrapToolsWithRuntimeHooks } from './policy-hooks.js';
 import { blockingStateForRequiredActions, collectRequiredActions } from './required-actions.js';
 
 const INSPECT_MAX_STEPS = 4;
@@ -575,7 +575,7 @@ function withRuntimeToolEvents(state: RunState, options: YagrRunOptions) {
   };
 }
 
-function shouldAttemptRecovery(outcome: RunOutcome, attemptNumber: number, requiredActions: YagrRequiredAction[], text = ''): boolean {
+function shouldAttemptRecovery(outcome: RunOutcome, attemptNumber: number, requiredActions: YagrRequiredAction[]): boolean {
   if (attemptNumber >= MAX_EXECUTION_ATTEMPTS) {
     return false;
   }
@@ -589,10 +589,6 @@ function shouldAttemptRecovery(outcome: RunOutcome, attemptNumber: number, requi
   }
 
   if (outcome.hasWorkflowWrites && (!outcome.successfulValidate || !outcome.successfulPush)) {
-    return true;
-  }
-
-  if (looksLikeUnresolvedDeliberation(text)) {
     return true;
   }
 
@@ -897,7 +893,9 @@ export class YagrRunEngine {
           attemptNumber === 1 ? (options.maxSteps ?? EXECUTE_MAX_STEPS) : Math.min(options.maxSteps ?? EXECUTE_MAX_STEPS, EXECUTE_RECOVERY_MAX_STEPS),
         );
 
-        text = phaseResult.text;
+        if (phaseResult.text) {
+          text = phaseResult.text;
+        }
         finishReason = phaseResult.finishReason;
         steps += phaseResult.steps;
         toolCalls = phaseResult.toolCalls;
@@ -905,7 +903,7 @@ export class YagrRunEngine {
 
         const outcome = analyzeRunOutcome(state.journal);
         const requiredActions = collectRequiredActions(state.journal);
-        if (!shouldAttemptRecovery(outcome, attemptNumber, requiredActions, text)) {
+        if (!shouldAttemptRecovery(outcome, attemptNumber, requiredActions)) {
           break;
         }
 

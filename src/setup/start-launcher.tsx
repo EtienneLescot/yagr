@@ -112,6 +112,7 @@ function StartLauncher({ onDone }: { onDone: (action: StartLaunchAction) => void
       <Box flexDirection="column">
         <Text bold>{`${CURSOR} Launch target`}</Text>
         <Text dimColor>  Web UI is the default. Onboard re-runs setup, then returns to launch.</Text>
+        <Text dimColor>  Configured gateways (e.g. Telegram) start in background alongside the chosen surface.</Text>
         <Box flexDirection="column" marginTop={1}>
           {START_ACTION_OPTIONS.map((option, index) => {
             const active = index === cursor;
