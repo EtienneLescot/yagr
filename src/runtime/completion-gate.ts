@@ -79,7 +79,7 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
       accepted: false,
       reasons,
       requiredActions,
-      state: hasBlockingWorkflowFailures ? 'failed_terminal' : 'running',
+      state: hasBlockingWorkflowFailures ? 'failed_terminal' : 'resumable',
     };
   }
 

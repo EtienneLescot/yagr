@@ -6,7 +6,12 @@ import test from 'node:test';
 
 import { evaluateCompletionGate } from '../dist/runtime/completion-gate.js';
 import { analyzeRunOutcome } from '../dist/runtime/outcome.js';
-import { createWorkflowPresentationGuardHook, wrapToolsWithRuntimeHooks } from '../dist/runtime/policy-hooks.js';
+import {
+  createDefaultRuntimeHooks,
+  createWorkflowPresentationGuardHook,
+  looksLikeUnresolvedDeliberation,
+  wrapToolsWithRuntimeHooks,
+} from '../dist/runtime/policy-hooks.js';
 import { collectRequiredActions } from '../dist/runtime/required-actions.js';
 import {
   sanitizeAssistantOutput,
@@ -503,4 +508,34 @@ test('completion gate still fails terminally on unresolved n8nac failures after 
 
   assert.equal(decision.accepted, false);
   assert.equal(decision.state, 'failed_terminal');
+});
+
+test('unresolved internal deliberation is rejected as a resumable completion', async () => {
+  const text = [
+    'I will create a "Space & Crypto" exotic workflow.',
+    'Actually, let\'s make it more exotic.',
+    'Wait, I need to find where to save it.',
+    'One more thing: I\'ll check set node info.',
+    'Step 1: Check n8nac-config.json to confirm the directory.',
+    'Step 2: Create the workflow file.',
+    'Step 3: Push and verify.',
+  ].join('\n\n');
+
+  assert.equal(looksLikeUnresolvedDeliberation(text), true);
+
+  const decision = await evaluateCompletionGate({
+    text,
+    finishReason: 'stop',
+    requiredActions: [],
+    hasWorkflowWrites: false,
+    successfulValidate: false,
+    successfulPush: false,
+    unresolvedFailureCount: 0,
+    hooks: createDefaultRuntimeHooks(),
+    context: { runId: 'run-8', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, false);
+  assert.equal(decision.state, 'resumable');
+  assert.match(decision.reasons[0], /unresolved internal deliberation/i);
 });

@@ -11,6 +11,19 @@ type ToolLike = {
 
 type ToolMap = Record<string, ToolLike>;
 
+const UNRESOLVED_DELIBERATION_PATTERNS = [
+  /\bActually\b/gi,
+  /\bWait\b/gi,
+  /\bLet'?s check\b/gi,
+  /\bI'?ll just\b/gi,
+  /\bI need to\b/gi,
+  /\bOne more thing\b/gi,
+  /\bStep \d+:/gi,
+];
+
+const FUTURE_INTENT_PATTERN = /\b(I'?ll|I will|Let'?s|need to|going to)\b/i;
+const RESOLVED_OUTCOME_PATTERN = /\b(created|updated|validated|pushed|verified|deployed|saved|wrote|here is|workflow ready|done\b)\b/i;
+
 function buildWorkflowPresentationRequiredAction(workflowId: string) {
   return {
     id: `pull-workflow-${workflowId}`,
@@ -54,8 +67,42 @@ export function createWorkflowPresentationGuardHook(): YagrRuntimeHook {
   };
 }
 
+export function looksLikeUnresolvedDeliberation(text: string): boolean {
+  const normalized = text.trim();
+  if (normalized.length < 160) {
+    return false;
+  }
+
+  const markerCount = UNRESOLVED_DELIBERATION_PATTERNS.reduce(
+    (total, pattern) => total + (normalized.match(pattern)?.length ?? 0),
+    0,
+  );
+
+  return markerCount >= 3
+    && FUTURE_INTENT_PATTERN.test(normalized)
+    && !RESOLVED_OUTCOME_PATTERN.test(normalized);
+}
+
+export function createUnresolvedDeliberationGuardHook(): YagrRuntimeHook {
+  return {
+    beforeCompletion: async (attempt) => {
+      if (!looksLikeUnresolvedDeliberation(attempt.text)) {
+        return;
+      }
+
+      return {
+        accepted: false,
+        message: 'Completion ended in unresolved internal deliberation instead of a grounded user-facing result.',
+      };
+    },
+  };
+}
+
 export function createDefaultRuntimeHooks(): YagrRuntimeHook[] {
-  return [createWorkflowPresentationGuardHook()];
+  return [
+    createWorkflowPresentationGuardHook(),
+    createUnresolvedDeliberationGuardHook(),
+  ];
 }
 
 export function wrapToolsWithRuntimeHooks<T extends ToolMap>(
