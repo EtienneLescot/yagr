@@ -26,9 +26,9 @@ This separation is one of the central Yagr design decisions:
 
 - Yagr is the product and agent layer
 - n8n is the current orchestrator
-- the orchestrator should remain swappable without rewriting the user story
+- support for additional orchestrators may be added later as an optional choice, without rewriting the user story
 
-That is why Yagr is framed around an orchestrator boundary: n8n today, potentially a native Yagr runtime or other orchestrators later.
+That is why Yagr is framed around an orchestrator boundary: n8n is the primary backend, and support for additional orchestrators may be offered later as an optional choice.
 
 ## Relationship to n8n-as-code
 
