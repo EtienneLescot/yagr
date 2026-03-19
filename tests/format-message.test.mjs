@@ -67,7 +67,8 @@ test('formatWorkflowLinkHtml outputs an anchor tag', () => {
     url: 'https://n8n.example.com/workflow/abc',
     title: 'Test WF',
   });
-  assert.match(result, /<a href="https:\/\/n8n\.example\.com\/workflow\/abc">Test WF<\/a>/);
+  assert.match(result, /<b>Test WF<\/b>/);
+  assert.match(result, /<a href="https:\/\/n8n\.example\.com\/workflow\/abc">https:\/\/n8n\.example\.com\/workflow\/abc<\/a>/);
 });
 
 test('formatWorkflowLinkHtml escapes HTML in title', () => {
