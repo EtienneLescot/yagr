@@ -63,7 +63,7 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
   }
 });
 
-test('system prompt compacts oversized workspace AGENTS while preserving late critical examples', () => {
+test('system prompt includes later AGENTS sections beyond the old truncation boundary', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-prompt-'));
   const previousCwd = process.cwd();
 
@@ -71,7 +71,19 @@ test('system prompt compacts oversized workspace AGENTS while preserving late cr
     const filler = 'A'.repeat(12_500);
     writeWorkspaceInstructions(
       tempDir,
-      `${filler}\n### Critical Example\nAiAgent.uses({ ai_languageModel: this.OpenaiModel.output })\n`,
+      [
+        filler,
+        '### Critical Example',
+        'AiAgent.uses({ ai_languageModel: this.OpenaiModel.output })',
+        '',
+        '## Connection Rules',
+        '// Nodes   : 6  |  Connections: 1',
+        '// ROUTING MAP',
+        '// Start',
+        '//   → Transform',
+        '// AI CONNECTIONS',
+        '> Key rule: Regular nodes connect with source.out(0).to(target.in(0)).',
+      ].join('\n'),
     );
 
     process.chdir(tempDir);
@@ -79,8 +91,12 @@ test('system prompt compacts oversized workspace AGENTS while preserving late cr
 
     assert.match(prompt, /Critical Example/);
     assert.match(prompt, /AiAgent\.uses\(\{ ai_languageModel: this\.OpenaiModel\.output \}\)/);
-    assert.match(prompt, /workspace instructions compacted for startup/);
-    assert.doesNotMatch(prompt, /A{2000}/);
+    assert.match(prompt, /ROUTING MAP/);
+    assert.match(prompt, /AI CONNECTIONS/);
+    assert.match(prompt, /Connections: 1/);
+    assert.match(prompt, /source\.out\(0\)\.to\(target\.in\(0\)\)/);
+    assert.doesNotMatch(prompt, /workspace instructions compacted for startup/);
+    assert.doesNotMatch(prompt, /truncated/);
   } finally {
     process.chdir(previousCwd);
     fs.rmSync(tempDir, { recursive: true, force: true });

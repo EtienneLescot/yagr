@@ -3,9 +3,6 @@ import path from 'node:path';
 import { getYagrLaunchDir, getYagrPaths } from '../config/yagr-home.js';
 import type { Engine } from '../engine/engine.js';
 
-const MAX_INLINE_WORKSPACE_INSTRUCTIONS_CHARS = 6_000;
-const COMPACTED_INSTRUCTION_NOTICE = '[workspace instructions compacted for startup; inspect AGENTS.md directly if a specific later detail is needed]';
-
 export function buildSystemPrompt(engine: Engine): string {
   const homeInstructions = loadHomeInstructions();
   const workspaceInstructions = loadWorkspaceInstructions();
@@ -62,44 +59,6 @@ function readInstructionFile(candidatePath: string): string | undefined {
   }
 }
 
-function compactWorkspaceInstructions(content: string): string {
-  if (content.length <= MAX_INLINE_WORKSPACE_INSTRUCTIONS_CHARS) {
-    return content;
-  }
-
-  const selectedLines = content
-    .split('\n')
-    .filter((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        return false;
-      }
-
-      return /^#{1,6}\s/.test(trimmed)
-        || /^[-*]\s/.test(trimmed)
-        || /^\d+\.\s/.test(trimmed)
-        || /^```/.test(trimmed)
-        || /\b(MUST|NEVER|CRITICAL|Required|required|IMPORTANT)\b/.test(line)
-        || /AiAgent\.uses/.test(line)
-        || /npx --yes n8nac/.test(line)
-        || /n8nac-config\.json/.test(line);
-    })
-    .join('\n')
-    .trim();
-
-  const digest = selectedLines || content;
-  if (digest.length <= MAX_INLINE_WORKSPACE_INSTRUCTIONS_CHARS) {
-    return `${digest}\n${COMPACTED_INSTRUCTION_NOTICE}`;
-  }
-
-  const half = Math.floor((MAX_INLINE_WORKSPACE_INSTRUCTIONS_CHARS - COMPACTED_INSTRUCTION_NOTICE.length - 10) / 2);
-  return [
-    digest.slice(0, half).trimEnd(),
-    COMPACTED_INSTRUCTION_NOTICE,
-    digest.slice(-half).trimStart(),
-  ].join('\n...\n');
-}
-
 function loadHomeInstructions(): string {
   const paths = getYagrPaths();
   const content = readInstructionFile(paths.homeInstructionsPath);
@@ -128,7 +87,7 @@ function loadWorkspaceInstructions(): string {
 
     const content = readInstructionFile(candidatePath);
     if (content) {
-      return `Follow these workspace instructions when relevant: ${compactWorkspaceInstructions(content)}`;
+      return `Follow these workspace instructions when relevant: ${content}`;
     }
   }
 
