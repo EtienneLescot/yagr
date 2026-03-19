@@ -28,7 +28,7 @@ test('extractWorkflowMapHeader returns the workflow-map block when present', () 
 test('resolveWorkflowDiagram prefers the local workflow file header over a fallback diagram', () => {
   const previousHome = process.env.YAGR_HOME;
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-workflow-card-'));
-  const workflowsDir = path.join(tempRoot, 'workflows', 'personal');
+  const workflowsDir = path.join(tempRoot, 'n8n-workspace', 'workflows', 'personal');
   fs.mkdirSync(workflowsDir, { recursive: true });
 
   const workflowPath = path.join(workflowsDir, 'exotic-space-music.workflow.ts');

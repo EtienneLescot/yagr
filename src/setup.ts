@@ -8,6 +8,7 @@ import { Command } from 'commander';
 import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
 import { normalizeGatewaySurfaces, YagrConfigService } from './config/yagr-config-service.js';
 import { YagrN8nConfigService } from './config/n8n-config-service.js';
+import { getYagrN8nWorkspaceDir, syncGeneratedN8nSkillFile } from './config/yagr-home.js';
 import { getGatewaySupervisorStatus } from './gateway/manager.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
 import type { GatewaySurface } from './gateway/types.js';
@@ -141,7 +142,7 @@ export async function runYagrSetup(
       try {
         await refreshAiContext({ host: url, apiKey });
       } catch (err) {
-        process.stderr.write(`Warning: AGENTS.md refresh failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        process.stderr.write(`Warning: n8n skill refresh failed: ${err instanceof Error ? err.message : String(err)}\n`);
       }
     },
 
@@ -220,7 +221,15 @@ export async function runYagrSetup(
 
 async function refreshAiContext(credentials: { host: string; apiKey: string }): Promise<void> {
   const updateAi = new UpdateAiCommand(new Command());
-  await updateAi.run({}, credentials);
+  const previousCwd = process.cwd();
+
+  try {
+    process.chdir(getYagrN8nWorkspaceDir());
+    await updateAi.run({}, credentials);
+    syncGeneratedN8nSkillFile(getYagrN8nWorkspaceDir());
+  } finally {
+    process.chdir(previousCwd);
+  }
 }
 
 function getBaseUrlForProvider(provider: YagrModelProvider): string | undefined {
