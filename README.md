@@ -27,7 +27,7 @@
 
 **Yagr is designed to sit above execution orchestrators.** n8n is the supported orchestrator today, and will remain the primary one. Support for additional orchestrators may be added later as an optional choice.
 
-[**Read Yagr docs**](https://yagr.dev/docs/) · [**Open n8n-as-code**](https://github.com/EtienneLescot/n8n-as-code)
+[**Read Yagr docs**](https://yagr.dev/docs/)
 
 </div>
 
