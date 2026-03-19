@@ -237,17 +237,6 @@ Yagr stores that state in its own home so the product does not depend on whateve
 
 ---
 
-## Products In This Repository
-
-| Product | Role | Where to go |
-|---|---|---|
-| **Yagr** | Autonomous automation agent | [Yagr docs](https://yagr.dev/) |
-| **n8n-as-code** | Workflow GitOps, AI skill, schema grounding, VS Code extension, TypeScript workflows | [n8n-as-code page](https://n8nascode.dev/n8n-as-code/) |
-
-The previous root README for `n8n-as-code` is preserved as a dedicated product README in [products/n8n-as-code/README.md](products/n8n-as-code/README.md).
-
----
-
 ### Troubleshooting
 
 If gateways are not responding or something feels stuck:
