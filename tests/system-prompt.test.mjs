@@ -46,7 +46,7 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
     assert.match(prompt, /You are Yagr, a local coding agent\./);
     assert.match(prompt, /senior software engineer and pragmatic technical architect/i);
     assert.match(prompt, /single mode/i);
-    assert.match(prompt, /AGENT\.md or AGENTS\.md file from the active Yagr workspace root as a foundational instruction file/i);
+    assert.match(prompt, /workspace AGENT\.md or AGENTS\.md content is already loaded into startup context/i);
     assert.match(prompt, /generic coding-agent behavior/i);
     assert.match(prompt, /smallest coherent change that fixes the root cause/i);
     assert.match(prompt, /Favor first-pass correctness over speed/i);
@@ -63,7 +63,7 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
   }
 });
 
-test('system prompt includes later AGENTS sections beyond the old truncation boundary', () => {
+test('system prompt compacts oversized workspace AGENTS while preserving late critical examples', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-prompt-'));
   const previousCwd = process.cwd();
 
@@ -79,7 +79,8 @@ test('system prompt includes later AGENTS sections beyond the old truncation bou
 
     assert.match(prompt, /Critical Example/);
     assert.match(prompt, /AiAgent\.uses\(\{ ai_languageModel: this\.OpenaiModel\.output \}\)/);
-    assert.doesNotMatch(prompt, /truncated/);
+    assert.match(prompt, /workspace instructions compacted for startup/);
+    assert.doesNotMatch(prompt, /A{2000}/);
   } finally {
     process.chdir(previousCwd);
     fs.rmSync(tempDir, { recursive: true, force: true });

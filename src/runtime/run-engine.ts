@@ -112,7 +112,8 @@ function createPhasePrompt(phase: 'inspect' | 'execute', userPrompt: string): st
     return [
       'Yagr internal phase: inspect.',
       'Analyze the request and gather only the context needed to execute it correctly.',
-      'Use tools to inspect the workspace, existing workflow files, workspace instructions, examples, and n8nac workspace status when needed.',
+      'Use tools to inspect the workspace, existing workflow files, examples, and n8nac workspace status when needed.',
+      'Do not reread the workspace AGENT.md or AGENTS.md file during inspect unless a specific later detail is missing from the current context.',
       'Favor correctness over speed in this phase. If an example or rule is likely to determine the right implementation, read it before acting.',
       'Do not claim completion in this phase.',
       `Original request: ${userPrompt}`,

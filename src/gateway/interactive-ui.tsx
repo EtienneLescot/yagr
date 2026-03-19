@@ -338,7 +338,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
       const stderrText = commandBuffersRef.current.stderr;
       const command = commandBuffersRef.current.command || event.toolName;
       pushEntry(
-        event.exitCode === 0 ? 'action' : 'interrupt',
+        'action',
         `Commande ${event.toolName}`,
         buildCommandHistoryText(command, stdoutText, stderrText, event.exitCode, event.message),
       );
