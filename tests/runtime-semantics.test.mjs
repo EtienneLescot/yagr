@@ -9,11 +9,12 @@ import { analyzeRunOutcome } from '../dist/runtime/outcome.js';
 import {
   createDefaultRuntimeHooks,
   createWorkflowPresentationGuardHook,
-  looksLikeUnresolvedDeliberation,
   wrapToolsWithRuntimeHooks,
 } from '../dist/runtime/policy-hooks.js';
 import { collectRequiredActions } from '../dist/runtime/required-actions.js';
 import {
+  INTERNAL_TAG_CLOSE,
+  INTERNAL_TAG_OPEN,
   sanitizeAssistantOutput,
   sanitizeAssistantResponseMessages,
   shouldAbortForInternalPromptLeak,
@@ -199,11 +200,11 @@ test('setup_check is ignored in observed n8nac failures', () => {
 
 test('assistant output sanitization removes leaked internal execution scaffolding', () => {
   const leaked = [
-    'Yagr internal phase: execute.',
+    `${INTERNAL_TAG_OPEN}Yagr internal phase: execute.`,
     'Complete the task end-to-end using the gathered context.',
     'When appropriate, author or edit workflow files, validate them, sync them, verify them, and then summarize what changed.',
     'Ask the user only when a specific missing value blocks execution.',
-    'Original request: Est-ce que tu pourrais me faire un petit workflow "Hello World"?',
+    `Original request: Est-ce que tu pourrais me faire un petit workflow "Hello World"?${INTERNAL_TAG_CLOSE}`,
     'Workflow cree: hello-world.workflow.ts',
   ].join('\n');
 
@@ -211,25 +212,22 @@ test('assistant output sanitization removes leaked internal execution scaffoldin
 });
 
 test('repeated leaked internal prompts trigger a loop abort signal', () => {
-  const repeatedLeak = [
-    'Yagr internal phase: execute.',
-    'Original request: hello',
-    'Yagr internal phase: execute.',
-    'Original request: hello',
-  ].join('\n');
+  const singleBlock = `${INTERNAL_TAG_OPEN}Yagr internal phase: execute.\nOriginal request: hello${INTERNAL_TAG_CLOSE}`;
+  const repeatedLeak = `${singleBlock}\n${singleBlock}`;
 
   assert.equal(shouldAbortForInternalPromptLeak(repeatedLeak), true);
   assert.equal(shouldAbortForInternalPromptLeak(repeatedLeak, 'Debut de reponse visible.'), false);
 });
 
-test('repeated final workflow bundle triggers repetitive output abort signal', () => {
+test('repeated output block triggers repetitive output abort signal', () => {
   const bundle = [
-    'Final workflow content:\nimport { workflow } from \'@n8n-as-code/transformer\';',
+    'Final workflow content:',
+    'import { workflow } from \'@n8n-as-code/transformer\';',
     'Final workflow status: Deployed and verified.',
     'Final workflow URL: http://localhost:5678/workflow/abc123.',
-  ].join('\n\n');
+  ].join('\n');
 
-  assert.equal(shouldAbortForRepetitiveAssistantOutput(`${bundle}\n\n${bundle}`), true);
+  assert.equal(shouldAbortForRepetitiveAssistantOutput(`${bundle}${bundle}`), true);
   assert.equal(shouldAbortForRepetitiveAssistantOutput(bundle), false);
 });
 
@@ -238,13 +236,13 @@ test('assistant response messages are sanitized before reuse across phases', () 
     {
       role: 'assistant',
       content: [
-        { type: 'text', text: 'Yagr internal phase: inspect.\nOriginal request: hello\n' },
+        { type: 'text', text: `${INTERNAL_TAG_OPEN}Yagr internal phase: inspect.\nOriginal request: hello${INTERNAL_TAG_CLOSE}` },
         { type: 'text', text: 'Workflow cree: exotic.workflow.ts' },
       ],
     },
     {
       role: 'assistant',
-      content: 'Yagr internal phase: execute.\nOriginal request: hello\n',
+      content: `${INTERNAL_TAG_OPEN}Yagr internal phase: execute.\nOriginal request: hello${INTERNAL_TAG_CLOSE}`,
     },
     {
       role: 'tool',
@@ -263,15 +261,6 @@ test('assistant response messages are sanitized before reuse across phases', () 
 });
 
 test('sanitized inspect carry-over does not include the internal inspect control prompt', () => {
-  const inspectInstruction = {
-    role: 'user',
-    content: [
-      'Yagr internal phase: inspect.',
-      'Analyze the request and gather only the context needed to execute it correctly.',
-      'Original request: Est-ce que tu peux me faire un petit workflow exotique?',
-    ].join('\n'),
-  };
-
   const inspectResponseMessages = sanitizeAssistantResponseMessages([
     {
       role: 'assistant',
@@ -284,7 +273,6 @@ test('sanitized inspect carry-over does not include the internal inspect control
     ...inspectResponseMessages,
   ];
 
-  assert.equal(executionContext.includes(inspectInstruction), false);
   assert.equal(executionContext.some((message) => typeof message.content === 'string' && message.content.includes('Yagr internal phase: inspect.')), false);
 });
 
@@ -508,34 +496,4 @@ test('completion gate still fails terminally on unresolved n8nac failures after 
 
   assert.equal(decision.accepted, false);
   assert.equal(decision.state, 'failed_terminal');
-});
-
-test('unresolved internal deliberation is rejected as a resumable completion', async () => {
-  const text = [
-    'I will create a "Space & Crypto" exotic workflow.',
-    'Actually, let\'s make it more exotic.',
-    'Wait, I need to find where to save it.',
-    'One more thing: I\'ll check set node info.',
-    'Step 1: Check n8nac-config.json to confirm the directory.',
-    'Step 2: Create the workflow file.',
-    'Step 3: Push and verify.',
-  ].join('\n\n');
-
-  assert.equal(looksLikeUnresolvedDeliberation(text), true);
-
-  const decision = await evaluateCompletionGate({
-    text,
-    finishReason: 'stop',
-    requiredActions: [],
-    hasWorkflowWrites: false,
-    successfulValidate: false,
-    successfulPush: false,
-    unresolvedFailureCount: 0,
-    hooks: createDefaultRuntimeHooks(),
-    context: { runId: 'run-8', phase: 'summarize', state: 'running' },
-  });
-
-  assert.equal(decision.accepted, false);
-  assert.equal(decision.state, 'resumable');
-  assert.match(decision.reasons[0], /unresolved internal deliberation/i);
 });

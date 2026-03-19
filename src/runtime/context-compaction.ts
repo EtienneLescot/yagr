@@ -3,6 +3,7 @@ import type { YagrContextCompactionEvent, YagrLanguageModelConfig, YagrRunJourna
 import { createLanguageModel } from '../llm/create-language-model.js';
 import { analyzeRunOutcome, formatObservedAction } from './outcome.js';
 import { collectRequiredActions } from './required-actions.js';
+import { INTERNAL_TAG_OPEN } from './run-engine.js';
 
 const DEFAULT_CHARS_PER_TOKEN = 4;
 const DEFAULT_THRESHOLD_PERCENT = 70;
@@ -86,15 +87,7 @@ function sanitizeTranscriptText(text: string): string {
     return '';
   }
 
-  if (trimmed.startsWith('Yagr internal phase:')) {
-    return '';
-  }
-
-  if (trimmed.startsWith('Original request:')) {
-    return '';
-  }
-
-  if (trimmed === 'Do not claim completion in this phase.') {
+  if (trimmed.includes(INTERNAL_TAG_OPEN)) {
     return '';
   }
 
