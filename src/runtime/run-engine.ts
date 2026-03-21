@@ -622,7 +622,7 @@ async function executePhase(
 }> {
   throwIfAborted(options.abortSignal);
 
-  if (options.provider === 'mistral' || options.provider === 'copilot-proxy') {
+  if (options.provider === 'mistral' || options.provider === 'copilot-proxy' || options.provider === 'openai-proxy') {
     const result = await generateText({
       abortSignal: options.abortSignal,
       model: createLanguageModel(options),
