@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.11](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.10...yagr@v0.2.11) (2026-03-21)
+
+
+### Features
+
+* add clean:yagr:all script for comprehensive local cleanup ([4506781](https://github.com/EtienneLescot/yagr/commit/450678132ad627458ad83674f8786592130804af))
+* add n8n local runtime options and update related assessments and tests ([af73c4c](https://github.com/EtienneLescot/yagr/commit/af73c4cff586910839a3cbd73eb24428193426a9))
+* add resolveManagedN8nBootstrapStage function and update bootstrap stage handling in install functions ([a27a48a](https://github.com/EtienneLescot/yagr/commit/a27a48a19b1635a495d64466e2154257dc1edaad))
+* enhance managed N8n state handling and add legacy config support in tests ([75bf72c](https://github.com/EtienneLescot/yagr/commit/75bf72c4ca4bb5da6c6523671833349590de5448))
+* implement managed n8n runtime support and enhance configuration handling ([59f4081](https://github.com/EtienneLescot/yagr/commit/59f4081b5bc419d81e9279867a318b56546ce2d2))
+* refactor N8n launch preparation and update related functions for improved handling ([b3d2eca](https://github.com/EtienneLescot/yagr/commit/b3d2eca98c2b65e79c8d258a4a055c2a6563a1d5))
+* update provider integration matrix and enhance OpenAI account handling for tool calls ([f038462](https://github.com/EtienneLescot/yagr/commit/f0384627c3cbc4032b7b5aa74fe1a09fb5c6020d))
+* update provider integration matrix for OpenAI and add tests for account handling ([6bb3058](https://github.com/EtienneLescot/yagr/commit/6bb30583314e027c10334d076b7ced09ff1d151e))
+
 ## [0.2.10](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.9...yagr@v0.2.10) (2026-03-21)
 
 
