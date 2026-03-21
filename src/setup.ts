@@ -13,6 +13,8 @@ import { getGatewaySupervisorStatus } from './gateway/manager.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
 import type { GatewaySurface } from './gateway/types.js';
 import { resolveLanguageModelConfig, resolveModelName, resolveModelProvider, type YagrModelProvider } from './llm/create-language-model.js';
+import { beginGitHubCopilotAuth, completeGitHubCopilotAuth } from './llm/copilot-account.js';
+import { beginGeminiAccountAuth, completeGeminiAccountAuth } from './llm/google-account.js';
 import { fetchAvailableModels } from './llm/provider-discovery.js';
 import {
   getDefaultBaseUrlForProvider,
@@ -110,6 +112,33 @@ export async function runYagrSetup(
   yagrConfigService = new YagrConfigService(),
   n8nConfigService = new YagrN8nConfigService(),
 ): Promise<boolean> {
+  const callbacks = createSetupCallbacks(yagrConfigService, n8nConfigService);
+  const result = await runSetupWizard(callbacks);
+
+  if (result.ok && result.telegramDeepLink) {
+    process.stdout.write(`\nTelegram onboarding link: ${result.telegramDeepLink}\n`);
+    try {
+      const { default: qrcode } = await import('qrcode-terminal');
+      qrcode.generate(result.telegramDeepLink, { small: true });
+    } catch { /* optional */ }
+  }
+
+  return result.ok;
+}
+
+export async function runYagrLlmSetup(
+  yagrConfigService = new YagrConfigService(),
+  n8nConfigService = new YagrN8nConfigService(),
+): Promise<boolean> {
+  const callbacks = createSetupCallbacks(yagrConfigService, n8nConfigService);
+  const result = await runSetupWizard(callbacks, { mode: 'llm-only' });
+  return result.ok;
+}
+
+function createSetupCallbacks(
+  yagrConfigService: YagrConfigService,
+  n8nConfigService: YagrN8nConfigService,
+): SetupCallbacks {
   const callbacks: SetupCallbacks = {
     getN8nDefaults(urlOverride?: string) {
       const cfg = n8nConfigService.getLocalConfig();
@@ -213,6 +242,70 @@ export async function runYagrSetup(
       };
     },
 
+    async startAccountAuth(provider) {
+      if (provider === 'google-proxy') {
+        const challenge = await beginGeminiAccountAuth();
+        const callbackHint = challenge.callbackServerStarted
+          ? 'After authorization, Yagr captures the callback automatically on http://127.0.0.1:8085.'
+          : 'If local callback is unavailable, paste the full redirect URL below.';
+        return {
+          kind: 'input',
+          title: 'Complete Gemini OAuth',
+          instructions: [
+            'Open this URL in your browser and sign in with Google:',
+            challenge.authUrl,
+            callbackHint,
+          ],
+          placeholder: challenge.callbackServerStarted
+            ? 'Press Enter after browser authorization'
+            : 'http://localhost:8085/oauth2callback?code=...',
+          submitLabel: challenge.callbackServerStarted
+            ? 'Continue after authorization'
+            : 'Submit redirect URL',
+          state: challenge.verifier,
+        };
+      }
+
+      if (provider === 'copilot-proxy') {
+        const challenge = await beginGitHubCopilotAuth();
+        return {
+          kind: 'input',
+          title: 'Complete GitHub Copilot OAuth',
+          instructions: [
+            `Open: ${challenge.verificationUri}`,
+            `Enter code: ${challenge.userCode}`,
+            'Authorize GitHub Copilot in your browser, then press Enter below to continue.',
+          ],
+          placeholder: 'Press Enter after browser authorization',
+          submitLabel: 'Continue after authorization',
+          state: JSON.stringify(challenge),
+        };
+      }
+
+      return { kind: 'none' };
+    },
+
+    async completeAccountAuth(provider, input, state) {
+      if (provider === 'google-proxy') {
+        if (!state) {
+          return { ok: false, error: 'Gemini OAuth state is missing.' };
+        }
+        await completeGeminiAccountAuth(input, state);
+        return { ok: true };
+      }
+
+      if (provider === 'copilot-proxy') {
+        if (!state) {
+          return { ok: false, error: 'GitHub Copilot device flow state is missing.' };
+        }
+        const challenge = JSON.parse(state) as { deviceCode: string; intervalMs: number; expiresAt: number };
+        await completeGitHubCopilotAuth(challenge);
+        return { ok: true };
+      }
+
+      return { ok: true };
+    },
+
     async fetchModels(provider, apiKey) {
       const cfg = yagrConfigService.getLocalConfig();
       const baseUrl = cfg.provider === provider ? cfg.baseUrl : getDefaultBaseUrlForProvider(provider);
@@ -261,18 +354,7 @@ export async function runYagrSetup(
       yagrConfigService.setEnabledGatewaySurfaces(surfaces);
     },
   };
-
-  const result = await runSetupWizard(callbacks);
-
-  if (result.ok && result.telegramDeepLink) {
-    process.stdout.write(`\nTelegram onboarding link: ${result.telegramDeepLink}\n`);
-    try {
-      const { default: qrcode } = await import('qrcode-terminal');
-      qrcode.generate(result.telegramDeepLink, { small: true });
-    } catch { /* optional */ }
-  }
-
-  return result.ok;
+  return callbacks;
 }
 
 export async function refreshN8nWorkspaceInstructionsFromSavedConfig(

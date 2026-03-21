@@ -1,7 +1,7 @@
 import type { YagrLocalConfig } from '../config/yagr-config-service.js';
-import { DEFAULT_COPILOT_API_BASE_URL, GITHUB_COPILOT_DEFAULT_MODEL, GITHUB_COPILOT_MODEL_CATALOG } from './copilot-account.js';
-import { GEMINI_ACCOUNT_DEFAULT_MODEL, GEMINI_ACCOUNT_MODEL_CATALOG } from './google-account.js';
-import { OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL, OPENAI_ACCOUNT_MODEL_CATALOG } from './openai-account.js';
+import { DEFAULT_COPILOT_API_BASE_URL, GITHUB_COPILOT_DEFAULT_MODEL } from './copilot-account.js';
+import { GEMINI_ACCOUNT_DEFAULT_MODEL } from './google-account.js';
+import { OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL } from './openai-account.js';
 
 export type YagrModelProvider =
   | 'anthropic'
@@ -216,22 +216,6 @@ function normalizeProxyModelsUrl(baseUrl?: string): string | undefined {
   }
 
   return normalizedBaseUrl.endsWith('/models') ? normalizedBaseUrl : `${normalizedBaseUrl}/models`;
-}
-
-export function getStaticModelCatalogForProvider(provider: YagrModelProvider): string[] {
-  if (provider === 'openai-proxy') {
-    return [...OPENAI_ACCOUNT_MODEL_CATALOG];
-  }
-
-  if (provider === 'google-proxy') {
-    return [...GEMINI_ACCOUNT_MODEL_CATALOG];
-  }
-
-  if (provider === 'copilot-proxy') {
-    return [...GITHUB_COPILOT_MODEL_CATALOG];
-  }
-
-  return [];
 }
 
 function normalizeBaseUrl(baseUrl?: string): string | undefined {

@@ -4,16 +4,16 @@ import { spawn } from 'node:child_process';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import {
   ensureGitHubCopilotSession,
-  GITHUB_COPILOT_MODEL_CATALOG,
+  fetchGitHubCopilotModels,
   resolveCopilotApiToken,
   validateGitHubCopilotRuntime,
 } from './copilot-account.js';
 import {
   ensureGeminiAccountSession,
-  GEMINI_ACCOUNT_MODEL_CATALOG,
-  validateGeminiAccountRuntime,
+  fetchGeminiOAuthModels,
 } from './google-account.js';
-import { ensureOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL, OPENAI_ACCOUNT_MODEL_CATALOG, validateOpenAiAccountRuntime } from './openai-account.js';
+import { readCachedModelCatalog, writeCachedModelCatalog } from './model-catalog-cache.js';
+import { ensureOpenAiAccountSession, fetchOpenAiAccountModels, OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL, validateOpenAiAccountRuntime } from './openai-account.js';
 import { fetchAvailableModels } from './provider-discovery.js';
 import { getDefaultBaseUrlForProvider, getProviderDefinition, isOAuthAccountProvider, type YagrModelProvider } from './provider-registry.js';
 
@@ -81,17 +81,41 @@ export async function prepareProviderRuntime(
       };
     }
 
+    let models: string[] = [];
+    let usedCacheFallback = false;
+    try {
+      const discovered = await withTimeout(fetchOpenAiAccountModels(session.accessToken), 6_000);
+      if (discovered.length > 0) {
+        models = discovered;
+        writeCachedModelCatalog(provider, discovered);
+      }
+    } catch {
+      // Fallback to cache.
+    }
+    if (models.length === 0) {
+      models = readCachedModelCatalog(provider);
+      usedCacheFallback = models.length > 0;
+    }
+
     return {
       ready: true,
       runtime: {
         provider,
         baseUrl: OPENAI_ACCOUNT_BASE_URL,
         apiKey: session.accessToken,
-        models: [...OPENAI_ACCOUNT_MODEL_CATALOG],
-        notes: ['Connected through the local Codex ChatGPT session.', 'Runtime validated with Codex exec.'],
+        models,
+        notes: [
+          'Connected through the local Codex ChatGPT session.',
+          'Runtime validated with Codex exec.',
+          usedCacheFallback ? 'Using locally cached OpenAI account models.' : 'Model discovery completed from OpenAI account runtime.',
+        ],
         autoStarted: false,
       },
-      notes: ['Connected through the local Codex ChatGPT session.', 'Runtime validated with Codex exec.'],
+      notes: [
+        'Connected through the local Codex ChatGPT session.',
+        'Runtime validated with Codex exec.',
+        usedCacheFallback ? 'Using locally cached OpenAI account models.' : 'Model discovery completed from OpenAI account runtime.',
+      ],
     };
   }
 
@@ -100,18 +124,33 @@ export async function prepareProviderRuntime(
     if (!session) {
       return {
         ready: false,
-        reason: 'Unable to sign in to Gemini. Launch the Gemini CLI login flow and retry.',
-        notes: ['Gemini OAuth is handled through the local Gemini CLI session.'],
+        reason: 'Unable to sign in to Gemini. Complete the Google OAuth flow and retry.',
+        notes: ['Gemini OAuth is handled directly by Yagr without a localhost callback server.'],
       };
     }
 
-    const probe = await validateGeminiAccountRuntime();
-    if (!probe.ok) {
-      return {
-        ready: false,
-        reason: probe.error || 'Gemini OAuth runtime validation failed after login.',
-        notes: ['Google sign-in exists, but the Gemini CLI runtime did not validate successfully.'],
-      };
+    let models: string[] = [];
+    let usedCacheFallback = false;
+    try {
+      const discovered = await withTimeout(fetchGeminiOAuthModels(session.accessToken), 13_000);
+      if (discovered.length > 0) {
+        models = discovered;
+        writeCachedModelCatalog(provider, discovered);
+      }
+    } catch {
+      // Fallback to cache.
+    }
+
+    if (models.length === 0) {
+      models = readCachedModelCatalog(provider);
+      usedCacheFallback = models.length > 0;
+    }
+
+    const notes = ['Connected through Yagr-managed Gemini OAuth.'];
+    if (usedCacheFallback) {
+      notes.push('Using locally cached Gemini models; live discovery did not complete in time.');
+    } else {
+      notes.push('Model discovery completed from Gemini OAuth.');
     }
 
     return {
@@ -119,11 +158,11 @@ export async function prepareProviderRuntime(
       runtime: {
         provider,
         baseUrl: options.baseUrl || '',
-        models: [...GEMINI_ACCOUNT_MODEL_CATALOG],
-        notes: ['Connected through the local Gemini CLI OAuth session.', 'Runtime validated with Gemini CLI.'],
+        models,
+        notes,
         autoStarted: false,
       },
-      notes: ['Connected through the local Gemini CLI OAuth session.', 'Runtime validated with Gemini CLI.'],
+      notes,
     };
   }
 
@@ -132,8 +171,8 @@ export async function prepareProviderRuntime(
     if (!session) {
       return {
         ready: false,
-        reason: 'Unable to sign in to GitHub. Run `gh auth login --web` or retry setup.',
-        notes: ['GitHub Copilot OAuth is handled through the local GitHub CLI session.'],
+        reason: 'Unable to sign in to GitHub Copilot. Complete the device login flow and retry.',
+        notes: ['GitHub Copilot OAuth is handled directly by Yagr with GitHub device flow.'],
       };
     }
 
@@ -147,16 +186,40 @@ export async function prepareProviderRuntime(
       };
     }
 
+    let models: string[] = [];
+    let usedCacheFallback = false;
+    try {
+      const discovered = await withTimeout(fetchGitHubCopilotModels(runtimeAuth.token, runtimeAuth.baseUrl), 6_000);
+      if (discovered.length > 0) {
+        models = discovered;
+        writeCachedModelCatalog(provider, discovered);
+      }
+    } catch {
+      // Fallback to cache.
+    }
+    if (models.length === 0) {
+      models = readCachedModelCatalog(provider);
+      usedCacheFallback = models.length > 0;
+    }
+
     return {
       ready: true,
       runtime: {
         provider,
         baseUrl: runtimeAuth.baseUrl,
-        models: [...GITHUB_COPILOT_MODEL_CATALOG],
-        notes: ['Connected through the local GitHub login and Copilot token exchange.', 'Runtime validated with GitHub Copilot.'],
+        models,
+        notes: [
+          'Connected through Yagr-managed GitHub device login and Copilot token exchange.',
+          'Runtime validated with GitHub Copilot.',
+          usedCacheFallback ? 'Using locally cached Copilot models.' : 'Model discovery completed from Copilot runtime.',
+        ],
         autoStarted: false,
       },
-      notes: ['Connected through the local GitHub login and Copilot token exchange.', 'Runtime validated with GitHub Copilot.'],
+      notes: [
+        'Connected through Yagr-managed GitHub device login and Copilot token exchange.',
+        'Runtime validated with GitHub Copilot.',
+        usedCacheFallback ? 'Using locally cached Copilot models.' : 'Model discovery completed from Copilot runtime.',
+      ],
     };
   }
 
@@ -399,6 +462,21 @@ function isProcessRunning(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 }
 
 function delay(ms: number): Promise<void> {

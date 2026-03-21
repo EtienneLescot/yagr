@@ -10,6 +10,7 @@ export interface YagrPaths {
   n8nWorkspaceDir: string;
   managedN8nDir: string;
   proxyRuntimeDir: string;
+  accountAuthDir: string;
   homeInstructionsPath: string;
   workspaceInstructionsPath: string;
   yagrConfigPath: string;
@@ -72,6 +73,10 @@ export function getYagrProxyRuntimeDir(): string {
   return path.join(getYagrHomeDir(), 'proxy-runtime');
 }
 
+export function getYagrAccountAuthDir(): string {
+  return path.join(getYagrHomeDir(), 'oauth');
+}
+
 export function resolveLegacyConfStorePath(
   projectName: string,
   configName: string,
@@ -99,6 +104,7 @@ export function getYagrPaths(): YagrPaths {
   const n8nWorkspaceDir = getYagrN8nWorkspaceDir();
   const managedN8nDir = getYagrManagedN8nDir();
   const proxyRuntimeDir = getYagrProxyRuntimeDir();
+  const accountAuthDir = getYagrAccountAuthDir();
   const legacyYagrCredentialsPath = resolveLegacyConfStorePath('yagr', 'credentials');
   const legacyN8nCredentialsPath = resolveLegacyConfStorePath('n8nac', 'credentials');
 
@@ -108,6 +114,7 @@ export function getYagrPaths(): YagrPaths {
     n8nWorkspaceDir,
     managedN8nDir,
     proxyRuntimeDir,
+    accountAuthDir,
     homeInstructionsPath: path.join(homeDir, 'AGENTS.md'),
     workspaceInstructionsPath: path.join(n8nWorkspaceDir, 'AGENTS.md'),
     yagrConfigPath: path.join(homeDir, 'yagr-config.json'),
@@ -128,5 +135,6 @@ export function ensureYagrHomeDir(): string {
   fs.mkdirSync(paths.n8nWorkspaceDir, { recursive: true });
   fs.mkdirSync(paths.managedN8nDir, { recursive: true });
   fs.mkdirSync(paths.proxyRuntimeDir, { recursive: true });
+  fs.mkdirSync(paths.accountAuthDir, { recursive: true });
   return paths.homeDir;
 }

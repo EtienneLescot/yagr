@@ -1,7 +1,5 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, spawn } from 'node:child_process';
 import type {
   LanguageModelV1,
   LanguageModelV1CallOptions,
@@ -9,23 +7,22 @@ import type {
   LanguageModelV1Prompt,
   LanguageModelV1StreamPart,
 } from '@ai-sdk/provider';
-import { getYagrPaths } from '../config/yagr-home.js';
+import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 
 export const DEFAULT_COPILOT_API_BASE_URL = 'https://api.individual.githubcopilot.com';
 export const GITHUB_COPILOT_DEFAULT_MODEL = 'gpt-4.1';
-export const GITHUB_COPILOT_MODEL_CATALOG = Object.freeze([
-  'claude-sonnet-4.6',
-  'claude-sonnet-4.5',
-  'gpt-4o',
-  'gpt-4.1',
-  'gpt-4.1-mini',
-  'gpt-4.1-nano',
-  'o1',
-  'o1-mini',
-  'o3-mini',
-]);
 
+const GITHUB_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
+const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
+const GITHUB_ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token';
 const COPILOT_TOKEN_URL = 'https://api.github.com/copilot_internal/v2/token';
+
+interface GitHubStoredSession {
+  provider: 'copilot-proxy';
+  githubToken: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 interface CachedCopilotToken {
   token: string;
@@ -33,13 +30,42 @@ interface CachedCopilotToken {
   updatedAt: number;
 }
 
+interface GitHubDeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+}
+
+type GitHubDeviceTokenResponse =
+  | {
+    access_token: string;
+    token_type: string;
+    scope?: string;
+  }
+  | {
+    error: string;
+    error_description?: string;
+  };
+
 export interface GitHubCopilotSession {
   githubToken: string;
   source: string;
 }
 
+export interface GitHubCopilotAuthChallenge {
+  verificationUri: string;
+  userCode: string;
+  deviceCode: string;
+  intervalMs: number;
+  expiresAt: number;
+}
+
 export function getGitHubCopilotSession(): GitHubCopilotSession | undefined {
-  const envToken = readOptionalString(process.env.GH_TOKEN) || readOptionalString(process.env.GITHUB_TOKEN);
+  const envToken = readOptionalString(process.env.COPILOT_GITHUB_TOKEN)
+    || readOptionalString(process.env.GH_TOKEN)
+    || readOptionalString(process.env.GITHUB_TOKEN);
   if (envToken) {
     return {
       githubToken: envToken,
@@ -47,23 +73,15 @@ export function getGitHubCopilotSession(): GitHubCopilotSession | undefined {
     };
   }
 
-  const token = readGitHubTokenFromCli();
-  if (token) {
-    return {
-      githubToken: token,
-      source: 'gh',
-    };
+  const stored = readStoredGitHubSession();
+  if (!stored) {
+    return undefined;
   }
 
-  const fileToken = readGitHubTokenFromHostsFile();
-  if (fileToken) {
-    return {
-      githubToken: fileToken,
-      source: 'hosts',
-    };
-  }
-
-  return undefined;
+  return {
+    githubToken: stored.githubToken,
+    source: 'yagr',
+  };
 }
 
 export async function ensureGitHubCopilotSession(): Promise<GitHubCopilotSession | undefined> {
@@ -71,13 +89,7 @@ export async function ensureGitHubCopilotSession(): Promise<GitHubCopilotSession
   if (existing) {
     return existing;
   }
-
-  const loginSucceeded = await runGitHubLogin();
-  if (!loginSucceeded) {
-    return undefined;
-  }
-
-  return getGitHubCopilotSession();
+  return undefined;
 }
 
 export async function resolveCopilotApiToken(githubToken: string): Promise<{
@@ -149,6 +161,27 @@ export async function validateGitHubCopilotRuntime(modelId = GITHUB_COPILOT_DEFA
   }
 }
 
+export async function fetchGitHubCopilotModels(token: string, baseUrl = DEFAULT_COPILOT_API_BASE_URL): Promise<string[]> {
+  const response = await fetch(`${baseUrl}/models`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+      'User-Agent': 'GitHubCopilotChat/0.26.7',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub Copilot model discovery failed: HTTP ${response.status}`);
+  }
+
+  const payload = await response.json() as { data?: Array<{ id?: string }> };
+  const models = (payload.data ?? [])
+    .map((entry) => entry.id?.trim())
+    .filter((entry): entry is string => Boolean(entry))
+    .sort((a, b) => a.localeCompare(b));
+  return [...new Set(models)];
+}
+
 export function createGitHubCopilotLanguageModel(modelId: string): LanguageModelV1 {
   return {
     specificationVersion: 'v1',
@@ -216,7 +249,7 @@ async function runGitHubCopilotCompletion(
 }> {
   const session = await ensureGitHubCopilotSession();
   if (!session) {
-    throw new Error('GitHub login not found. Run `gh auth login --web` or `yagr setup` again.');
+    throw new Error('GitHub Copilot OAuth session not found. Run `yagr setup` again.');
   }
 
   const runtimeAuth = await resolveCopilotApiToken(session.githubToken);
@@ -242,56 +275,145 @@ async function runGitHubCopilotCompletion(
   }
 
   const payload = await response.json() as Record<string, unknown>;
-  const text = extractCopilotText(payload);
-  const usage = extractOpenAiUsage(payload);
   return {
-    text,
+    text: extractCopilotText(payload),
     finishReason: 'stop',
-    usage,
+    usage: extractOpenAiUsage(payload),
     warnings,
   };
 }
 
-async function runGitHubLogin(): Promise<boolean> {
-  return await new Promise((resolve) => {
-    const child = spawn('gh', ['auth', 'login', '--web'], {
-      stdio: 'inherit',
-      env: process.env,
-      cwd: process.cwd(),
+export async function beginGitHubCopilotAuth(): Promise<GitHubCopilotAuthChallenge> {
+  const device = await requestDeviceCode();
+  return {
+    verificationUri: device.verification_uri,
+    userCode: device.user_code,
+    deviceCode: device.device_code,
+    intervalMs: Math.max(1000, device.interval * 1000),
+    expiresAt: Date.now() + device.expires_in * 1000,
+  };
+}
+
+export async function completeGitHubCopilotAuth(challenge: {
+  deviceCode: string;
+  intervalMs: number;
+  expiresAt: number;
+}): Promise<GitHubCopilotSession> {
+  const githubToken = await pollForAccessToken(challenge);
+  const stored: GitHubStoredSession = {
+    provider: 'copilot-proxy',
+    githubToken,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  writeStoredGitHubSession(stored);
+  return {
+    githubToken: stored.githubToken,
+    source: 'yagr',
+  };
+}
+
+async function requestDeviceCode(): Promise<GitHubDeviceCodeResponse> {
+  const body = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    scope: 'read:user',
+  });
+
+  const response = await fetch(GITHUB_DEVICE_CODE_URL, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub device code failed: HTTP ${response.status}`);
+  }
+
+  return await response.json() as GitHubDeviceCodeResponse;
+}
+
+async function pollForAccessToken(params: {
+  deviceCode: string;
+  intervalMs: number;
+  expiresAt: number;
+}): Promise<string> {
+  const body = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    device_code: params.deviceCode,
+    grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+  });
+
+  while (Date.now() < params.expiresAt) {
+    const response = await fetch(GITHUB_ACCESS_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body,
     });
 
-    child.on('error', () => resolve(false));
-    child.on('exit', (code) => resolve(code === 0));
-  });
+    if (!response.ok) {
+      throw new Error(`GitHub access token failed: HTTP ${response.status}`);
+    }
+
+    const payload = await response.json() as GitHubDeviceTokenResponse;
+    if ('access_token' in payload && typeof payload.access_token === 'string') {
+      return payload.access_token;
+    }
+
+    const error = 'error' in payload ? payload.error : 'unknown';
+    if (error === 'authorization_pending') {
+      await delay(params.intervalMs);
+      continue;
+    }
+    if (error === 'slow_down') {
+      await delay(params.intervalMs + 2000);
+      continue;
+    }
+    if (error === 'access_denied') {
+      throw new Error('GitHub login cancelled.');
+    }
+    if (error === 'expired_token') {
+      throw new Error('GitHub device code expired. Retry setup.');
+    }
+    throw new Error(`GitHub device flow error: ${error}`);
+  }
+
+  throw new Error('GitHub device code expired. Retry setup.');
 }
 
-function readGitHubTokenFromCli(): string | undefined {
+function getGitHubSessionPath(): string {
+  const override = process.env.YAGR_COPILOT_SESSION_PATH?.trim();
+  if (override) {
+    return override;
+  }
+
+  ensureYagrHomeDir();
+  return path.join(getYagrPaths().accountAuthDir, 'copilot-oauth.json');
+}
+
+function readStoredGitHubSession(): GitHubStoredSession | undefined {
+  const sessionPath = getGitHubSessionPath();
+  if (!fs.existsSync(sessionPath)) {
+    return undefined;
+  }
+
   try {
-    return readOptionalString(execFileSync('gh', ['auth', 'token'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      env: process.env,
-      cwd: process.cwd(),
-    }));
+    const parsed = JSON.parse(fs.readFileSync(sessionPath, 'utf8')) as GitHubStoredSession;
+    return parsed.githubToken ? parsed : undefined;
   } catch {
     return undefined;
   }
 }
 
-function readGitHubTokenFromHostsFile(): string | undefined {
-  const hostsPath = process.env.YAGR_GITHUB_HOSTS_PATH
-    || path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'gh', 'hosts.yml');
-  if (!fs.existsSync(hostsPath)) {
-    return undefined;
-  }
-
-  try {
-    const content = fs.readFileSync(hostsPath, 'utf8');
-    const match = content.match(/github\.com:\s*(?:\n[^\n]*)*?\n\s+oauth_token:\s+([^\n]+)/m);
-    return readOptionalString(match?.[1]);
-  } catch {
-    return undefined;
-  }
+function writeStoredGitHubSession(session: GitHubStoredSession): void {
+  const sessionPath = getGitHubSessionPath();
+  fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+  fs.writeFileSync(sessionPath, JSON.stringify(session, null, 2));
 }
 
 function getCopilotTokenCachePath(): string {
@@ -300,8 +422,8 @@ function getCopilotTokenCachePath(): string {
     return override;
   }
 
-  const paths = getYagrPaths();
-  return path.join(paths.proxyRuntimeDir, 'sessions', 'copilot-token.json');
+  ensureYagrHomeDir();
+  return path.join(getYagrPaths().accountAuthDir, 'copilot-runtime-token.json');
 }
 
 function readCachedCopilotToken(cachePath: string): CachedCopilotToken | undefined {
@@ -332,13 +454,9 @@ function parseCopilotTokenResponse(value: unknown): { token: string; expiresAt: 
 
   const record = value as Record<string, unknown>;
   const token = readOptionalString(record.token);
-  if (!token) {
-    throw new Error('Copilot token response missing token');
-  }
-
   const expiresAt = normalizeEpochMillis(record.expires_at);
-  if (!expiresAt) {
-    throw new Error('Copilot token response missing expires_at');
+  if (!token || !expiresAt) {
+    throw new Error('Invalid Copilot token response.');
   }
 
   return { token, expiresAt };
@@ -378,11 +496,9 @@ function flattenPromptPart(message: LanguageModelV1Prompt[number]): string {
   if (message.role === 'system') {
     return message.content;
   }
-
   if (message.role === 'user') {
     return message.content.map((part) => part.type === 'text' ? part.text : `[${part.type}]`).join('\n');
   }
-
   if (message.role === 'assistant') {
     return message.content.map((part) => {
       if (part.type === 'text' || part.type === 'reasoning') {
@@ -394,7 +510,6 @@ function flattenPromptPart(message: LanguageModelV1Prompt[number]): string {
       return `[${part.type}]`;
     }).join('\n');
   }
-
   return message.content.map((part) => `[tool-result ${part.toolName}] ${JSON.stringify(part.result)}`).join('\n');
 }
 
@@ -410,15 +525,11 @@ function extractCopilotText(payload: Record<string, unknown>): string {
   if (typeof content === 'string') {
     return content;
   }
-
   if (Array.isArray(content)) {
-    return content
-      .map((part) => typeof part === 'object' && part && typeof (part as Record<string, unknown>).text === 'string'
-        ? (part as Record<string, string>).text
-        : '')
-      .join('');
+    return content.map((part) => typeof part === 'object' && part && typeof (part as Record<string, unknown>).text === 'string'
+      ? (part as Record<string, string>).text
+      : '').join('');
   }
-
   return '';
 }
 
@@ -445,4 +556,8 @@ function normalizeEpochMillis(value: unknown): number | undefined {
     }
   }
   return undefined;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

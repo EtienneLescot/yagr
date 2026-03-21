@@ -12,16 +12,6 @@ import type {
 
 export const OPENAI_ACCOUNT_BASE_URL = 'https://chatgpt.com/backend-api';
 export const OPENAI_ACCOUNT_DEFAULT_MODEL = 'gpt-5.4';
-export const OPENAI_ACCOUNT_MODEL_CATALOG = Object.freeze([
-  'gpt-5.4',
-  'gpt-5.3-codex',
-  'gpt-5.3-codex-spark',
-  'gpt-5.2',
-  'gpt-5.2-codex',
-  'gpt-5.1-codex',
-  'gpt-5.1-codex-mini',
-  'gpt-5.1-codex-max',
-]);
 
 interface CodexAuthFile {
   auth_mode?: string;
@@ -177,6 +167,26 @@ export async function validateOpenAiAccountRuntime(modelId = OPENAI_ACCOUNT_DEFA
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+export async function fetchOpenAiAccountModels(accessToken: string): Promise<string[]> {
+  const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}/models`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`OpenAI account model discovery failed: HTTP ${response.status}`);
+  }
+
+  const payload = await response.json() as { data?: Array<{ id?: string }> };
+  const models = (payload.data ?? [])
+    .map((entry) => entry.id?.trim())
+    .filter((entry): entry is string => Boolean(entry))
+    .sort((a, b) => a.localeCompare(b));
+  return [...new Set(models)];
 }
 
 async function runCodexExec(
