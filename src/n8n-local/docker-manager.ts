@@ -43,13 +43,14 @@ export async function installManagedDockerN8n(options: InstallManagedDockerN8nOp
   const existingState = readManagedN8nState();
   const port = options.port ?? existingState?.port ?? assessment.preferredPort ?? DEFAULT_N8N_PORT;
   const image = options.image ?? existingState?.image ?? DEFAULT_N8N_IMAGE;
+  const bootstrapStage = existingState?.bootstrapStage ?? 'owner-pending';
 
   writeDockerComposeFiles({ image, port });
   updateManagedN8nState(() => buildManagedN8nState({
     image,
     port,
     status: 'starting',
-    bootstrapStage: 'owner-pending',
+    bootstrapStage,
   }));
 
   await runDockerCompose(['up', '-d', '--pull', 'missing']);
@@ -59,7 +60,7 @@ export async function installManagedDockerN8n(options: InstallManagedDockerN8nOp
   return updateManagedN8nState((current) => ({
     ...(current ?? buildManagedN8nState({ image, port })),
     status: 'ready',
-    bootstrapStage: 'owner-pending',
+    bootstrapStage: current?.bootstrapStage ?? bootstrapStage,
     lastError: undefined,
   }));
 

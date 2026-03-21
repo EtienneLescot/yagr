@@ -27,12 +27,13 @@ export async function installManagedDirectN8n(options: { port?: number } = {}): 
   fs.mkdirSync(npmCacheDir, { recursive: true });
   const existingState = readManagedN8nState();
   const port = options.port ?? existingState?.port ?? assessment.preferredPort ?? DEFAULT_N8N_PORT;
+  const bootstrapStage = existingState?.bootstrapStage ?? 'owner-pending';
   const state = updateManagedN8nState(() => buildManagedN8nState({
     strategy: 'direct',
     image: '',
     port,
     status: 'starting',
-    bootstrapStage: 'owner-pending',
+    bootstrapStage,
     logFile: paths.logFile,
   }));
 
@@ -76,7 +77,7 @@ export async function installManagedDirectN8n(options: { port?: number } = {}): 
     logFile: paths.logFile,
     pid: child.pid,
     status: 'ready',
-    bootstrapStage: 'owner-pending',
+    bootstrapStage: current?.bootstrapStage ?? bootstrapStage,
     lastError: undefined,
   }));
 }
