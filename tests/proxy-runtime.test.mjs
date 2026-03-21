@@ -59,7 +59,9 @@ test('prepareProviderRuntime resolves the local Codex ChatGPT session for openai
   }));
 
   const previousAuthPath = process.env.YAGR_CODEX_AUTH_PATH;
+  const previousSkipValidation = process.env.YAGR_SKIP_CODEX_RUNTIME_VALIDATION;
   process.env.YAGR_CODEX_AUTH_PATH = authPath;
+  process.env.YAGR_SKIP_CODEX_RUNTIME_VALIDATION = '1';
 
   try {
     const result = await prepareProviderRuntime('openai-proxy');
@@ -78,6 +80,11 @@ test('prepareProviderRuntime resolves the local Codex ChatGPT session for openai
       'gpt-5.1-codex-max',
     ]);
   } finally {
+    if (previousSkipValidation === undefined) {
+      delete process.env.YAGR_SKIP_CODEX_RUNTIME_VALIDATION;
+    } else {
+      process.env.YAGR_SKIP_CODEX_RUNTIME_VALIDATION = previousSkipValidation;
+    }
     if (previousAuthPath === undefined) {
       delete process.env.YAGR_CODEX_AUTH_PATH;
     } else {

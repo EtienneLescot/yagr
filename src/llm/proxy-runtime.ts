@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
-import { ensureOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_MODEL_CATALOG } from './openai-account.js';
+import { ensureOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL, OPENAI_ACCOUNT_MODEL_CATALOG, validateOpenAiAccountRuntime } from './openai-account.js';
 import { fetchAvailableModels } from './provider-discovery.js';
 import { getDefaultBaseUrlForProvider, getProviderDefinition, type YagrModelProvider } from './provider-registry.js';
 
@@ -61,6 +61,15 @@ export async function prepareProviderRuntime(
       };
     }
 
+    const probe = await validateOpenAiAccountRuntime(OPENAI_ACCOUNT_DEFAULT_MODEL);
+    if (!probe.ok) {
+      return {
+        ready: false,
+        reason: probe.error || 'OpenAI account runtime validation failed after login.',
+        notes: ['ChatGPT sign-in exists, but the Codex execution runtime did not validate successfully.'],
+      };
+    }
+
     return {
       ready: true,
       runtime: {
@@ -68,10 +77,10 @@ export async function prepareProviderRuntime(
         baseUrl: OPENAI_ACCOUNT_BASE_URL,
         apiKey: session.accessToken,
         models: [...OPENAI_ACCOUNT_MODEL_CATALOG],
-        notes: ['Connected through the local Codex ChatGPT session.'],
+        notes: ['Connected through the local Codex ChatGPT session.', 'Runtime validated with Codex exec.'],
         autoStarted: false,
       },
-      notes: ['Connected through the local Codex ChatGPT session.'],
+      notes: ['Connected through the local Codex ChatGPT session.', 'Runtime validated with Codex exec.'],
     };
   }
 
