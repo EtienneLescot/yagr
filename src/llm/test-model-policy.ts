@@ -9,7 +9,7 @@ const TEST_MODEL_PREFERENCES: Partial<Record<YagrModelProvider, string[]>> = {
   openrouter: ['google/gemini-3-flash-preview', 'openai/gpt-4.1-mini', 'openai/gpt-4o-mini'],
   'openai-proxy': ['gpt-5.1-codex-mini', 'gpt-5.1'],
   'anthropic-proxy': ['claude-3-haiku-20240307', 'claude-sonnet-4-5'],
-  'google-proxy': ['gemini-2.5-flash', 'gemini-2.5-pro'],
+  'google-proxy': ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-pro'],
   'copilot-proxy': ['gpt-4.1'],
 };
 
