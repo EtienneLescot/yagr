@@ -141,6 +141,7 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
       title: 'Connect OpenAI account',
       body: [
         'Yagr will open your browser to sign you in with your ChatGPT account.',
+        'This uses your ChatGPT subscription — no API credits are consumed.',
       ],
       continueLabel: 'Sign in with ChatGPT',
     };
