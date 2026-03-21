@@ -3,7 +3,12 @@
  * Single source of truth for workflow-link rendering and markdown-to-surface conversion.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { YagrToolEvent } from '../types.js';
+import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
+import { buildLocalWorkflowOpenBridgeUrl } from './local-open-bridge.js';
 
 // ---------------------------------------------------------------------------
 // Workflow embed extraction (from tool events)
@@ -12,12 +17,22 @@ import type { YagrToolEvent } from '../types.js';
 export interface WorkflowEmbed {
   workflowId: string;
   url: string;
+  targetUrl?: string;
   title?: string;
+}
+
+export function workflowEmbedKey(embed: WorkflowEmbed): string {
+  return `${embed.workflowId}::${embed.targetUrl ?? embed.url}`;
 }
 
 export function extractWorkflowEmbed(event: YagrToolEvent): WorkflowEmbed | undefined {
   if (event.type === 'embed' && event.kind === 'workflow') {
-    return { workflowId: event.workflowId, url: event.url, title: event.title };
+    return {
+      workflowId: event.workflowId,
+      url: event.url,
+      targetUrl: event.targetUrl,
+      title: event.title,
+    };
   }
   return undefined;
 }
@@ -28,17 +43,18 @@ export function extractWorkflowEmbed(event: YagrToolEvent): WorkflowEmbed | unde
 
 export function formatWorkflowLinkPlain(embed: WorkflowEmbed): string {
   const label = embed.title ?? `Workflow ${embed.workflowId}`;
-  return `🔗 ${label}\n   ${embed.url}`;
+  return `🔗 ${label}`;
 }
 
 export function formatWorkflowLinkHtml(embed: WorkflowEmbed): string {
   const label = escapeHtml(embed.title ?? `Workflow ${embed.workflowId}`);
-  return `🔗 <b>${label}</b>\n${embed.url}`;
+  return `🔗 <a href="${escapeHtml(embed.url)}">${label}</a>`;
 }
 
 export function formatWorkflowLinkTerminal(embed: WorkflowEmbed): string {
   const label = embed.title ?? `Workflow ${embed.workflowId}`;
-  return `🔗 \x1b]8;;${embed.url}\x07${label}\x1b]8;;\x07`;
+  const terminalUrl = resolveTerminalWorkflowOpenUrl(embed);
+  return `🔗 \x1b]8;;${terminalUrl}\x07${label}\x1b]8;;\x07`;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,18 +62,21 @@ export function formatWorkflowLinkTerminal(embed: WorkflowEmbed): string {
 // ---------------------------------------------------------------------------
 
 export function buildWorkflowFooterPlain(embeds: WorkflowEmbed[]): string {
-  if (embeds.length === 0) return '';
-  return embeds.map(formatWorkflowLinkPlain).join('\n');
+  const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
+  if (uniqueEmbeds.length === 0) return '';
+  return uniqueEmbeds.map(formatWorkflowLinkPlain).join('\n');
 }
 
 export function buildWorkflowFooterHtml(embeds: WorkflowEmbed[]): string {
-  if (embeds.length === 0) return '';
-  return embeds.map(formatWorkflowLinkHtml).join('\n');
+  const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
+  if (uniqueEmbeds.length === 0) return '';
+  return uniqueEmbeds.map(formatWorkflowLinkHtml).join('\n');
 }
 
 export function buildWorkflowFooterTerminal(embeds: WorkflowEmbed[]): string {
-  if (embeds.length === 0) return '';
-  return embeds.map(formatWorkflowLinkTerminal).join('\n');
+  const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
+  if (uniqueEmbeds.length === 0) return '';
+  return uniqueEmbeds.map(formatWorkflowLinkTerminal).join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +85,51 @@ export function buildWorkflowFooterTerminal(embeds: WorkflowEmbed[]): string {
 
 export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export function resolveTerminalWorkflowOpenUrl(embed: WorkflowEmbed): string {
+  if (embed.targetUrl && embed.url.startsWith('data:text/html')) {
+    return buildLocalWorkflowOpenBridgeUrl(embed.targetUrl);
+  }
+
+  if (!embed.url.startsWith('data:text/html')) {
+    return embed.url;
+  }
+
+  return materializeDataUrlAsLocalFile(embed.workflowId, embed.url);
+}
+
+function materializeDataUrlAsLocalFile(workflowId: string, dataUrl: string): string {
+  const paths = getYagrPaths();
+  ensureYagrHomeDir();
+  const dir = path.join(paths.homeDir, 'open-links');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+
+  const encoded = dataUrl.split(',', 2)[1] ?? '';
+  const html = decodeURIComponent(encoded);
+  const filePath = path.join(dir, `${sanitizeFileName(workflowId)}.html`);
+  fs.writeFileSync(filePath, html, { mode: 0o600 });
+  return pathToFileURL(filePath).toString();
+}
+
+function sanitizeFileName(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
+function dedupeWorkflowEmbeds(embeds: WorkflowEmbed[]): WorkflowEmbed[] {
+  const seen = new Set<string>();
+  const unique: WorkflowEmbed[] = [];
+
+  for (const embed of embeds) {
+    const key = workflowEmbedKey(embed);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(embed);
+  }
+
+  return unique;
 }
 
 // ---------------------------------------------------------------------------

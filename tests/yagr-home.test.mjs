@@ -16,12 +16,15 @@ test('getYagrLaunchDir returns the preserved launch directory', () => {
   assert.equal(getYagrLaunchDir(), process.env.YAGR_LAUNCH_CWD ?? process.cwd());
 });
 
-test('getYagrHomeDir defaults to ~/.yagr when YAGR_HOME is unset', () => {
+test('getYagrHomeDir defaults to the platform-standard Yagr home when YAGR_HOME is unset', () => {
   const previousYagrHome = process.env.YAGR_HOME;
   delete process.env.YAGR_HOME;
 
   try {
-    assert.equal(getYagrHomeDir(), path.join(os.homedir(), '.yagr'));
+    const expected = process.platform === 'win32'
+      ? path.join(process.env.APPDATA?.trim() || path.join(os.homedir(), 'AppData', 'Roaming'), 'yagr')
+      : path.join(os.homedir(), '.yagr');
+    assert.equal(getYagrHomeDir(), expected);
   } finally {
     if (previousYagrHome !== undefined) {
       process.env.YAGR_HOME = previousYagrHome;
@@ -63,6 +66,7 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
     const paths = getYagrPaths();
     assert.equal(paths.homeDir, path.resolve(getYagrLaunchDir(), '.yagr-test-workspace'));
     assert.equal(paths.n8nWorkspaceDir, path.join(paths.homeDir, 'n8n-workspace'));
+    assert.equal(paths.managedN8nDir, path.join(paths.homeDir, 'n8n'));
     assert.equal(paths.workspaceInstructionsPath, path.join(paths.n8nWorkspaceDir, 'AGENTS.md'));
     assert.equal(paths.yagrConfigPath, path.join(paths.homeDir, 'yagr-config.json'));
     assert.equal(paths.yagrCredentialsPath, path.join(paths.homeDir, 'credentials.json'));
@@ -102,5 +106,17 @@ test('resolveLegacyConfStorePath follows the Linux XDG config convention', () =>
     '/tmp/home',
   );
 
-  assert.equal(legacyPath, '/tmp/xdg-config/yagr-nodejs/credentials.json');
+  assert.equal(legacyPath, path.join('/tmp/xdg-config', 'yagr-nodejs', 'credentials.json'));
+});
+
+test('resolveLegacyConfStorePath uses platform separators on Windows', () => {
+  const legacyPath = resolveLegacyConfStorePath(
+    'yagr',
+    'credentials',
+    { APPDATA: path.join('C:', 'Users', 'etienne', 'AppData', 'Roaming') },
+    'win32',
+    path.join('C:', 'Users', 'etienne'),
+  );
+
+  assert.equal(legacyPath, path.join('C:', 'Users', 'etienne', 'AppData', 'Roaming', 'yagr-nodejs', 'credentials.json'));
 });

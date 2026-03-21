@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { YagrN8nConfigService, resolveWorkflowDir, type YagrN8nLocalConfig } from '../config/n8n-config-service.js';
+import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
 
@@ -104,10 +105,11 @@ function runN8nac(
   onOutput?: (stream: 'stdout' | 'stderr', chunk: string) => void | Promise<void>,
 ): Promise<RunResult> {
   return new Promise((resolve) => {
-    const child = spawn('npx', ['--yes', 'n8nac', ...args], {
+    const child = spawn(resolvePackageManagerCommand('npx'), ['--yes', 'n8nac', ...args], {
       cwd,
       env: { ...process.env, ...getN8nacProcessEnv(env) },
       stdio: 'pipe',
+      ...resolvePackageManagerSpawnOptions(),
     });
 
     let stdout = '';
@@ -195,7 +197,7 @@ async function runObservedN8nac(
   cwd: string,
   env?: NodeJS.ProcessEnv,
 ): Promise<RunResult> {
-  const command = ['npx', '--yes', 'n8nac', ...args].map(quoteShellArg).join(' ');
+  const command = [resolvePackageManagerCommand('npx'), '--yes', 'n8nac', ...args].map(quoteShellArg).join(' ');
 
   await emitToolEvent(observer, {
     type: 'command-start',
@@ -245,24 +247,48 @@ function isWorkspaceInitialized(): { initialized: boolean; configPath: string; w
 }
 
 export function createN8nAcTool(observer?: ToolExecutionObserver) {
+  const strictCompatibleParameters = z.preprocess((input) => {
+    if (!input || typeof input !== 'object') {
+      return input;
+    }
+
+    const obj = input as Record<string, unknown>;
+    return {
+      ...obj,
+      n8nHost: obj.n8nHost ?? null,
+      n8nApiKey: obj.n8nApiKey ?? null,
+      projectId: obj.projectId ?? null,
+      projectName: obj.projectName ?? null,
+      projectIndex: obj.projectIndex ?? null,
+      listScope: obj.listScope ?? null,
+      workflowId: obj.workflowId ?? null,
+      filename: obj.filename ?? null,
+      skillsArgs: obj.skillsArgs ?? null,
+      skillsArgv: obj.skillsArgv ?? null,
+      validateFile: obj.validateFile ?? null,
+      syncFolder: obj.syncFolder ?? null,
+      resolveMode: obj.resolveMode ?? null,
+    };
+  }, z.object({
+    action: z.enum(N8NAC_ACTIONS).describe('Primary n8nac action. Use skills for any n8nac skills subcommand; skillsArgs and skillsArgv are accepted as legacy aliases and normalize to skills.'),
+    n8nHost: z.string().nullable().describe('n8n host URL for init_auth.'),
+    n8nApiKey: z.string().nullable().describe('n8n API key for init_auth.'),
+    projectId: z.string().nullable().describe('n8n project ID for init_project.'),
+    projectName: z.string().nullable().describe('n8n project name for init_project.'),
+    projectIndex: z.number().int().min(1).nullable().describe('1-based project selector for init_project.'),
+    listScope: z.enum(['all', 'local', 'remote', 'distant']).nullable().describe('Workflow listing scope for list.'),
+    workflowId: z.string().nullable().describe('Workflow ID for pull, verify, or resolve.'),
+    filename: z.string().nullable().describe('Workflow filename including .workflow.ts for push.'),
+    skillsArgs: z.string().nullable().describe('String form of n8nac skills arguments, for example search telegram.'),
+    skillsArgv: z.array(z.string()).nullable().describe('Array form of n8nac skills arguments when values contain spaces.'),
+    validateFile: z.string().nullable().describe('Local workflow file path for n8nac skills validate.'),
+    syncFolder: z.string().nullable().describe('Sync folder to pass to init_project. Defaults to workflows.'),
+    resolveMode: z.enum(['keep-current', 'keep-incoming']).nullable().describe('Conflict resolution mode for resolve.'),
+  }));
+
   return tool({
     description: 'Run n8n-as-code workflow operations from the active workspace. For skills queries, use action="skills" with either skillsArgs as a single shell-like string or skillsArgv as an array of arguments.',
-    parameters: z.object({
-      action: z.enum(N8NAC_ACTIONS).describe('Primary n8nac action. Use skills for any n8nac skills subcommand; skillsArgs and skillsArgv are accepted as legacy aliases and normalize to skills.'),
-      n8nHost: z.string().optional().describe('n8n host URL for init_auth.'),
-      n8nApiKey: z.string().optional().describe('n8n API key for init_auth.'),
-      projectId: z.string().optional().describe('n8n project ID for init_project.'),
-      projectName: z.string().optional().describe('n8n project name for init_project.'),
-      projectIndex: z.number().int().min(1).optional().describe('1-based project selector for init_project.'),
-      listScope: z.enum(['all', 'local', 'remote', 'distant']).optional().describe('Workflow listing scope for list.'),
-      workflowId: z.string().optional().describe('Workflow ID for pull, verify, or resolve.'),
-      filename: z.string().optional().describe('Workflow filename including .workflow.ts for push.'),
-      skillsArgs: z.string().optional().describe('String form of n8nac skills arguments, for example search telegram.'),
-      skillsArgv: z.array(z.string()).optional().describe('Array form of n8nac skills arguments when values contain spaces.'),
-      validateFile: z.string().optional().describe('Local workflow file path for n8nac skills validate.'),
-      syncFolder: z.string().optional().describe('Sync folder to pass to init_project. Defaults to workflows.'),
-      resolveMode: z.enum(['keep-current', 'keep-incoming']).optional().describe('Conflict resolution mode for resolve.'),
-    }),
+    parameters: strictCompatibleParameters,
     execute: async ({
       action,
       n8nHost,
@@ -405,8 +431,16 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
             ? splitArgv(skillsArgs)
             : null;
 
-        if (!argv) {
-          throw new Error('skills requires skillsArgv or a valid skillsArgs string');
+        if (!argv || argv.length === 0) {
+          // Robust fallback for providers that emit an empty skills call.
+          const fallback = await runObservedN8nac(observer, ['skills', 'list'], cwd);
+          return {
+            exitCode: fallback.exitCode,
+            timedOut: fallback.timedOut,
+            stdout: truncateText(fallback.stdout),
+            stderr: truncateText(fallback.stderr),
+            note: 'No skills args were provided; defaulted to `n8nac skills list`.',
+          };
         }
 
         const result = await runObservedN8nac(observer, ['skills', ...argv], cwd);

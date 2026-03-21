@@ -13,16 +13,26 @@ import { getGatewaySupervisorStatus } from './gateway/manager.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
 import type { GatewaySurface } from './gateway/types.js';
 import { resolveLanguageModelConfig, resolveModelName, resolveModelProvider, type YagrModelProvider } from './llm/create-language-model.js';
+import { beginGitHubCopilotAuth, completeGitHubCopilotAuth } from './llm/copilot-account.js';
+import { beginGeminiAccountAuth, completeGeminiAccountAuth } from './llm/google-account.js';
+import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession } from './llm/openai-account.js';
+import { fetchAvailableModels } from './llm/provider-discovery.js';
+import {
+  getDefaultBaseUrlForProvider,
+  isProviderConfigured,
+  providerNeedsBaseUrlInput,
+  YAGR_MODEL_PROVIDERS,
+} from './llm/provider-registry.js';
+import { prepareProviderRuntime } from './llm/proxy-runtime.js';
+import { bootstrapManagedLocalN8n } from './n8n-local/bootstrap.js';
+import { installManagedDirectN8n } from './n8n-local/direct-manager.js';
+import { installManagedDockerN8n } from './n8n-local/docker-manager.js';
+import { inspectLocalN8nBootstrap } from './n8n-local/detect.js';
+import { markManagedN8nBootstrapStage } from './n8n-local/state.js';
 import { runSetupWizard, type SetupCallbacks } from './setup/setup-wizard.js';
+import { openExternalUrl } from './system/open-external.js';
 
-const VALID_PROVIDERS: YagrModelProvider[] = [
-  'anthropic',
-  'openai',
-  'google',
-  'groq',
-  'mistral',
-  'openrouter',
-];
+const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
 
 export interface YagrSetupStatus {
   ready: boolean;
@@ -30,7 +40,7 @@ export interface YagrSetupStatus {
   llmConfigured: boolean;
   enabledSurfaces: GatewaySurface[];
   startableSurfaces: GatewaySurface[];
-  missingSteps: Array<'n8n' | 'llm' | 'surfaces'>;
+  missingSteps: Array<'n8n' | 'llm'>;
 }
 
 export function buildYagrSetupStatus(input: {
@@ -39,7 +49,7 @@ export function buildYagrSetupStatus(input: {
   enabledSurfaces: GatewaySurface[];
   startableSurfaces: GatewaySurface[];
 }): YagrSetupStatus {
-  const missingSteps: Array<'n8n' | 'llm' | 'surfaces'> = [];
+  const missingSteps: Array<'n8n' | 'llm'> = [];
 
   if (!input.n8nConfigured) {
     missingSteps.push('n8n');
@@ -47,10 +57,6 @@ export function buildYagrSetupStatus(input: {
 
   if (!input.llmConfigured) {
     missingSteps.push('llm');
-  }
-
-  if (input.startableSurfaces.length === 0) {
-    missingSteps.push('surfaces');
   }
 
   return {
@@ -83,8 +89,7 @@ export function getYagrSetupStatus(
 
   let llmConfigured = false;
   try {
-    const resolvedConfig = resolveLanguageModelConfig({}, yagrConfigService);
-    llmConfigured = Boolean(resolvedConfig.provider && resolvedConfig.model && resolvedConfig.apiKey);
+    llmConfigured = isProviderConfigured(yagrConfig, (provider) => yagrConfigService.getApiKey(provider));
   } catch {
     llmConfigured = false;
   }
@@ -104,6 +109,33 @@ export async function runYagrSetup(
   yagrConfigService = new YagrConfigService(),
   n8nConfigService = new YagrN8nConfigService(),
 ): Promise<boolean> {
+  const callbacks = createSetupCallbacks(yagrConfigService, n8nConfigService);
+  const result = await runSetupWizard(callbacks);
+
+  if (result.ok && result.telegramDeepLink) {
+    process.stdout.write(`\nTelegram onboarding link: ${result.telegramDeepLink}\n`);
+    try {
+      const { default: qrcode } = await import('qrcode-terminal');
+      qrcode.generate(result.telegramDeepLink, { small: true });
+    } catch { /* optional */ }
+  }
+
+  return result.ok;
+}
+
+export async function runYagrLlmSetup(
+  yagrConfigService = new YagrConfigService(),
+  n8nConfigService = new YagrN8nConfigService(),
+): Promise<boolean> {
+  const callbacks = createSetupCallbacks(yagrConfigService, n8nConfigService);
+  const result = await runSetupWizard(callbacks, { mode: 'llm-only' });
+  return result.ok;
+}
+
+function createSetupCallbacks(
+  yagrConfigService: YagrConfigService,
+  n8nConfigService: YagrN8nConfigService,
+): SetupCallbacks {
   const callbacks: SetupCallbacks = {
     getN8nDefaults(urlOverride?: string) {
       const cfg = n8nConfigService.getLocalConfig();
@@ -120,6 +152,7 @@ export async function runYagrSetup(
       const client = new N8nApiClient({ host: url, apiKey });
       const connected = await client.testConnection();
       if (!connected) throw new Error('Unable to connect to n8n with the provided URL and API key.');
+      markManagedN8nBootstrapStage(url, 'api-key-pending');
       const projects = await client.getProjects();
       if (projects.length === 0) throw new Error('No n8n projects found. Create one in n8n first, then rerun setup.');
       return projects;
@@ -148,6 +181,47 @@ export async function runYagrSetup(
       } catch (err) {
         process.stderr.write(`Warning: n8n workspace instructions refresh failed: ${err instanceof Error ? err.message : String(err)}\n`);
       }
+      markManagedN8nBootstrapStage(url, 'connected');
+    },
+
+    async installManagedLocalN8n(strategy) {
+      const assessment = await inspectLocalN8nBootstrap();
+      if (strategy === 'docker') {
+        if (!assessment.docker.available) {
+          throw new Error('Docker is not running. Choose the local managed n8n option without Docker, or install/run Docker.');
+        }
+        if (assessment.docker.reachable === false) {
+          throw new Error('Docker is not running. Choose the local managed n8n option without Docker, or install/run Docker.');
+        }
+        return installManagedDockerN8n();
+      }
+
+      if (strategy === 'direct') {
+        if (!assessment.node.supportedForDirectRuntime) {
+          throw new Error('A compatible local Node.js runtime is required for the non-Docker local n8n install. Run `yagr n8n doctor` for details.');
+        }
+        return installManagedDirectN8n();
+      }
+
+      if (assessment.recommendedStrategy === 'docker') {
+        return installManagedDockerN8n();
+      }
+      if (assessment.recommendedStrategy === 'direct') {
+        return installManagedDirectN8n();
+      }
+      throw new Error('No supported automatic local n8n runtime is available. Run `yagr n8n doctor` for details.');
+    },
+
+    async bootstrapManagedLocalN8n(url) {
+      const result = await bootstrapManagedLocalN8n({ url });
+      if (result.apiKey) {
+        n8nConfigService.saveApiKey(url, result.apiKey);
+      }
+      return result;
+    },
+
+    async openUrl(url) {
+      await openExternalUrl(url);
     },
 
     getLlmDefaults() {
@@ -160,23 +234,160 @@ export async function runYagrSetup(
         provider: initialProvider,
         getApiKey: (prov) => yagrConfigService.getApiKey(prov),
         getDefaultModel: (prov) => cfg.provider === prov && cfg.model ? cfg.model : undefined,
-        getBaseUrl: (prov) => cfg.provider === prov ? cfg.baseUrl : getBaseUrlForProvider(prov),
-        needsBaseUrl: (prov) => ['groq', 'mistral', 'openrouter'].includes(prov),
+        getBaseUrl: (prov) => cfg.provider === prov ? cfg.baseUrl : getDefaultBaseUrlForProvider(prov),
+        needsBaseUrl: (prov) => providerNeedsBaseUrlInput(prov),
       };
     },
 
+    async prepareProvider(provider, apiKey) {
+      const cfg = yagrConfigService.getLocalConfig();
+      const prepared = await prepareProviderRuntime(provider, {
+        apiKey,
+        baseUrl: cfg.provider === provider ? cfg.baseUrl : getDefaultBaseUrlForProvider(provider),
+      });
+
+      return {
+        ready: prepared.ready,
+        apiKey: prepared.runtime?.apiKey,
+        baseUrl: prepared.runtime?.baseUrl,
+        models: prepared.runtime?.models,
+        notes: prepared.notes,
+        error: prepared.reason,
+      };
+    },
+
+    async startAccountAuth(provider) {
+      if (provider === 'openai-proxy') {
+        const session = await ensureOpenAiAccountSession();
+        if (session) {
+          return { kind: 'none' };
+        }
+        const challenge = await beginCodexAuth();
+        const callbackHint = challenge.callbackServerStarted
+          ? 'After signing in, Yagr captures the callback automatically.'
+          : 'If the browser does not open, copy the URL above and visit it manually.';
+        return {
+          kind: 'input',
+          title: 'Connect OpenAI account (ChatGPT Plus)',
+          instructions: [
+            'Open this URL in your browser and sign in with your ChatGPT account:',
+            challenge.authUrl,
+            'This uses your ChatGPT subscription — no API credits are consumed.',
+            callbackHint,
+          ],
+          placeholder: challenge.callbackServerStarted
+            ? 'Press Enter after signing in'
+            : `http://localhost:1455/auth/callback?code=...`,
+          submitLabel: challenge.callbackServerStarted ? 'Continue after sign-in' : 'Submit redirect URL',
+        };
+      }
+
+      if (provider === 'anthropic-proxy') {
+        return {
+          kind: 'input',
+          title: 'Connect Claude token',
+          instructions: [
+            'On a machine where Claude CLI is installed and logged in, run:',
+            'claude setup-token',
+            'Paste the generated setup-token below.',
+          ],
+          placeholder: 'Paste setup-token',
+          submitLabel: 'Continue with setup-token',
+        };
+      }
+
+      if (provider === 'google-proxy') {
+        const challenge = await beginGeminiAccountAuth();
+        const callbackHint = challenge.callbackServerStarted
+          ? 'After authorization, Yagr captures the callback automatically on http://127.0.0.1:8085.'
+          : 'If local callback is unavailable, paste the full redirect URL below.';
+        return {
+          kind: 'input',
+          title: 'Complete Gemini OAuth',
+          instructions: [
+            'Open this URL in your browser and sign in with Google:',
+            challenge.authUrl,
+            callbackHint,
+          ],
+          placeholder: challenge.callbackServerStarted
+            ? 'Press Enter after browser authorization'
+            : 'http://localhost:8085/oauth2callback?code=...',
+          submitLabel: challenge.callbackServerStarted
+            ? 'Continue after authorization'
+            : 'Submit redirect URL',
+          state: challenge.verifier,
+        };
+      }
+
+      if (provider === 'copilot-proxy') {
+        const challenge = await beginGitHubCopilotAuth();
+        return {
+          kind: 'input',
+          title: 'Complete GitHub Copilot OAuth',
+          instructions: [
+            `Open: ${challenge.verificationUri}`,
+            `Enter code: ${challenge.userCode}`,
+            'Authorize GitHub Copilot in your browser, then press Enter below to continue.',
+          ],
+          placeholder: 'Press Enter after browser authorization',
+          submitLabel: 'Continue after authorization',
+          state: JSON.stringify(challenge),
+        };
+      }
+
+      return { kind: 'none' };
+    },
+
+    async completeAccountAuth(provider, input, state) {
+      if (provider === 'openai-proxy') {
+        await completeCodexAuth();
+        return { ok: true };
+      }
+
+      if (provider === 'google-proxy') {
+        if (!state) {
+          return { ok: false, error: 'Gemini OAuth state is missing.' };
+        }
+        await completeGeminiAccountAuth(input, state);
+        return { ok: true };
+      }
+
+      if (provider === 'copilot-proxy') {
+        if (!state) {
+          return { ok: false, error: 'GitHub Copilot device flow state is missing.' };
+        }
+        const challenge = JSON.parse(state) as { deviceCode: string; intervalMs: number; expiresAt: number };
+        await completeGitHubCopilotAuth(challenge);
+        return { ok: true };
+      }
+
+      if (provider === 'anthropic-proxy') {
+        const credential = input.trim();
+        if (!credential) {
+          return { ok: false, error: 'Paste a Claude setup-token.' };
+        }
+        return { ok: true, apiKey: credential };
+      }
+
+      return { ok: true };
+    },
+
     async fetchModels(provider, apiKey) {
-      return fetchAvailableModels(provider, apiKey);
+      const cfg = yagrConfigService.getLocalConfig();
+      const baseUrl = cfg.provider === provider ? cfg.baseUrl : getDefaultBaseUrlForProvider(provider);
+      return fetchAvailableModels(provider, apiKey, baseUrl);
     },
 
     saveLlmConfig({ provider, apiKey, model, baseUrl }) {
       const cfg = yagrConfigService.getLocalConfig();
-      yagrConfigService.saveApiKey(provider, apiKey);
+      if (apiKey) {
+        yagrConfigService.saveApiKey(provider, apiKey);
+      }
       yagrConfigService.saveLocalConfig({
         ...cfg,
         provider,
         model,
-        baseUrl: baseUrl ?? getBaseUrlForProvider(provider),
+        baseUrl: baseUrl ?? getDefaultBaseUrlForProvider(provider),
       });
     },
 
@@ -209,18 +420,7 @@ export async function runYagrSetup(
       yagrConfigService.setEnabledGatewaySurfaces(surfaces);
     },
   };
-
-  const result = await runSetupWizard(callbacks);
-
-  if (result.ok && result.telegramDeepLink) {
-    process.stdout.write(`\nTelegram onboarding link: ${result.telegramDeepLink}\n`);
-    try {
-      const { default: qrcode } = await import('qrcode-terminal');
-      qrcode.generate(result.telegramDeepLink, { small: true });
-    } catch { /* optional */ }
-  }
-
-  return result.ok;
+  return callbacks;
 }
 
 export async function refreshN8nWorkspaceInstructionsFromSavedConfig(
@@ -252,31 +452,6 @@ async function refreshAiContext(credentials: { host: string; apiKey: string }): 
   }
 }
 
-function getBaseUrlForProvider(provider: YagrModelProvider): string | undefined {
-  switch (provider) {
-    case 'openrouter': return 'https://openrouter.ai/api/v1';
-    case 'openai': return undefined;
-    case 'groq': return 'https://api.groq.com/openai/v1';
-    case 'mistral': return 'https://api.mistral.ai/v1';
-    case 'anthropic': return undefined;
-    default: return undefined;
-  }
-}
-
-function validateUrl(value: string): string | undefined {
-  const normalized = sanitizeInputValue(value);
-  if (!normalized) {
-    return 'A URL is required.';
-  }
-
-  try {
-    new URL(normalized);
-    return undefined;
-  } catch {
-    return 'Enter a valid URL.';
-  }
-}
-
 function sanitizeInputValue(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
@@ -284,41 +459,4 @@ function sanitizeInputValue(value: string | undefined): string | undefined {
 
   const trimmed = value.trim();
   return trimmed.replace(/^['"]|['"]$/g, '');
-}
-async function fetchAvailableModels(provider: YagrModelProvider, apiKey: string): Promise<string[]> {
-  const endpoints: Partial<Record<YagrModelProvider, {
-    url: string;
-    map: (data: Record<string, unknown>) => string[];
-  }>> = {
-    openrouter: {
-      url: 'https://openrouter.ai/api/v1/models',
-      map: (data) => (data['data'] as Array<{ id: string }> | undefined)?.map((m) => m.id) ?? [],
-    },
-    openai: {
-      url: 'https://api.openai.com/v1/models',
-      map: (data) => (data['data'] as Array<{ id: string }> | undefined)?.map((m) => m.id) ?? [],
-    },
-    groq: {
-      url: 'https://api.groq.com/openai/v1/models',
-      map: (data) => (data['data'] as Array<{ id: string }> | undefined)?.map((m) => m.id) ?? [],
-    },
-    mistral: {
-      url: 'https://api.mistral.ai/v1/models',
-      map: (data) => (data['data'] as Array<{ id: string }> | undefined)?.map((m) => m.id) ?? [],
-    },
-  };
-
-  const endpoint = endpoints[provider];
-  if (!endpoint) return [];
-
-  try {
-    const response = await fetch(endpoint.url, {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    const payload = await response.json() as Record<string, unknown>;
-    return endpoint.map(payload).sort((a, b) => a.localeCompare(b));
-  } catch {
-    return [];
-  }
 }

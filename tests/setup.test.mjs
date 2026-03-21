@@ -12,7 +12,7 @@ test('buildYagrSetupStatus reports all missing setup phases when nothing is read
   });
 
   assert.equal(status.ready, false);
-  assert.deepEqual(status.missingSteps, ['n8n', 'llm', 'surfaces']);
+  assert.deepEqual(status.missingSteps, ['n8n', 'llm']);
 });
 
 test('buildYagrSetupStatus is ready only when n8n llm and a startable surface exist', () => {
@@ -78,4 +78,54 @@ test('getYagrSetupStatus treats the active webui as a startable surface', () => 
   assert.equal(status.ready, true);
   assert.deepEqual(status.missingSteps, []);
   assert.deepEqual(status.startableSurfaces, ['webui']);
+});
+
+test('getYagrSetupStatus accepts proxy-based llm providers without api keys', () => {
+  const yagrConfigService = {
+    updateLocalConfig(updater) {
+      return updater(this.getLocalConfig());
+    },
+    getLocalConfig() {
+      return {
+        provider: 'anthropic-proxy',
+        model: 'claude-sonnet-4',
+        baseUrl: 'http://127.0.0.1:3456/v1',
+        gateway: {
+          enabledSurfaces: [],
+        },
+      };
+    },
+    getEnabledGatewaySurfaces() {
+      return [];
+    },
+    getApiKey() {
+      return undefined;
+    },
+    getTelegramBotToken() {
+      return undefined;
+    },
+  };
+
+  const n8nConfigService = {
+    getLocalConfig() {
+      return {
+        host: 'http://localhost:5678',
+        syncFolder: '/tmp/yagr-sync',
+        projectId: 'proj_123',
+        projectName: 'Test Project',
+      };
+    },
+    getApiKey() {
+      return 'test-n8n-key';
+    },
+  };
+
+  const status = getYagrSetupStatus(
+    yagrConfigService,
+    n8nConfigService,
+    { activeSurfaces: ['webui'] },
+  );
+
+  assert.equal(status.llmConfigured, true);
+  assert.equal(status.ready, true);
 });
