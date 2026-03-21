@@ -150,12 +150,13 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
 
   if (provider === 'anthropic-proxy') {
     return {
-      title: 'Connect Anthropic account',
+      title: 'Connect Claude token',
       body: [
-        'Use one of the two authentication modes:',
-        '1) Anthropic token (paste setup-token)  OR  2) Anthropic API key.',
+        'Generate a setup-token on a machine where Claude CLI is installed and logged in:',
+        '`claude setup-token`',
+        'Paste the generated setup-token below.',
       ],
-      continueLabel: 'Paste setup-token or API key',
+      continueLabel: 'Paste setup-token',
     };
   }
 
@@ -903,16 +904,15 @@ function SetupWizard({ callbacks, options, onDone }: {
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-account-auth') {
-      const isAnthropic = phase.provider === 'anthropic-proxy';
-      const maxCursor = isAnthropic ? 2 : 1;
+      const maxCursor = 1;
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(maxCursor, phase.cursor + 1) });
       else if (key.return) {
-        if (isAnthropic && phase.cursor === 0) {
+        if (phase.provider === 'anthropic-proxy' && phase.cursor === 0) {
           setPhase({
             kind: 'llm-account-input',
-            provider: phase.provider,
-            title: 'Anthropic token (paste setup-token)',
+            provider: 'anthropic-proxy',
+            title: 'Claude setup-token',
             instructions: [
               'On a machine where Claude CLI is installed and logged in, run:',
               'claude setup-token',
@@ -923,21 +923,7 @@ function SetupWizard({ callbacks, options, onDone }: {
             state: 'anthropic:setup-token',
           });
           setTextValue('');
-        } else if (isAnthropic && phase.cursor === 1) {
-          setPhase({
-            kind: 'llm-account-input',
-            provider: phase.provider,
-            title: 'Anthropic API key',
-            instructions: [
-              'Create or copy your Anthropic API key from the Anthropic dashboard.',
-              'Then paste your key below.',
-            ],
-            placeholder: 'sk-ant-...',
-            submitLabel: 'Continue with API key',
-            state: 'anthropic:api-key',
-          });
-          setTextValue('');
-        } else if (!isAnthropic && phase.cursor === 0) {
+        } else if (phase.cursor === 0) {
           void (async () => {
             try {
               const authStep = await callbacks.startAccountAuth(phase.provider);
@@ -1297,9 +1283,7 @@ function SetupWizard({ callbacks, options, onDone }: {
       case 'llm-account-auth':
         {
           const authCopy = getProviderAuthCopy(phase.provider);
-          const authOptions = phase.provider === 'anthropic-proxy'
-            ? ['Anthropic token (paste setup-token)', 'Anthropic API key', 'Back to providers'] as const
-            : [authCopy.continueLabel, 'Back to providers'] as const;
+          const authOptions = [authCopy.continueLabel, 'Back to providers'] as const;
         return (
           <Box flexDirection="column">
             <FieldLabel label={authCopy.title} />
@@ -1311,10 +1295,7 @@ function SetupWizard({ callbacks, options, onDone }: {
               cursor={phase.cursor}
               getLabel={(v) => v}
               getHint={(v) => {
-                if (phase.provider === 'anthropic-proxy') {
-                  return v.startsWith('Anthropic token') ? 'recommended' : undefined;
-                }
-                return v.startsWith('Continue') ? 'recommended' : undefined;
+                return (v.startsWith('Continue') || v.startsWith('Paste')) ? 'recommended' : undefined;
               }}
               maxVisibleRows={getListViewportHeight(terminalRows, 11)}
               maxLineWidth={listLineWidth}
