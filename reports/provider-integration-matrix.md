@@ -1,7 +1,7 @@
 # Provider Integration Matrix
 
-- Generated at: 2026-03-21T12:30:23.282Z
-- Providers: `openai`
+- Generated at: 2026-03-21T12:34:11.208Z
+- Providers: `groq`
 - Timeouts: setup/model=60000ms, inference=75000ms
 - Advanced scenario: enabled (timeout=120000ms)
 
@@ -18,4 +18,4 @@
 
 | Provider | Setup | Model Listing | Inference | Advanced Scenario |
 | --- | --- | --- | --- | --- |
-| `openai` | **PASS**<br>API key detected in environment. | **PASS**<br>129 models: babbage-002, chatgpt-image-latest, dall-e-2, dall-e-3, davinci-002, gpt-3.5-turbo, gpt-3.5-turbo-0125, gpt-3.5-turbo-1106 (+121 more) | **PASS**<br>Model gpt-4.1-mini responded (2 chars). | **PASS**<br>CLI scenario succeeded with model gpt-4.1-mini. |
+| `groq` | **PASS**<br>API key detected in environment. | **PASS**<br>18 models: allam-2-7b, canopylabs/orpheus-arabic-saudi, canopylabs/orpheus-v1-english, groq/compound, groq/compound-mini, llama-3.1-8b-instant, llama-3.3-70b-versatile, meta-llama/llama-4-scout-17b-16e-instruct (+10 more) | **PASS**<br>Model llama-3.1-8b-instant responded (2 chars). | **PASS**<br>CLI scenario succeeded with model llama-3.1-8b-instant. |
