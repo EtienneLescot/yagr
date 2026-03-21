@@ -140,10 +140,20 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
     return {
       title: 'Connect OpenAI account',
       body: [
-        'Yagr uses the Codex account runtime for your ChatGPT account.',
-        'It will verify your local sign-in and may open a browser login flow if needed.',
+        'Yagr will open your browser to sign you in with your ChatGPT account.',
       ],
-      continueLabel: 'Continue with ChatGPT sign-in',
+      continueLabel: 'Sign in with ChatGPT',
+    };
+  }
+
+  if (provider === 'anthropic-proxy') {
+    return {
+      title: 'Connect Anthropic account',
+      body: [
+        'Yagr reads your Anthropic credentials from the Claude Code CLI config.',
+        'Make sure Claude Code is installed (`claude`) and you have signed in or set an API key.',
+      ],
+      continueLabel: 'Continue with Claude credentials',
     };
   }
 
@@ -635,6 +645,12 @@ function SetupWizard({ callbacks, options, onDone }: {
           }
           models = prepared.models ?? [];
         } else if (isOAuthAccountProvider(phase.provider)) {
+          const preparedError = prepared.error?.toLowerCase() ?? '';
+          if (preparedError.includes('insufficient authentication scopes') || preparedError.includes('http 403')) {
+            setTextValue('');
+            setPhase({ kind: 'llm-account-auth', provider: phase.provider, cursor: 0 });
+            return;
+          }
           setPhase({
             kind: 'llm-model',
             provider: phase.provider,

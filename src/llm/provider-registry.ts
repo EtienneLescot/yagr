@@ -1,5 +1,6 @@
 import type { YagrLocalConfig } from '../config/yagr-config-service.js';
 import { DEFAULT_COPILOT_API_BASE_URL, GITHUB_COPILOT_DEFAULT_MODEL } from './copilot-account.js';
+import { ANTHROPIC_ACCOUNT_DEFAULT_MODEL } from './anthropic-account.js';
 import { GEMINI_ACCOUNT_DEFAULT_MODEL } from './google-account.js';
 import { OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL } from './openai-account.js';
 
@@ -114,22 +115,20 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     defaultBaseUrl: OPENAI_ACCOUNT_BASE_URL,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
-    setupHint: 'Use your ChatGPT account, no API key',
+    setupHint: 'Use your OpenAI account, no API key',
+    modelDiscovery: {
+      buildUrl: () => `${OPENAI_ACCOUNT_BASE_URL}/models`,
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
   },
   'anthropic-proxy': {
     id: 'anthropic-proxy',
     displayName: 'Claude OAuth',
-    defaultModel: 'claude-sonnet-4',
-    defaultBaseUrl: 'http://127.0.0.1:3456/v1',
-    experimental: true,
+    defaultModel: ANTHROPIC_ACCOUNT_DEFAULT_MODEL,
     requiresApiKey: false,
-    usesOpenAiCompatibleApi: true,
-    setupHint: 'Manual local proxy',
-    modelDiscovery: {
-      buildUrl: normalizeProxyModelsUrl,
-      authMode: 'bearer-optional',
-      mapResponse: MODEL_LIST_MAPPER,
-    },
+    usesOpenAiCompatibleApi: false,
+    setupHint: 'Use your Anthropic account (via Claude Code), no API key',
   },
   'google-proxy': {
     id: 'google-proxy',
@@ -189,7 +188,7 @@ export function getProviderDisplayName(provider: YagrModelProvider): string {
 }
 
 export function isOAuthAccountProvider(provider: YagrModelProvider): boolean {
-  return provider === 'openai-proxy' || provider === 'google-proxy' || provider === 'copilot-proxy';
+  return provider === 'openai-proxy' || provider === 'anthropic-proxy' || provider === 'google-proxy' || provider === 'copilot-proxy';
 }
 
 export function isProviderConfigured(localConfig: YagrLocalConfig, getApiKey: (provider: YagrModelProvider) => string | undefined): boolean {

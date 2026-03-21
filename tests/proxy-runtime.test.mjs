@@ -18,7 +18,8 @@ async function withMockedFetch(mockedFetch, run) {
 
 test('prepareProviderRuntime detects an already running proxy endpoint', async () => {
   await withMockedFetch(async (url) => {
-    assert.equal(url, 'http://127.0.0.1:3456/v1/models');
+    // Uses openrouter's fixed discovery URL (independent of baseUrl override).
+    assert.equal(url, 'https://openrouter.ai/api/v1/models');
     return new Response(JSON.stringify({
       data: [
         { id: 'gpt-5' },
@@ -29,12 +30,11 @@ test('prepareProviderRuntime detects an already running proxy endpoint', async (
       headers: { 'Content-Type': 'application/json' },
     });
   }, async () => {
-    const baseUrl = 'http://127.0.0.1:3456/v1';
-    const result = await prepareProviderRuntime('anthropic-proxy', { baseUrl });
+    const result = await prepareProviderRuntime('openrouter', { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1' });
 
     assert.equal(result.ready, true);
     assert.deepEqual(result.runtime?.models, ['gpt-5', 'gpt-5-mini']);
-    assert.equal(result.runtime?.baseUrl, baseUrl);
+    assert.equal(result.runtime?.baseUrl, 'https://openrouter.ai/api/v1');
     assert.equal(result.runtime?.autoStarted, false);
   });
 });
@@ -57,25 +57,15 @@ test('prepareProviderRuntime resolves the local Codex ChatGPT session for openai
   process.env.YAGR_SKIP_CODEX_RUNTIME_VALIDATION = '1';
 
   try {
-    await withMockedFetch(async (url) => {
-      assert.equal(url, 'https://chatgpt.com/backend-api/models');
-      return new Response(JSON.stringify({
-        data: [
-          { id: 'gpt-5.4' },
-          { id: 'gpt-5.2' },
-        ],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }, async () => {
-      const result = await prepareProviderRuntime('openai-proxy');
+    // Model discovery is static (no HTTP call) — no fetch mock needed.
+    const result = await prepareProviderRuntime('openai-proxy');
 
-      assert.equal(result.ready, true);
-      assert.equal(result.runtime?.baseUrl, 'https://chatgpt.com/backend-api');
-      assert.equal(result.runtime?.apiKey, 'test-access-token');
-      assert.deepEqual(result.runtime?.models, ['gpt-5.2', 'gpt-5.4']);
-    });
+    assert.equal(result.ready, true);
+    assert.equal(result.runtime?.baseUrl, 'https://chatgpt.com/backend-api');
+    assert.equal(result.runtime?.apiKey, 'test-access-token');
+    // Models come from the static KNOWN_CODEX_MODELS list.
+    assert.ok(Array.isArray(result.runtime?.models));
+    assert.ok(result.runtime.models.includes('gpt-5.1-codex-mini'));
   } finally {
     if (previousSkipValidation === undefined) {
       delete process.env.YAGR_SKIP_CODEX_RUNTIME_VALIDATION;
@@ -229,6 +219,53 @@ test('prepareProviderRuntime resolves the local GitHub Copilot OAuth session for
       delete process.env.YAGR_COPILOT_TOKEN_CACHE_PATH;
     } else {
       process.env.YAGR_COPILOT_TOKEN_CACHE_PATH = previousCachePath;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('prepareProviderRuntime resolves the local Anthropic credentials for anthropic-proxy', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-anthropic-auth-'));
+  const claudeConfigPath = path.join(tempDir, 'config.json');
+  fs.writeFileSync(claudeConfigPath, JSON.stringify({
+    primaryApiKey: 'sk-ant-test-key',
+  }));
+
+  const previousClaudeConfigPath = process.env.YAGR_CLAUDE_CONFIG_PATH;
+  const previousSkipValidation = process.env.YAGR_SKIP_ANTHROPIC_RUNTIME_VALIDATION;
+  process.env.YAGR_CLAUDE_CONFIG_PATH = claudeConfigPath;
+  process.env.YAGR_SKIP_ANTHROPIC_RUNTIME_VALIDATION = '1';
+
+  try {
+    await withMockedFetch(async (url) => {
+      assert.equal(url, 'https://api.anthropic.com/v1/models');
+      return new Response(JSON.stringify({
+        data: [
+          { id: 'claude-opus-4-5' },
+          { id: 'claude-sonnet-4-5' },
+        ],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }, async () => {
+      const result = await prepareProviderRuntime('anthropic-proxy');
+
+      assert.equal(result.ready, true);
+      assert.equal(result.runtime?.apiKey, 'sk-ant-test-key');
+      assert.deepEqual(result.runtime?.models, ['claude-opus-4-5', 'claude-sonnet-4-5']);
+      assert.ok(result.notes.some((note) => note.includes('Claude Code CLI credentials')));
+    });
+  } finally {
+    if (previousSkipValidation === undefined) {
+      delete process.env.YAGR_SKIP_ANTHROPIC_RUNTIME_VALIDATION;
+    } else {
+      process.env.YAGR_SKIP_ANTHROPIC_RUNTIME_VALIDATION = previousSkipValidation;
+    }
+    if (previousClaudeConfigPath === undefined) {
+      delete process.env.YAGR_CLAUDE_CONFIG_PATH;
+    } else {
+      process.env.YAGR_CLAUDE_CONFIG_PATH = previousClaudeConfigPath;
     }
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

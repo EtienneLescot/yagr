@@ -1,6 +1,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { YagrConfigService, type YagrLocalConfig } from '../config/yagr-config-service.js';
+import { createAnthropicAccountLanguageModel } from './anthropic-account.js';
 import { createGitHubCopilotLanguageModel } from './copilot-account.js';
 import { createGeminiAccountLanguageModel } from './google-account.js';
 import { createOpenAiAccountLanguageModel, getOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL } from './openai-account.js';
@@ -162,10 +163,14 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
 
   if (provider === 'openai-proxy') {
     if (!resolvedApiKey) {
-      throw new Error('OpenAI account session not found. Run `codex --login` or `yagr setup` again.');
+      throw new Error('OpenAI account session not found. Run `yagr setup` again.');
     }
 
     return createOpenAiAccountLanguageModel(modelName);
+  }
+
+  if (provider === 'anthropic-proxy') {
+    return createAnthropicAccountLanguageModel(modelName);
   }
 
   if (provider === 'google-proxy') {

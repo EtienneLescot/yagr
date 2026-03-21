@@ -15,6 +15,7 @@ import type { GatewaySurface } from './gateway/types.js';
 import { resolveLanguageModelConfig, resolveModelName, resolveModelProvider, type YagrModelProvider } from './llm/create-language-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth } from './llm/copilot-account.js';
 import { beginGeminiAccountAuth, completeGeminiAccountAuth } from './llm/google-account.js';
+import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession } from './llm/openai-account.js';
 import { fetchAvailableModels } from './llm/provider-discovery.js';
 import {
   getDefaultBaseUrlForProvider,
@@ -243,6 +244,35 @@ function createSetupCallbacks(
     },
 
     async startAccountAuth(provider) {
+      if (provider === 'openai-proxy') {
+        const session = await ensureOpenAiAccountSession();
+        if (session) {
+          return { kind: 'none' };
+        }
+        const challenge = await beginCodexAuth();
+        const callbackHint = challenge.callbackServerStarted
+          ? 'After signing in, Yagr captures the callback automatically.'
+          : 'If the browser does not open, copy the URL above and visit it manually.';
+        return {
+          kind: 'input',
+          title: 'Connect OpenAI account',
+          instructions: [
+            'Open this URL in your browser and sign in with your ChatGPT account:',
+            challenge.authUrl,
+            callbackHint,
+          ],
+          placeholder: challenge.callbackServerStarted
+            ? 'Press Enter after signing in'
+            : `http://localhost:1455/auth/callback?code=...`,
+          submitLabel: challenge.callbackServerStarted ? 'Continue after sign-in' : 'Submit redirect URL',
+        };
+      }
+
+      if (provider === 'anthropic-proxy') {
+        // Reads credentials from ~/.claude/config.json — no interactive auth step needed.
+        return { kind: 'none' };
+      }
+
       if (provider === 'google-proxy') {
         const challenge = await beginGeminiAccountAuth();
         const callbackHint = challenge.callbackServerStarted
@@ -286,6 +316,11 @@ function createSetupCallbacks(
     },
 
     async completeAccountAuth(provider, input, state) {
+      if (provider === 'openai-proxy') {
+        await completeCodexAuth();
+        return { ok: true };
+      }
+
       if (provider === 'google-proxy') {
         if (!state) {
           return { ok: false, error: 'Gemini OAuth state is missing.' };

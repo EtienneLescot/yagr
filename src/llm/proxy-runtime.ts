@@ -13,6 +13,11 @@ import {
   fetchGeminiOAuthModels,
 } from './google-account.js';
 import { readCachedModelCatalog, writeCachedModelCatalog } from './model-catalog-cache.js';
+import {
+  ensureAnthropicAccountSession,
+  fetchAnthropicAccountModels,
+  validateAnthropicAccountRuntime,
+} from './anthropic-account.js';
 import { ensureOpenAiAccountSession, fetchOpenAiAccountModels, OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL, validateOpenAiAccountRuntime } from './openai-account.js';
 import { fetchAvailableModels } from './provider-discovery.js';
 import { getDefaultBaseUrlForProvider, getProviderDefinition, isOAuthAccountProvider, type YagrModelProvider } from './provider-registry.js';
@@ -67,8 +72,8 @@ export async function prepareProviderRuntime(
     if (!session) {
       return {
         ready: false,
-        reason: 'Unable to sign in to ChatGPT via Codex. Run `codex --login` and retry.',
-        notes: ['OpenAI account login is handled through the local Codex CLI session.'],
+        reason: 'No OpenAI account session found. Run `yagr setup` to authenticate with OpenAI.',
+        notes: ['OpenAI account login uses a native PKCE OAuth flow managed by Yagr.'],
       };
     }
 
@@ -76,8 +81,8 @@ export async function prepareProviderRuntime(
     if (!probe.ok) {
       return {
         ready: false,
-        reason: probe.error || 'OpenAI account runtime validation failed after login.',
-        notes: ['ChatGPT sign-in exists, but the Codex execution runtime did not validate successfully.'],
+        reason: probe.error || 'OpenAI account runtime validation failed.',
+        notes: ['OpenAI session found, but the API endpoint did not validate successfully.'],
       };
     }
 
@@ -97,6 +102,10 @@ export async function prepareProviderRuntime(
       usedCacheFallback = models.length > 0;
     }
 
+    const sessionNote = session.source === 'codex'
+      ? 'Connected through backward-compatible Codex CLI session.'
+      : 'Connected through Yagr-managed OpenAI OAuth.';
+
     return {
       ready: true,
       runtime: {
@@ -105,17 +114,80 @@ export async function prepareProviderRuntime(
         apiKey: session.accessToken,
         models,
         notes: [
-          'Connected through the local Codex ChatGPT session.',
-          'Runtime validated with Codex exec.',
-          usedCacheFallback ? 'Using locally cached OpenAI account models.' : 'Model discovery completed from OpenAI account runtime.',
+          sessionNote,
+          usedCacheFallback ? 'Using locally cached OpenAI account models.' : 'Model discovery completed from OpenAI account.',
         ],
         autoStarted: false,
       },
       notes: [
-        'Connected through the local Codex ChatGPT session.',
-        'Runtime validated with Codex exec.',
-        usedCacheFallback ? 'Using locally cached OpenAI account models.' : 'Model discovery completed from OpenAI account runtime.',
+        sessionNote,
+        usedCacheFallback ? 'Using locally cached OpenAI account models.' : 'Model discovery completed from OpenAI account.',
       ],
+    };
+  }
+
+  if (provider === 'anthropic-proxy') {
+    const session = await ensureAnthropicAccountSession();
+    if (!session) {
+      return {
+        ready: false,
+        reason: 'No Anthropic account credentials found. Install Claude Code CLI (`claude`) and sign in, or set ANTHROPIC_API_KEY.',
+        notes: ['Anthropic account credentials are read from the Claude Code CLI config (~/.claude/config.json) or ANTHROPIC_API_KEY.'],
+      };
+    }
+
+    const probe = await validateAnthropicAccountRuntime();
+    if (!probe.ok) {
+      return {
+        ready: false,
+        reason: probe.error || 'Anthropic account runtime validation failed.',
+        notes: ['Anthropic credentials found, but the API endpoint did not validate successfully.'],
+      };
+    }
+
+    let models: string[] = [];
+    let usedCacheFallback = false;
+    let discoveryError: string | undefined;
+    try {
+      const discovered = await withTimeout(fetchAnthropicAccountModels(session.apiKey), 6_000);
+      if (discovered.length > 0) {
+        models = discovered;
+        writeCachedModelCatalog(provider, discovered);
+      }
+    } catch (error) {
+      discoveryError = error instanceof Error ? error.message : String(error);
+    }
+    if (models.length === 0) {
+      models = readCachedModelCatalog(provider);
+      usedCacheFallback = models.length > 0;
+    }
+
+    const sourceNote = session.source === 'env'
+      ? 'Connected through ANTHROPIC_API_KEY environment variable.'
+      : 'Connected through Claude Code CLI credentials.';
+
+    const notes = [sourceNote];
+    if (usedCacheFallback) {
+      notes.push('Using locally cached Anthropic models; live discovery did not complete in time.');
+    } else if (discoveryError) {
+      notes.push(`Model discovery failed: ${discoveryError}`);
+    } else if (models.length > 0) {
+      notes.push('Model discovery completed from Anthropic API.');
+    } else {
+      notes.push('Model discovery returned no models for this account.');
+    }
+
+    return {
+      ready: true,
+      runtime: {
+        provider,
+        baseUrl: '',
+        apiKey: session.apiKey,
+        models,
+        notes,
+        autoStarted: false,
+      },
+      notes,
     };
   }
 
@@ -131,17 +203,22 @@ export async function prepareProviderRuntime(
 
     let models: string[] = [];
     let usedCacheFallback = false;
+    let discoveryError: string | undefined;
+    let scopeInsufficient = false;
     try {
       const discovered = await withTimeout(fetchGeminiOAuthModels(session.accessToken), 13_000);
       if (discovered.length > 0) {
         models = discovered;
         writeCachedModelCatalog(provider, discovered);
       }
-    } catch {
-      // Fallback to cache.
+    } catch (error) {
+      discoveryError = error instanceof Error ? error.message : String(error);
+      scopeInsufficient = discoveryError.toLowerCase().includes('insufficient authentication scopes')
+        || discoveryError.toLowerCase().includes('access_token_scope_insufficient')
+        || discoveryError.toLowerCase().includes('http 403');
     }
 
-    if (models.length === 0) {
+    if (models.length === 0 && !scopeInsufficient) {
       models = readCachedModelCatalog(provider);
       usedCacheFallback = models.length > 0;
     }
@@ -149,8 +226,18 @@ export async function prepareProviderRuntime(
     const notes = ['Connected through Yagr-managed Gemini OAuth.'];
     if (usedCacheFallback) {
       notes.push('Using locally cached Gemini models; live discovery did not complete in time.');
-    } else {
+    } else if (models.length > 0) {
       notes.push('Model discovery completed from Gemini OAuth.');
+    } else if (discoveryError) {
+      notes.push(`Model discovery failed: ${discoveryError}`);
+    } else {
+      notes.push('Model discovery returned no models for this account/session.');
+    }
+    if (process.env.YAGR_DEBUG_MODEL_DISCOVERY === '1') {
+      notes.push(`Gemini models discovered: ${models.length}.`);
+      if (models.length > 0) {
+        notes.push(`Gemini model IDs: ${models.join(', ')}`);
+      }
     }
 
     return {

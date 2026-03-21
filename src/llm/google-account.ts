@@ -3,7 +3,6 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import type {
   LanguageModelV1,
   LanguageModelV1CallOptions,
@@ -18,7 +17,8 @@ export const GEMINI_ACCOUNT_DEFAULT_MODEL = 'gemini-2.5-pro';
 const GEMINI_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GEMINI_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GEMINI_USERINFO_URL = 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json';
-const GEMINI_MODELS_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
+const CODE_ASSIST_API_VERSION = 'v1internal';
 const GEMINI_REDIRECT_URI = 'http://localhost:8085/oauth2callback';
 const GEMINI_SCOPES = [
   'https://www.googleapis.com/auth/cloud-platform',
@@ -75,12 +75,26 @@ interface PendingGeminiCallbackServer {
 let pendingGeminiCallbackServer: PendingGeminiCallbackServer | undefined;
 const completedGeminiCallbacks = new Map<string, { url: string; capturedAt: number }>();
 
-interface GeminiModelsResponse {
-  models?: Array<{
-    name?: string;
-    supportedGenerationMethods?: string[];
-  }>;
-  nextPageToken?: string;
+interface CodeAssistLoadResponse {
+  currentTier?: {
+    id?: string;
+  };
+  cloudaicompanionProject?: string;
+}
+
+interface CodeAssistGenerateResponse {
+  response?: {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{ text?: string }>;
+      };
+      finishReason?: string;
+    }>;
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+    };
+  };
 }
 
 export function getGeminiConfigDir(): string {
@@ -103,10 +117,6 @@ export function getGeminiSessionPath(): string {
 
   ensureYagrHomeDir();
   return path.join(getYagrPaths().accountAuthDir, 'gemini-oauth.json');
-}
-
-function getGeminiExecutable(): string {
-  return process.env.YAGR_GEMINI_CLI_PATH || 'gemini';
 }
 
 export function getGeminiAccountSession(): GeminiAccountSession | undefined {
@@ -177,61 +187,82 @@ export async function validateGeminiAccountRuntime(modelId = GEMINI_ACCOUNT_DEFA
       text: result.text,
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('HTTP 429') || message.includes('RESOURCE_EXHAUSTED')) {
+      return {
+        ok: true,
+        text: 'Quota exhausted for current model; runtime endpoint is reachable.',
+      };
+    }
     return {
       ok: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     };
   }
 }
 
 export async function fetchGeminiOAuthModels(accessToken: string): Promise<string[]> {
-  const discovered = new Set<string>();
-  let pageToken: string | undefined;
-  const startedAt = Date.now();
-  const maxElapsedMs = 12_000;
-  const maxPages = 20;
+  return await probeGeminiModelsViaCodeAssist(accessToken);
+}
 
-  for (let page = 0; page < maxPages; page += 1) {
-    if (Date.now() - startedAt >= maxElapsedMs) {
-      break;
-    }
+async function probeGeminiModelsViaCodeAssist(accessToken: string): Promise<string[]> {
+  const project = await loadGeminiCodeAssistProject(accessToken);
+  const debugDiscovery = process.env.YAGR_DEBUG_MODEL_DISCOVERY === '1';
+  const envCandidates = process.env.YAGR_GEMINI_MODEL_PROBE_LIST?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
+  const candidateModels = envCandidates.length > 0
+    ? envCandidates
+    : [
+      'gemini-3.1-pro-preview',
+      'gemini-3.1-flash-preview',
+      'gemini-3-pro-preview',
+      'gemini-3-flash-preview',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-2.0-flash',
+    ];
 
-    const params = new URLSearchParams();
-    params.set('pageSize', '1000');
-    if (pageToken) {
-      params.set('pageToken', pageToken);
-    }
+  const available = new Set<string>();
+  for (const modelId of candidateModels) {
+    let accepted = false;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetchWithTimeout(`${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:generateContent`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            model: modelId,
+            project,
+            request: {
+              contents: [{ role: 'user', parts: [{ text: 'OK' }] }],
+            },
+          }),
+        }, 8_000);
 
-    const response = await fetchWithTimeout(`${GEMINI_MODELS_URL}${params.toString() ? `?${params.toString()}` : ''}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-      },
-    }, 4_000);
-
-    if (!response.ok) {
-      break;
-    }
-
-    const payload = await response.json() as GeminiModelsResponse;
-    for (const model of payload.models ?? []) {
-      const supportsGeneration = (model.supportedGenerationMethods ?? []).includes('generateContent');
-      if (!supportsGeneration) {
-        continue;
+        if (response.status === 200 || response.status === 429) {
+          available.add(modelId);
+          accepted = true;
+        }
+        if (debugDiscovery) {
+          process.stderr.write(`[yagr] gemini code-assist probe model=${modelId} attempt=${attempt + 1} http=${response.status}\n`);
+        }
+        if (accepted || response.status !== 408) {
+          break;
+        }
+      } catch (error) {
+        if (debugDiscovery) {
+          const message = error instanceof Error ? error.message : String(error);
+          process.stderr.write(`[yagr] gemini code-assist probe model=${modelId} attempt=${attempt + 1} error=${message}\n`);
+        }
       }
-      const modelName = model.name?.replace(/^models\//, '').trim();
-      if (modelName) {
-        discovered.add(modelName);
-      }
     }
-
-    if (!payload.nextPageToken) {
-      break;
-    }
-    pageToken = payload.nextPageToken;
   }
 
-  return [...discovered].sort((a, b) => a.localeCompare(b));
+  return [...available].sort((a, b) => a.localeCompare(b));
 }
 
 export function createGeminiAccountLanguageModel(modelId: string): LanguageModelV1 {
@@ -304,46 +335,41 @@ async function runGeminiExec(
     throw new Error('Gemini OAuth session not found. Run `yagr setup` again.');
   }
 
-  syncGeminiCliFiles(session);
-  ensureGeminiCliSettings();
-
   const warnings = buildGeminiWarnings(options);
   const prompt = flattenPrompt(options.prompt);
-  const args = ['--model', modelId, '--sandbox=false', '--prompt', prompt];
+  const project = await loadGeminiCodeAssistProject(session.accessToken);
+  const response = await fetchWithTimeout(`${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:generateContent`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.accessToken}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      model: modelId,
+      project,
+      request: {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      },
+    }),
+  }, 20_000);
 
-  return await new Promise((resolve, reject) => {
-    const child = spawn(getGeminiExecutable(), args, {
-      env: buildGeminiEnvironment(),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      cwd: process.cwd(),
-    });
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Gemini Code Assist runtime failed (HTTP ${response.status})${body ? `: ${body.slice(0, 200)}` : ''}`);
+  }
 
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += String(chunk);
-    });
-    child.on('error', reject);
-    child.on('exit', (code) => {
-      if (code !== 0) {
-        reject(new Error(extractCliError(stdout, stderr) || `Gemini CLI failed with exit code ${code}.`));
-        return;
-      }
-
-      resolve({
-        text: stdout.trim(),
-        finishReason: 'stop',
-        usage: {
-          promptTokens: 0,
-          completionTokens: 0,
-        },
-        warnings,
-      });
-    });
-  });
+  const payload = await response.json() as CodeAssistGenerateResponse;
+  const text = payload.response?.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim() || '';
+  return {
+    text,
+    finishReason: 'stop',
+    usage: {
+      promptTokens: payload.response?.usageMetadata?.promptTokenCount ?? 0,
+      completionTokens: payload.response?.usageMetadata?.candidatesTokenCount ?? 0,
+    },
+    warnings,
+  };
 }
 
 export async function beginGeminiAccountAuth(): Promise<GeminiAccountAuthChallenge> {
@@ -794,7 +820,7 @@ function buildGeminiWarnings(options: Pick<LanguageModelV1CallOptions, 'mode'>):
   return options.mode.tools.map((tool) => ({
     type: 'unsupported-tool',
     tool,
-    details: 'Gemini OAuth currently executes through Gemini CLI and does not expose Yagr tool-calls yet.',
+    details: 'Gemini OAuth currently executes through Code Assist runtime and does not expose Yagr tool-calls yet.',
   }));
 }
 
@@ -827,22 +853,6 @@ function flattenPrompt(prompt: LanguageModelV1Prompt): string {
   }).join('\n\n');
 }
 
-function buildGeminiEnvironment(): NodeJS.ProcessEnv {
-  const nextEnv = { ...process.env };
-  delete nextEnv.GEMINI_API_KEY;
-  delete nextEnv.GOOGLE_API_KEY;
-  nextEnv.NO_COLOR = '1';
-  nextEnv.CI = '1';
-  nextEnv.GEMINI_CLI_NO_RELAUNCH = 'true';
-  return nextEnv;
-}
-
-function extractCliError(stdout: string, stderr: string): string | undefined {
-  const combined = [stdout, stderr].filter(Boolean).join('\n');
-  const lines = combined.split('\n').map((line) => line.trim()).filter(Boolean);
-  return lines.at(-1);
-}
-
 async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -854,4 +864,34 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: num
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function loadGeminiCodeAssistProject(accessToken: string): Promise<string> {
+  const response = await fetchWithTimeout(`${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:loadCodeAssist`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      metadata: {
+        ideType: 'IDE_UNSPECIFIED',
+        platform: 'PLATFORM_UNSPECIFIED',
+        pluginType: 'GEMINI',
+      },
+    }),
+  }, 8_000);
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Gemini Code Assist load failed (HTTP ${response.status})${body ? `: ${body.slice(0, 200)}` : ''}`);
+  }
+
+  const payload = await response.json() as CodeAssistLoadResponse;
+  const project = payload.cloudaicompanionProject?.trim();
+  if (!project) {
+    throw new Error('Gemini Code Assist did not return a project id.');
+  }
+  return project;
 }
