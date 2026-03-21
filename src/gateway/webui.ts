@@ -39,8 +39,7 @@ import {
   providerRequiresApiKey,
   YAGR_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
-import { buildManagedN8nWorkflowOpenPage } from '../n8n-local/browser-auth.js';
-import { ManagedN8nOwnerCredentialService } from '../n8n-local/owner-credentials.js';
+import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -477,8 +476,8 @@ class WebUiGateway implements Gateway {
   }
 
   private async sendManagedN8nWorkflowSession(response: ServerResponse, target: string): Promise<void> {
-    const session = await this.resolveManagedN8nWorkflowSession(target);
-    if ('error' in session) {
+    const session = resolveManagedN8nWorkflowOpen(target);
+    if (!session.ok) {
       this.sendJson(response, session.statusCode, { error: session.error });
       return;
     }
@@ -487,8 +486,8 @@ class WebUiGateway implements Gateway {
   }
 
   private async openManagedN8nWorkflow(response: ServerResponse, target: string): Promise<void> {
-    const session = await this.resolveManagedN8nWorkflowSession(target);
-    if ('error' in session) {
+    const session = resolveManagedN8nWorkflowOpen(target);
+    if (!session.ok) {
       this.sendText(response, session.statusCode, session.error, 'text/plain; charset=utf-8');
       return;
     }
@@ -500,75 +499,6 @@ class WebUiGateway implements Gateway {
     }
 
     this.sendText(response, 200, session.payload.fallbackPage, 'text/html; charset=utf-8');
-  }
-
-  private async resolveManagedN8nWorkflowSession(target: string): Promise<
-    | { statusCode: number; error: string }
-    | {
-        payload:
-          | { mode: 'direct'; targetUrl: string }
-          | {
-              mode: 'managed';
-              targetUrl: string;
-              loginUrl: string;
-              credentials: {
-                email: string;
-                password: string;
-                firstName: string;
-                lastName: string;
-                createdAt: string;
-                url: string;
-              };
-              fallbackPage: string;
-            };
-      }
-  > {
-    if (!target) {
-      return { statusCode: 400, error: 'Workflow target URL is required.' };
-    }
-
-    const n8nConfig = new YagrN8nConfigService().getLocalConfig();
-    if (!n8nConfig.host) {
-      return { statusCode: 400, error: 'n8n is not configured yet.' };
-    }
-
-    let targetUrl: URL;
-    let configuredHost: URL;
-    try {
-      targetUrl = new URL(target);
-      configuredHost = new URL(n8nConfig.host);
-    } catch {
-      return { statusCode: 400, error: 'Workflow target URL is invalid.' };
-    }
-
-    if (targetUrl.origin !== configuredHost.origin) {
-      return { statusCode: 400, error: 'Workflow target URL does not match the configured n8n host.' };
-    }
-
-    const ownerCredentials = new ManagedN8nOwnerCredentialService().get(configuredHost.origin);
-    if (!ownerCredentials) {
-      return {
-        payload: {
-          mode: 'direct',
-          targetUrl: targetUrl.toString(),
-        },
-      };
-    }
-
-    const loginUrl = new URL('/rest/login', configuredHost.origin).toString();
-    return {
-      payload: {
-        mode: 'managed',
-        targetUrl: targetUrl.toString(),
-        loginUrl,
-        credentials: ownerCredentials,
-        fallbackPage: buildManagedN8nWorkflowOpenPage({
-          targetUrl: targetUrl.toString(),
-          loginUrl,
-          credentials: ownerCredentials,
-        }),
-      },
-    };
   }
 
   private async saveN8nConfig(input: { host: string; apiKey?: string; projectId: string; syncFolder: string }): Promise<string | undefined> {

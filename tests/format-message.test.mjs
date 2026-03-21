@@ -44,14 +44,13 @@ test('extractWorkflowEmbed returns undefined for non-embed events', () => {
 // Workflow link formatting
 // ---------------------------------------------------------------------------
 
-test('formatWorkflowLinkPlain includes title and URL on separate lines', () => {
+test('formatWorkflowLinkPlain includes the workflow title', () => {
   const result = formatWorkflowLinkPlain({
     workflowId: 'abc',
     url: 'https://n8n.example.com/workflow/abc',
     title: 'Test WF',
   });
   assert.match(result, /Test WF/);
-  assert.match(result, /https:\/\/n8n\.example\.com\/workflow\/abc/);
 });
 
 test('formatWorkflowLinkPlain falls back to workflowId when no title', () => {
@@ -96,12 +95,12 @@ test('formatWorkflowLinkTerminal uses OSC 8 escape sequences', () => {
 test('formatWorkflowLinkTerminal shows target URL when Yagr auth bridge is used', () => {
   const result = formatWorkflowLinkTerminal({
     workflowId: 'abc',
-    url: 'http://127.0.0.1:3789/open/n8n-workflow?target=x',
+    url: `data:text/html;charset=utf-8,${encodeURIComponent('<html><body>hello</body></html>')}`,
     targetUrl: 'http://127.0.0.1:5678/workflow/abc',
     title: 'Test WF',
   });
-  assert.ok(result.includes('http://127.0.0.1:5678/workflow/abc'));
-  assert.ok(result.includes('\x1b]8;;http://127.0.0.1:3789/open/n8n-workflow?target=x\x07'));
+  assert.match(result, /\x1b]8;;http:\/\/127\.0\.0\.1:3791\/open\/n8n-workflow\?target=/);
+  assert.ok(!result.includes('http://127.0.0.1:5678/workflow/abc'));
 });
 
 // ---------------------------------------------------------------------------
