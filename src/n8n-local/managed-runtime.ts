@@ -1,4 +1,3 @@
-import { N8nApiClient } from 'n8nac';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import {
   getManagedDirectN8nStatus,
@@ -9,6 +8,19 @@ import {
   startManagedDockerN8n,
 } from './docker-manager.js';
 import { readManagedN8nState, type ManagedN8nInstanceState } from './state.js';
+
+export type ConfiguredN8nRuntimeMode =
+  | 'unconfigured'
+  | 'managed-local'
+  | 'legacy-managed-match'
+  | 'external';
+
+export interface ConfiguredN8nLaunchPreparation {
+  mode: ConfiguredN8nRuntimeMode;
+  started: boolean;
+  state?: ManagedN8nInstanceState;
+  warning?: string;
+}
 
 function normalizeUrlOrigin(url: string | undefined): string | undefined {
   if (!url) {
@@ -23,12 +35,20 @@ function normalizeUrlOrigin(url: string | undefined): string | undefined {
 }
 
 function resolveConfiguredRuntimeSource(configService: YagrN8nConfigService): {
-  source: 'managed-local' | 'external' | undefined;
+  source: ConfiguredN8nRuntimeMode;
   localConfig: ReturnType<YagrN8nConfigService['getLocalConfig']>;
   managedState: ManagedN8nInstanceState | undefined;
 } {
   const localConfig = configService.getLocalConfig();
   const managedState = readManagedN8nState();
+
+  if (!localConfig.host) {
+    return {
+      source: 'unconfigured',
+      localConfig,
+      managedState,
+    };
+  }
 
   if (localConfig.runtimeSource) {
     return {
@@ -43,7 +63,7 @@ function resolveConfiguredRuntimeSource(configService: YagrN8nConfigService): {
 
   if (configuredHost && managedHost && configuredHost === managedHost) {
     return {
-      source: 'managed-local',
+      source: 'legacy-managed-match',
       localConfig,
       managedState,
     };
@@ -60,7 +80,7 @@ export function getConfiguredManagedN8nState(
   configService = new YagrN8nConfigService(),
 ): ManagedN8nInstanceState | undefined {
   const { source, localConfig, managedState } = resolveConfiguredRuntimeSource(configService);
-  if (source !== 'managed-local') {
+  if (source !== 'managed-local' && source !== 'legacy-managed-match') {
     return undefined;
   }
 
@@ -111,15 +131,11 @@ export async function getConfiguredExternalN8nReachabilityWarning(
     return undefined;
   }
 
-  const apiKey = configService.getApiKey(localConfig.host);
-  if (!apiKey) {
-    return undefined;
-  }
-
   try {
-    const client = new N8nApiClient({ host: localConfig.host, apiKey });
-    const connected = await client.testConnection();
-    if (connected) {
+    const response = await fetch(new URL('/healthz', localConfig.host), {
+      method: 'GET',
+    });
+    if (response.ok) {
       return undefined;
     }
   } catch {
@@ -127,4 +143,32 @@ export async function getConfiguredExternalN8nReachabilityWarning(
   }
 
   return `Configured external n8n instance is not reachable at ${localConfig.host}. Yagr will not restart manually-managed instances automatically.`;
+}
+
+export async function prepareConfiguredN8nForLaunch(
+  configService = new YagrN8nConfigService(),
+): Promise<ConfiguredN8nLaunchPreparation> {
+  const { source } = resolveConfiguredRuntimeSource(configService);
+
+  if (source === 'managed-local' || source === 'legacy-managed-match') {
+    const ensured = await ensureConfiguredManagedN8nRunning(configService);
+    return {
+      mode: source,
+      started: ensured.started,
+      state: ensured.state,
+    };
+  }
+
+  if (source === 'external') {
+    return {
+      mode: source,
+      started: false,
+      warning: await getConfiguredExternalN8nReachabilityWarning(configService),
+    };
+  }
+
+  return {
+    mode: source,
+    started: false,
+  };
 }

@@ -33,8 +33,7 @@ import {
 } from './n8n-local/direct-manager.js';
 import { formatLocalN8nBootstrapAssessment, inspectLocalN8nBootstrap } from './n8n-local/detect.js';
 import {
-  ensureConfiguredManagedN8nRunning,
-  getConfiguredExternalN8nReachabilityWarning,
+  prepareConfiguredN8nForLaunch,
 } from './n8n-local/managed-runtime.js';
 import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { readManagedN8nState } from './n8n-local/state.js';
@@ -495,18 +494,17 @@ async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Pro
 }
 
 async function ensureManagedN8nAtLaunch(): Promise<void> {
-  const externalWarning = await getConfiguredExternalN8nReachabilityWarning();
-  if (externalWarning) {
-    process.stderr.write(`Warning: ${externalWarning}\n`);
+  const preparation = await prepareConfiguredN8nForLaunch();
+  if (preparation.warning) {
+    process.stderr.write(`Warning: ${preparation.warning}\n`);
   }
 
-  const result = await ensureConfiguredManagedN8nRunning();
-  if (!result.started || !result.state) {
+  if (!preparation.started || !preparation.state) {
     return;
   }
 
-  const modeLabel = result.state.strategy === 'direct' ? 'non-Docker' : 'Docker';
-  process.stdout.write(`Restarted Yagr-managed n8n (${modeLabel}) at ${result.state.url}\n`);
+  const modeLabel = preparation.state.strategy === 'direct' ? 'non-Docker' : 'Docker';
+  process.stdout.write(`Restarted Yagr-managed n8n (${modeLabel}) at ${preparation.state.url}\n`);
 }
 
 async function refreshN8nWorkspaceInstructionsAtLaunch(): Promise<void> {
