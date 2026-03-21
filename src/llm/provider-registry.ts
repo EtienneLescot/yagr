@@ -1,4 +1,6 @@
 import type { YagrLocalConfig } from '../config/yagr-config-service.js';
+import { DEFAULT_COPILOT_API_BASE_URL, GITHUB_COPILOT_DEFAULT_MODEL, GITHUB_COPILOT_MODEL_CATALOG } from './copilot-account.js';
+import { GEMINI_ACCOUNT_DEFAULT_MODEL, GEMINI_ACCOUNT_MODEL_CATALOG } from './google-account.js';
 import { OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL, OPENAI_ACCOUNT_MODEL_CATALOG } from './openai-account.js';
 
 export type YagrModelProvider =
@@ -15,6 +17,7 @@ export type YagrModelProvider =
 
 export interface YagrProviderDefinition {
   id: YagrModelProvider;
+  displayName?: string;
   defaultModel: string;
   defaultBaseUrl?: string;
   requiresApiKey: boolean;
@@ -47,6 +50,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   openai: {
     id: 'openai',
+    displayName: 'OpenAI API Key',
     defaultModel: 'gpt-4o',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: true,
@@ -59,12 +63,14 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   google: {
     id: 'google',
+    displayName: 'Gemini API Key',
     defaultModel: 'gemini-1.5-pro-latest',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
   },
   groq: {
     id: 'groq',
+    displayName: 'Groq API Key',
     defaultModel: 'llama-3.1-70b-versatile',
     defaultBaseUrl: 'https://api.groq.com/openai/v1',
     requiresApiKey: true,
@@ -77,6 +83,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   mistral: {
     id: 'mistral',
+    displayName: 'Mistral API Key',
     defaultModel: 'mistral-large-latest',
     defaultBaseUrl: 'https://api.mistral.ai/v1',
     requiresApiKey: true,
@@ -89,6 +96,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   openrouter: {
     id: 'openrouter',
+    displayName: 'OpenRouter API Key',
     defaultModel: 'anthropic/claude-3.5-sonnet',
     defaultBaseUrl: 'https://openrouter.ai/api/v1',
     requiresApiKey: true,
@@ -101,14 +109,16 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   'openai-proxy': {
     id: 'openai-proxy',
+    displayName: 'OpenAI OAuth',
     defaultModel: OPENAI_ACCOUNT_DEFAULT_MODEL,
     defaultBaseUrl: OPENAI_ACCOUNT_BASE_URL,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
-    setupHint: 'ChatGPT account',
+    setupHint: 'Use your ChatGPT account, no API key',
   },
   'anthropic-proxy': {
     id: 'anthropic-proxy',
+    displayName: 'Claude OAuth',
     defaultModel: 'claude-sonnet-4',
     defaultBaseUrl: 'http://127.0.0.1:3456/v1',
     experimental: true,
@@ -123,30 +133,20 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   'google-proxy': {
     id: 'google-proxy',
-    defaultModel: 'gemini-2.5-pro',
-    experimental: true,
+    displayName: 'Gemini OAuth',
+    defaultModel: GEMINI_ACCOUNT_DEFAULT_MODEL,
     requiresApiKey: false,
-    usesOpenAiCompatibleApi: true,
-    setupHint: 'Account flow in progress',
-    modelDiscovery: {
-      buildUrl: normalizeProxyModelsUrl,
-      authMode: 'bearer-optional',
-      mapResponse: MODEL_LIST_MAPPER,
-    },
+    usesOpenAiCompatibleApi: false,
+    setupHint: 'Use your Google/Gemini account, no API key',
   },
   'copilot-proxy': {
     id: 'copilot-proxy',
-    defaultModel: 'gpt-5.2-codex',
-    defaultBaseUrl: 'http://127.0.0.1:3000/v1',
-    experimental: true,
+    displayName: 'GitHub Copilot OAuth',
+    defaultModel: GITHUB_COPILOT_DEFAULT_MODEL,
+    defaultBaseUrl: DEFAULT_COPILOT_API_BASE_URL,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
-    setupHint: 'Manual local proxy',
-    modelDiscovery: {
-      buildUrl: normalizeProxyModelsUrl,
-      authMode: 'bearer-optional',
-      mapResponse: MODEL_LIST_MAPPER,
-    },
+    setupHint: 'Use your GitHub Copilot subscription, no API key',
   },
 };
 
@@ -165,7 +165,7 @@ export function getDefaultModelForProvider(provider: YagrModelProvider): string 
 }
 
 export function providerNeedsBaseUrlInput(provider: YagrModelProvider): boolean {
-  if (provider === 'openai-proxy') {
+  if (isOAuthAccountProvider(provider)) {
     return false;
   }
 
@@ -182,6 +182,14 @@ export function isExperimentalProvider(provider: YagrModelProvider): boolean {
 
 export function getProviderSetupHint(provider: YagrModelProvider): string | undefined {
   return getProviderDefinition(provider).setupHint;
+}
+
+export function getProviderDisplayName(provider: YagrModelProvider): string {
+  return getProviderDefinition(provider).displayName ?? provider;
+}
+
+export function isOAuthAccountProvider(provider: YagrModelProvider): boolean {
+  return provider === 'openai-proxy' || provider === 'google-proxy' || provider === 'copilot-proxy';
 }
 
 export function isProviderConfigured(localConfig: YagrLocalConfig, getApiKey: (provider: YagrModelProvider) => string | undefined): boolean {
@@ -213,6 +221,14 @@ function normalizeProxyModelsUrl(baseUrl?: string): string | undefined {
 export function getStaticModelCatalogForProvider(provider: YagrModelProvider): string[] {
   if (provider === 'openai-proxy') {
     return [...OPENAI_ACCOUNT_MODEL_CATALOG];
+  }
+
+  if (provider === 'google-proxy') {
+    return [...GEMINI_ACCOUNT_MODEL_CATALOG];
+  }
+
+  if (provider === 'copilot-proxy') {
+    return [...GITHUB_COPILOT_MODEL_CATALOG];
   }
 
   return [];

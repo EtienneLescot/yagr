@@ -3,7 +3,14 @@ import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import type { GatewaySurface } from '../gateway/types.js';
 import type { YagrModelProvider } from '../llm/create-language-model.js';
-import { getProviderSetupHint, isExperimentalProvider, providerRequiresApiKey, YAGR_MODEL_PROVIDERS } from '../llm/provider-registry.js';
+import {
+  getProviderDisplayName,
+  getProviderSetupHint,
+  isExperimentalProvider,
+  isOAuthAccountProvider,
+  providerRequiresApiKey,
+  YAGR_MODEL_PROVIDERS,
+} from '../llm/provider-registry.js';
 import type { ManagedN8nInstanceState } from '../n8n-local/state.js';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -79,7 +86,7 @@ type Phase =
   | { kind: 'n8n-local-ready'; url: string; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
-  | { kind: 'llm-openai-auth'; provider: YagrModelProvider; cursor: number }
+  | { kind: 'llm-account-auth'; provider: YagrModelProvider; cursor: number }
   | { kind: 'llm-reuse-config'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
   | { kind: 'llm-reuse-apikey'; provider: YagrModelProvider; existing: string; cursor: number }
   | { kind: 'llm-apikey'; provider: YagrModelProvider; err?: string }
@@ -105,6 +112,51 @@ function sectionIndex(phase: Phase): number {
   if (phase.kind.startsWith('n8n')) return 1;
   if (phase.kind.startsWith('llm')) return 2;
   return 3;
+}
+
+function getProviderAuthCopy(provider: YagrModelProvider): {
+  title: string;
+  body: string[];
+  continueLabel: string;
+} {
+  if (provider === 'openai-proxy') {
+    return {
+      title: 'Connect OpenAI account',
+      body: [
+        'Yagr uses the Codex account runtime for your ChatGPT account.',
+        'It will verify your local sign-in and may open a browser login flow if needed.',
+      ],
+      continueLabel: 'Continue with ChatGPT sign-in',
+    };
+  }
+
+  if (provider === 'google-proxy') {
+    return {
+      title: 'Connect Gemini account',
+      body: [
+        'Yagr uses the Gemini CLI OAuth session for your Google account.',
+        'It will verify the local session and may open a browser login flow if needed.',
+      ],
+      continueLabel: 'Continue with Gemini sign-in',
+    };
+  }
+
+  if (provider === 'copilot-proxy') {
+    return {
+      title: 'Connect GitHub Copilot account',
+      body: [
+        'Yagr uses your GitHub login and exchanges it for a Copilot runtime token.',
+        'It may open the GitHub browser login flow if needed.',
+      ],
+      continueLabel: 'Continue with GitHub sign-in',
+    };
+  }
+
+  return {
+    title: `Connect ${getProviderDisplayName(provider)}`,
+    body: ['Yagr will verify your account session before loading models.'],
+    continueLabel: 'Continue',
+  };
 }
 
 // ─── Primitive UI components ──────────────────────────────────────────────────
@@ -540,6 +592,17 @@ function SetupWizard({ callbacks, onDone }: {
             note = prepared.notes.join(' ');
           }
           models = prepared.models ?? [];
+        } else if (isOAuthAccountProvider(phase.provider)) {
+          setPhase({
+            kind: 'llm-model',
+            provider: phase.provider,
+            apiKey: phase.apiKey,
+            models: [],
+            defModel: phase.defModel,
+            cursor: 0,
+            note: prepared.error || note,
+          });
+          return;
         }
 
         if (models.length === 0) {
@@ -739,9 +802,9 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.return) {
         const provider = VALID_PROVIDERS[phase.cursor];
         const existing = llmApiKeyDraftsRef.current[provider] ?? llmDef.getApiKey(provider);
-        if (provider === 'openai-proxy') {
+        if (isOAuthAccountProvider(provider)) {
           setTextValue('');
-          setPhase({ kind: 'llm-openai-auth', provider, cursor: 0 });
+          setPhase({ kind: 'llm-account-auth', provider, cursor: 0 });
         } else if (!providerRequiresApiKey(provider)) {
           const defModel = llmDef.getDefaultModel(provider);
           transitionToLlmModelsLoading(provider, existing ?? '', defModel);
@@ -753,13 +816,14 @@ function SetupWizard({ callbacks, onDone }: {
           setTextValue(llmApiKeyDraftsRef.current[provider] ?? '');
         }
       } else if (key.escape) cancel('Setup cancelled.');
-    } else if (phase.kind === 'llm-openai-auth') {
+    } else if (phase.kind === 'llm-account-auth') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
       else if (key.return) {
         if (phase.cursor === 0) {
           const defModel = llmDef.getDefaultModel(phase.provider);
-          transitionToLlmModelsLoading(phase.provider, '', defModel, 'Yagr will verify your ChatGPT account with Codex and may open a browser sign-in flow.');
+          const authCopy = getProviderAuthCopy(phase.provider);
+          transitionToLlmModelsLoading(phase.provider, '', defModel, authCopy.body.join(' '));
         } else {
           setPhase({ kind: 'llm-provider', initial: phase.provider, cursor: VALID_PROVIDERS.indexOf(phase.provider) });
         }
@@ -784,7 +848,7 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.return) {
         const selected = allOptions[phase.cursor];
         if (selected === '__custom__') {
-          if (phase.provider === 'openai-proxy') {
+          if (isOAuthAccountProvider(phase.provider)) {
             return;
           }
           setPhase({ ...phase, models: [] });
@@ -846,7 +910,7 @@ function SetupWizard({ callbacks, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-openai-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'llm-model' && phase.models.length > 0);
 
   useInput((input, key) => {
@@ -1043,7 +1107,7 @@ function SetupWizard({ callbacks, onDone }: {
         return (
           <Box flexDirection="column">
             <FieldLabel label="LLM configuration" />
-            <Text dimColor>  Currently configured: {phase.provider} / {phase.model}</Text>
+            <Text dimColor>  Currently configured: {getProviderDisplayName(phase.provider)} / {phase.model}</Text>
             <SelectList
               options={['Keep current configuration', 'Change provider or model'] as const}
               cursor={phase.cursor}
@@ -1062,7 +1126,7 @@ function SetupWizard({ callbacks, onDone }: {
             <SelectList
               options={VALID_PROVIDERS}
               cursor={phase.cursor}
-              getLabel={(v) => v}
+              getLabel={(v) => getProviderDisplayName(v)}
               getHint={(v) => {
                 const parts = [
                   v === phase.initial ? 'currently configured' : undefined,
@@ -1078,14 +1142,17 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
-      case 'llm-openai-auth':
+      case 'llm-account-auth':
+        {
+          const authCopy = getProviderAuthCopy(phase.provider);
         return (
           <Box flexDirection="column">
-            <FieldLabel label="Connect ChatGPT account" />
-            <Text dimColor>  Yagr uses the Codex account runtime for `openai-proxy`.</Text>
-            <Text dimColor>  It will verify your local ChatGPT sign-in and may open a browser login flow if needed.</Text>
+            <FieldLabel label={authCopy.title} />
+            {authCopy.body.map((line) => (
+              <Text key={line} dimColor>  {line}</Text>
+            ))}
             <SelectList
-              options={['Continue with ChatGPT sign-in', 'Back to providers'] as const}
+              options={[authCopy.continueLabel, 'Back to providers'] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
               getHint={(v) => v.startsWith('Continue') ? 'recommended' : undefined}
@@ -1095,12 +1162,13 @@ function SetupWizard({ callbacks, onDone }: {
             <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
+        }
 
       case 'llm-reuse-apikey':
         return (
           <Box flexDirection="column">
-            <FieldLabel label={`${phase.provider} API key`} />
-            <Text dimColor>  A saved key exists for {phase.provider}</Text>
+            <FieldLabel label={`${getProviderDisplayName(phase.provider)} API key`} />
+            <Text dimColor>  A saved key exists for {getProviderDisplayName(phase.provider)}</Text>
             <SelectList
               options={['Keep the saved key', 'Enter a new key'] as const}
               cursor={phase.cursor}
@@ -1115,7 +1183,7 @@ function SetupWizard({ callbacks, onDone }: {
       case 'llm-apikey':
         return (
           <Box flexDirection="column">
-            <FieldLabel label={`${phase.provider} API key`} />
+            <FieldLabel label={`${getProviderDisplayName(phase.provider)} API key`} />
             {!providerRequiresApiKey(phase.provider) ? (
               <Text dimColor>  Optional for local proxy providers. Leave empty if your proxy handles account auth.</Text>
             ) : null}
@@ -1139,21 +1207,21 @@ function SetupWizard({ callbacks, onDone }: {
       case 'llm-models-loading':
         return (
           <Box flexDirection="column">
-            <SpinnerDisplay message={`Fetching available models for ${phase.provider}…`} frame={spinnerFrame} />
+            <SpinnerDisplay message={`Fetching available models for ${getProviderDisplayName(phase.provider)}…`} frame={spinnerFrame} />
             {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
           </Box>
         );
 
       case 'llm-model': {
         const modelOptions = getDisplayedModelOptions(phase.models);
-        const manualEntryDisabled = phase.provider === 'openai-proxy' && phase.models.length === 0;
+        const manualEntryDisabled = isOAuthAccountProvider(phase.provider) && phase.models.length === 0;
         return (
           <Box flexDirection="column">
-            <FieldLabel label={`Default model  ·  ${phase.provider}`} />
+            <FieldLabel label={`Default model  ·  ${getProviderDisplayName(phase.provider)}`} />
             {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
             {manualEntryDisabled ? (
               <Box flexDirection="column" marginLeft={2}>
-                <Text color="red">Unable to fetch models for {phase.provider}.</Text>
+                <Text color="red">Unable to fetch models for {getProviderDisplayName(phase.provider)}.</Text>
                 <Text dimColor>Retry setup after the proxy/account flow is available, or use a stable API-key provider for now.</Text>
               </Box>
             ) : phase.models.length === 0 ? (
@@ -1203,7 +1271,7 @@ function SetupWizard({ callbacks, onDone }: {
       case 'llm-baseurl':
         return (
           <Box flexDirection="column">
-            <FieldLabel label={`${phase.provider} base URL`} />
+            <FieldLabel label={`${getProviderDisplayName(phase.provider)} base URL`} />
             <Text dimColor>  Leave empty to use the default endpoint</Text>
             <Box marginLeft={2}>
               <WizardTextInput
@@ -1286,7 +1354,7 @@ function SetupWizard({ callbacks, onDone }: {
             <Text color="green" bold>{CHECK}  Setup complete</Text>
             <Box marginTop={1} flexDirection="column">
               {phase.n8nHost ? <Text dimColor>  n8n    {DOT}  {phase.n8nHost}</Text> : null}
-              {phase.provider ? <Text dimColor>  LLM    {DOT}  {phase.provider}{phase.model ? ` / ${phase.model}` : ''}</Text> : null}
+              {phase.provider ? <Text dimColor>  LLM    {DOT}  {getProviderDisplayName(phase.provider as YagrModelProvider)}{phase.model ? ` / ${phase.model}` : ''}</Text> : null}
               {phase.surfaces.length > 0
                 ? <Text dimColor>  Gates  {DOT}  {phase.surfaces.join(', ')}</Text>
                 : <Text dimColor>  Gates  {DOT}  none</Text>}

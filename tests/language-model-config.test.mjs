@@ -77,3 +77,31 @@ test('resolveLanguageModelConfig supports OpenAI account-backed provider without
     baseUrl: 'https://chatgpt.com/backend-api',
   });
 });
+
+test('resolveLanguageModelConfig supports Gemini OAuth provider without api key', () => {
+  const configStore = createConfigStore(
+    { provider: 'google-proxy', model: 'gemini-2.5-pro' },
+    {},
+  );
+
+  assert.deepEqual(resolveLanguageModelConfig({}, configStore), {
+    provider: 'google-proxy',
+    model: 'gemini-2.5-pro',
+    apiKey: undefined,
+    baseUrl: undefined,
+  });
+});
+
+test('resolveLanguageModelConfig supports GitHub Copilot OAuth provider without api key', () => {
+  const configStore = createConfigStore(
+    { provider: 'copilot-proxy', model: 'gpt-4.1' },
+    {},
+  );
+
+  assert.deepEqual(resolveLanguageModelConfig({}, configStore), {
+    provider: 'copilot-proxy',
+    model: 'gpt-4.1',
+    apiKey: undefined,
+    baseUrl: 'https://api.individual.githubcopilot.com',
+  });
+});
