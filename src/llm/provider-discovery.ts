@@ -20,11 +20,18 @@ export async function fetchAvailableModels(
     'Content-Type': 'application/json',
   };
 
-  if (discovery.authMode !== 'none' && apiKey) {
+  if ((discovery.authMode === 'bearer-optional' || discovery.authMode === 'bearer-required') && apiKey) {
     headers.Authorization = `Bearer ${apiKey}`;
+  }
+  if (discovery.authMode === 'x-api-key-required' && apiKey) {
+    headers['x-api-key'] = apiKey;
+    headers['anthropic-version'] = '2023-06-01';
   }
 
   if (discovery.authMode === 'bearer-required' && !apiKey) {
+    return [];
+  }
+  if (discovery.authMode === 'x-api-key-required' && !apiKey) {
     return [];
   }
 
