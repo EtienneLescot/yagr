@@ -192,10 +192,10 @@ function createSetupCallbacks(
       const assessment = await inspectLocalN8nBootstrap();
       if (strategy === 'docker') {
         if (!assessment.docker.available) {
-          throw new Error('Docker is not installed. Choose the local managed n8n option without Docker, or install Docker and try again.');
+          throw new Error('Docker is not running. Choose the local managed n8n option without Docker, or install/run Docker.');
         }
         if (assessment.docker.reachable === false) {
-          throw new Error('Docker is not started. Please start Docker and try again.');
+          throw new Error('Docker is not running. Choose the local managed n8n option without Docker, or install/run Docker.');
         }
         return installManagedDockerN8n();
       }
