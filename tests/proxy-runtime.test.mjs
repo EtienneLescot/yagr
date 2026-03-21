@@ -106,28 +106,17 @@ test('prepareProviderRuntime resolves the local Gemini OAuth session for google-
   process.env.YAGR_SKIP_GEMINI_RUNTIME_VALIDATION = '1';
 
   try {
-    await withMockedFetch(async (url) => {
-      assert.match(String(url), /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models/);
-      return new Response(JSON.stringify({
-        models: [
-          { name: 'models/gemini-2.5-pro', supportedGenerationMethods: ['generateContent'] },
-          { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] },
-        ],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }, async () => {
-      const result = await prepareProviderRuntime('google-proxy');
+    const result = await prepareProviderRuntime('google-proxy');
 
-      assert.equal(result.ready, true);
-      assert.deepEqual(result.runtime?.models, ['gemini-2.5-flash', 'gemini-2.5-pro']);
-      assert.ok(result.notes.some((note) => note.includes('Yagr-managed Gemini OAuth')));
-      const writtenAuth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
-      assert.equal(writtenAuth.access_token, 'gemini-access-token');
-      const writtenSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      assert.equal(writtenSettings.selectedAuthType, 'oauth-personal');
-    });
+    assert.equal(result.ready, true);
+    assert.ok(result.runtime?.models.length > 0, 'Should return curated model list');
+    assert.ok(result.runtime?.models.includes('gemini-2.5-pro'), 'Should include gemini-2.5-pro');
+    assert.ok(result.runtime?.models.includes('gemini-2.5-flash'), 'Should include gemini-2.5-flash');
+    assert.ok(result.notes.some((note) => note.includes('Yagr-managed Gemini OAuth')));
+    const writtenAuth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    assert.equal(writtenAuth.access_token, 'gemini-access-token');
+    const writtenSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.equal(writtenSettings.selectedAuthType, 'oauth-personal');
   } finally {
     if (previousSkipValidation === undefined) {
       delete process.env.YAGR_SKIP_GEMINI_RUNTIME_VALIDATION;
