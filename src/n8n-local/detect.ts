@@ -13,6 +13,8 @@ export type LocalN8nBootstrapStrategy = 'docker' | 'direct' | 'manual';
 export interface CommandAvailability {
   available: boolean;
   version?: string;
+  reachable?: boolean;
+  statusMessage?: string;
 }
 
 export interface LocalN8nBootstrapAssessment {
@@ -78,7 +80,7 @@ export function buildLocalN8nBootstrapAssessment(input: {
   const nodeMajorVersion = parseNodeMajorVersion(input.node.version);
   const supportedForDirectRuntime = isSupportedDirectRuntimeNodeVersion(input.node.version);
   const recommendedStrategy = chooseLocalN8nBootstrapStrategy({
-    dockerAvailable: input.docker.available,
+    dockerAvailable: input.docker.available && input.docker.reachable !== false,
     nodeVersion: input.node.version,
   });
 
@@ -87,6 +89,8 @@ export function buildLocalN8nBootstrapAssessment(input: {
 
   if (!input.docker.available) {
     notes.push('Docker is not available. Yagr will need a direct runtime or a manual prerequisite step.');
+  } else if (input.docker.reachable === false) {
+    notes.push(input.docker.statusMessage ?? 'Docker is installed, but the Docker engine is not running.');
   }
 
   if (!input.node.available) {
@@ -127,7 +131,9 @@ export function formatLocalN8nBootstrapAssessment(assessment: LocalN8nBootstrapA
     `Platform: ${assessment.platform}`,
     `Preferred strategy: ${assessment.recommendedStrategy}`,
     `Preferred URL: ${assessment.preferredUrl}`,
-    `Docker: ${assessment.docker.available ? `yes${assessment.docker.version ? ` (${assessment.docker.version})` : ''}` : 'no'}`,
+    `Docker: ${assessment.docker.available
+      ? `yes${assessment.docker.version ? ` (${assessment.docker.version})` : ''}${assessment.docker.reachable === false ? ' · daemon not reachable' : ''}`
+      : 'no'}`,
     `Node.js: ${assessment.node.available ? `yes${assessment.node.version ? ` (${assessment.node.version})` : ''}` : 'no'}`,
   ];
 
@@ -176,12 +182,28 @@ export async function inspectLocalN8nBootstrap(
 async function detectCommandAvailability(command: string, versionArgs: string[]): Promise<CommandAvailability> {
   try {
     const { stdout, stderr } = await execFileAsync(command, versionArgs, { timeout: 5000 });
-    return {
+    const availability: CommandAvailability = {
       available: true,
       version: normalizeCommandVersion(stdout || stderr),
     };
+    if (command === 'docker') {
+      availability.reachable = await isDockerDaemonReachable();
+      if (availability.reachable === false) {
+        availability.statusMessage = 'Docker is installed, but Docker is not started. Please start Docker and try again.';
+      }
+    }
+    return availability;
   } catch {
     return { available: false };
+  }
+}
+
+async function isDockerDaemonReachable(): Promise<boolean> {
+  try {
+    await execFileAsync('docker', ['info', '--format', '{{.ServerVersion}}'], { timeout: 5000 });
+    return true;
+  } catch {
+    return false;
   }
 }
 

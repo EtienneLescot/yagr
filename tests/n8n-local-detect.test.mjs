@@ -52,6 +52,23 @@ test('buildLocalN8nBootstrapAssessment surfaces blockers and preferred URL', () 
   assert.equal(assessment.blockers.length > 0, true);
 });
 
+test('buildLocalN8nBootstrapAssessment falls back to direct when Docker is installed but not started', () => {
+  const assessment = buildLocalN8nBootstrapAssessment({
+    platform: 'linux',
+    docker: {
+      available: true,
+      version: 'Docker',
+      reachable: false,
+      statusMessage: 'Docker is not started. Please start Docker and try again.',
+    },
+    node: { available: true, version: 'v22.11.0' },
+    preferredPort: 5678,
+  });
+
+  assert.equal(assessment.recommendedStrategy, 'direct');
+  assert.match(assessment.notes.join('\n'), /Docker is not started/i);
+});
+
 test('formatLocalN8nBootstrapAssessment renders a readable report', () => {
   const report = formatLocalN8nBootstrapAssessment({
     platform: 'darwin',
