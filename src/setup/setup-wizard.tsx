@@ -27,6 +27,7 @@ export interface SetupCallbacks {
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
   saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string }): Promise<void>;
   installManagedLocalN8n(): Promise<ManagedN8nInstanceState>;
+  openUrl(url: string): Promise<void>;
   getLlmDefaults(): {
     provider?: YagrModelProvider;
     getApiKey(prov: YagrModelProvider): string | undefined;
@@ -67,6 +68,7 @@ type Phase =
   | { kind: 'n8n-syncfolder'; url: string; apiKey: string; project: IProject; def: string; err?: string }
   | { kind: 'n8n-saving'; url: string; apiKey: string; project: IProject; syncFolder: string; log?: string }
   | { kind: 'n8n-local-installing' }
+  | { kind: 'n8n-local-ready'; url: string; cursor: number }
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
   | { kind: 'llm-reuse-config'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
@@ -429,17 +431,7 @@ function SetupWizard({ callbacks, onDone }: {
       try {
         const state = await callbacks.installManagedLocalN8n();
         if (guard !== asyncGuard.current) return;
-        const existing = callbacks.getN8nDefaults(state.url).apiKey;
-        if (existing) {
-          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: existing });
-          return;
-        }
-        setPhase({
-          kind: 'n8n-local-auth',
-          url: state.url,
-          message: 'Yagr installed a local n8n instance. Open the URL, create the owner account, generate an API key in Settings > n8n API, then paste it here.',
-        });
-        setTextValue('');
+        setPhase({ kind: 'n8n-local-ready', url: state.url, cursor: 0 });
       } catch (err) {
         if (guard !== asyncGuard.current) return;
         setPhase({ kind: 'error', message: (err as Error).message });
@@ -608,6 +600,38 @@ function SetupWizard({ callbacks, onDone }: {
           setTextValue(n8nDef.url);
         }
       } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'n8n-local-ready') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      else if (key.return) {
+        if (phase.cursor === 0) {
+          void (async () => {
+            try {
+              await callbacks.openUrl(phase.url);
+            } catch {
+              // Leave the flow available even if browser opening fails.
+            }
+            const existing = callbacks.getN8nDefaults(phase.url).apiKey;
+            if (existing) {
+              setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: existing });
+              return;
+            }
+            setPhase({
+              kind: 'n8n-local-auth',
+              url: phase.url,
+              message: 'The local n8n editor is ready. Create the owner account, then open Settings > n8n API, generate a key for Yagr, and paste it here.',
+            });
+            setTextValue('');
+          })();
+        } else {
+          setPhase({
+            kind: 'n8n-local-auth',
+            url: phase.url,
+            message: 'Open the local n8n URL in your browser, create the owner account, then generate a key in Settings > n8n API and paste it here.',
+          });
+          setTextValue('');
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'n8n-reuse-apikey') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
@@ -728,7 +752,7 @@ function SetupWizard({ callbacks, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-mode', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'llm-model' && phase.models.length > 0);
 
   useInput((input, key) => {
@@ -830,12 +854,32 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
+      case 'n8n-local-ready':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="Local n8n is ready" />
+            <Text dimColor>  Instance URL: {phase.url}</Text>
+            <Text dimColor>  Yagr waited for the n8n editor to finish starting before showing this step.</Text>
+            <Text dimColor>  You will first create the owner account, then create an API key for Yagr.</Text>
+            <SelectList
+              options={['Open n8n in the browser', 'I will open it myself'] as const}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              getHint={(v) => v.startsWith('Open') ? 'recommended' : phase.url}
+              maxVisibleRows={getListViewportHeight(terminalRows, 12)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
       case 'n8n-local-auth':
         return (
           <Box flexDirection="column">
             <FieldLabel label="Local n8n API key" />
             <Text dimColor>  Local instance URL: {phase.url}</Text>
             <Text dimColor>  {phase.message}</Text>
+            <Text dimColor>  If the browser is not already open, run `yagr n8n local open` or open the URL manually.</Text>
             <Box marginLeft={2} marginTop={1}>
               <WizardTextInput
                 value={textValue}
