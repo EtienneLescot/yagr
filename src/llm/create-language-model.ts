@@ -1,6 +1,8 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { YagrConfigService, type YagrLocalConfig } from '../config/yagr-config-service.js';
+import { createGitHubCopilotLanguageModel } from './copilot-account.js';
+import { createGeminiAccountLanguageModel } from './google-account.js';
 import { createOpenAiAccountLanguageModel, getOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL } from './openai-account.js';
 import {
   getDefaultBaseUrlForProvider,
@@ -61,11 +63,11 @@ function inferContextWindowTokens(provider: YagrModelProvider, modelName: string
     return 128_000;
   }
 
-  if (provider === 'google') {
+  if (provider === 'google' || provider === 'google-proxy') {
     return 1_000_000;
   }
 
-  if (provider === 'groq' || provider === 'mistral') {
+  if (provider === 'groq' || provider === 'mistral' || provider === 'copilot-proxy') {
     return 128_000;
   }
 
@@ -164,6 +166,14 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
     }
 
     return createOpenAiAccountLanguageModel(modelName);
+  }
+
+  if (provider === 'google-proxy') {
+    return createGeminiAccountLanguageModel(modelName);
+  }
+
+  if (provider === 'copilot-proxy') {
+    return createGitHubCopilotLanguageModel(modelName);
   }
 
   if (definition.usesOpenAiCompatibleApi) {

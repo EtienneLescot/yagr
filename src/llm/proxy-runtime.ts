@@ -2,9 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
+import {
+  ensureGitHubCopilotSession,
+  GITHUB_COPILOT_MODEL_CATALOG,
+  resolveCopilotApiToken,
+  validateGitHubCopilotRuntime,
+} from './copilot-account.js';
+import {
+  ensureGeminiAccountSession,
+  GEMINI_ACCOUNT_MODEL_CATALOG,
+  validateGeminiAccountRuntime,
+} from './google-account.js';
 import { ensureOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL, OPENAI_ACCOUNT_MODEL_CATALOG, validateOpenAiAccountRuntime } from './openai-account.js';
 import { fetchAvailableModels } from './provider-discovery.js';
-import { getDefaultBaseUrlForProvider, getProviderDefinition, type YagrModelProvider } from './provider-registry.js';
+import { getDefaultBaseUrlForProvider, getProviderDefinition, isOAuthAccountProvider, type YagrModelProvider } from './provider-registry.js';
 
 interface ProxyRuntimeEntry {
   provider: YagrModelProvider;
@@ -84,6 +95,71 @@ export async function prepareProviderRuntime(
     };
   }
 
+  if (provider === 'google-proxy') {
+    const session = await ensureGeminiAccountSession();
+    if (!session) {
+      return {
+        ready: false,
+        reason: 'Unable to sign in to Gemini. Launch the Gemini CLI login flow and retry.',
+        notes: ['Gemini OAuth is handled through the local Gemini CLI session.'],
+      };
+    }
+
+    const probe = await validateGeminiAccountRuntime();
+    if (!probe.ok) {
+      return {
+        ready: false,
+        reason: probe.error || 'Gemini OAuth runtime validation failed after login.',
+        notes: ['Google sign-in exists, but the Gemini CLI runtime did not validate successfully.'],
+      };
+    }
+
+    return {
+      ready: true,
+      runtime: {
+        provider,
+        baseUrl: options.baseUrl || '',
+        models: [...GEMINI_ACCOUNT_MODEL_CATALOG],
+        notes: ['Connected through the local Gemini CLI OAuth session.', 'Runtime validated with Gemini CLI.'],
+        autoStarted: false,
+      },
+      notes: ['Connected through the local Gemini CLI OAuth session.', 'Runtime validated with Gemini CLI.'],
+    };
+  }
+
+  if (provider === 'copilot-proxy') {
+    const session = await ensureGitHubCopilotSession();
+    if (!session) {
+      return {
+        ready: false,
+        reason: 'Unable to sign in to GitHub. Run `gh auth login --web` or retry setup.',
+        notes: ['GitHub Copilot OAuth is handled through the local GitHub CLI session.'],
+      };
+    }
+
+    const runtimeAuth = await resolveCopilotApiToken(session.githubToken);
+    const probe = await validateGitHubCopilotRuntime();
+    if (!probe.ok) {
+      return {
+        ready: false,
+        reason: probe.error || 'GitHub Copilot runtime validation failed after login.',
+        notes: ['GitHub sign-in exists, but the Copilot runtime did not validate successfully.'],
+      };
+    }
+
+    return {
+      ready: true,
+      runtime: {
+        provider,
+        baseUrl: runtimeAuth.baseUrl,
+        models: [...GITHUB_COPILOT_MODEL_CATALOG],
+        notes: ['Connected through the local GitHub login and Copilot token exchange.', 'Runtime validated with GitHub Copilot.'],
+        autoStarted: false,
+      },
+      notes: ['Connected through the local GitHub login and Copilot token exchange.', 'Runtime validated with GitHub Copilot.'],
+    };
+  }
+
   const definition = getProviderDefinition(provider);
   const baseUrl = options.baseUrl || getDefaultBaseUrlForProvider(provider);
   if (!definition.usesOpenAiCompatibleApi || !baseUrl) {
@@ -110,6 +186,13 @@ export async function prepareProviderRuntime(
   }
 
   if (!definition.managedProxy) {
+    if (isOAuthAccountProvider(provider)) {
+      return {
+        ready: false,
+        reason: `OAuth runtime for ${provider} is not ready.`,
+        notes: [],
+      };
+    }
     return {
       ready: false,
       notes: [],
