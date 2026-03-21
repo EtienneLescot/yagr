@@ -75,7 +75,7 @@ type Phase =
   | { kind: 'n8n-project'; url: string; apiKey: string; projects: IProject[]; cursor: number }
   | { kind: 'n8n-syncfolder'; url: string; apiKey: string; project: IProject; def: string; err?: string }
   | { kind: 'n8n-saving'; url: string; apiKey: string; project: IProject; syncFolder: string; log?: string }
-  | { kind: 'n8n-local-installing' }
+  | { kind: 'n8n-local-installing'; startedAt: number }
   | { kind: 'n8n-local-ready'; url: string; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
@@ -655,7 +655,7 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
       else if (key.return) {
         if (phase.cursor === 0) {
-          setPhase({ kind: 'n8n-local-installing' });
+          setPhase({ kind: 'n8n-local-installing', startedAt: Date.now() });
         } else {
           setPhase({ kind: 'n8n-url', def: n8nDef.url });
           setTextValue(n8nDef.url);
@@ -922,11 +922,20 @@ function SetupWizard({ callbacks, onDone }: {
         );
 
       case 'n8n-local-installing':
+        {
+          const elapsedSeconds = Math.max(0, Math.round((Date.now() - phase.startedAt) / 1000));
+          const elapsedLabel = elapsedSeconds < 60
+            ? `${elapsedSeconds}s`
+            : `${Math.floor(elapsedSeconds / 60)}m ${String(elapsedSeconds % 60).padStart(2, '0')}s`;
         return (
           <Box flexDirection="column">
             <SpinnerDisplay message="Installing and starting a Yagr-managed local n8n instance…" frame={spinnerFrame} />
+            <Text dimColor>  Yagr is waiting for the n8n API and editor to become ready before continuing.</Text>
+            <Text dimColor>  First run can take 1 to 3 minutes depending on Docker, npm downloads, and machine speed.</Text>
+            <Text dimColor>  Elapsed: {elapsedLabel}</Text>
           </Box>
         );
+        }
 
       case 'n8n-local-ready':
         return (

@@ -39,6 +39,7 @@ import { YAGR_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
+const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
   command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
@@ -310,6 +311,44 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   return parsed;
+}
+
+async function runWithSpinner<T>(message: string, task: () => Promise<T>, detail?: string): Promise<T> {
+  if (!process.stdout.isTTY) {
+    if (detail) {
+      process.stdout.write(`${message}\n`);
+      process.stdout.write(`${detail}\n`);
+    } else {
+      process.stdout.write(`${message}\n`);
+    }
+    return task();
+  }
+
+  const startedAt = Date.now();
+  let frame = 0;
+  const render = () => {
+    const elapsedSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+    const elapsedLabel = elapsedSeconds < 60
+      ? `${elapsedSeconds}s`
+      : `${Math.floor(elapsedSeconds / 60)}m ${String(elapsedSeconds % 60).padStart(2, '0')}s`;
+    const detailText = detail ? ` ${detail}` : '';
+    process.stdout.write(`\r${CLI_SPINNER_FRAMES[frame % CLI_SPINNER_FRAMES.length]} ${message}${detailText} Elapsed: ${elapsedLabel}`);
+    frame += 1;
+  };
+
+  render();
+  const interval = setInterval(render, 120);
+
+  try {
+    const result = await task();
+    clearInterval(interval);
+    process.stdout.write(`\r✓ ${message}\n`);
+    return result;
+  } catch (error) {
+    clearInterval(interval);
+    process.stdout.write(`\r✕ ${message}\n`);
+    throw error;
+  }
 }
 
 async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
@@ -643,8 +682,16 @@ async function main(): Promise<void> {
     if (args.command === 'n8n-local-install') {
       const assessment = await inspectLocalN8nBootstrap();
       const state = assessment.recommendedStrategy === 'direct'
-        ? await installManagedDirectN8n()
-        : await installManagedDockerN8n();
+        ? await runWithSpinner(
+          'Installing and starting a Yagr-managed local n8n instance…',
+          () => installManagedDirectN8n(),
+          'Direct runtime mode. This can take 1 to 3 minutes on first run.',
+        )
+        : await runWithSpinner(
+          'Installing and starting a Yagr-managed local n8n instance…',
+          () => installManagedDockerN8n(),
+          'Docker mode. Waiting for the n8n API and editor to become ready.',
+        );
       process.stdout.write(`Managed local n8n installed and started at ${state.url}\n`);
       process.stdout.write('Next: run `yagr onboard` to continue with silent bootstrap and assisted fallback.\n');
       return;
@@ -653,8 +700,16 @@ async function main(): Promise<void> {
     if (args.command === 'n8n-local-start') {
       const current = readManagedN8nState();
       const state = current?.strategy === 'direct'
-        ? await startManagedDirectN8n()
-        : await startManagedDockerN8n();
+        ? await runWithSpinner(
+          'Starting the Yagr-managed local n8n instance…',
+          () => startManagedDirectN8n(),
+          'Direct runtime mode.',
+        )
+        : await runWithSpinner(
+          'Starting the Yagr-managed local n8n instance…',
+          () => startManagedDockerN8n(),
+          'Docker mode.',
+        );
       process.stdout.write(`Managed local n8n is running at ${state.url}\n`);
       return;
     }
