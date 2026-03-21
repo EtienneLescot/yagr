@@ -11,7 +11,9 @@
   "scripts": {
     "build": "tsc -b && node scripts/build-webui.mjs",
     "clean": "rm -rf dist tsconfig.tsbuildinfo node_modules/.cache docs/static/img/yagr-logo.png",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "test": "npm run test:unit",
+    "test:unit": "npm run build && node --test tests/*.test.mjs",
+    "test:integration": "npm run build && node --test tests/integration/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
     "yagr:onboard": "YAGR_HOME=.yagr-test-workspace node dist/cli.js onboard",
@@ -55,6 +57,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "esbuild": "^0.25.3",
+    "testcontainers": "^11.13.0",
     "typescript": "^5.3.3"
   },
   "files": [

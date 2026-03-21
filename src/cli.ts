@@ -17,6 +17,15 @@ import {
 } from './gateway/telegram.js';
 import { YagrAgent } from './agent.js';
 import type { YagrModelProvider } from './llm/create-language-model.js';
+import {
+  getManagedDockerN8nLogs,
+  getManagedDockerN8nStatus,
+  installManagedDockerN8n,
+  startManagedDockerN8n,
+  stopManagedDockerN8n,
+} from './n8n-local/docker-manager.js';
+import { formatLocalN8nBootstrapAssessment, inspectLocalN8nBootstrap } from './n8n-local/detect.js';
+import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrSetup } from './setup.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [
@@ -29,7 +38,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [
 ];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs';
   startTarget?: 'webui' | 'tui';
   prompt?: string;
   interactive: boolean;
@@ -151,6 +160,36 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   if (argv[0] === 'telegram' && argv[1] === 'reset') {
     parsed.command = 'telegram-reset';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'doctor') {
+    parsed.command = 'n8n-doctor';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'install') {
+    parsed.command = 'n8n-local-install';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'start') {
+    parsed.command = 'n8n-local-start';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'status') {
+    parsed.command = 'n8n-local-status';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'stop') {
+    parsed.command = 'n8n-local-stop';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'logs') {
+    parsed.command = 'n8n-local-logs';
     return parsed;
   }
 
@@ -382,6 +421,12 @@ Commands:
   telegram status              Show Telegram gateway status (JSON)
   telegram onboarding          Show the Telegram onboarding/link URL
   telegram reset               Remove Telegram gateway configuration
+  n8n doctor                   Inspect local n8n bootstrap readiness
+  n8n local install            Install and start a Yagr-managed local n8n runtime
+  n8n local start              Start the Yagr-managed local n8n runtime
+  n8n local stop               Stop the Yagr-managed local n8n runtime
+  n8n local status             Show status for the Yagr-managed local n8n runtime
+  n8n local logs               Show recent logs for the Yagr-managed local n8n runtime
 
   config show                  Show current configuration (JSON)
   config reset                 Clear all configuration and stored credentials
@@ -524,6 +569,52 @@ async function main(): Promise<void> {
     if (args.command === 'telegram-reset') {
       resetTelegramGateway(configService);
       process.stdout.write('Yagr Telegram config reset.\n');
+      return;
+    }
+
+    if (args.command === 'n8n-doctor') {
+      const assessment = await inspectLocalN8nBootstrap();
+      const plan = createN8nBootstrapPlan({ target: 'local-managed', assessment });
+      process.stdout.write(formatLocalN8nBootstrapAssessment(assessment));
+      process.stdout.write(`Bootstrap automation target: ${plan.automationLevel}\n`);
+      process.stdout.write(`Bootstrap can proceed: ${plan.canProceed ? 'yes' : 'no'}\n`);
+      if (plan.reasons.length > 0) {
+        process.stdout.write('Plan notes:\n');
+        for (const reason of plan.reasons) {
+          process.stdout.write(`- ${reason}\n`);
+        }
+      }
+      return;
+    }
+
+    if (args.command === 'n8n-local-install') {
+      const state = await installManagedDockerN8n();
+      process.stdout.write(`Managed local n8n installed and started at ${state.url}\n`);
+      process.stdout.write('Next: open the URL, create the owner account, generate an API key, then run `yagr setup`.\n');
+      return;
+    }
+
+    if (args.command === 'n8n-local-start') {
+      const state = await startManagedDockerN8n();
+      process.stdout.write(`Managed local n8n is running at ${state.url}\n`);
+      return;
+    }
+
+    if (args.command === 'n8n-local-status') {
+      const status = await getManagedDockerN8nStatus();
+      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+      return;
+    }
+
+    if (args.command === 'n8n-local-stop') {
+      const state = await stopManagedDockerN8n();
+      process.stdout.write(`Managed local n8n stopped for ${state.url}\n`);
+      return;
+    }
+
+    if (args.command === 'n8n-local-logs') {
+      const logs = await getManagedDockerN8nLogs();
+      process.stdout.write(`${logs}\n`);
       return;
     }
   }

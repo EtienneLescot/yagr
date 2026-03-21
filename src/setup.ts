@@ -13,6 +13,7 @@ import { getGatewaySupervisorStatus } from './gateway/manager.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
 import type { GatewaySurface } from './gateway/types.js';
 import { resolveLanguageModelConfig, resolveModelName, resolveModelProvider, type YagrModelProvider } from './llm/create-language-model.js';
+import { installManagedDockerN8n } from './n8n-local/docker-manager.js';
 import { runSetupWizard, type SetupCallbacks } from './setup/setup-wizard.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [
@@ -148,6 +149,10 @@ export async function runYagrSetup(
       } catch (err) {
         process.stderr.write(`Warning: n8n workspace instructions refresh failed: ${err instanceof Error ? err.message : String(err)}\n`);
       }
+    },
+
+    async installManagedLocalN8n() {
+      return installManagedDockerN8n();
     },
 
     getLlmDefaults() {
