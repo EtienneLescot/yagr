@@ -163,10 +163,16 @@ export function buildLocalN8nBootstrapAssessment(input: {
 }
 
 export function formatLocalN8nBootstrapAssessment(assessment: LocalN8nBootstrapAssessment): string {
+  const availableManagedRuntimes = [
+    assessment.docker.available && assessment.docker.reachable !== false ? 'docker' : null,
+    assessment.node.supportedForDirectRuntime ? 'direct' : null,
+  ].filter((value): value is 'docker' | 'direct' => Boolean(value));
+
   const lines = [
     'Local n8n bootstrap assessment',
     `Platform: ${assessment.platform}`,
-    `Preferred strategy: ${assessment.recommendedStrategy}`,
+    `Suggested runtime: ${assessment.recommendedStrategy}`,
+    `Available managed runtimes: ${availableManagedRuntimes.length > 0 ? availableManagedRuntimes.join(', ') : 'none'}`,
     `Preferred URL: ${assessment.preferredUrl}`,
     `Docker: ${assessment.docker.available
       ? `yes${assessment.docker.version ? ` (${assessment.docker.version})` : ''}${assessment.docker.reachable === false ? ' · daemon not reachable' : ''}`

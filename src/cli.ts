@@ -45,6 +45,7 @@ const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '�
 interface ParsedArgs {
   command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
   startTarget?: 'webui' | 'tui';
+  n8nLocalRuntime?: 'docker' | 'direct';
   prompt?: string;
   interactive: boolean;
   provider?: YagrModelProvider;
@@ -316,6 +317,27 @@ function parseArgs(argv: string[]): ParsedArgs {
       throw new Error('Invalid value for --scope. Use one of: config, config+creds, full.');
     }
 
+    if (arg === '--runtime') {
+      const value = argv[index + 1];
+      if (value === 'docker' || value === 'direct') {
+        parsed.n8nLocalRuntime = value;
+        index += 1;
+        continue;
+      }
+
+      throw new Error('Invalid value for --runtime. Use one of: docker, direct.');
+    }
+
+    if (arg === '--docker') {
+      parsed.n8nLocalRuntime = 'docker';
+      continue;
+    }
+
+    if (arg === '--direct' || arg === '--non-docker') {
+      parsed.n8nLocalRuntime = 'direct';
+      continue;
+    }
+
     if (!parsed.prompt) {
       parsed.prompt = arg;
       continue;
@@ -527,6 +549,9 @@ Agent options (for \`yagr [prompt]\` and most commands):
   --hide-thinking              Hide agent thinking output
   --hide-execution             Hide tool execution output
   --debug                      Enable debug logs for setup/model discovery
+  --runtime <docker|direct>    Runtime for \`n8n local install\`
+  --docker                     Shortcut for \`n8n local install --runtime docker\`
+  --direct, --non-docker       Shortcut for \`n8n local install --runtime direct\`
   --yes                        Auto-confirm destructive operations
   --dry-run                    Preview without making changes
 
@@ -709,17 +734,22 @@ async function main(): Promise<void> {
 
     if (args.command === 'n8n-local-install') {
       const assessment = await inspectLocalN8nBootstrap();
-      const state = assessment.recommendedStrategy === 'direct'
+      const runtime = args.n8nLocalRuntime ?? assessment.recommendedStrategy;
+      const state = runtime === 'direct'
         ? await runWithSpinner(
           'Installing and starting a Yagr-managed local n8n instance…',
           () => installManagedDirectN8n(),
           'Direct runtime mode. This can take 1 to 3 minutes on first run.',
         )
-        : await runWithSpinner(
-          'Installing and starting a Yagr-managed local n8n instance…',
-          () => installManagedDockerN8n(),
-          'Docker mode. Waiting for the n8n API and editor to become ready.',
-        );
+        : runtime === 'docker'
+          ? await runWithSpinner(
+            'Installing and starting a Yagr-managed local n8n instance…',
+            () => installManagedDockerN8n(),
+            'Docker mode. Waiting for the n8n API and editor to become ready.',
+          )
+          : (() => {
+            throw new Error('No supported automatic local n8n runtime is available. Re-run with --runtime docker or --runtime direct after installing the required prerequisite.');
+          })();
       process.stdout.write(`Managed local n8n installed and started at ${state.url}\n`);
       process.stdout.write('Next: run `yagr onboard` to continue with silent bootstrap and assisted fallback.\n');
       return;

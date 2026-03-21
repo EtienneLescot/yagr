@@ -41,7 +41,7 @@ test('yagr n8n doctor reports a clean Node-only Linux environment inside a conta
   const stdout = Array.isArray(output) ? output.join('\n') : String(output);
 
   assert.match(stdout, /Local n8n bootstrap assessment/);
-  assert.match(stdout, /Preferred strategy: direct/);
+  assert.match(stdout, /Suggested runtime: direct/);
   assert.match(stdout, /Preferred URL: http:\/\/127\.0\.0\.1:5678/);
   assert.match(stdout, /Bootstrap automation target: silent/);
 }, 30_000);
