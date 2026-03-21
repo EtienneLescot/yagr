@@ -20,7 +20,20 @@ const CHECK = '✓';
 const DOT = '·';
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
+const PROVIDER_WIZARD_ORDER: YagrModelProvider[] = [
+  'openai',
+  'openai-proxy',
+  'anthropic',
+  'anthropic-proxy',
+  'google',
+  'google-proxy',
+  'copilot-proxy',
+  'groq',
+  'mistral',
+  'openrouter',
+];
+
+const VALID_PROVIDERS: YagrModelProvider[] = PROVIDER_WIZARD_ORDER.filter((provider) => YAGR_MODEL_PROVIDERS.includes(provider));
 
 const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: string }> = [
   { value: 'telegram', label: 'Telegram', hint: 'Bot-based chat gateway' },
@@ -424,8 +437,10 @@ function SelectList<T>({
         const active = i === cursor;
         const hint = getHint?.(opt);
         const prefix = active ? `  ${CURSOR} ` : '    ';
-        const suffix = hint ? `  ${DOT}  ${hint}` : '';
-        const line = truncateTerminalLine(`${prefix}${getLabel(opt)}${suffix}`, availableWidth);
+        const line = truncateTerminalLine(
+          formatOptionLineWithHint(prefix, getLabel(opt), hint, availableWidth),
+          availableWidth,
+        );
         return (
           <Box key={i}>
             <Text color={active ? 'cyan' : undefined} bold={active}>{line}</Text>
@@ -435,6 +450,13 @@ function SelectList<T>({
       {end < options.length ? <Text dimColor>{truncateTerminalLine(`  ↓  ${options.length - end} more`, availableWidth)}</Text> : null}
     </Box>
   );
+}
+
+function formatOptionLineWithHint(prefix: string, label: string, hint: string | undefined, width: number): string {
+  if (!hint) {
+    return `${prefix}${label}`;
+  }
+  return `${prefix}${label}  ${DOT}  ${hint}`;
 }
 
 function MultiSelectList({
@@ -1267,9 +1289,9 @@ function SetupWizard({ callbacks, options, onDone }: {
               getLabel={(v) => getProviderDisplayName(v)}
               getHint={(v) => {
                 const parts = [
-                  v === phase.initial ? 'currently configured' : undefined,
-                  isExperimentalProvider(v) ? 'experimental' : undefined,
                   getProviderSetupHint(v),
+                  isExperimentalProvider(v) ? 'experimental' : undefined,
+                  v === phase.initial ? 'currently configured' : undefined,
                 ].filter(Boolean);
                 return parts.length > 0 ? parts.join(' · ') : undefined;
               }}

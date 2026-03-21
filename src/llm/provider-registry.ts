@@ -52,7 +52,7 @@ const GOOGLE_OPENAI_MODEL_LIST_MAPPER = (data: Record<string, unknown>) =>
 export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDefinition> = {
   anthropic: {
     id: 'anthropic',
-    displayName: 'Claude API',
+    displayName: 'Claude',
     defaultModel: 'claude-sonnet-4-5',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
@@ -64,11 +64,10 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   openai: {
     id: 'openai',
-    displayName: 'OpenAI API Key',
+    displayName: 'OpenAI',
     defaultModel: 'gpt-4o',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: true,
-    setupHint: 'API key',
     modelDiscovery: {
       buildUrl: () => 'https://api.openai.com/v1/models',
       authMode: 'bearer-required',
@@ -77,7 +76,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   google: {
     id: 'google',
-    displayName: 'Gemini API Key',
+    displayName: 'Gemini',
     defaultModel: 'gemini-2.5-flash',
     defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     requiresApiKey: true,
@@ -90,7 +89,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   groq: {
     id: 'groq',
-    displayName: 'Groq API Key',
+    displayName: 'Groq',
     defaultModel: 'llama-3.1-70b-versatile',
     defaultBaseUrl: 'https://api.groq.com/openai/v1',
     requiresApiKey: true,
@@ -103,7 +102,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   mistral: {
     id: 'mistral',
-    displayName: 'Mistral API Key',
+    displayName: 'Mistral',
     defaultModel: 'mistral-large-latest',
     defaultBaseUrl: 'https://api.mistral.ai/v1',
     requiresApiKey: true,
@@ -116,7 +115,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   openrouter: {
     id: 'openrouter',
-    displayName: 'OpenRouter API Key',
+    displayName: 'OpenRouter',
     defaultModel: 'anthropic/claude-3.5-sonnet',
     defaultBaseUrl: 'https://openrouter.ai/api/v1',
     requiresApiKey: true,
@@ -129,12 +128,12 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   'openai-proxy': {
     id: 'openai-proxy',
-    displayName: 'OpenAI OAuth',
+    displayName: 'OpenAI',
     defaultModel: OPENAI_ACCOUNT_DEFAULT_MODEL,
     defaultBaseUrl: OPENAI_ACCOUNT_BASE_URL,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
-    setupHint: 'Uses your ChatGPT subscription, no API credits',
+    setupHint: 'ChatGPT subscription, no API key required',
     modelDiscovery: {
       buildUrl: () => `${OPENAI_ACCOUNT_BASE_URL}/models`,
       authMode: 'bearer-required',
@@ -143,28 +142,28 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   'anthropic-proxy': {
     id: 'anthropic-proxy',
-    displayName: 'Claude Token',
+    displayName: 'Claude',
     defaultModel: ANTHROPIC_ACCOUNT_DEFAULT_MODEL,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: false,
-    setupHint: 'Use a Claude setup-token from `claude setup-token`',
+    setupHint: 'Claude setup-token from `claude setup-token`',
   },
   'google-proxy': {
     id: 'google-proxy',
-    displayName: 'Gemini OAuth',
+    displayName: 'Gemini',
     defaultModel: GEMINI_ACCOUNT_DEFAULT_MODEL,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: false,
-    setupHint: 'Use your Google/Gemini account, no API key',
+    setupHint: 'Gemini subscription, no API key required (unofficial, not recommended)',
   },
   'copilot-proxy': {
     id: 'copilot-proxy',
-    displayName: 'GitHub Copilot OAuth',
+    displayName: 'GitHub',
     defaultModel: GITHUB_COPILOT_DEFAULT_MODEL,
     defaultBaseUrl: DEFAULT_COPILOT_API_BASE_URL,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
-    setupHint: 'Use your GitHub Copilot subscription, no API key',
+    setupHint: 'Copilot subscription, no API key required',
   },
 };
 
