@@ -24,7 +24,7 @@ test('isSupportedDirectRuntimeNodeVersion accepts supported majors only', () => 
   assert.equal(isSupportedDirectRuntimeNodeVersion(undefined), false);
 });
 
-test('chooseLocalN8nBootstrapStrategy prefers docker over direct runtime', () => {
+test('chooseLocalN8nBootstrapStrategy suggests docker when both managed runtimes are available', () => {
   assert.equal(
     chooseLocalN8nBootstrapStrategy({ dockerAvailable: true, nodeVersion: 'v18.20.0' }),
     'docker',
@@ -87,7 +87,8 @@ test('formatLocalN8nBootstrapAssessment renders a readable report', () => {
     notes: ['Docker is available. This is the preferred local n8n strategy.'],
   });
 
-  assert.match(report, /Preferred strategy: docker/);
+  assert.match(report, /Suggested runtime: docker/);
+  assert.match(report, /Available managed runtimes: docker, direct/);
   assert.match(report, /Preferred URL: http:\/\/127\.0\.0\.1:5678/);
   assert.match(report, /Notes:/);
 });
