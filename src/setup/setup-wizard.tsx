@@ -3,6 +3,15 @@ import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import type { GatewaySurface } from '../gateway/types.js';
 import type { YagrModelProvider } from '../llm/create-language-model.js';
+import {
+  getProviderDisplayName,
+  getProviderSetupHint,
+  isExperimentalProvider,
+  isOAuthAccountProvider,
+  providerRequiresApiKey,
+  YAGR_MODEL_PROVIDERS,
+} from '../llm/provider-registry.js';
+import type { ManagedN8nInstanceState } from '../n8n-local/state.js';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -11,9 +20,20 @@ const CHECK = '✓';
 const DOT = '·';
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-const VALID_PROVIDERS: YagrModelProvider[] = [
-  'anthropic', 'openai', 'google', 'groq', 'mistral', 'openrouter',
+const PROVIDER_WIZARD_ORDER: YagrModelProvider[] = [
+  'openai',
+  'openai-proxy',
+  'anthropic',
+  'anthropic-proxy',
+  'google',
+  'google-proxy',
+  'copilot-proxy',
+  'groq',
+  'mistral',
+  'openrouter',
 ];
+
+const VALID_PROVIDERS: YagrModelProvider[] = PROVIDER_WIZARD_ORDER.filter((provider) => YAGR_MODEL_PROVIDERS.includes(provider));
 
 const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: string }> = [
   { value: 'telegram', label: 'Telegram', hint: 'Bot-based chat gateway' },
@@ -25,6 +45,9 @@ export interface SetupCallbacks {
   getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string };
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
   saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string }): Promise<void>;
+  installManagedLocalN8n(strategy: 'docker' | 'direct' | 'auto'): Promise<ManagedN8nInstanceState>;
+  bootstrapManagedLocalN8n(url: string): Promise<{ mode: 'silent' | 'assisted'; apiKey?: string; reason?: string }>;
+  openUrl(url: string): Promise<void>;
   getLlmDefaults(): {
     provider?: YagrModelProvider;
     getApiKey(prov: YagrModelProvider): string | undefined;
@@ -32,8 +55,29 @@ export interface SetupCallbacks {
     getBaseUrl(prov: YagrModelProvider): string | undefined;
     needsBaseUrl(prov: YagrModelProvider): boolean;
   };
-  fetchModels(provider: YagrModelProvider, apiKey: string): Promise<string[]>;
-  saveLlmConfig(p: { provider: YagrModelProvider; apiKey: string; model: string; baseUrl?: string }): void;
+  prepareProvider(provider: YagrModelProvider, apiKey?: string): Promise<{
+    ready: boolean;
+    apiKey?: string;
+    baseUrl?: string;
+    models?: string[];
+    notes?: string[];
+    error?: string;
+  }>;
+  startAccountAuth(provider: YagrModelProvider): Promise<{
+    kind: 'none' | 'input';
+    title?: string;
+    instructions?: string[];
+    placeholder?: string;
+    submitLabel?: string;
+    state?: string;
+  }>;
+  completeAccountAuth(provider: YagrModelProvider, input: string, state?: string): Promise<{
+    ok: boolean;
+    error?: string;
+    apiKey?: string;
+  }>;
+  fetchModels(provider: YagrModelProvider, apiKey?: string): Promise<string[]>;
+  saveLlmConfig(p: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string }): void;
   getSurfaceDefaults(): { surfaces: GatewaySurface[] };
   getTelegramToken(): string | undefined;
   setupTelegram(token: string): Promise<{ username: string }>;
@@ -45,10 +89,14 @@ export interface SetupResult {
   telegramDeepLink?: string;
 }
 
-export function runSetupWizard(callbacks: SetupCallbacks): Promise<SetupResult> {
+export interface SetupWizardOptions {
+  mode?: 'full' | 'llm-only';
+}
+
+export function runSetupWizard(callbacks: SetupCallbacks, options: SetupWizardOptions = {}): Promise<SetupResult> {
   return new Promise((resolve) => {
     const { unmount } = render(
-      <SetupWizard callbacks={callbacks} onDone={(result) => { unmount(); resolve(result); }} />,
+      <SetupWizard callbacks={callbacks} options={options} onDone={(result) => { unmount(); resolve(result); }} />,
     );
   });
 }
@@ -56,6 +104,7 @@ export function runSetupWizard(callbacks: SetupCallbacks): Promise<SetupResult> 
 // ─── Phase state machine ──────────────────────────────────────────────────────
 
 type Phase =
+  | { kind: 'n8n-mode'; cursor: number; err?: string }
   | { kind: 'n8n-url'; def: string; err?: string }
   | { kind: 'n8n-reuse-apikey'; url: string; existing: string; cursor: number }
   | { kind: 'n8n-apikey'; url: string; err?: string }
@@ -63,12 +112,17 @@ type Phase =
   | { kind: 'n8n-project'; url: string; apiKey: string; projects: IProject[]; cursor: number }
   | { kind: 'n8n-syncfolder'; url: string; apiKey: string; project: IProject; def: string; err?: string }
   | { kind: 'n8n-saving'; url: string; apiKey: string; project: IProject; syncFolder: string; log?: string }
+  | { kind: 'n8n-local-installing'; startedAt: number; strategy: 'docker' | 'direct' | 'auto' }
+  | { kind: 'n8n-local-ready'; url: string; cursor: number; note?: string }
+  | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
+  | { kind: 'llm-account-auth'; provider: YagrModelProvider; cursor: number }
+  | { kind: 'llm-account-input'; provider: YagrModelProvider; title: string; instructions: string[]; placeholder?: string; submitLabel: string; state?: string; err?: string }
   | { kind: 'llm-reuse-config'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
   | { kind: 'llm-reuse-apikey'; provider: YagrModelProvider; existing: string; cursor: number }
   | { kind: 'llm-apikey'; provider: YagrModelProvider; err?: string }
-  | { kind: 'llm-models-loading'; provider: YagrModelProvider; apiKey: string; defModel: string | undefined }
-  | { kind: 'llm-model'; provider: YagrModelProvider; apiKey: string; models: string[]; defModel: string | undefined; cursor: number }
+  | { kind: 'llm-models-loading'; provider: YagrModelProvider; apiKey: string; defModel: string | undefined; note?: string }
+  | { kind: 'llm-model'; provider: YagrModelProvider; apiKey: string; models: string[]; defModel: string | undefined; cursor: number; note?: string }
   | { kind: 'llm-baseurl'; provider: YagrModelProvider; apiKey: string; model: string; def: string; err?: string }
   | { kind: 'surfaces'; cursor: number; selected: GatewaySurface[] }
   | { kind: 'telegram-reuse-token'; surfaces: GatewaySurface[]; existing: string; cursor: number }
@@ -91,13 +145,70 @@ function sectionIndex(phase: Phase): number {
   return 3;
 }
 
+function getProviderAuthCopy(provider: YagrModelProvider): {
+  title: string;
+  body: string[];
+  continueLabel: string;
+} {
+  if (provider === 'openai-proxy') {
+    return {
+      title: 'Connect OpenAI account',
+      body: [
+        'Yagr will open your browser to sign you in with your ChatGPT account.',
+        'This uses your ChatGPT subscription — no API credits are consumed.',
+      ],
+      continueLabel: 'Sign in with ChatGPT',
+    };
+  }
+
+  if (provider === 'anthropic-proxy') {
+    return {
+      title: 'Connect Claude token',
+      body: [
+        'Generate a setup-token on a machine where Claude CLI is installed and logged in:',
+        '`claude setup-token`',
+        'Paste the generated setup-token below.',
+      ],
+      continueLabel: 'Paste setup-token',
+    };
+  }
+
+  if (provider === 'google-proxy') {
+    return {
+      title: 'Connect Gemini account',
+      body: [
+        'Yagr runs a native Google OAuth flow for your Gemini account.',
+        'It will show a browser URL and ask you to paste the redirect URL back here.',
+      ],
+      continueLabel: 'Continue with Gemini sign-in',
+    };
+  }
+
+  if (provider === 'copilot-proxy') {
+    return {
+      title: 'Connect GitHub Copilot account',
+      body: [
+        'Yagr runs a native GitHub device login and exchanges it for a Copilot runtime token.',
+        'It will show a verification URL and code in the terminal.',
+      ],
+      continueLabel: 'Continue with GitHub sign-in',
+    };
+  }
+
+  return {
+    title: `Connect ${getProviderDisplayName(provider)}`,
+    body: ['Yagr will verify your account session before loading models.'],
+    continueLabel: 'Continue',
+  };
+}
+
 // ─── Primitive UI components ──────────────────────────────────────────────────
 
 function Rule(): JSX.Element {
   return <Text dimColor>{'─'.repeat(56)}</Text>;
 }
 
-function Header({ phase }: { phase: Phase }): JSX.Element {
+function Header({ phase, mode }: { phase: Phase; mode: 'full' | 'llm-only' }): JSX.Element {
   const section = sectionFor(phase);
   const idx = sectionIndex(phase);
   const isDone = phase.kind === 'done' || phase.kind === 'cancelled' || phase.kind === 'error';
@@ -108,7 +219,9 @@ function Header({ phase }: { phase: Phase }): JSX.Element {
         <Text color="cyan" bold>◈  Yagr Setup</Text>
         {!isDone && (
           <Text dimColor>
-            {`${idx === 1 ? '●' : '○'}${idx === 2 ? '●' : '○'}${idx === 3 ? '●' : '○'}  step ${idx} / 3`}
+            {mode === 'llm-only'
+              ? '●  step 1 / 1'
+              : `${idx === 1 ? '●' : '○'}${idx === 2 ? '●' : '○'}${idx === 3 ? '●' : '○'}  step ${idx} / 3`}
           </Text>
         )}
       </Box>
@@ -324,8 +437,10 @@ function SelectList<T>({
         const active = i === cursor;
         const hint = getHint?.(opt);
         const prefix = active ? `  ${CURSOR} ` : '    ';
-        const suffix = hint ? `  ${DOT}  ${hint}` : '';
-        const line = truncateTerminalLine(`${prefix}${getLabel(opt)}${suffix}`, availableWidth);
+        const line = truncateTerminalLine(
+          formatOptionLineWithHint(prefix, getLabel(opt), hint, availableWidth),
+          availableWidth,
+        );
         return (
           <Box key={i}>
             <Text color={active ? 'cyan' : undefined} bold={active}>{line}</Text>
@@ -335,6 +450,13 @@ function SelectList<T>({
       {end < options.length ? <Text dimColor>{truncateTerminalLine(`  ↓  ${options.length - end} more`, availableWidth)}</Text> : null}
     </Box>
   );
+}
+
+function formatOptionLineWithHint(prefix: string, label: string, hint: string | undefined, width: number): string {
+  if (!hint) {
+    return `${prefix}${label}`;
+  }
+  return `${prefix}${label}  ${DOT}  ${hint}`;
 }
 
 function MultiSelectList({
@@ -378,8 +500,9 @@ function MultiSelectList({
 
 // ─── Main wizard component ────────────────────────────────────────────────────
 
-function SetupWizard({ callbacks, onDone }: {
+function SetupWizard({ callbacks, options, onDone }: {
   callbacks: SetupCallbacks;
+  options?: SetupWizardOptions;
   onDone: (result: SetupResult) => void;
 }): JSX.Element {
   const app = useApp();
@@ -387,17 +510,40 @@ function SetupWizard({ callbacks, onDone }: {
   const n8nDef = callbacks.getN8nDefaults();
   const llmDef = callbacks.getLlmDefaults();
   const surfDef = callbacks.getSurfaceDefaults();
+  const mode = options?.mode ?? 'full';
 
-  const [phase, setPhase] = useState<Phase>({ kind: 'n8n-url', def: n8nDef.url });
-  const [textValue, setTextValue] = useState(n8nDef.url);
+  const [phase, setPhase] = useState<Phase>(() => {
+    if (mode === 'llm-only') {
+      const llmProvider = llmDef.provider;
+      if (llmProvider) {
+        const existingApiKey = llmDef.getApiKey(llmProvider);
+        const existingModel = llmDef.getDefaultModel(llmProvider);
+        if (existingModel && (existingApiKey || !providerRequiresApiKey(llmProvider))) {
+          return { kind: 'llm-reuse-config', provider: llmProvider, apiKey: existingApiKey ?? '', model: existingModel, cursor: 0 };
+        }
+
+        return {
+          kind: 'llm-provider',
+          initial: llmProvider,
+          cursor: Math.max(0, VALID_PROVIDERS.indexOf(llmProvider)),
+        };
+      }
+
+      return { kind: 'llm-provider', cursor: 0 };
+    }
+
+    return { kind: 'n8n-mode', cursor: 0 };
+  });
+  const [textValue, setTextValue] = useState('');
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const asyncGuard = useRef(0);
   const llmApiKeyDraftsRef = useRef<Partial<Record<YagrModelProvider, string>>>({});
+  const llmBaseUrlDraftsRef = useRef<Partial<Record<YagrModelProvider, string>>>({});
   const terminalRows = stdout?.rows ?? process.stdout.rows ?? 24;
   const terminalColumns = stdout?.columns ?? process.stdout.columns ?? 80;
   const listLineWidth = Math.max(12, terminalColumns - 6);
 
-  const isLoading = phase.kind === 'n8n-connecting' || phase.kind === 'n8n-saving'
+  const isLoading = phase.kind === 'n8n-connecting' || phase.kind === 'n8n-saving' || phase.kind === 'n8n-local-installing'
     || phase.kind === 'llm-models-loading' || phase.kind === 'telegram-connecting';
 
   useEffect(() => {
@@ -416,6 +562,41 @@ function SetupWizard({ callbacks, onDone }: {
       cancel('Setup cancelled.');
     }
   });
+
+  useEffect(() => {
+    if (phase.kind !== 'n8n-local-installing') return;
+    const guard = ++asyncGuard.current;
+    void (async () => {
+      try {
+        const state = await callbacks.installManagedLocalN8n(phase.strategy);
+        if (guard !== asyncGuard.current) return;
+        const bootstrap = await callbacks.bootstrapManagedLocalN8n(state.url);
+        if (guard !== asyncGuard.current) return;
+        if (bootstrap.mode === 'silent' && bootstrap.apiKey) {
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: bootstrap.apiKey });
+          return;
+        }
+        const existing = callbacks.getN8nDefaults(state.url).apiKey;
+        if (existing) {
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: existing });
+          return;
+        }
+        setPhase({
+          kind: 'n8n-local-ready',
+          url: state.url,
+          cursor: 0,
+          note: bootstrap.reason ? `Silent bootstrap fallback: ${bootstrap.reason}` : undefined,
+        });
+      } catch (err) {
+        if (guard !== asyncGuard.current) return;
+        setPhase({
+          kind: 'n8n-mode',
+          cursor: phase.strategy === 'docker' ? 0 : 1,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
+  }, [phase.kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (phase.kind !== 'n8n-connecting') return;
@@ -454,8 +635,8 @@ function SetupWizard({ callbacks, onDone }: {
         if (llmProvider) {
           const existingApiKey = llmDef.getApiKey(llmProvider);
           const existingModel = llmDef.getDefaultModel(llmProvider);
-          if (existingApiKey && existingModel) {
-            setPhase({ kind: 'llm-reuse-config', provider: llmProvider, apiKey: existingApiKey, model: existingModel, cursor: 0 });
+          if (existingModel && (existingApiKey || !providerRequiresApiKey(llmProvider))) {
+            setPhase({ kind: 'llm-reuse-config', provider: llmProvider, apiKey: existingApiKey ?? '', model: existingModel, cursor: 0 });
             return;
           }
         }
@@ -473,22 +654,62 @@ function SetupWizard({ callbacks, onDone }: {
     const guard = ++asyncGuard.current;
     void (async () => {
       try {
-        const models = await callbacks.fetchModels(phase.provider, phase.apiKey);
+        let models: string[] = [];
+        let resolvedApiKey = phase.apiKey;
+        let note = phase.note;
+
+        const prepared = await callbacks.prepareProvider(phase.provider, phase.apiKey || undefined);
+        if (guard !== asyncGuard.current) return;
+        if (prepared.ready) {
+          if (prepared.baseUrl) {
+            llmBaseUrlDraftsRef.current[phase.provider] = prepared.baseUrl;
+          }
+          if (prepared.apiKey !== undefined) {
+            resolvedApiKey = prepared.apiKey;
+            llmApiKeyDraftsRef.current[phase.provider] = prepared.apiKey;
+          }
+          if (prepared.notes && prepared.notes.length > 0) {
+            note = prepared.notes.join(' ');
+          }
+          models = prepared.models ?? [];
+        } else if (isOAuthAccountProvider(phase.provider)) {
+          const preparedError = prepared.error?.toLowerCase() ?? '';
+          if (preparedError.includes('insufficient authentication scopes') || preparedError.includes('http 403')) {
+            setTextValue('');
+            setPhase({ kind: 'llm-account-auth', provider: phase.provider, cursor: 0 });
+            return;
+          }
+          setPhase({
+            kind: 'llm-model',
+            provider: phase.provider,
+            apiKey: phase.apiKey,
+            models: [],
+            defModel: phase.defModel,
+            cursor: 0,
+            note: prepared.error || note,
+          });
+          return;
+        }
+
+        if (models.length === 0) {
+          models = await callbacks.fetchModels(phase.provider, resolvedApiKey || undefined);
+        }
         if (guard !== asyncGuard.current) return;
         const displayedOptions = getDisplayedModelOptions(models);
         const idx = phase.defModel ? displayedOptions.indexOf(phase.defModel) : -1;
         setPhase({
           kind: 'llm-model',
-          provider: phase.provider, apiKey: phase.apiKey,
+          provider: phase.provider, apiKey: resolvedApiKey,
           models, defModel: phase.defModel,
           cursor: idx >= 0 ? idx : 0,
+          note,
         });
       } catch {
         if (guard !== asyncGuard.current) return;
         setPhase({
           kind: 'llm-model',
           provider: phase.provider, apiKey: phase.apiKey,
-          models: [], defModel: phase.defModel, cursor: 0,
+          models: [], defModel: phase.defModel, cursor: 0, note: phase.note,
         });
       }
     })();
@@ -541,14 +762,6 @@ function SetupWizard({ callbacks, onDone }: {
     setPhase({ kind: 'n8n-saving', url, apiKey, project, syncFolder: folder });
   }, []);
 
-  const handleLlmApiKeySubmit = useCallback((provider: YagrModelProvider) => (value: string) => {
-    const key = value.trim();
-    if (!key) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'llm-apikey' }>, err: 'API key is required.' })); return; }
-    llmApiKeyDraftsRef.current[provider] = key;
-    const defModel = llmDef.getDefaultModel(provider);
-    setPhase({ kind: 'llm-models-loading', provider, apiKey: key, defModel });
-  }, [llmDef]);
-
   const handleBaseUrlSubmit = useCallback((provider: YagrModelProvider, apiKey: string, model: string) => (value: string) => {
     const url = value.trim();
     if (url) {
@@ -565,8 +778,105 @@ function SetupWizard({ callbacks, onDone }: {
     setPhase({ kind: 'telegram-connecting', surfaces, token });
   }, []);
 
+  const transitionToLlmModelsLoading = useCallback((provider: YagrModelProvider, apiKey: string, defModel: string | undefined, note?: string) => {
+    setTextValue('');
+    setPhase({
+      kind: 'llm-models-loading',
+      provider,
+      apiKey,
+      defModel,
+      ...(note ? { note } : {}),
+    });
+  }, []);
+
+  const handleLlmApiKeySubmit = useCallback((provider: YagrModelProvider) => (value: string) => {
+    const key = value.trim();
+    if (!key && providerRequiresApiKey(provider)) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'llm-apikey' }>, err: 'API key is required.' })); return; }
+    llmApiKeyDraftsRef.current[provider] = key;
+    const defModel = llmDef.getDefaultModel(provider);
+    transitionToLlmModelsLoading(provider, key, defModel);
+  }, [llmDef, transitionToLlmModelsLoading]);
+
+  const handleAccountAuthSubmit = useCallback((provider: YagrModelProvider, state?: string) => (value: string) => {
+    void (async () => {
+      try {
+        const result = await callbacks.completeAccountAuth(provider, value, state);
+        if (!result.ok) {
+          setPhase((current) => current.kind === 'llm-account-input'
+            ? { ...current, err: result.error || 'Authentication failed.' }
+            : current);
+          return;
+        }
+
+        const defModel = llmDef.getDefaultModel(provider);
+        transitionToLlmModelsLoading(provider, result.apiKey ?? '', defModel);
+      } catch (error) {
+        setPhase((current) => current.kind === 'llm-account-input'
+          ? { ...current, err: error instanceof Error ? error.message : String(error) }
+          : current);
+      }
+    })();
+  }, [callbacks, llmDef, transitionToLlmModelsLoading]);
+
+  const saveLlmAndContinue = useCallback((provider: YagrModelProvider, apiKey: string, model: string, note?: string) => {
+    const draftedBaseUrl = llmBaseUrlDraftsRef.current[provider];
+    callbacks.saveLlmConfig({ provider, apiKey, model, baseUrl: draftedBaseUrl || undefined });
+    setTextValue('');
+    if (mode === 'llm-only') {
+      setPhase({ kind: 'done', n8nHost: '', n8nProject: '', provider, model, surfaces: surfDef.surfaces });
+      setTimeout(() => { onDone({ ok: true }); app.exit(); }, 250);
+      return;
+    }
+    setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
+  }, [app, callbacks, mode, onDone, surfDef]);
+
   const handleSelectKey = useCallback((input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean; escape: boolean }) => {
-    if (phase.kind === 'n8n-reuse-apikey') {
+    if (phase.kind === 'n8n-mode') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1), err: undefined });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(2, phase.cursor + 1), err: undefined });
+      else if (key.return) {
+        if (phase.cursor === 0) {
+          setPhase({ kind: 'n8n-local-installing', startedAt: Date.now(), strategy: 'docker' });
+        } else if (phase.cursor === 1) {
+          setPhase({ kind: 'n8n-local-installing', startedAt: Date.now(), strategy: 'direct' });
+        } else {
+          setPhase({ kind: 'n8n-url', def: n8nDef.url });
+          setTextValue(n8nDef.url);
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'n8n-local-ready') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      else if (key.return) {
+        if (phase.cursor === 0) {
+          void (async () => {
+            try {
+              await callbacks.openUrl(phase.url);
+            } catch {
+              // Leave the flow available even if browser opening fails.
+            }
+            const existing = callbacks.getN8nDefaults(phase.url).apiKey;
+            if (existing) {
+              setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: existing });
+              return;
+            }
+            setPhase({
+              kind: 'n8n-local-auth',
+              url: phase.url,
+              message: 'The local n8n editor is ready. Create the owner account, then open Settings > n8n API, generate a key for Yagr, and paste it here.',
+            });
+            setTextValue('');
+          })();
+        } else {
+          setPhase({
+            kind: 'n8n-local-auth',
+            url: phase.url,
+            message: 'Open the local n8n URL in your browser, create the owner account, then generate a key in Settings > n8n API and paste it here.',
+          });
+          setTextValue('');
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'n8n-reuse-apikey') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
       else if (key.return) {
@@ -591,9 +901,12 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.return) {
         if (phase.cursor === 0) {
           llmApiKeyDraftsRef.current[phase.provider] = phase.apiKey;
-          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model, baseUrl: llmDef.getBaseUrl(phase.provider) });
+          const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider] ?? llmDef.getBaseUrl(phase.provider);
+          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model, baseUrl: draftedBaseUrl });
+          setTextValue('');
           setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
         } else {
+          setTextValue('');
           setPhase({ kind: 'llm-provider', initial: phase.provider, cursor: VALID_PROVIDERS.indexOf(phase.provider) });
         }
       } else if (key.escape) cancel('Setup cancelled.');
@@ -603,13 +916,86 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.return) {
         const provider = VALID_PROVIDERS[phase.cursor];
         const existing = llmApiKeyDraftsRef.current[provider] ?? llmDef.getApiKey(provider);
-        if (existing) {
+        if (isOAuthAccountProvider(provider)) {
+          setTextValue('');
+          setPhase({ kind: 'llm-account-auth', provider, cursor: 0 });
+        } else if (!providerRequiresApiKey(provider)) {
+          const defModel = llmDef.getDefaultModel(provider);
+          transitionToLlmModelsLoading(provider, existing ?? '', defModel);
+        } else if (existing) {
+          setTextValue('');
           setPhase({ kind: 'llm-reuse-apikey', provider, existing, cursor: 0 });
         } else {
           setPhase({ kind: 'llm-apikey', provider });
           setTextValue(llmApiKeyDraftsRef.current[provider] ?? '');
         }
       } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'llm-account-auth') {
+      const maxCursor = 1;
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(maxCursor, phase.cursor + 1) });
+      else if (key.return) {
+        if (phase.provider === 'anthropic-proxy' && phase.cursor === 0) {
+          setPhase({
+            kind: 'llm-account-input',
+            provider: 'anthropic-proxy',
+            title: 'Claude setup-token',
+            instructions: [
+              'On a machine where Claude CLI is installed and logged in, run:',
+              'claude setup-token',
+              'Copy the generated setup-token and paste it below.',
+            ],
+            placeholder: 'Paste setup-token',
+            submitLabel: 'Continue with setup-token',
+            state: 'anthropic:setup-token',
+          });
+          setTextValue('');
+        } else if (phase.cursor === 0) {
+          void (async () => {
+            try {
+              const authStep = await callbacks.startAccountAuth(phase.provider);
+              const authUrl = (authStep.instructions ?? [])
+                .map((line) => line.match(/https?:\/\/\S+/)?.[0])
+                .find(Boolean);
+              if (authUrl) {
+                void callbacks.openUrl(authUrl).catch(() => {
+                  // Browser auto-open is best effort only.
+                });
+              }
+              if (authStep.kind === 'input') {
+                setPhase({
+                  kind: 'llm-account-input',
+                  provider: phase.provider,
+                  title: authStep.title ?? getProviderAuthCopy(phase.provider).title,
+                  instructions: authStep.instructions ?? [],
+                  placeholder: authStep.placeholder,
+                  submitLabel: authStep.submitLabel ?? 'Continue',
+                  state: authStep.state,
+                });
+                setTextValue('');
+                return;
+              }
+
+              const defModel = llmDef.getDefaultModel(phase.provider);
+              const authCopy = getProviderAuthCopy(phase.provider);
+              transitionToLlmModelsLoading(phase.provider, '', defModel, authCopy.body.join(' '));
+            } catch (error) {
+              setPhase({
+                kind: 'llm-account-input',
+                provider: phase.provider,
+                title: getProviderAuthCopy(phase.provider).title,
+                instructions: getProviderAuthCopy(phase.provider).body,
+                submitLabel: 'Continue',
+                err: error instanceof Error ? error.message : String(error),
+              });
+            }
+          })();
+        } else {
+          setPhase({ kind: 'llm-provider', initial: phase.provider, cursor: VALID_PROVIDERS.indexOf(phase.provider) });
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'llm-account-input') {
+      if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-reuse-apikey') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
@@ -617,7 +1003,7 @@ function SetupWizard({ callbacks, onDone }: {
         if (phase.cursor === 0) {
           const defModel = llmDef.getDefaultModel(phase.provider);
           llmApiKeyDraftsRef.current[phase.provider] = phase.existing;
-          setPhase({ kind: 'llm-models-loading', provider: phase.provider, apiKey: phase.existing, defModel });
+          transitionToLlmModelsLoading(phase.provider, phase.existing, defModel);
         } else {
           setPhase({ kind: 'llm-apikey', provider: phase.provider });
           setTextValue(llmApiKeyDraftsRef.current[phase.provider] ?? '');
@@ -635,13 +1021,16 @@ function SetupWizard({ callbacks, onDone }: {
           return;
         }
         const model = selected;
+        const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider];
+        const defaultBaseUrl = draftedBaseUrl ?? llmDef.getBaseUrl(phase.provider);
         const needsUrl = llmDef.needsBaseUrl(phase.provider);
-        if (needsUrl || llmDef.getBaseUrl(phase.provider)) {
-          setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model, def: llmDef.getBaseUrl(phase.provider) ?? '' });
-          setTextValue(llmDef.getBaseUrl(phase.provider) ?? '');
+        if (draftedBaseUrl) {
+          saveLlmAndContinue(phase.provider, phase.apiKey, model, phase.note);
+        } else if (needsUrl || defaultBaseUrl) {
+          setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model, def: defaultBaseUrl ?? '' });
+          setTextValue(defaultBaseUrl ?? '');
         } else {
-          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model });
-          setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
+          saveLlmAndContinue(phase.provider, phase.apiKey, model, phase.note);
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'surfaces') {
@@ -686,7 +1075,7 @@ function SetupWizard({ callbacks, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'llm-model' && phase.models.length > 0);
 
   useInput((input, key) => {
@@ -696,13 +1085,43 @@ function SetupWizard({ callbacks, onDone }: {
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      <Header phase={phase} />
+      <Header phase={phase} mode={mode} />
       {renderPhase()}
     </Box>
   );
 
   function renderPhase(): JSX.Element {
     switch (phase.kind) {
+      case 'n8n-mode':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="n8n setup path" />
+            <Text dimColor>  Choose the lowest-friction way to connect Yagr to n8n.</Text>
+            <SelectList
+              options={[
+                'Install a Yagr-managed n8n with Docker',
+                'Install a Yagr-managed local n8n',
+                'Use an existing n8n instance and API key',
+              ] as const}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              getHint={(v) => {
+                if (v === 'Install a Yagr-managed n8n with Docker') {
+                  return 'Recommended if Docker is installed and running';
+                }
+                if (v === 'Install a Yagr-managed local n8n') {
+                  return 'Managed local runtime without Docker';
+                }
+                return 'Cloud or self-managed n8n';
+              }}
+              maxVisibleRows={getListViewportHeight(terminalRows, 13)}
+              maxLineWidth={listLineWidth}
+            />
+            {phase.err ? <ErrorLine message={phase.err} /> : null}
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
       case 'n8n-url':
         return (
           <Box flexDirection="column">
@@ -761,6 +1180,63 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
+      case 'n8n-local-installing':
+        {
+          const elapsedSeconds = Math.max(0, Math.round((Date.now() - phase.startedAt) / 1000));
+          const elapsedLabel = elapsedSeconds < 60
+            ? `${elapsedSeconds}s`
+            : `${Math.floor(elapsedSeconds / 60)}m ${String(elapsedSeconds % 60).padStart(2, '0')}s`;
+        return (
+          <Box flexDirection="column">
+            <SpinnerDisplay message="Installing and starting a Yagr-managed local n8n instance…" frame={spinnerFrame} />
+            <Text dimColor>  Yagr is waiting for the n8n API and editor to become ready before continuing.</Text>
+            <Text dimColor>  First run can take 1 to 3 minutes depending on Docker, npm downloads, and machine speed.</Text>
+            <Text dimColor>  Elapsed: {elapsedLabel}</Text>
+          </Box>
+        );
+        }
+
+      case 'n8n-local-ready':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="Local n8n is ready" />
+            <Text dimColor>  Instance URL: {phase.url}</Text>
+            <Text dimColor>  Yagr waited for the n8n editor to finish starting before showing this step.</Text>
+            <Text dimColor>  Yagr attempted a silent owner/API bootstrap first.</Text>
+            {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
+            <Text dimColor>  You will first create the owner account, then create an API key for Yagr.</Text>
+            <SelectList
+              options={['Open n8n in the browser', 'I will open it myself'] as const}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              getHint={(v) => v.startsWith('Open') ? 'recommended' : phase.url}
+              maxVisibleRows={getListViewportHeight(terminalRows, 12)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
+      case 'n8n-local-auth':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="Local n8n API key" />
+            <Text dimColor>  Local instance URL: {phase.url}</Text>
+            <Text dimColor>  {phase.message}</Text>
+            <Text dimColor>  If the browser is not already open, run `yagr n8n local open` or open the URL manually.</Text>
+            <Box marginLeft={2} marginTop={1}>
+              <WizardTextInput
+                value={textValue}
+                onChange={setTextValue}
+                onSubmit={handleN8nApiKeySubmit(phase.url)}
+                mask="●"
+                placeholder="Paste the new n8n API key"
+              />
+            </Box>
+            <HintBar hints={['Enter ↵  confirm', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
       case 'n8n-project':
         return (
           <Box flexDirection="column">
@@ -806,7 +1282,7 @@ function SetupWizard({ callbacks, onDone }: {
         return (
           <Box flexDirection="column">
             <FieldLabel label="LLM configuration" />
-            <Text dimColor>  Currently configured: {phase.provider} / {phase.model}</Text>
+            <Text dimColor>  Currently configured: {getProviderDisplayName(phase.provider)} / {phase.model}</Text>
             <SelectList
               options={['Keep current configuration', 'Change provider or model'] as const}
               cursor={phase.cursor}
@@ -825,8 +1301,15 @@ function SetupWizard({ callbacks, onDone }: {
             <SelectList
               options={VALID_PROVIDERS}
               cursor={phase.cursor}
-              getLabel={(v) => v}
-              getHint={(v) => v === phase.initial ? 'currently configured' : undefined}
+              getLabel={(v) => getProviderDisplayName(v)}
+              getHint={(v) => {
+                const parts = [
+                  getProviderSetupHint(v),
+                  isExperimentalProvider(v) ? 'experimental' : undefined,
+                  v === phase.initial ? 'currently configured' : undefined,
+                ].filter(Boolean);
+                return parts.length > 0 ? parts.join(' · ') : undefined;
+              }}
               maxVisibleRows={getListViewportHeight(terminalRows, 10)}
               maxLineWidth={listLineWidth}
             />
@@ -834,11 +1317,56 @@ function SetupWizard({ callbacks, onDone }: {
           </Box>
         );
 
+      case 'llm-account-auth':
+        {
+          const authCopy = getProviderAuthCopy(phase.provider);
+          const authOptions = [authCopy.continueLabel, 'Back to providers'] as const;
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label={authCopy.title} />
+            {authCopy.body.map((line) => (
+              <Text key={line} dimColor>  {line}</Text>
+            ))}
+            <SelectList
+              options={authOptions}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              getHint={(v) => {
+                return (v.startsWith('Continue') || v.startsWith('Paste')) ? 'recommended' : undefined;
+              }}
+              maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+        }
+
+      case 'llm-account-input':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label={phase.title} />
+            {phase.instructions.map((line, index) => (
+              <Text key={`${index}-${line}`} dimColor>  {line}</Text>
+            ))}
+            <Box marginLeft={2} marginTop={1}>
+              <WizardTextInput
+                value={textValue}
+                onChange={setTextValue}
+                onSubmit={handleAccountAuthSubmit(phase.provider, phase.state)}
+                placeholder={phase.placeholder}
+              />
+            </Box>
+            {phase.err ? <ErrorLine message={phase.err} /> : null}
+            <HintBar hints={[`${phase.submitLabel}  (Enter ↵)`, 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
       case 'llm-reuse-apikey':
         return (
           <Box flexDirection="column">
-            <FieldLabel label={`${phase.provider} API key`} />
-            <Text dimColor>  A saved key exists for {phase.provider}</Text>
+            <FieldLabel label={`${getProviderDisplayName(phase.provider)} API key`} />
+            <Text dimColor>  A saved key exists for {getProviderDisplayName(phase.provider)}</Text>
             <SelectList
               options={['Keep the saved key', 'Enter a new key'] as const}
               cursor={phase.cursor}
@@ -853,7 +1381,10 @@ function SetupWizard({ callbacks, onDone }: {
       case 'llm-apikey':
         return (
           <Box flexDirection="column">
-            <FieldLabel label={`${phase.provider} API key`} />
+            <FieldLabel label={`${getProviderDisplayName(phase.provider)} API key`} />
+            {!providerRequiresApiKey(phase.provider) ? (
+              <Text dimColor>  Optional for local proxy providers. Leave empty if your proxy handles account auth.</Text>
+            ) : null}
             <Box marginLeft={2}>
               <WizardTextInput
                 value={textValue}
@@ -863,7 +1394,7 @@ function SetupWizard({ callbacks, onDone }: {
                 }}
                 onSubmit={handleLlmApiKeySubmit(phase.provider)}
                 mask="●"
-                placeholder="your-api-key"
+                placeholder={providerRequiresApiKey(phase.provider) ? 'your-api-key' : 'optional'}
               />
             </Box>
             {phase.err ? <ErrorLine message={phase.err} /> : null}
@@ -872,9 +1403,13 @@ function SetupWizard({ callbacks, onDone }: {
         );
 
       case 'llm-models-loading':
+        const loadingMessage = isOAuthAccountProvider(phase.provider)
+          ? `Finalizing ${getProviderDisplayName(phase.provider)} account and fetching models…`
+          : `Fetching available models for ${getProviderDisplayName(phase.provider)}…`;
         return (
           <Box flexDirection="column">
-            <SpinnerDisplay message={`Fetching available models for ${phase.provider}…`} frame={spinnerFrame} />
+            <SpinnerDisplay message={loadingMessage} frame={spinnerFrame} />
+            {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
           </Box>
         );
 
@@ -882,7 +1417,8 @@ function SetupWizard({ callbacks, onDone }: {
         const modelOptions = getDisplayedModelOptions(phase.models);
         return (
           <Box flexDirection="column">
-            <FieldLabel label={`Default model  ·  ${phase.provider}`} />
+            <FieldLabel label={`Default model  ·  ${getProviderDisplayName(phase.provider)}`} />
+            {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
             {phase.models.length === 0 ? (
               <Box marginLeft={2}>
                 <WizardTextInput
@@ -891,19 +1427,22 @@ function SetupWizard({ callbacks, onDone }: {
                   onSubmit={(v) => {
                     const m = v.trim() || phase.defModel || '';
                     if (!m) return;
+                    const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider];
+                    const defaultBaseUrl = draftedBaseUrl ?? llmDef.getBaseUrl(phase.provider);
                     const needsUrl = llmDef.needsBaseUrl(phase.provider);
-                    if (needsUrl || llmDef.getBaseUrl(phase.provider)) {
-                      setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model: m, def: llmDef.getBaseUrl(phase.provider) ?? '' });
-                      setTextValue(llmDef.getBaseUrl(phase.provider) ?? '');
+                    if (draftedBaseUrl) {
+                      saveLlmAndContinue(phase.provider, phase.apiKey, m, phase.note);
+                    } else if (needsUrl || defaultBaseUrl) {
+                      setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model: m, def: defaultBaseUrl ?? '' });
+                      setTextValue(defaultBaseUrl ?? '');
                     } else {
-                      callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: m });
-                      setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
+                      saveLlmAndContinue(phase.provider, phase.apiKey, m, phase.note);
                     }
                   }}
-                  placeholder={phase.defModel}
-                />
-              </Box>
-            ) : (
+                placeholder={phase.defModel}
+              />
+            </Box>
+          ) : (
               <SelectList
                 options={modelOptions}
                 cursor={phase.cursor}
@@ -913,7 +1452,11 @@ function SetupWizard({ callbacks, onDone }: {
                 maxLineWidth={listLineWidth}
               />
             )}
-            <HintBar hints={phase.models.length > 0 ? ['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel'] : ['Enter ↵  confirm', 'Ctrl+C  cancel']} />
+            <HintBar hints={
+              phase.models.length > 0
+                ? ['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel']
+                : ['Enter ↵  confirm', 'Ctrl+C  cancel']
+            } />
           </Box>
         );
       }
@@ -921,7 +1464,7 @@ function SetupWizard({ callbacks, onDone }: {
       case 'llm-baseurl':
         return (
           <Box flexDirection="column">
-            <FieldLabel label={`${phase.provider} base URL`} />
+            <FieldLabel label={`${getProviderDisplayName(phase.provider)} base URL`} />
             <Text dimColor>  Leave empty to use the default endpoint</Text>
             <Box marginLeft={2}>
               <WizardTextInput
@@ -1004,7 +1547,7 @@ function SetupWizard({ callbacks, onDone }: {
             <Text color="green" bold>{CHECK}  Setup complete</Text>
             <Box marginTop={1} flexDirection="column">
               {phase.n8nHost ? <Text dimColor>  n8n    {DOT}  {phase.n8nHost}</Text> : null}
-              {phase.provider ? <Text dimColor>  LLM    {DOT}  {phase.provider}{phase.model ? ` / ${phase.model}` : ''}</Text> : null}
+              {phase.provider ? <Text dimColor>  LLM    {DOT}  {getProviderDisplayName(phase.provider as YagrModelProvider)}{phase.model ? ` / ${phase.model}` : ''}</Text> : null}
               {phase.surfaces.length > 0
                 ? <Text dimColor>  Gates  {DOT}  {phase.surfaces.join(', ')}</Text>
                 : <Text dimColor>  Gates  {DOT}  none</Text>}

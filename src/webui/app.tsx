@@ -19,7 +19,7 @@ type ChatStreamEvent =
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
-  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; title?: string; diagram?: string };
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string };
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -624,6 +624,19 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
 }
 
 function WorkflowHeader({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
+  const openWorkflow = React.useCallback(async () => {
+    const resolvedUrl = embed.targetUrl
+      ? `/open/n8n-workflow?target=${encodeURIComponent(embed.targetUrl)}`
+      : embed.url;
+    const popup = window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
+    if (popup) {
+      popup.opener = null;
+    }
+    if (!popup) {
+      window.location.href = resolvedUrl;
+    }
+  }, [embed.targetUrl, embed.url]);
+
   return (
     <div className="workflowCard">
       <div className="workflowHeader">
@@ -631,9 +644,9 @@ function WorkflowHeader({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
           <span className="workflowBadge">Workflow</span>
           <span className="workflowTitle">{embed.title ?? `Workflow ${embed.workflowId}`}</span>
         </div>
-        <a className="primaryButton" href={embed.url} target="_blank" rel="noreferrer">
+        <button className="primaryButton" type="button" onClick={() => { void openWorkflow(); }}>
           Open in n8n
-        </a>
+        </button>
       </div>
       {embed.diagram ? (
         <div className="workflowGraphWrap">
@@ -1316,6 +1329,7 @@ function App() {
               kind: streamEvent.kind,
               workflowId: streamEvent.workflowId,
               url: streamEvent.url,
+              targetUrl: streamEvent.targetUrl,
               title: streamEvent.title,
               diagram: streamEvent.diagram,
             },

@@ -35,6 +35,7 @@ export type YagrToolEvent =
       kind: 'workflow';
       workflowId: string;
       url: string;
+      targetUrl?: string;
       title?: string;
       diagram?: string;
     };

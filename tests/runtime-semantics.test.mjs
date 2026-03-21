@@ -20,6 +20,7 @@ import {
   shouldAbortForInternalPromptLeak,
   shouldAbortForRepetitiveAssistantOutput,
 } from '../dist/runtime/run-engine.js';
+import { createRequestRequiredActionTool as createRequestRequiredActionToolFactory } from '../dist/tools/request-required-action.js';
 
 test('beforeTool hook can block execution with a structured required action', async () => {
   const wrappedTools = wrapToolsWithRuntimeHooks(
@@ -53,6 +54,19 @@ test('beforeTool hook can block execution with a structured required action', as
   assert.equal(result.ok, false);
   assert.equal(result.blocked, true);
   assert.equal(result.requiredAction.kind, 'permission');
+});
+
+test('requestRequiredAction defaults resumable to true and accepts omitted detail', async () => {
+  const tool = createRequestRequiredActionToolFactory();
+  const result = await tool.execute({
+    kind: 'input',
+    title: 'Need value',
+    message: 'Provide a value.',
+  });
+
+  assert.equal(result.kind, 'input');
+  assert.equal(result.detail, undefined);
+  assert.equal(result.resumable, true);
 });
 
 test('workflow presentation is blocked until the workflow exists locally', async () => {

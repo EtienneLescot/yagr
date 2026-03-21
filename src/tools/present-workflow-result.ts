@@ -3,6 +3,7 @@ import path from 'node:path';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { getYagrLaunchDir, getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
+import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import type { ToolExecutionObserver } from './observer.js';
 import { emitToolEvent } from './observer.js';
 
@@ -112,16 +113,24 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
     }),
     execute: async ({ workflowId, workflowUrl, title, diagram }) => {
       const resolvedDiagram = resolveWorkflowDiagram(workflowId, diagram);
+      const workflowLink = resolveWorkflowOpenLink(workflowUrl);
       await emitToolEvent(observer, {
         type: 'embed',
         toolName: 'presentWorkflowResult',
         kind: 'workflow',
         workflowId,
-        url: workflowUrl,
+        url: workflowLink.openUrl,
+        targetUrl: workflowLink.targetUrl,
         title,
         diagram: resolvedDiagram,
       });
-      return { presented: true, workflowId, workflowUrl, title: title ?? null };
+      return {
+        presented: true,
+        workflowId,
+        workflowUrl: workflowLink.openUrl,
+        targetWorkflowUrl: workflowLink.targetUrl,
+        title: title ?? null,
+      };
     },
   });
 }
