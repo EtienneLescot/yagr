@@ -7,6 +7,7 @@ import {
   buildManagedN8nState,
   ensureManagedN8nDirs,
   readManagedN8nState,
+  resolveManagedN8nBootstrapStage,
   updateManagedN8nState,
   type ManagedN8nInstanceState,
 } from './state.js';
@@ -27,7 +28,7 @@ export async function installManagedDirectN8n(options: { port?: number } = {}): 
   fs.mkdirSync(npmCacheDir, { recursive: true });
   const existingState = readManagedN8nState();
   const port = options.port ?? existingState?.port ?? assessment.preferredPort ?? DEFAULT_N8N_PORT;
-  const bootstrapStage = existingState?.bootstrapStage ?? 'owner-pending';
+  const bootstrapStage = resolveManagedN8nBootstrapStage(`http://127.0.0.1:${port}`);
   const state = updateManagedN8nState(() => buildManagedN8nState({
     strategy: 'direct',
     image: '',

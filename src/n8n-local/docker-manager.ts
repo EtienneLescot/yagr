@@ -7,6 +7,7 @@ import {
   buildManagedN8nState,
   ensureManagedN8nDirs,
   readManagedN8nState,
+  resolveManagedN8nBootstrapStage,
   updateManagedN8nState,
   type ManagedN8nInstanceState,
 } from './state.js';
@@ -43,7 +44,7 @@ export async function installManagedDockerN8n(options: InstallManagedDockerN8nOp
   const existingState = readManagedN8nState();
   const port = options.port ?? existingState?.port ?? assessment.preferredPort ?? DEFAULT_N8N_PORT;
   const image = options.image ?? existingState?.image ?? DEFAULT_N8N_IMAGE;
-  const bootstrapStage = existingState?.bootstrapStage ?? 'owner-pending';
+  const bootstrapStage = resolveManagedN8nBootstrapStage(`http://127.0.0.1:${port}`);
 
   writeDockerComposeFiles({ image, port });
   updateManagedN8nState(() => buildManagedN8nState({

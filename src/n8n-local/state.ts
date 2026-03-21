@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 
 export interface ManagedN8nInstanceState {
@@ -125,4 +126,37 @@ export function markManagedN8nBootstrapStage(
     status: bootstrapStage === 'connected' ? 'ready' : (state ?? current).status,
     lastError: undefined,
   }));
+}
+
+export function resolveManagedN8nBootstrapStage(url: string): ManagedN8nInstanceState['bootstrapStage'] {
+  const configService = new YagrN8nConfigService();
+  const localConfig = configService.getLocalConfig();
+  const configuredHost = normalizeUrlOrigin(localConfig.host);
+  const managedHost = normalizeUrlOrigin(url);
+
+  if (
+    localConfig.runtimeSource === 'managed-local'
+    && configuredHost
+    && managedHost
+    && configuredHost === managedHost
+    && localConfig.projectId
+    && localConfig.projectName
+    && configService.getApiKey(localConfig.host ?? '')
+  ) {
+    return 'connected';
+  }
+
+  return readManagedN8nState()?.bootstrapStage ?? 'owner-pending';
+}
+
+function normalizeUrlOrigin(url: string | undefined): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url.replace(/\/$/, '');
+  }
 }
