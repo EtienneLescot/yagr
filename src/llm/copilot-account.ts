@@ -4,8 +4,11 @@ import type {
   LanguageModelV1,
   LanguageModelV1CallOptions,
   LanguageModelV1CallWarning,
+  LanguageModelV1FunctionTool,
+  LanguageModelV1FunctionToolCall,
   LanguageModelV1Prompt,
   LanguageModelV1StreamPart,
+  LanguageModelV1ToolChoice,
 } from '@ai-sdk/provider';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 
@@ -203,6 +206,7 @@ export function createGitHubCopilotLanguageModel(modelId: string): LanguageModel
         text: execution.text,
         finishReason: execution.finishReason,
         usage: execution.usage,
+        ...(execution.toolCalls ? { toolCalls: execution.toolCalls } : {}),
         rawCall: {
           rawPrompt: options.prompt,
           rawSettings: { modelId },
@@ -247,11 +251,12 @@ async function runGitHubCopilotCompletion(
   options: Pick<LanguageModelV1CallOptions, 'prompt' | 'mode' | 'inputFormat'>,
 ): Promise<{
   text: string;
-  finishReason: 'stop' | 'error';
+  finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown';
   usage: {
     promptTokens: number;
     completionTokens: number;
   };
+  toolCalls?: LanguageModelV1FunctionToolCall[];
   warnings: LanguageModelV1CallWarning[];
 }> {
   const session = await ensureGitHubCopilotSession();
@@ -260,7 +265,9 @@ async function runGitHubCopilotCompletion(
   }
 
   const runtimeAuth = await resolveCopilotApiToken(session.githubToken);
-  const warnings = buildCopilotWarnings(options);
+  const regularMode = options.mode.type === 'regular' ? options.mode : undefined;
+  const tools = getFunctionTools(options.mode);
+  const warnings = buildCopilotWarnings(options, tools);
   const response = await fetch(`${runtimeAuth.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -274,6 +281,7 @@ async function runGitHubCopilotCompletion(
     body: JSON.stringify({
       model: modelId,
       messages: toOpenAiMessages(options.prompt),
+      ...(tools.length > 0 ? { tools: toOpenAiTools(tools), tool_choice: toOpenAiToolChoice(regularMode?.toolChoice) } : {}),
       stream: false,
     }),
   });
@@ -284,10 +292,13 @@ async function runGitHubCopilotCompletion(
   }
 
   const payload = await response.json() as Record<string, unknown>;
+  const toolCalls = extractOpenAiToolCalls(payload);
+  const finishReason = normalizeFinishReason(payload, toolCalls);
   return {
     text: extractCopilotText(payload),
-    finishReason: 'stop',
+    finishReason,
     usage: extractOpenAiUsage(payload),
+    ...(toolCalls.length > 0 ? { toolCalls } : {}),
     warnings,
   };
 }
@@ -482,44 +493,120 @@ export function deriveCopilotApiBaseUrlFromToken(token: string): string | null {
   return host ? `https://${host}` : null;
 }
 
-function buildCopilotWarnings(options: Pick<LanguageModelV1CallOptions, 'mode'>): LanguageModelV1CallWarning[] {
+function buildCopilotWarnings(
+  options: Pick<LanguageModelV1CallOptions, 'mode'>,
+  functionTools: LanguageModelV1FunctionTool[],
+): LanguageModelV1CallWarning[] {
   if (options.mode.type !== 'regular' || !options.mode.tools || options.mode.tools.length === 0) {
     return [];
+  }
+
+  const warnings: LanguageModelV1CallWarning[] = [];
+  for (const tool of options.mode.tools) {
+    if (tool.type === 'provider-defined') {
+      warnings.push({
+        type: 'unsupported-tool',
+        tool,
+        details: 'GitHub Copilot OAuth only supports function tools in OpenAI-compatible format.',
+      });
+    }
+  }
+
+  if (functionTools.length > 0) {
+    return warnings;
   }
 
   return options.mode.tools.map((tool) => ({
     type: 'unsupported-tool',
     tool,
-    details: 'GitHub Copilot OAuth currently uses a text-only OpenAI-compatible runtime and does not expose Yagr tool-calls yet.',
+    details: 'GitHub Copilot OAuth did not receive any function tools for this call.',
   }));
 }
 
-function toOpenAiMessages(prompt: LanguageModelV1Prompt): Array<{ role: string; content: string }> {
-  return prompt.map((message) => ({
-    role: message.role === 'tool' ? 'user' : message.role,
-    content: flattenPromptPart(message),
+function getFunctionTools(
+  mode: Pick<LanguageModelV1CallOptions, 'mode'>['mode'],
+): LanguageModelV1FunctionTool[] {
+  if (mode.type !== 'regular' || !Array.isArray(mode.tools) || mode.tools.length === 0) {
+    return [];
+  }
+
+  return mode.tools.filter((tool): tool is LanguageModelV1FunctionTool => tool.type === 'function');
+}
+
+function toOpenAiTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string, unknown>> {
+  return tools.map((tool) => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      ...(tool.description ? { description: tool.description } : {}),
+      parameters: tool.parameters,
+    },
   }));
 }
 
-function flattenPromptPart(message: LanguageModelV1Prompt[number]): string {
-  if (message.role === 'system') {
-    return message.content;
+function toOpenAiToolChoice(toolChoice: LanguageModelV1ToolChoice | undefined): unknown {
+  if (!toolChoice || toolChoice.type === 'auto') {
+    return 'auto';
   }
-  if (message.role === 'user') {
-    return message.content.map((part) => part.type === 'text' ? part.text : `[${part.type}]`).join('\n');
+  if (toolChoice.type === 'none' || toolChoice.type === 'required') {
+    return toolChoice.type;
   }
-  if (message.role === 'assistant') {
-    return message.content.map((part) => {
-      if (part.type === 'text' || part.type === 'reasoning') {
-        return part.text;
-      }
-      if (part.type === 'tool-call') {
-        return `[tool-call ${part.toolName}] ${JSON.stringify(part.args)}`;
-      }
-      return `[${part.type}]`;
-    }).join('\n');
+  if (toolChoice.type === 'tool') {
+    return {
+      type: 'function',
+      function: {
+        name: toolChoice.toolName,
+      },
+    };
   }
-  return message.content.map((part) => `[tool-result ${part.toolName}] ${JSON.stringify(part.result)}`).join('\n');
+  return 'auto';
+}
+
+function toOpenAiMessages(prompt: LanguageModelV1Prompt): Array<Record<string, unknown>> {
+  return prompt.map((message) => {
+    if (message.role === 'system') {
+      return { role: 'system', content: message.content };
+    }
+
+    if (message.role === 'user') {
+      return {
+        role: 'user',
+        content: message.content.map((part) => part.type === 'text' ? part.text : `[${part.type}]`).join('\n'),
+      };
+    }
+
+    if (message.role === 'assistant') {
+      const textContent = message.content
+        .filter((part) => part.type === 'text' || part.type === 'reasoning')
+        .map((part) => part.text)
+        .join('\n')
+        .trim();
+
+      const toolCalls = message.content
+        .filter((part) => part.type === 'tool-call')
+        .map((part) => ({
+          id: part.toolCallId,
+          type: 'function',
+          function: {
+            name: part.toolName,
+            arguments: JSON.stringify(part.args ?? {}),
+          },
+        }));
+
+      return {
+        role: 'assistant',
+        content: textContent.length > 0 ? textContent : '',
+        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+      };
+    }
+
+    return message.content.map((part) => ({
+      role: 'tool',
+      tool_call_id: part.toolCallId,
+      name: part.toolName,
+      content: stringifyToolResult(part.result),
+    }));
+  }).flat();
 }
 
 function extractCopilotText(payload: Record<string, unknown>): string {
@@ -548,6 +635,81 @@ function extractOpenAiUsage(payload: Record<string, unknown>): { promptTokens: n
     promptTokens: typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : 0,
     completionTokens: typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : 0,
   };
+}
+
+function extractOpenAiToolCalls(payload: Record<string, unknown>): LanguageModelV1FunctionToolCall[] {
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return [];
+  }
+
+  const message = (choices[0] as Record<string, unknown>)?.message as Record<string, unknown> | undefined;
+  const rawToolCalls = message?.tool_calls;
+  if (!Array.isArray(rawToolCalls)) {
+    return [];
+  }
+
+  return rawToolCalls
+    .map((entry, index) => {
+      if (!entry || typeof entry !== 'object') {
+        return undefined;
+      }
+      const call = entry as Record<string, unknown>;
+      const id = readOptionalString(call.id) || `copilot-tool-call-${index + 1}`;
+      const fn = call.function as Record<string, unknown> | undefined;
+      const toolName = readOptionalString(fn?.name);
+      if (!toolName) {
+        return undefined;
+      }
+      const argsRaw = fn?.arguments;
+      const args = typeof argsRaw === 'string' ? argsRaw : JSON.stringify(argsRaw ?? {});
+      return {
+        toolCallType: 'function' as const,
+        toolCallId: id,
+        toolName,
+        args,
+      };
+    })
+    .filter((entry): entry is LanguageModelV1FunctionToolCall => Boolean(entry));
+}
+
+function normalizeFinishReason(
+  payload: Record<string, unknown>,
+  toolCalls: LanguageModelV1FunctionToolCall[],
+): 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown' {
+  if (toolCalls.length > 0) {
+    return 'tool-calls';
+  }
+
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return 'unknown';
+  }
+  const raw = readOptionalString((choices[0] as Record<string, unknown>)?.finish_reason);
+  if (!raw) {
+    return 'unknown';
+  }
+  if (raw === 'stop' || raw === 'length' || raw === 'content-filter' || raw === 'tool-calls' || raw === 'error' || raw === 'other' || raw === 'unknown') {
+    return raw;
+  }
+  if (raw === 'tool_calls') {
+    return 'tool-calls';
+  }
+  if (raw === 'content_filter') {
+    return 'content-filter';
+  }
+  return 'other';
+}
+
+function stringifyToolResult(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return String(value);
+  }
 }
 
 function readOptionalString(value: unknown): string | undefined {
