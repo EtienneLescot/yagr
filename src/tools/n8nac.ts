@@ -429,8 +429,16 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
             ? splitArgv(skillsArgs)
             : null;
 
-        if (!argv) {
-          throw new Error('skills requires skillsArgv or a valid skillsArgs string');
+        if (!argv || argv.length === 0) {
+          // Robust fallback for providers that emit an empty skills call.
+          const fallback = await runObservedN8nac(observer, ['skills', 'list'], cwd);
+          return {
+            exitCode: fallback.exitCode,
+            timedOut: fallback.timedOut,
+            stdout: truncateText(fallback.stdout),
+            stderr: truncateText(fallback.stderr),
+            note: 'No skills args were provided; defaulted to `n8nac skills list`.',
+          };
         }
 
         const result = await runObservedN8nac(observer, ['skills', ...argv], cwd);

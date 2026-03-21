@@ -1,6 +1,6 @@
 # Provider Integration Matrix
 
-- Generated at: 2026-03-21T13:21:43.222Z
+- Generated at: 2026-03-21T13:37:34.888Z
 - Providers: `copilot-proxy`
 - Timeouts: setup/model=60000ms, inference=75000ms
 - Advanced scenario: enabled (timeout=120000ms)
@@ -9,13 +9,13 @@
 
 | Step | PASS | FAIL | SKIP |
 | --- | ---: | ---: | ---: |
-| setup | 0 | 0 | 1 |
-| model-listing | 0 | 0 | 1 |
-| inference | 0 | 0 | 1 |
-| advanced-scenario | 0 | 1 | 0 |
+| setup | 1 | 0 | 0 |
+| model-listing | 1 | 0 | 0 |
+| inference | 1 | 0 | 0 |
+| advanced-scenario | 1 | 0 | 0 |
 
 ## Details
 
 | Provider | Setup | Model Listing | Inference | Advanced Scenario |
 | --- | --- | --- | --- | --- |
-| `copilot-proxy` | **SKIP**<br>Unable to sign in to GitHub Copilot. Complete the device login flow and retry. | **SKIP**<br>Skipped because setup is not available. | **SKIP**<br>Skipped because setup is not available. | **FAIL**<br>Yagr CLI error: GitHub Copilot OAuth session not found. Run `yagr setup` again. (log: /home/etienne/repos/yagr/reports/provider-advanced-logs/copilot-proxy-2026-03-21T13-21-43-221Z.log) |
+| `copilot-proxy` | **PASS**<br>41 models: claude-haiku-4.5, claude-opus-4.5, claude-opus-4.6, claude-opus-4.6-fast, claude-sonnet-4, claude-sonnet-4.5, claude-sonnet-4.6, gemini-2.5-pro (+33 more) | **PASS**<br>41 models: claude-haiku-4.5, claude-opus-4.5, claude-opus-4.6, claude-opus-4.6-fast, claude-sonnet-4, claude-sonnet-4.5, claude-sonnet-4.6, gemini-2.5-pro (+33 more) | **PASS**<br>Model gpt-4.1 responded (2 chars). | **PASS**<br>CLI scenario succeeded with model gpt-4.1. |
