@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { YagrN8nConfigService, resolveWorkflowDir, type YagrN8nLocalConfig } from '../config/n8n-config-service.js';
+import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
 
@@ -104,10 +105,11 @@ function runN8nac(
   onOutput?: (stream: 'stdout' | 'stderr', chunk: string) => void | Promise<void>,
 ): Promise<RunResult> {
   return new Promise((resolve) => {
-    const child = spawn('npx', ['--yes', 'n8nac', ...args], {
+    const child = spawn(resolvePackageManagerCommand('npx'), ['--yes', 'n8nac', ...args], {
       cwd,
       env: { ...process.env, ...getN8nacProcessEnv(env) },
       stdio: 'pipe',
+      ...resolvePackageManagerSpawnOptions(),
     });
 
     let stdout = '';
@@ -195,7 +197,7 @@ async function runObservedN8nac(
   cwd: string,
   env?: NodeJS.ProcessEnv,
 ): Promise<RunResult> {
-  const command = ['npx', '--yes', 'n8nac', ...args].map(quoteShellArg).join(' ');
+  const command = [resolvePackageManagerCommand('npx'), '--yes', 'n8nac', ...args].map(quoteShellArg).join(' ');
 
   await emitToolEvent(observer, {
     type: 'command-start',

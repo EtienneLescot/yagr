@@ -6,7 +6,7 @@ const execFileAsync = promisify(execFile);
 
 export const DEFAULT_N8N_PORT = 5678;
 export const MAX_PORT_SCAN_ATTEMPTS = 10;
-export const SUPPORTED_DIRECT_NODE_MAJORS = [20, 22, 24] as const;
+export const MINIMUM_DIRECT_RUNTIME_NODE_VERSION = '22.16.0';
 
 export type LocalN8nBootstrapStrategy = 'docker' | 'direct' | 'manual';
 
@@ -51,9 +51,46 @@ export function parseNodeMajorVersion(version: string | undefined): number | und
   return match ? Number(match[1]) : undefined;
 }
 
+export function parseNodeVersion(version: string | undefined): { major: number; minor: number; patch: number } | undefined {
+  if (!version) {
+    return undefined;
+  }
+
+  const match = version.trim().match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+  };
+}
+
 export function isSupportedDirectRuntimeNodeVersion(version: string | undefined): boolean {
-  const major = parseNodeMajorVersion(version);
-  return major !== undefined && SUPPORTED_DIRECT_NODE_MAJORS.includes(major as typeof SUPPORTED_DIRECT_NODE_MAJORS[number]);
+  const parsed = parseNodeVersion(version);
+  if (!parsed) {
+    return false;
+  }
+
+  if (parsed.major > 22) {
+    return true;
+  }
+
+  if (parsed.major < 22) {
+    return false;
+  }
+
+  if (parsed.minor > 16) {
+    return true;
+  }
+
+  if (parsed.minor < 16) {
+    return false;
+  }
+
+  return parsed.patch >= 0;
 }
 
 export function chooseLocalN8nBootstrapStrategy(input: {
@@ -97,7 +134,7 @@ export function buildLocalN8nBootstrapAssessment(input: {
     notes.push('Node.js is not available.');
   } else if (!supportedForDirectRuntime) {
     blockers.push(
-      `Detected Node.js ${input.node.version ?? 'unknown'}, but direct local n8n bootstrap currently targets majors ${SUPPORTED_DIRECT_NODE_MAJORS.join(', ')}.`,
+      `Detected Node.js ${input.node.version ?? 'unknown'}, but direct local n8n bootstrap requires Node.js ${MINIMUM_DIRECT_RUNTIME_NODE_VERSION} or newer.`,
     );
   }
 
