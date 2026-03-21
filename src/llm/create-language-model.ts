@@ -170,7 +170,7 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
   }
 
   if (provider === 'anthropic-proxy') {
-    return createAnthropicAccountLanguageModel(modelName);
+    return createAnthropicAccountLanguageModel(modelName, resolvedApiKey);
   }
 
   if (provider === 'google-proxy') {

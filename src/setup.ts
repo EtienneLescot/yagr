@@ -270,8 +270,18 @@ function createSetupCallbacks(
       }
 
       if (provider === 'anthropic-proxy') {
-        // Reads credentials from ~/.claude/config.json — no interactive auth step needed.
-        return { kind: 'none' };
+        return {
+          kind: 'input',
+          title: 'Connect Anthropic account',
+          instructions: [
+            'Choose one mode:',
+            '• Anthropic token (paste setup-token from `claude setup-token`)',
+            '• Anthropic API key (starts with `sk-ant-`)',
+            'Paste setup-token or API key below.',
+          ],
+          placeholder: 'setup-token or sk-ant-...',
+          submitLabel: 'Continue',
+        };
       }
 
       if (provider === 'google-proxy') {
@@ -337,6 +347,14 @@ function createSetupCallbacks(
         const challenge = JSON.parse(state) as { deviceCode: string; intervalMs: number; expiresAt: number };
         await completeGitHubCopilotAuth(challenge);
         return { ok: true };
+      }
+
+      if (provider === 'anthropic-proxy') {
+        const credential = input.trim();
+        if (!credential) {
+          return { ok: false, error: 'Paste an Anthropic setup-token or API key.' };
+        }
+        return { ok: true, apiKey: credential };
       }
 
       return { ok: true };

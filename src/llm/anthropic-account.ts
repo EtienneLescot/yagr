@@ -39,6 +39,11 @@ export function getClaudeConfigPath(): string {
 // ─── Session reader ────────────────────────────────────────────────────────────
 
 export function getAnthropicAccountSession(): AnthropicAccountSession | undefined {
+  const yagrToken = process.env.YAGR_ANTHROPIC_SETUP_TOKEN?.trim();
+  if (yagrToken) {
+    return { apiKey: yagrToken, source: 'env' };
+  }
+
   // 1. Environment variable (highest priority, e.g. CI or explicit override).
   const envKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (envKey) {
@@ -106,7 +111,10 @@ export async function fetchAnthropicAccountModels(apiKey: string): Promise<strin
 
 // ─── Runtime validation ─────────────────────────────────────────────────────────
 
-export async function validateAnthropicAccountRuntime(modelId = ANTHROPIC_ACCOUNT_DEFAULT_MODEL): Promise<{
+export async function validateAnthropicAccountRuntime(
+  modelId = ANTHROPIC_ACCOUNT_DEFAULT_MODEL,
+  overrideApiKey?: string,
+): Promise<{
   ok: boolean;
   text?: string;
   error?: string;
@@ -116,12 +124,13 @@ export async function validateAnthropicAccountRuntime(modelId = ANTHROPIC_ACCOUN
   }
 
   const session = await ensureAnthropicAccountSession();
-  if (!session) {
+  const apiKey = overrideApiKey?.trim() || session?.apiKey;
+  if (!apiKey) {
     return { ok: false, error: 'No Anthropic account credentials found. Install Claude Code or set ANTHROPIC_API_KEY.' };
   }
 
   try {
-    const model = createAnthropicAccountLanguageModel(modelId);
+    const model = createAnthropicAccountLanguageModel(modelId, apiKey);
     const result = await model.doGenerate({
       inputFormat: 'prompt',
       mode: { type: 'regular' },
@@ -142,14 +151,15 @@ export async function validateAnthropicAccountRuntime(modelId = ANTHROPIC_ACCOUN
 
 // ─── Language model ────────────────────────────────────────────────────────────
 
-export function createAnthropicAccountLanguageModel(modelId: string): LanguageModelV1 {
+export function createAnthropicAccountLanguageModel(modelId: string, overrideApiKey?: string): LanguageModelV1 {
   const session = getAnthropicAccountSession();
-  if (!session) {
+  const apiKey = overrideApiKey?.trim() || session?.apiKey;
+  if (!apiKey) {
     throw new Error(
       'Anthropic account credentials not found. '
       + 'Install Claude Code CLI (`claude`) and sign in, or set ANTHROPIC_API_KEY.',
     );
   }
 
-  return createAnthropic({ apiKey: session.apiKey })(modelId);
+  return createAnthropic({ apiKey })(modelId);
 }

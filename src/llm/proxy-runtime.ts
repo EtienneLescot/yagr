@@ -14,6 +14,7 @@ import {
 } from './google-account.js';
 import { writeCachedModelCatalog } from './model-catalog-cache.js';
 import {
+  ANTHROPIC_ACCOUNT_DEFAULT_MODEL,
   ensureAnthropicAccountSession,
   fetchAnthropicAccountModels,
   validateAnthropicAccountRuntime,
@@ -126,16 +127,18 @@ export async function prepareProviderRuntime(
   }
 
   if (provider === 'anthropic-proxy') {
+    const manualCredential = options.apiKey?.trim();
     const session = await ensureAnthropicAccountSession();
-    if (!session) {
+    const resolvedCredential = manualCredential || session?.apiKey;
+    if (!resolvedCredential) {
       return {
         ready: false,
-        reason: 'No Anthropic account credentials found. Install Claude Code CLI (`claude`) and sign in, or set ANTHROPIC_API_KEY.',
-        notes: ['Anthropic account credentials are read from the Claude Code CLI config (~/.claude/config.json) or ANTHROPIC_API_KEY.'],
+        reason: 'No Anthropic credential found. Paste a setup-token or Anthropic API key in setup.',
+        notes: ['Anthropic credentials can come from setup input, Claude Code config (~/.claude/config.json), or ANTHROPIC_API_KEY.'],
       };
     }
 
-    const probe = await validateAnthropicAccountRuntime();
+    const probe = await validateAnthropicAccountRuntime(ANTHROPIC_ACCOUNT_DEFAULT_MODEL, resolvedCredential);
     if (!probe.ok) {
       return {
         ready: false,
@@ -147,7 +150,7 @@ export async function prepareProviderRuntime(
     let models: string[] = [];
     let discoveryError: string | undefined;
     try {
-      const discovered = await withTimeout(fetchAnthropicAccountModels(session.apiKey), 6_000);
+      const discovered = await withTimeout(fetchAnthropicAccountModels(resolvedCredential), 6_000);
       if (discovered.length > 0) {
         models = discovered;
         writeCachedModelCatalog(provider, discovered);
@@ -156,9 +159,11 @@ export async function prepareProviderRuntime(
       discoveryError = error instanceof Error ? error.message : String(error);
     }
 
-    const sourceNote = session.source === 'env'
-      ? 'Connected through ANTHROPIC_API_KEY environment variable.'
-      : 'Connected through Claude Code CLI credentials.';
+    const sourceNote = manualCredential
+      ? 'Connected through credential pasted during setup.'
+      : session?.source === 'env'
+        ? 'Connected through ANTHROPIC_API_KEY environment variable.'
+        : 'Connected through Claude Code CLI credentials.';
 
     const notes = [sourceNote];
     if (discoveryError) {
@@ -174,7 +179,7 @@ export async function prepareProviderRuntime(
       runtime: {
         provider,
         baseUrl: '',
-        apiKey: session.apiKey,
+        apiKey: resolvedCredential,
         models,
         notes,
         autoStarted: false,
