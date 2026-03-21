@@ -100,3 +100,20 @@ export function updateManagedN8nState(
   }
   return writeManagedN8nState(next);
 }
+
+export function markManagedN8nBootstrapStage(
+  url: string,
+  bootstrapStage: ManagedN8nInstanceState['bootstrapStage'],
+): ManagedN8nInstanceState | undefined {
+  const current = readManagedN8nState();
+  if (!current || current.url !== url) {
+    return undefined;
+  }
+
+  return updateManagedN8nState((state) => ({
+    ...(state ?? current),
+    bootstrapStage,
+    status: bootstrapStage === 'connected' ? 'ready' : (state ?? current).status,
+    lastError: undefined,
+  }));
+}

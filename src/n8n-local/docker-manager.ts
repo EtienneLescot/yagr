@@ -12,7 +12,8 @@ import {
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_N8N_IMAGE = 'docker.n8n.io/n8nio/n8n:stable';
-const DEFAULT_HEALTH_TIMEOUT_MS = 60_000;
+const DEFAULT_HEALTH_TIMEOUT_MS = 180_000;
+const DEFAULT_EDITOR_TIMEOUT_MS = 90_000;
 
 export interface InstallManagedDockerN8nOptions {
   image?: string;
@@ -47,6 +48,7 @@ export async function installManagedDockerN8n(options: InstallManagedDockerN8nOp
 
   await runDockerCompose(['up', '-d', '--pull', 'missing']);
   await waitForManagedN8nHealth(`http://127.0.0.1:${port}`);
+  await waitForManagedN8nEditorReadyBestEffort(`http://127.0.0.1:${port}`);
 
   return updateManagedN8nState((current) => ({
     ...(current ?? buildManagedN8nState({ image, port })),
@@ -75,6 +77,7 @@ export async function startManagedDockerN8n(): Promise<ManagedN8nInstanceState> 
 
   await runDockerCompose(['up', '-d']);
   await waitForManagedN8nHealth(state.url);
+  await waitForManagedN8nEditorReadyBestEffort(state.url);
 
   return updateManagedN8nState((current) => ({
     ...(current ?? state),
@@ -189,6 +192,24 @@ async function isManagedN8nHealthy(url: string): Promise<boolean> {
   }
 }
 
+async function isManagedN8nEditorReady(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return false;
+    }
+
+    const body = await response.text();
+    if (!body.trim()) {
+      return false;
+    }
+
+    return !body.toLowerCase().includes('n8n is starting up');
+  } catch {
+    return false;
+  }
+}
+
 async function waitForManagedN8nHealth(url: string, timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -204,4 +225,28 @@ async function waitForManagedN8nHealth(url: string, timeoutMs = DEFAULT_HEALTH_T
     lastError: `Timed out waiting for ${url} to become healthy.`,
   }));
   throw new Error(`Timed out waiting for ${url} to become healthy.`);
+}
+
+async function waitForManagedN8nEditorReady(url: string, timeoutMs = DEFAULT_EDITOR_TIMEOUT_MS): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await isManagedN8nEditorReady(url)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  updateManagedN8nState((current) => ({
+    ...(current ?? buildManagedN8nState({ image: DEFAULT_N8N_IMAGE, port: DEFAULT_N8N_PORT })),
+    lastError: `Timed out waiting for the n8n editor at ${url} to become ready.`,
+  }));
+  throw new Error(`Timed out waiting for the n8n editor at ${url} to become ready.`);
+}
+
+async function waitForManagedN8nEditorReadyBestEffort(url: string): Promise<void> {
+  try {
+    await waitForManagedN8nEditorReady(url);
+  } catch {
+    // Do not fail installation on editor warmup only.
+  }
 }

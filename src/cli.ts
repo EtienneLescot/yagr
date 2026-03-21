@@ -26,7 +26,9 @@ import {
 } from './n8n-local/docker-manager.js';
 import { formatLocalN8nBootstrapAssessment, inspectLocalN8nBootstrap } from './n8n-local/detect.js';
 import { createN8nBootstrapPlan } from './n8n-local/plan.js';
+import { readManagedN8nState } from './n8n-local/state.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrSetup } from './setup.js';
+import { openExternalUrl } from './system/open-external.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [
   'anthropic',
@@ -38,7 +40,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [
 ];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
   startTarget?: 'webui' | 'tui';
   prompt?: string;
   interactive: boolean;
@@ -190,6 +192,11 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'logs') {
     parsed.command = 'n8n-local-logs';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'open') {
+    parsed.command = 'n8n-local-open';
     return parsed;
   }
 
@@ -427,6 +434,7 @@ Commands:
   n8n local stop               Stop the Yagr-managed local n8n runtime
   n8n local status             Show status for the Yagr-managed local n8n runtime
   n8n local logs               Show recent logs for the Yagr-managed local n8n runtime
+  n8n local open               Open the Yagr-managed local n8n runtime in the browser
 
   config show                  Show current configuration (JSON)
   config reset                 Clear all configuration and stored credentials
@@ -615,6 +623,16 @@ async function main(): Promise<void> {
     if (args.command === 'n8n-local-logs') {
       const logs = await getManagedDockerN8nLogs();
       process.stdout.write(`${logs}\n`);
+      return;
+    }
+
+    if (args.command === 'n8n-local-open') {
+      const state = readManagedN8nState();
+      if (!state) {
+        throw new Error('No Yagr-managed local n8n instance is installed yet.');
+      }
+      await openExternalUrl(state.url);
+      process.stdout.write(`Opened ${state.url}\n`);
       return;
     }
   }

@@ -14,7 +14,9 @@ import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/tel
 import type { GatewaySurface } from './gateway/types.js';
 import { resolveLanguageModelConfig, resolveModelName, resolveModelProvider, type YagrModelProvider } from './llm/create-language-model.js';
 import { installManagedDockerN8n } from './n8n-local/docker-manager.js';
+import { markManagedN8nBootstrapStage } from './n8n-local/state.js';
 import { runSetupWizard, type SetupCallbacks } from './setup/setup-wizard.js';
+import { openExternalUrl } from './system/open-external.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [
   'anthropic',
@@ -121,6 +123,7 @@ export async function runYagrSetup(
       const client = new N8nApiClient({ host: url, apiKey });
       const connected = await client.testConnection();
       if (!connected) throw new Error('Unable to connect to n8n with the provided URL and API key.');
+      markManagedN8nBootstrapStage(url, 'api-key-pending');
       const projects = await client.getProjects();
       if (projects.length === 0) throw new Error('No n8n projects found. Create one in n8n first, then rerun setup.');
       return projects;
@@ -149,10 +152,15 @@ export async function runYagrSetup(
       } catch (err) {
         process.stderr.write(`Warning: n8n workspace instructions refresh failed: ${err instanceof Error ? err.message : String(err)}\n`);
       }
+      markManagedN8nBootstrapStage(url, 'connected');
     },
 
     async installManagedLocalN8n() {
       return installManagedDockerN8n();
+    },
+
+    async openUrl(url) {
+      await openExternalUrl(url);
     },
 
     getLlmDefaults() {
