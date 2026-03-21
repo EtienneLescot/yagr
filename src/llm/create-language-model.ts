@@ -346,7 +346,29 @@ function getApiKeyForProvider(
   provider: YagrModelProvider,
   configStore: YagrLanguageModelConfigStore,
 ): string | undefined {
-  return configStore.getApiKey(provider);
+  const configured = configStore.getApiKey(provider);
+  if (configured) {
+    return configured;
+  }
+
+  const byProvider: Partial<Record<YagrModelProvider, string[]>> = {
+    openai: ['OPENAI_LLM_API_KEY', 'OPENAI_API_KEY'],
+    anthropic: ['ANTHROPIC_LLM_API_KEY', 'ANTHROPIC_API_KEY'],
+    google: ['GOOGLE_GENERATIVE_AI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_LLM_API_KEY', 'GOOGLE_LLM_API_KEY'],
+    groq: ['GROQ_API_KEY', 'GROQ_LLM_API_KEY'],
+    mistral: ['MISTRAL_API_KEY', 'MISTRAL_LLM_API_KEY'],
+    openrouter: ['OPENROUTER_API_KEY', 'OPENROUTER_LLM_API_KEY'],
+  };
+
+  const envKeys = byProvider[provider] ?? [];
+  for (const envKey of envKeys) {
+    const value = process.env[envKey]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function getBaseUrlForProvider(
