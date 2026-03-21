@@ -82,7 +82,7 @@ type RunState = {
 };
 
 function providerOptionsForRun(provider?: YagrModelProvider): { openai?: { strictSchemas: boolean } } | undefined {
-  if (provider === 'openai') {
+  if (provider === 'openai' || provider === 'groq') {
     return { openai: { strictSchemas: false } };
   }
   return undefined;
