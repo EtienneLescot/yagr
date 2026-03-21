@@ -35,6 +35,9 @@ export async function installManagedDockerN8n(options: InstallManagedDockerN8nOp
   if (!assessment.docker.available) {
     throw new Error('Docker is not available on this machine. Run `yagr n8n doctor` for details.');
   }
+  if (assessment.docker.reachable === false) {
+    throw new Error('Docker is not started. Please start Docker and try again.');
+  }
 
   const paths = ensureManagedN8nDirs();
   const existingState = readManagedN8nState();

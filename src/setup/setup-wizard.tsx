@@ -45,7 +45,7 @@ export interface SetupCallbacks {
   getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string };
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
   saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string }): Promise<void>;
-  installManagedLocalN8n(): Promise<ManagedN8nInstanceState>;
+  installManagedLocalN8n(strategy: 'docker' | 'direct' | 'auto'): Promise<ManagedN8nInstanceState>;
   bootstrapManagedLocalN8n(url: string): Promise<{ mode: 'silent' | 'assisted'; apiKey?: string; reason?: string }>;
   openUrl(url: string): Promise<void>;
   getLlmDefaults(): {
@@ -104,7 +104,7 @@ export function runSetupWizard(callbacks: SetupCallbacks, options: SetupWizardOp
 // ─── Phase state machine ──────────────────────────────────────────────────────
 
 type Phase =
-  | { kind: 'n8n-mode'; cursor: number }
+  | { kind: 'n8n-mode'; cursor: number; err?: string }
   | { kind: 'n8n-url'; def: string; err?: string }
   | { kind: 'n8n-reuse-apikey'; url: string; existing: string; cursor: number }
   | { kind: 'n8n-apikey'; url: string; err?: string }
@@ -112,7 +112,7 @@ type Phase =
   | { kind: 'n8n-project'; url: string; apiKey: string; projects: IProject[]; cursor: number }
   | { kind: 'n8n-syncfolder'; url: string; apiKey: string; project: IProject; def: string; err?: string }
   | { kind: 'n8n-saving'; url: string; apiKey: string; project: IProject; syncFolder: string; log?: string }
-  | { kind: 'n8n-local-installing'; startedAt: number }
+  | { kind: 'n8n-local-installing'; startedAt: number; strategy: 'docker' | 'direct' | 'auto' }
   | { kind: 'n8n-local-ready'; url: string; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
@@ -568,7 +568,7 @@ function SetupWizard({ callbacks, options, onDone }: {
     const guard = ++asyncGuard.current;
     void (async () => {
       try {
-        const state = await callbacks.installManagedLocalN8n();
+        const state = await callbacks.installManagedLocalN8n(phase.strategy);
         if (guard !== asyncGuard.current) return;
         const bootstrap = await callbacks.bootstrapManagedLocalN8n(state.url);
         if (guard !== asyncGuard.current) return;
@@ -589,8 +589,11 @@ function SetupWizard({ callbacks, options, onDone }: {
         });
       } catch (err) {
         if (guard !== asyncGuard.current) return;
-        setPhase({ kind: 'error', message: (err as Error).message });
-        setTimeout(() => { onDone({ ok: false }); app.exit(); }, 2000);
+        setPhase({
+          kind: 'n8n-mode',
+          cursor: phase.strategy === 'docker' ? 0 : 1,
+          err: err instanceof Error ? err.message : String(err),
+        });
       }
     })();
   }, [phase.kind]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -829,11 +832,13 @@ function SetupWizard({ callbacks, options, onDone }: {
 
   const handleSelectKey = useCallback((input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean; escape: boolean }) => {
     if (phase.kind === 'n8n-mode') {
-      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
-      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1), err: undefined });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(2, phase.cursor + 1), err: undefined });
       else if (key.return) {
         if (phase.cursor === 0) {
-          setPhase({ kind: 'n8n-local-installing', startedAt: Date.now() });
+          setPhase({ kind: 'n8n-local-installing', startedAt: Date.now(), strategy: 'docker' });
+        } else if (phase.cursor === 1) {
+          setPhase({ kind: 'n8n-local-installing', startedAt: Date.now(), strategy: 'direct' });
         } else {
           setPhase({ kind: 'n8n-url', def: n8nDef.url });
           setTextValue(n8nDef.url);
@@ -1094,15 +1099,25 @@ function SetupWizard({ callbacks, options, onDone }: {
             <Text dimColor>  Choose the lowest-friction way to connect Yagr to n8n.</Text>
             <SelectList
               options={[
-                'Install a new local n8n instance',
-                'Use an existing n8n instance',
+                'Install a Yagr-managed n8n with Docker',
+                'Install a Yagr-managed local n8n',
+                'Use an existing n8n instance and API key',
               ] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
-              getHint={(v) => v.startsWith('Install') ? 'Yagr-managed local runtime' : 'Cloud or self-managed instance'}
-              maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+              getHint={(v) => {
+                if (v === 'Install a Yagr-managed n8n with Docker') {
+                  return 'Recommended if Docker is installed and running';
+                }
+                if (v === 'Install a Yagr-managed local n8n') {
+                  return 'Managed local runtime without Docker';
+                }
+                return 'Cloud or self-managed n8n';
+              }}
+              maxVisibleRows={getListViewportHeight(terminalRows, 13)}
               maxLineWidth={listLineWidth}
             />
+            {phase.err ? <ErrorLine message={phase.err} /> : null}
             <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );

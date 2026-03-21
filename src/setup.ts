@@ -188,8 +188,25 @@ function createSetupCallbacks(
       markManagedN8nBootstrapStage(url, 'connected');
     },
 
-    async installManagedLocalN8n() {
+    async installManagedLocalN8n(strategy) {
       const assessment = await inspectLocalN8nBootstrap();
+      if (strategy === 'docker') {
+        if (!assessment.docker.available) {
+          throw new Error('Docker is not installed. Choose the local managed n8n option without Docker, or install Docker and try again.');
+        }
+        if (assessment.docker.reachable === false) {
+          throw new Error('Docker is not started. Please start Docker and try again.');
+        }
+        return installManagedDockerN8n();
+      }
+
+      if (strategy === 'direct') {
+        if (!assessment.node.supportedForDirectRuntime) {
+          throw new Error('A compatible local Node.js runtime is required for the non-Docker local n8n install. Run `yagr n8n doctor` for details.');
+        }
+        return installManagedDirectN8n();
+      }
+
       if (assessment.recommendedStrategy === 'docker') {
         return installManagedDockerN8n();
       }
