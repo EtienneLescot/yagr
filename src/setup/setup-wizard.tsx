@@ -61,6 +61,7 @@ export interface SetupCallbacks {
   completeAccountAuth(provider: YagrModelProvider, input: string, state?: string): Promise<{
     ok: boolean;
     error?: string;
+    apiKey?: string;
   }>;
   fetchModels(provider: YagrModelProvider, apiKey?: string): Promise<string[]>;
   saveLlmConfig(p: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string }): void;
@@ -151,10 +152,10 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
     return {
       title: 'Connect Anthropic account',
       body: [
-        'Yagr reads your Anthropic credentials from the Claude Code CLI config.',
-        'Make sure Claude Code is installed (`claude`) and you have signed in or set an API key.',
+        'Use one of the two authentication modes:',
+        '1) Anthropic token (paste setup-token)  OR  2) Anthropic API key.',
       ],
-      continueLabel: 'Continue with Claude credentials',
+      continueLabel: 'Paste setup-token or API key',
     };
   }
 
@@ -782,7 +783,7 @@ function SetupWizard({ callbacks, options, onDone }: {
         }
 
         const defModel = llmDef.getDefaultModel(provider);
-        transitionToLlmModelsLoading(provider, '', defModel);
+        transitionToLlmModelsLoading(provider, result.apiKey ?? '', defModel);
       } catch (error) {
         setPhase((current) => current.kind === 'llm-account-input'
           ? { ...current, err: error instanceof Error ? error.message : String(error) }
@@ -902,10 +903,41 @@ function SetupWizard({ callbacks, options, onDone }: {
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-account-auth') {
+      const isAnthropic = phase.provider === 'anthropic-proxy';
+      const maxCursor = isAnthropic ? 2 : 1;
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
-      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(maxCursor, phase.cursor + 1) });
       else if (key.return) {
-        if (phase.cursor === 0) {
+        if (isAnthropic && phase.cursor === 0) {
+          setPhase({
+            kind: 'llm-account-input',
+            provider: phase.provider,
+            title: 'Anthropic token (paste setup-token)',
+            instructions: [
+              'On a machine where Claude CLI is installed and logged in, run:',
+              'claude setup-token',
+              'Copy the generated setup-token and paste it below.',
+            ],
+            placeholder: 'Paste setup-token',
+            submitLabel: 'Continue with setup-token',
+            state: 'anthropic:setup-token',
+          });
+          setTextValue('');
+        } else if (isAnthropic && phase.cursor === 1) {
+          setPhase({
+            kind: 'llm-account-input',
+            provider: phase.provider,
+            title: 'Anthropic API key',
+            instructions: [
+              'Create or copy your Anthropic API key from the Anthropic dashboard.',
+              'Then paste your key below.',
+            ],
+            placeholder: 'sk-ant-...',
+            submitLabel: 'Continue with API key',
+            state: 'anthropic:api-key',
+          });
+          setTextValue('');
+        } else if (!isAnthropic && phase.cursor === 0) {
           void (async () => {
             try {
               const authStep = await callbacks.startAccountAuth(phase.provider);
@@ -1265,6 +1297,9 @@ function SetupWizard({ callbacks, options, onDone }: {
       case 'llm-account-auth':
         {
           const authCopy = getProviderAuthCopy(phase.provider);
+          const authOptions = phase.provider === 'anthropic-proxy'
+            ? ['Anthropic token (paste setup-token)', 'Anthropic API key', 'Back to providers'] as const
+            : [authCopy.continueLabel, 'Back to providers'] as const;
         return (
           <Box flexDirection="column">
             <FieldLabel label={authCopy.title} />
@@ -1272,10 +1307,15 @@ function SetupWizard({ callbacks, options, onDone }: {
               <Text key={line} dimColor>  {line}</Text>
             ))}
             <SelectList
-              options={[authCopy.continueLabel, 'Back to providers'] as const}
+              options={authOptions}
               cursor={phase.cursor}
               getLabel={(v) => v}
-              getHint={(v) => v.startsWith('Continue') ? 'recommended' : undefined}
+              getHint={(v) => {
+                if (phase.provider === 'anthropic-proxy') {
+                  return v.startsWith('Anthropic token') ? 'recommended' : undefined;
+                }
+                return v.startsWith('Continue') ? 'recommended' : undefined;
+              }}
               maxVisibleRows={getListViewportHeight(terminalRows, 11)}
               maxLineWidth={listLineWidth}
             />
