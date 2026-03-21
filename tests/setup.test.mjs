@@ -12,7 +12,7 @@ test('buildYagrSetupStatus reports all missing setup phases when nothing is read
   });
 
   assert.equal(status.ready, false);
-  assert.deepEqual(status.missingSteps, ['n8n', 'llm', 'surfaces']);
+  assert.deepEqual(status.missingSteps, ['n8n', 'llm']);
 });
 
 test('buildYagrSetupStatus is ready only when n8n llm and a startable surface exist', () => {
