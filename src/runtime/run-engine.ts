@@ -81,6 +81,13 @@ type RunState = {
   stepNumber: number;
 };
 
+function providerOptionsForRun(provider?: YagrModelProvider): { openai?: { strictSchemas: boolean } } | undefined {
+  if (provider === 'openai') {
+    return { openai: { strictSchemas: false } };
+  }
+  return undefined;
+}
+
 function createAbortError(message = 'Yagr run stopped by user.'): Error {
   const error = new Error(message);
   error.name = 'AbortError';
@@ -623,6 +630,7 @@ async function executePhase(
       tools,
       messages,
       maxSteps,
+      providerOptions: providerOptionsForRun(options.provider),
     });
 
     for (const step of result.steps) {
@@ -666,6 +674,7 @@ async function executePhase(
     messages,
     maxSteps,
     toolCallStreaming: shouldUseToolCallStreaming(options.provider),
+    providerOptions: providerOptionsForRun(options.provider),
     onStepFinish: async (stepResult) => {
       recordedSteps += 1;
       for (const toolCall of stepResult.toolCalls) {
@@ -861,6 +870,7 @@ export class YagrRunEngine {
         tools,
         messages: [...executionContext, inspectInstruction],
         maxSteps: Math.min(options.maxSteps ?? 8, INSPECT_MAX_STEPS),
+        providerOptions: providerOptionsForRun(options.provider),
       });
 
       for (const step of inspectResult.steps) {
