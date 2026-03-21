@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.2.10](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.9...yagr@v0.2.10) (2026-03-21)
+
+
+### Features
+
+* add support for Gemini and GitHub Copilot OAuth providers ([1c4ecc6](https://github.com/EtienneLescot/yagr/commit/1c4ecc6c5d6d7897beb31517bf499edcad700416))
+* add support for multiple OAuth providers and enhance provider integration testing ([8353290](https://github.com/EtienneLescot/yagr/commit/835329086afd46cddcc75117516d4db7de4b03c9))
+* **anthropic:** enhance credential handling with setup-token and API key support ([e87db14](https://github.com/EtienneLescot/yagr/commit/e87db1427d6db5a65dfa4eb19b410987a567b74b))
+* enhance Docker integration and error handling in local n8n setup ([2bbe3cf](https://github.com/EtienneLescot/yagr/commit/2bbe3cfa6cb4bcb37d4bf81a39e99041af5b2fed))
+* enhance package manager command resolution and improve node version checks ([73dba19](https://github.com/EtienneLescot/yagr/commit/73dba19e0c9c316bbdfc4e47352f0fafcfcc99b2))
+* enhance provider integration and improve local workflow handling ([1975efc](https://github.com/EtienneLescot/yagr/commit/1975efc3cf6c7e9d8c20d67d2dda842e53bfd0b9))
+* enhance provider registry and proxy runtime for OpenAI and Anthropic support ([6c2dc9c](https://github.com/EtienneLescot/yagr/commit/6c2dc9c440a921c5538119d3de026951e4f01c8c))
+* enhance support for Anthropic integration by adding setup-token and updating provider details ([e23f7d0](https://github.com/EtienneLescot/yagr/commit/e23f7d097d72edbacce8de4fc19d9ba8fc5cb476))
+* enhance support for copilot-proxy provider in execution phase ([95c21a4](https://github.com/EtienneLescot/yagr/commit/95c21a45d15d3abc1a40b0e6ef363057923e76cb))
+* enhance temporary environment setup and improve legacy credential path resolution in tests ([8ee3182](https://github.com/EtienneLescot/yagr/commit/8ee3182fe39e680c549b9cf2adfc6ae860b60d58))
+* **gemini:** enhance CodeAssist integration with project ID caching and improved error handling ([e80c910](https://github.com/EtienneLescot/yagr/commit/e80c910a15e123c4dd73521e7c29527b2ea088d1))
+* **gemini:** implement error handling and session management in doStream method ([3262019](https://github.com/EtienneLescot/yagr/commit/326201973f8b03ac8f9cae6cf3015eb70ec69441))
+* **gemini:** streamline Gemini OAuth model fetching and enhance error handling ([c3d1b12](https://github.com/EtienneLescot/yagr/commit/c3d1b1251e00fa52dc5210d4c8c4348b4e887a6a))
+* implement model catalog caching and dynamic model fetching ([e395b67](https://github.com/EtienneLescot/yagr/commit/e395b67287c8bb958a07e8819fc0737bc38a816f))
+* improve Docker error messages for local n8n setup ([2270aa2](https://github.com/EtienneLescot/yagr/commit/2270aa239de9518304833ba83b2759f5cf8e7f63))
+* integrate Anthropic account support and improve OpenAI provider handling ([da726c4](https://github.com/EtienneLescot/yagr/commit/da726c48214de34585a1a1a9726c9d66fe90c91b))
+* local n8n manager + multi-provider OAuth support ([5aaea2b](https://github.com/EtienneLescot/yagr/commit/5aaea2b22787a4c883b151ee36bc064a0790b5c2))
+* **n8n-local:** add ManagedN8nOwnerCredentialService for storing owner credentials ([ca38d87](https://github.com/EtienneLescot/yagr/commit/ca38d87d8fa3e17d6690b50c0ff9c0d943d81f7f))
+* **n8n-local:** implement silent bootstrap for managed local n8n with owner credentials ([ca38d87](https://github.com/EtienneLescot/yagr/commit/ca38d87d8fa3e17d6690b50c0ff9c0d943d81f7f))
+* **n8n:** enhance local n8n management with open command and bootstrap state tracking ([ffcc234](https://github.com/EtienneLescot/yagr/commit/ffcc23459f4de318a23fe7f83f321b38e811ca10))
+* **n8n:** implement local workflow open bridge and enhance workflow link handling ([83eb873](https://github.com/EtienneLescot/yagr/commit/83eb873eb286a744358a2aae276e89e45f56550a))
+* **n8n:** implement managed local n8n installation and bootstrap process ([52f8fd5](https://github.com/EtienneLescot/yagr/commit/52f8fd575aa4c787986a9c48b9a527f2a4f12755))
+* **n8n:** implement spinner for local n8n installation and enhance setup wizard feedback ([9fa3854](https://github.com/EtienneLescot/yagr/commit/9fa3854bf909c7bfd63bedfab9408837ecedc455))
+* **n8n:** refactor scenario management and enhance environment setup ([f6b2d86](https://github.com/EtienneLescot/yagr/commit/f6b2d86e9646ea4d3fbb67e862f3e76a961184e1))
+* **n8n:** retrieve existing API key for n8n connection in setup wizard ([817ff6f](https://github.com/EtienneLescot/yagr/commit/817ff6f1a0c9d98895862418779be9c2d6e51e9b))
+* **openai:** enhance OpenAI account integration with validation and setup wizard updates ([a0668d7](https://github.com/EtienneLescot/yagr/commit/a0668d7c4c8448872974314d265d729605cddc9e))
+* update CI workflow and tests to improve credential path handling ([de06e05](https://github.com/EtienneLescot/yagr/commit/de06e05dffdc69fbcd5a4b05109a99f8fd4475fe))
+* update OpenAI account connection hints to clarify ChatGPT subscription usage ([164650c](https://github.com/EtienneLescot/yagr/commit/164650cfbedc1ce0db1fd49c4c8d5708baeb83f0))
+* update provider display names and enhance provider wizard order ([a0fb38f](https://github.com/EtienneLescot/yagr/commit/a0fb38f1a143ff7c4babeee360b0214f0becd585))
+* update provider integration matrix and enhance Google provider model preferences ([5c98dc6](https://github.com/EtienneLescot/yagr/commit/5c98dc634ab065165b7ccf3ba888fb0bf6c1ebcf))
+* update provider integration matrix and enhance skills handling in n8nac tool ([bc0ad88](https://github.com/EtienneLescot/yagr/commit/bc0ad8824d4e1e7da76d6c7fd17b8d32501fa639))
+* update provider integration matrix for copilot-proxy and enhance GitHub Copilot session handling ([fa08d90](https://github.com/EtienneLescot/yagr/commit/fa08d90eb4c7fb98bb92086a4717b3c1775d9dee))
+* update provider integration matrix for google-proxy and change default model to gemini-3-flash-preview ([f0ace99](https://github.com/EtienneLescot/yagr/commit/f0ace99b95a40a8e3d5b905ee0bde771916eb02b))
+* update provider integration matrix for groq and enhance API key retrieval logic ([7833654](https://github.com/EtienneLescot/yagr/commit/7833654d4ad95aa5eb996a2128e3c634b61fba21))
+* update provider integration matrix for OpenAI and enhance provider options in context compaction and run engine ([4a6bb8c](https://github.com/EtienneLescot/yagr/commit/4a6bb8cf06757639b8bfc39e52738e9bc8376fdd))
+* update provider integration matrix for OpenAI and fix advanced scenario results ([9bb046c](https://github.com/EtienneLescot/yagr/commit/9bb046c5562944d764899219b3e051d1daf83d2e))
+* update provider integration matrix timestamp and enhance provider options for 'groq' ([6be7c13](https://github.com/EtienneLescot/yagr/commit/6be7c131de62055ff8ae69a63c72f076d1ed9bb3))
+* update tests for node version support and improve Yagr home directory resolution ([201d69f](https://github.com/EtienneLescot/yagr/commit/201d69fe2484370d37f5b90283ed7e00f9c889ba))
+
+
+### Bug Fixes
+
+* **n8n-local:** update docker manager to read existing state for port and image ([ca38d87](https://github.com/EtienneLescot/yagr/commit/ca38d87d8fa3e17d6690b50c0ff9c0d943d81f7f))
+* **workflow:** update workflow link handling to support target URLs for auth bridge ([ca38d87](https://github.com/EtienneLescot/yagr/commit/ca38d87d8fa3e17d6690b50c0ff9c0d943d81f7f))
+
 ## [0.2.9](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.8...yagr@v0.2.9) (2026-03-19)
 
 
