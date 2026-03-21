@@ -267,30 +267,184 @@ export function createGeminiAccountLanguageModel(modelId: string): LanguageModel
       };
     },
     async doStream(options) {
-      const execution = await runGeminiExec(modelId, options);
+      const session = await ensureGeminiAccountSession();
+      if (!session) {
+        throw new Error('Gemini OAuth session not found. Run `yagr setup` again.');
+      }
+      const warnings = buildGeminiWarnings(options);
+      const project = await resolveCodeAssistProject(session);
+      const { systemInstruction, contents } = convertToGeminiFormat(options.prompt);
+
+      const abortController = new AbortController();
+      const timeoutTimer = setTimeout(() => abortController.abort(), 120_000);
+
+      let fetchResponse: Response;
+      try {
+        fetchResponse = await fetch(
+          `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:streamGenerateContent?alt=sse`,
+          {
+            method: 'POST',
+            signal: abortController.signal,
+            headers: {
+              Authorization: `Bearer ${session.accessToken}`,
+              'Content-Type': 'application/json',
+              Accept: 'text/event-stream',
+              'User-Agent': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
+              'X-Goog-Api-Client': `gl-node/${process.versions.node}`,
+              'Client-Metadata': CODE_ASSIST_CLIENT_METADATA,
+            },
+            body: JSON.stringify({
+              model: modelId,
+              project,
+              request: {
+                ...(systemInstruction ? { systemInstruction } : {}),
+                contents,
+              },
+              userAgent: 'yagr',
+            }),
+          },
+        );
+      } catch (error) {
+        clearTimeout(timeoutTimer);
+        throw error;
+      }
+
+      if (!fetchResponse.ok) {
+        clearTimeout(timeoutTimer);
+        const body = await fetchResponse.text().catch(() => '');
+        throw formatCodeAssistError(fetchResponse.status, body, modelId);
+      }
+
+      const responseBody = fetchResponse.body;
       const stream = new ReadableStream<LanguageModelV1StreamPart>({
-        start(controller) {
-          if (execution.text) {
-            controller.enqueue({ type: 'text-delta', textDelta: execution.text });
+        async start(controller) {
+          if (!responseBody) {
+            clearTimeout(timeoutTimer);
+            controller.enqueue({ type: 'finish', finishReason: 'stop', usage: { promptTokens: 0, completionTokens: 0 } });
+            controller.close();
+            return;
           }
-          controller.enqueue({
-            type: 'finish',
-            finishReason: execution.finishReason,
-            usage: execution.usage,
-          });
-          controller.close();
+          try {
+            const reader = responseBody.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let promptTokens = 0;
+            let completionTokens = 0;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() ?? '';
+
+              for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const data = line.slice(6).trim();
+                if (!data || data === '[DONE]') continue;
+                try {
+                  const chunk = JSON.parse(data) as CodeAssistGenerateResponse;
+                  const parts = chunk.response?.candidates?.[0]?.content?.parts ?? [];
+                  for (const part of parts) {
+                    if (part.text) {
+                      controller.enqueue({ type: 'text-delta', textDelta: part.text });
+                    }
+                  }
+                  if (chunk.response?.usageMetadata) {
+                    promptTokens = chunk.response.usageMetadata.promptTokenCount ?? promptTokens;
+                    completionTokens = chunk.response.usageMetadata.candidatesTokenCount ?? completionTokens;
+                  }
+                } catch {
+                  // Malformed SSE chunk — skip
+                }
+              }
+            }
+
+            clearTimeout(timeoutTimer);
+            controller.enqueue({ type: 'finish', finishReason: 'stop', usage: { promptTokens, completionTokens } });
+            controller.close();
+          } catch (error) {
+            clearTimeout(timeoutTimer);
+            controller.error(error);
+          }
+        },
+        cancel() {
+          clearTimeout(timeoutTimer);
+          abortController.abort();
         },
       });
 
       return {
         stream,
-        rawCall: {
-          rawPrompt: options.prompt,
-          rawSettings: { modelId },
-        },
-        warnings: execution.warnings,
+        rawCall: { rawPrompt: options.prompt, rawSettings: { modelId } },
+        warnings,
       };
     },
+  };
+}
+
+interface GeminiContent {
+  role: 'user' | 'model';
+  parts: Array<{ text: string }>;
+}
+
+interface GeminiConvertedPrompt {
+  systemInstruction?: { parts: Array<{ text: string }> };
+  contents: GeminiContent[];
+}
+
+function convertToGeminiFormat(prompt: LanguageModelV1Prompt): GeminiConvertedPrompt {
+  const systemParts: string[] = [];
+  const contents: GeminiContent[] = [];
+
+  const push = (role: 'user' | 'model', text: string): void => {
+    const last = contents[contents.length - 1];
+    if (last?.role === role) {
+      last.parts[0].text += '\n\n' + text;
+    } else {
+      contents.push({ role, parts: [{ text }] });
+    }
+  };
+
+  for (const message of prompt) {
+    if (message.role === 'system') {
+      systemParts.push(message.content);
+      continue;
+    }
+
+    if (message.role === 'user') {
+      const text = message.content
+        .map((part) => part.type === 'text' ? part.text : `[${part.type}]`)
+        .join('\n');
+      push('user', text);
+      continue;
+    }
+
+    if (message.role === 'assistant') {
+      const text = message.content.map((part) => {
+        if (part.type === 'text' || part.type === 'reasoning') return part.text;
+        if (part.type === 'tool-call') return `[Calling ${part.toolName}: ${JSON.stringify(part.args)}]`;
+        return `[${part.type}]`;
+      }).join('\n');
+      push('model', text);
+      continue;
+    }
+
+    // tool messages: fold results into the user turn
+    const text = message.content
+      .map((part) => `[Result of ${part.toolName}]:\n${JSON.stringify(part.result)}`)
+      .join('\n\n');
+    push('user', text);
+  }
+
+  if (contents.length === 0) {
+    contents.push({ role: 'user', parts: [{ text: '' }] });
+  }
+
+  return {
+    systemInstruction: systemParts.length > 0 ? { parts: [{ text: systemParts.join('\n\n') }] } : undefined,
+    contents,
   };
 }
 
@@ -312,7 +466,7 @@ async function runGeminiExec(
   }
 
   const warnings = buildGeminiWarnings(options);
-  const prompt = flattenPrompt(options.prompt);
+  const { systemInstruction, contents } = convertToGeminiFormat(options.prompt);
   const project = await resolveCodeAssistProject(session);
   const response = await fetchWithTimeout(`${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:generateContent`, {
     method: 'POST',
@@ -328,11 +482,12 @@ async function runGeminiExec(
       model: modelId,
       project,
       request: {
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        ...(systemInstruction ? { systemInstruction } : {}),
+        contents,
       },
       userAgent: 'yagr',
     }),
-  }, 20_000);
+  }, 30_000);
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
@@ -813,35 +968,6 @@ function buildGeminiWarnings(options: Pick<LanguageModelV1CallOptions, 'mode'>):
     tool,
     details: 'Gemini OAuth currently executes through Code Assist runtime and does not expose Yagr tool-calls yet.',
   }));
-}
-
-function flattenPrompt(prompt: LanguageModelV1Prompt): string {
-  return prompt.map((message) => {
-    if (message.role === 'system') {
-      return `System:\n${message.content}`;
-    }
-
-    if (message.role === 'user') {
-      const content = message.content.map((part) => part.type === 'text' ? part.text : `[${part.type}]`).join('\n');
-      return `User:\n${content}`;
-    }
-
-    if (message.role === 'assistant') {
-      const content = message.content.map((part) => {
-        if (part.type === 'text' || part.type === 'reasoning') {
-          return part.text;
-        }
-        if (part.type === 'tool-call') {
-          return `[tool-call ${part.toolName}] ${JSON.stringify(part.args)}`;
-        }
-        return `[${part.type}]`;
-      }).join('\n');
-      return `Assistant:\n${content}`;
-    }
-
-    const content = message.content.map((part) => `[tool-result ${part.toolName}] ${JSON.stringify(part.result)}`).join('\n');
-    return `Tool:\n${content}`;
-  }).join('\n\n');
 }
 
 async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
