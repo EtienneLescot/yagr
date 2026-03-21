@@ -11,6 +11,7 @@ export interface YagrN8nLocalConfig {
   projectName?: string;
   instanceIdentifier?: string;
   customNodesPath?: string;
+  runtimeSource?: 'managed-local' | 'external';
 }
 
 interface N8nCredentialStore {
@@ -78,11 +79,16 @@ export class YagrN8nConfigService {
     fs.writeFileSync(this.localConfigPath, JSON.stringify(config, null, 2));
   }
 
-  saveBootstrapState(host: string, syncFolder = 'workflows'): void {
+  saveBootstrapState(
+    host: string,
+    syncFolder = 'workflows',
+    runtimeSource: YagrN8nLocalConfig['runtimeSource'] = 'external',
+  ): void {
     const current = this.getLocalConfig();
     const bootstrapState: YagrN8nLocalConfig = {
       host,
       syncFolder,
+      runtimeSource,
     };
 
     if (current.customNodesPath) {

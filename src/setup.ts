@@ -158,9 +158,9 @@ function createSetupCallbacks(
       return projects;
     },
 
-    async saveN8nConfig({ url, apiKey, project, syncFolder }) {
+    async saveN8nConfig({ url, apiKey, project, syncFolder, runtimeSource }) {
       n8nConfigService.saveApiKey(url, apiKey);
-      n8nConfigService.saveBootstrapState(url, syncFolder);
+      n8nConfigService.saveBootstrapState(url, syncFolder, runtimeSource);
       const instanceIdentifier = await n8nConfigService.getOrCreateInstanceIdentifier(url);
       const currentConfig = n8nConfigService.getLocalConfig();
       const projectName = getDisplayProjectName(project);
@@ -171,6 +171,7 @@ function createSetupCallbacks(
         projectName,
         instanceIdentifier,
         customNodesPath: currentConfig.customNodesPath,
+        runtimeSource,
       });
       const workflowDir = resolveWorkflowDir({ syncFolder, instanceIdentifier, projectName });
       if (workflowDir) {
