@@ -5,10 +5,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
 import type { YagrAgent } from '../agent.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
+import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
+import { openExternalUrl } from '../system/open-external.js';
 import {
   type WorkflowEmbed,
   buildWorkflowFooterTerminal,
   extractWorkflowEmbed,
+  resolveTerminalWorkflowOpenUrl,
+  workflowEmbedKey,
 } from './format-message.js';
 import type {
   YagrAgentState,
@@ -506,7 +510,11 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     if (event.type === 'embed' && event.kind === 'workflow') {
       const embed = extractWorkflowEmbed(event);
       if (embed) {
-        setWorkflowEmbeds((prev) => [...prev, embed]);
+        setWorkflowEmbeds((prev) => (
+          prev.some((entry) => workflowEmbedKey(entry) === workflowEmbedKey(embed))
+            ? prev
+            : [...prev, embed]
+        ));
         const label = embed.title ? `${embed.title} — ${embed.url}` : embed.url;
         pushEntry('result', 'Workflow disponible', label, 'strong');
         setActiveOperationText(`Workflow pret : ${embed.url}`);
@@ -664,6 +672,25 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
       return;
     }
 
+    if (prompt === '/open') {
+      const latestEmbed = workflowEmbeds[workflowEmbeds.length - 1];
+      if (!latestEmbed) {
+        pushEntry('narrative', 'Workflow', 'Aucun workflow recent a ouvrir.');
+        return;
+      }
+
+      try {
+        await openExternalUrl(resolveTerminalWorkflowOpenUrl(latestEmbed));
+        pushEntry('result', 'Ouverture du workflow', latestEmbed.targetUrl ?? latestEmbed.url);
+        setActiveOperationText(`Workflow ouvert : ${latestEmbed.targetUrl ?? latestEmbed.url}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        pushEntry('interrupt', 'Ouverture echouee', message);
+        setActiveOperationText(`Echec ouverture workflow : ${message}`);
+      }
+      return;
+    }
+
     if (prompt.startsWith('/approve')) {
       const permissionActions = pendingRequiredActions.filter((action) => action.kind === 'permission');
       if (permissionActions.length === 0) {
@@ -680,7 +707,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
 
     await runPrompt(prompt);
-  }, [agent, app, isRunning, pendingRequiredActions, pushEntry, runPrompt]);
+  }, [agent, app, isRunning, pendingRequiredActions, pushEntry, runPrompt, workflowEmbeds]);
 
   useInput((inputKey, key) => {
     if (key.ctrl && inputKey === 'c') {
@@ -690,6 +717,25 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
 
     if (key.ctrl && inputKey === 'y') {
       setHistoryOpen((previous) => !previous);
+      return;
+    }
+
+    if (key.ctrl && inputKey.toLowerCase() === 'o' && workflowEmbeds.length > 0 && !isRunning) {
+      const latestEmbed = workflowEmbeds[workflowEmbeds.length - 1];
+      if (!latestEmbed) {
+        return;
+      }
+
+      void openExternalUrl(resolveTerminalWorkflowOpenUrl(latestEmbed))
+        .then(() => {
+          pushEntry('result', 'Ouverture du workflow', latestEmbed.targetUrl ?? latestEmbed.url);
+          setActiveOperationText(`Workflow ouvert : ${latestEmbed.targetUrl ?? latestEmbed.url}`);
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          pushEntry('interrupt', 'Ouverture echouee', message);
+          setActiveOperationText(`Echec ouverture workflow : ${message}`);
+        });
       return;
     }
 
@@ -714,6 +760,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
 
   const idleIcon = currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
   const statusText = isRunning ? activeOperationText : phaseStatusText;
+  const latestWorkflowTarget = workflowEmbeds.length > 0 ? (workflowEmbeds[workflowEmbeds.length - 1]?.targetUrl ?? workflowEmbeds[workflowEmbeds.length - 1]?.url) : undefined;
   const mainTitle = historyOpen
     ? 'Historique complet'
     : pendingRequiredActions.length > 0
@@ -773,7 +820,14 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
             ) : (
               <Text color={stateColor(currentState)}>{idleIcon} {statusText}</Text>
             )}
-            <Text dimColor>{historyOpen ? 'Mode historique actif. Reviens avec Ctrl+Y ou Esc.' : 'Ctrl+Y pour basculer vers le transcript complet.'}</Text>
+            <Text dimColor>
+              {historyOpen
+                ? 'Mode historique actif. Reviens avec Ctrl+Y ou Esc.'
+                : latestWorkflowTarget
+                  ? `Ctrl+Y pour le transcript complet. Appuie sur Ctrl+O ou tape /open pour ouvrir le dernier workflow.`
+                  : 'Ctrl+Y pour basculer vers le transcript complet.'}
+            </Text>
+            {latestWorkflowTarget ? <Text dimColor>Dernier workflow: {latestWorkflowTarget}</Text> : null}
           </Box>
           <Box>
             <Text color="green">› </Text>
@@ -793,6 +847,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
 }
 
 export async function runInteractiveGateway(agent: YagrAgent, options: YagrRunOptions): Promise<void> {
+  await ensureLocalWorkflowOpenBridgeRunning();
   const ink = render(<YagrInteractiveApp agent={agent} options={options} />, {
     exitOnCtrlC: false,
   });

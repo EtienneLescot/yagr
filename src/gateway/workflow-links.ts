@@ -1,13 +1,11 @@
 import { YagrConfigService } from '../config/yagr-config-service.js';
+import { buildManagedN8nWorkflowOpenDataUrl } from '../n8n-local/browser-auth.js';
 import { ManagedN8nOwnerCredentialService } from '../n8n-local/owner-credentials.js';
-
-const DEFAULT_WEBUI_HOST = '127.0.0.1';
-const DEFAULT_WEBUI_PORT = 3789;
 
 export interface WorkflowOpenLink {
   openUrl: string;
   targetUrl: string;
-  via: 'direct' | 'webui-auth';
+  via: 'direct' | 'self-contained-auth';
 }
 
 export function resolveWorkflowOpenLink(
@@ -26,11 +24,10 @@ export function resolveWorkflowOpenLink(
     };
   }
 
-  const configService = options.configService ?? new YagrConfigService();
+  void (options.configService ?? new YagrConfigService());
   const ownerCredentialService = options.ownerCredentialService ?? new ManagedN8nOwnerCredentialService();
   const ownerCredentials = ownerCredentialService.get(targetUrl.origin);
-  const enabledSurfaces = configService.getEnabledGatewaySurfaces();
-  if (!ownerCredentials || !enabledSurfaces.includes('webui')) {
+  if (!ownerCredentials) {
     return {
       openUrl: targetUrl.toString(),
       targetUrl: targetUrl.toString(),
@@ -38,11 +35,15 @@ export function resolveWorkflowOpenLink(
     };
   }
 
-  const webUiBaseUrl = getConfiguredWebUiBaseUrl(configService);
+  const loginUrl = new URL('/rest/login', targetUrl.origin).toString();
   return {
-    openUrl: `${webUiBaseUrl}/open/n8n-workflow?target=${encodeURIComponent(targetUrl.toString())}`,
+    openUrl: buildManagedN8nWorkflowOpenDataUrl({
+      targetUrl: targetUrl.toString(),
+      loginUrl,
+      credentials: ownerCredentials,
+    }),
     targetUrl: targetUrl.toString(),
-    via: 'webui-auth',
+    via: 'self-contained-auth',
   };
 }
 
@@ -52,24 +53,4 @@ function normalizeUrl(value: string): URL | undefined {
   } catch {
     return undefined;
   }
-}
-
-function getConfiguredWebUiBaseUrl(configService: YagrConfigService): string {
-  const config = configService.getLocalConfig();
-  const host = sanitizeHost(config.gateway?.webui?.host);
-  const port = sanitizePort(config.gateway?.webui?.port);
-  return `http://${host}:${port}`;
-}
-
-function sanitizeHost(value: string | undefined): string {
-  const trimmed = value?.trim();
-  return trimmed || DEFAULT_WEBUI_HOST;
-}
-
-function sanitizePort(value: number | undefined): number {
-  if (!Number.isInteger(value) || Number(value) <= 0 || Number(value) > 65535) {
-    return DEFAULT_WEBUI_PORT;
-  }
-
-  return Number(value);
 }

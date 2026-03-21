@@ -625,11 +625,14 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
 
 function WorkflowHeader({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
   const openWorkflow = React.useCallback(async () => {
-    const popup = window.open(embed.url, '_blank');
+    const resolvedUrl = embed.targetUrl
+      ? `/open/n8n-workflow?target=${encodeURIComponent(embed.targetUrl)}`
+      : embed.url;
+    const popup = window.open(resolvedUrl, '_blank');
     if (!popup) {
-      window.location.href = embed.url;
+      window.location.href = resolvedUrl;
     }
-  }, [embed.url]);
+  }, [embed.targetUrl, embed.url]);
 
   return (
     <div className="workflowCard">

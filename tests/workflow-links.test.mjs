@@ -27,22 +27,14 @@ test('resolveWorkflowOpenLink returns direct URL when no managed local credentia
   }
 });
 
-test('resolveWorkflowOpenLink uses the webui auth bridge for managed local n8n when webui is enabled', () => {
+test('resolveWorkflowOpenLink uses a self-contained auth bridge for managed local n8n', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-workflow-link-'));
   const previousHome = process.env.YAGR_HOME;
   process.env.YAGR_HOME = tempHome;
 
   try {
     const configService = new YagrConfigService();
-    configService.saveLocalConfig({
-      gateway: {
-        enabledSurfaces: ['webui'],
-        webui: {
-          host: '127.0.0.1',
-          port: 4799,
-        },
-      },
-    });
+    configService.saveLocalConfig({});
 
     const ownerCredentialService = new ManagedN8nOwnerCredentialService();
     ownerCredentialService.save({
@@ -59,12 +51,10 @@ test('resolveWorkflowOpenLink uses the webui auth bridge for managed local n8n w
       ownerCredentialService,
     });
 
-    assert.equal(result.via, 'webui-auth');
+    assert.equal(result.via, 'self-contained-auth');
     assert.equal(result.targetUrl, 'http://127.0.0.1:5678/workflow/abc');
-    assert.equal(
-      result.openUrl,
-      'http://127.0.0.1:4799/open/n8n-workflow?target=http%3A%2F%2F127.0.0.1%3A5678%2Fworkflow%2Fabc',
-    );
+    assert.match(result.openUrl, /^data:text\/html;charset=utf-8,/);
+    assert.match(decodeURIComponent(result.openUrl), /http:\/\/127\.0\.0\.1:5678\/workflow\/abc/);
   } finally {
     if (previousHome === undefined) delete process.env.YAGR_HOME;
     else process.env.YAGR_HOME = previousHome;

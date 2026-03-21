@@ -153,6 +153,14 @@ export function buildManagedN8nWorkflowOpenPage(input: {
 </html>`;
 }
 
+export function buildManagedN8nWorkflowOpenDataUrl(input: {
+  targetUrl: string;
+  loginUrl: string;
+  credentials: ManagedN8nOwnerCredentials;
+}): string {
+  return `data:text/html;charset=utf-8,${encodeURIComponent(buildManagedN8nWorkflowOpenPage(input))}`;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
