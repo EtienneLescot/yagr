@@ -16,8 +16,9 @@ test('parseNodeMajorVersion handles v-prefixed and raw versions', () => {
 });
 
 test('isSupportedDirectRuntimeNodeVersion accepts supported majors only', () => {
-  assert.equal(isSupportedDirectRuntimeNodeVersion('v20.19.0'), true);
-  assert.equal(isSupportedDirectRuntimeNodeVersion('v22.2.0'), true);
+  assert.equal(isSupportedDirectRuntimeNodeVersion('v20.19.0'), false);
+  assert.equal(isSupportedDirectRuntimeNodeVersion('v22.2.0'), false);
+  assert.equal(isSupportedDirectRuntimeNodeVersion('v22.16.0'), true);
   assert.equal(isSupportedDirectRuntimeNodeVersion('v24.0.1'), true);
   assert.equal(isSupportedDirectRuntimeNodeVersion('v18.20.0'), false);
   assert.equal(isSupportedDirectRuntimeNodeVersion(undefined), false);
@@ -29,7 +30,7 @@ test('chooseLocalN8nBootstrapStrategy prefers docker over direct runtime', () =>
     'docker',
   );
   assert.equal(
-    chooseLocalN8nBootstrapStrategy({ dockerAvailable: false, nodeVersion: 'v22.11.0' }),
+    chooseLocalN8nBootstrapStrategy({ dockerAvailable: false, nodeVersion: 'v22.16.0' }),
     'direct',
   );
   assert.equal(
@@ -61,7 +62,7 @@ test('buildLocalN8nBootstrapAssessment falls back to direct when Docker is insta
       reachable: false,
       statusMessage: 'Docker is not started. Please start Docker and try again.',
     },
-    node: { available: true, version: 'v22.11.0' },
+    node: { available: true, version: 'v22.16.0' },
     preferredPort: 5678,
   });
 
@@ -75,7 +76,7 @@ test('formatLocalN8nBootstrapAssessment renders a readable report', () => {
     docker: { available: true, version: 'Docker' },
     node: {
       available: true,
-      version: 'v22.11.0',
+      version: 'v22.16.0',
       supportedForDirectRuntime: true,
       majorVersion: 22,
     },
