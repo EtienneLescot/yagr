@@ -18,7 +18,11 @@ export async function ensureLocalWorkflowOpenBridgeRunning(): Promise<void> {
       void handleRequest(request, response);
     });
 
-    nextServer.once('error', reject);
+    nextServer.once('error', (error) => {
+      serverPromise = undefined;
+      server = undefined;
+      reject(error);
+    });
     nextServer.listen(DEFAULT_LOCAL_BRIDGE_PORT, DEFAULT_LOCAL_BRIDGE_HOST, () => {
       server = nextServer;
       resolve();

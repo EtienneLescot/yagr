@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { YagrConfigService } from '../dist/config/yagr-config-service.js';
+import { YagrN8nConfigService } from '../dist/config/n8n-config-service.js';
 import { ManagedN8nOwnerCredentialService } from '../dist/n8n-local/owner-credentials.js';
 import { resolveWorkflowOpenLink } from '../dist/gateway/workflow-links.js';
 
@@ -33,8 +33,8 @@ test('resolveWorkflowOpenLink uses a self-contained auth bridge for managed loca
   process.env.YAGR_HOME = tempHome;
 
   try {
-    const configService = new YagrConfigService();
-    configService.saveLocalConfig({});
+    const n8nConfigService = new YagrN8nConfigService();
+    n8nConfigService.saveLocalConfig({});
 
     const ownerCredentialService = new ManagedN8nOwnerCredentialService();
     ownerCredentialService.save({
@@ -47,7 +47,7 @@ test('resolveWorkflowOpenLink uses a self-contained auth bridge for managed loca
     });
 
     const result = resolveWorkflowOpenLink('http://127.0.0.1:5678/workflow/abc', {
-      configService,
+      n8nConfigService,
       ownerCredentialService,
     });
 
@@ -55,6 +55,44 @@ test('resolveWorkflowOpenLink uses a self-contained auth bridge for managed loca
     assert.equal(result.targetUrl, 'http://127.0.0.1:5678/workflow/abc');
     assert.match(result.openUrl, /^data:text\/html;charset=utf-8,/);
     assert.match(decodeURIComponent(result.openUrl), /http:\/\/127\.0\.0\.1:5678\/workflow\/abc/);
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('resolveWorkflowOpenLink falls back to direct when the workflow origin does not match the configured n8n host', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-workflow-link-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const n8nConfigService = new YagrN8nConfigService();
+    n8nConfigService.saveLocalConfig({
+      host: 'http://127.0.0.1:5678',
+    });
+
+    const ownerCredentialService = new ManagedN8nOwnerCredentialService();
+    ownerCredentialService.save({
+      url: 'http://127.0.0.1:5678',
+      email: 'owner@local.yagr',
+      password: 'Password1A',
+      firstName: 'Yagr',
+      lastName: 'Local',
+      createdAt: new Date().toISOString(),
+    });
+
+    const result = resolveWorkflowOpenLink('http://127.0.0.1:5679/workflow/abc', {
+      n8nConfigService,
+      ownerCredentialService,
+    });
+
+    assert.deepEqual(result, {
+      openUrl: 'http://127.0.0.1:5679/workflow/abc',
+      targetUrl: 'http://127.0.0.1:5679/workflow/abc',
+      via: 'direct',
+    });
   } finally {
     if (previousHome === undefined) delete process.env.YAGR_HOME;
     else process.env.YAGR_HOME = previousHome;

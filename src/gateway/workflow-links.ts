@@ -1,4 +1,4 @@
-import { YagrConfigService } from '../config/yagr-config-service.js';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { buildManagedN8nWorkflowOpenDataUrl } from '../n8n-local/browser-auth.js';
 import { ManagedN8nOwnerCredentialService } from '../n8n-local/owner-credentials.js';
 
@@ -11,7 +11,7 @@ export interface WorkflowOpenLink {
 export function resolveWorkflowOpenLink(
   workflowUrl: string,
   options: {
-    configService?: YagrConfigService;
+    n8nConfigService?: YagrN8nConfigService;
     ownerCredentialService?: ManagedN8nOwnerCredentialService;
   } = {},
 ): WorkflowOpenLink {
@@ -24,7 +24,19 @@ export function resolveWorkflowOpenLink(
     };
   }
 
-  void (options.configService ?? new YagrConfigService());
+  const n8nConfigService = options.n8nConfigService ?? new YagrN8nConfigService();
+  const configuredHost = n8nConfigService.getLocalConfig().host;
+  if (configuredHost) {
+    const configuredOrigin = normalizeUrl(configuredHost)?.origin;
+    if (configuredOrigin && configuredOrigin !== targetUrl.origin) {
+      return {
+        openUrl: targetUrl.toString(),
+        targetUrl: targetUrl.toString(),
+        via: 'direct',
+      };
+    }
+  }
+
   const ownerCredentialService = options.ownerCredentialService ?? new ManagedN8nOwnerCredentialService();
   const ownerCredentials = ownerCredentialService.get(targetUrl.origin);
   if (!ownerCredentials) {

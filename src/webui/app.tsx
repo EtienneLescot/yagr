@@ -628,7 +628,10 @@ function WorkflowHeader({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
     const resolvedUrl = embed.targetUrl
       ? `/open/n8n-workflow?target=${encodeURIComponent(embed.targetUrl)}`
       : embed.url;
-    const popup = window.open(resolvedUrl, '_blank');
+    const popup = window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
+    if (popup) {
+      popup.opener = null;
+    }
     if (!popup) {
       window.location.href = resolvedUrl;
     }

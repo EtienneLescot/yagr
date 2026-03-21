@@ -261,7 +261,12 @@ class WebUiGateway implements Gateway {
       if (providerRequiresApiKey(provider) && !apiKey) {
         throw new Error(`No API key available for ${provider}. Save one first.`);
       }
-      const baseUrl = body.baseUrl ? String(body.baseUrl) : this.configService.getLocalConfig().baseUrl;
+      const configuredLlm = this.configService.getLocalConfig();
+      const baseUrl = body.baseUrl
+        ? String(body.baseUrl)
+        : configuredLlm.provider === provider
+          ? configuredLlm.baseUrl
+          : undefined;
 
       this.sendJson(response, 200, {
         models: await fetchAvailableModels(provider, apiKey, baseUrl),

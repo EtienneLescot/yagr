@@ -103,12 +103,12 @@ function materializeDataUrlAsLocalFile(workflowId: string, dataUrl: string): str
   const paths = getYagrPaths();
   ensureYagrHomeDir();
   const dir = path.join(paths.homeDir, 'open-links');
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
   const encoded = dataUrl.split(',', 2)[1] ?? '';
   const html = decodeURIComponent(encoded);
   const filePath = path.join(dir, `${sanitizeFileName(workflowId)}.html`);
-  fs.writeFileSync(filePath, html);
+  fs.writeFileSync(filePath, html, { mode: 0o600 });
   return pathToFileURL(filePath).toString();
 }
 

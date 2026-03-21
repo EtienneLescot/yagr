@@ -25,6 +25,7 @@ import {
   stopManagedDockerN8n,
 } from './n8n-local/docker-manager.js';
 import {
+  getManagedDirectN8nStatus,
   getManagedDirectN8nLogs,
   installManagedDirectN8n,
   startManagedDirectN8n,
@@ -742,7 +743,10 @@ async function main(): Promise<void> {
     }
 
     if (args.command === 'n8n-local-status') {
-      const status = await getManagedDockerN8nStatus();
+      const current = readManagedN8nState();
+      const status = current?.strategy === 'direct'
+        ? await getManagedDirectN8nStatus()
+        : await getManagedDockerN8nStatus();
       process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
       return;
     }
