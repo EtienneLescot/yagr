@@ -446,6 +446,11 @@ function SetupWizard({ callbacks, onDone }: {
           setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: bootstrap.apiKey });
           return;
         }
+        const existing = callbacks.getN8nDefaults(state.url).apiKey;
+        if (existing) {
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: existing });
+          return;
+        }
         setPhase({
           kind: 'n8n-local-ready',
           url: state.url,
