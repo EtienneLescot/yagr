@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import { DEFAULT_N8N_PORT, inspectLocalN8nBootstrap } from './detect.js';
+import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import {
   buildManagedN8nState,
   ensureManagedN8nDirs,
@@ -10,6 +12,7 @@ import {
 } from './state.js';
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 180_000;
+const DEFAULT_STARTUP_TIMEOUT_MS = 600_000;
 const DEFAULT_EDITOR_TIMEOUT_MS = 90_000;
 const N8N_PACKAGE_SPEC = 'n8n@latest';
 
@@ -20,6 +23,8 @@ export async function installManagedDirectN8n(options: { port?: number } = {}): 
   }
 
   const paths = ensureManagedN8nDirs();
+  const npmCacheDir = path.join(paths.rootDir, 'npm-cache');
+  fs.mkdirSync(npmCacheDir, { recursive: true });
   const existingState = readManagedN8nState();
   const port = options.port ?? existingState?.port ?? assessment.preferredPort ?? DEFAULT_N8N_PORT;
   const state = updateManagedN8nState(() => buildManagedN8nState({
@@ -31,7 +36,7 @@ export async function installManagedDirectN8n(options: { port?: number } = {}): 
     logFile: paths.logFile,
   }));
 
-  const child = spawn('npm', [
+  const child = spawn(resolvePackageManagerCommand('npm'), [
     'exec',
     '--yes',
     N8N_PACKAGE_SPEC,
@@ -41,6 +46,7 @@ export async function installManagedDirectN8n(options: { port?: number } = {}): 
     cwd: paths.rootDir,
     detached: true,
     stdio: ['ignore', fs.openSync(paths.logFile, 'a'), fs.openSync(paths.logFile, 'a')],
+    ...resolvePackageManagerSpawnOptions(),
     env: {
       ...process.env,
       N8N_PORT: String(port),
@@ -53,12 +59,13 @@ export async function installManagedDirectN8n(options: { port?: number } = {}): 
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'true',
       GENERIC_TIMEZONE: 'UTC',
       TZ: 'UTC',
+      npm_config_cache: npmCacheDir,
+      npm_config_update_notifier: 'false',
     },
   });
-
+  const startupWatch = waitForManagedN8nStartup(child, state.url, paths.logFile);
   child.unref();
-
-  await waitForManagedN8nHealth(state.url);
+  await startupWatch;
   await waitForManagedN8nEditorReadyBestEffort(state.url);
 
   return updateManagedN8nState((current) => ({
@@ -166,6 +173,64 @@ async function waitForManagedN8nEditorReadyBestEffort(url: string): Promise<void
   } catch {
     // best effort only
   }
+}
+
+async function waitForManagedN8nStartup(
+  child: ReturnType<typeof spawn>,
+  url: string,
+  logFile: string,
+  timeoutMs = DEFAULT_STARTUP_TIMEOUT_MS,
+): Promise<void> {
+  let childError: Error | undefined;
+  let exitCode: number | null | undefined;
+  let exitSignal: NodeJS.Signals | null | undefined;
+  let exited = false;
+
+  child.once('error', (error) => {
+    childError = error;
+  });
+
+  child.once('exit', (code, signal) => {
+    exited = true;
+    exitCode = code;
+    exitSignal = signal;
+  });
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (childError) {
+      throw new Error(`Failed to start managed n8n runtime: ${childError.message}`);
+    }
+
+    if (await isManagedN8nHealthy(url)) {
+      return;
+    }
+
+    if (exited) {
+      const logTail = readLogTail(logFile);
+      const suffix = logTail ? `\n\nRecent runtime log:\n${logTail}` : '';
+      throw new Error(`Managed n8n runtime exited before becoming healthy (code ${exitCode ?? 'null'}, signal ${exitSignal ?? 'none'}).${suffix}`);
+    }
+
+    await delay(1500);
+  }
+
+  const logTail = readLogTail(logFile);
+  const suffix = logTail ? `\n\nRecent runtime log:\n${logTail}` : '';
+  throw new Error(`Timed out waiting for ${url} to become healthy after ${Math.round(timeoutMs / 1000)}s.${suffix}`);
+}
+
+function readLogTail(logFile: string, maxChars = 4000): string {
+  if (!fs.existsSync(logFile)) {
+    return '';
+  }
+
+  const content = fs.readFileSync(logFile, 'utf-8').trim();
+  if (!content) {
+    return '';
+  }
+
+  return content.slice(-maxChars);
 }
 
 async function delay(ms: number): Promise<void> {

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
+import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import {
   ensureGitHubCopilotSession,
   fetchGitHubCopilotModels,
@@ -396,9 +397,10 @@ function startManagedProxy(provider: YagrModelProvider, baseUrl: string): ProxyR
   const logPath = path.join(logDir, `${provider}.log`);
   const logFd = fs.openSync(logPath, 'a');
   const args = ['--yes', '--package', managed.packageName, managed.executable, ...(managed.args ?? [])];
-  const child = spawn('npx', args, {
+  const child = spawn(resolvePackageManagerCommand('npx'), args, {
     detached: true,
     stdio: ['ignore', logFd, logFd],
+    ...resolvePackageManagerSpawnOptions(),
     env: process.env,
   });
 
@@ -408,7 +410,7 @@ function startManagedProxy(provider: YagrModelProvider, baseUrl: string): ProxyR
   const entry: ProxyRuntimeEntry = {
     provider,
     pid: child.pid,
-    command: `npx ${args.join(' ')}`,
+    command: `${resolvePackageManagerCommand('npx')} ${args.join(' ')}`,
     baseUrl,
     logPath,
     startedAt: new Date().toISOString(),
