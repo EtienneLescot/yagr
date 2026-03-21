@@ -32,19 +32,21 @@ import type {
   YagrToolEvent,
 } from '../types.js';
 import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
+import { fetchAvailableModels } from '../llm/provider-discovery.js';
+import {
+  getDefaultBaseUrlForProvider,
+  isProviderConfigured,
+  providerRequiresApiKey,
+  YAGR_MODEL_PROVIDERS,
+} from '../llm/provider-registry.js';
+import { buildManagedN8nWorkflowOpenPage } from '../n8n-local/browser-auth.js';
+import { ManagedN8nOwnerCredentialService } from '../n8n-local/owner-credentials.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 3789;
-const VALID_PROVIDERS: YagrModelProvider[] = [
-  'anthropic',
-  'openai',
-  'google',
-  'groq',
-  'mistral',
-  'openrouter',
-];
+const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
 const ACTIVE_WEBUI_SURFACES = ['webui'] as const;
 
 const WEB_UI_HTML = `<!doctype html>
@@ -81,7 +83,7 @@ type WebUiChatStreamEvent =
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
-  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; title?: string; diagram?: string };
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string };
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -256,13 +258,14 @@ class WebUiGateway implements Gateway {
     if (method === 'POST' && url.pathname === '/api/llm/models') {
       const body = await this.readJson(request);
       const provider = this.assertProvider(String(body.provider ?? ''));
-      const apiKey = body.apiKey ? String(body.apiKey) : this.configService.getApiKey(provider);
-      if (!apiKey) {
+      const apiKey = body.apiKey !== undefined ? String(body.apiKey) : this.configService.getApiKey(provider);
+      if (providerRequiresApiKey(provider) && !apiKey) {
         throw new Error(`No API key available for ${provider}. Save one first.`);
       }
+      const baseUrl = body.baseUrl ? String(body.baseUrl) : this.configService.getLocalConfig().baseUrl;
 
       this.sendJson(response, 200, {
-        models: await fetchAvailableModels(provider, apiKey),
+        models: await fetchAvailableModels(provider, apiKey, baseUrl),
       });
       return;
     }
@@ -386,6 +389,18 @@ class WebUiGateway implements Gateway {
       return;
     }
 
+    if (method === 'GET' && url.pathname === '/api/n8n/workflow-session') {
+      const target = String(url.searchParams.get('target') ?? '').trim();
+      await this.sendManagedN8nWorkflowSession(response, target);
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/open/n8n-workflow') {
+      const target = String(url.searchParams.get('target') ?? '').trim();
+      await this.openManagedN8nWorkflow(response, target);
+      return;
+    }
+
     this.sendJson(response, 404, { error: 'Not found' });
   }
 
@@ -404,12 +419,10 @@ class WebUiGateway implements Gateway {
     let availableModels: string[] = [];
     if (yagrConfig.provider) {
       const apiKey = this.configService.getApiKey(yagrConfig.provider);
-      if (apiKey) {
-        try {
-          availableModels = await fetchAvailableModels(yagrConfig.provider, apiKey);
-        } catch {
-          availableModels = [];
-        }
+      try {
+        availableModels = await fetchAvailableModels(yagrConfig.provider, apiKey, yagrConfig.baseUrl);
+      } catch {
+        availableModels = [];
       }
     }
 
@@ -461,6 +474,101 @@ class WebUiGateway implements Gateway {
     }
 
     return client.getProjects();
+  }
+
+  private async sendManagedN8nWorkflowSession(response: ServerResponse, target: string): Promise<void> {
+    const session = await this.resolveManagedN8nWorkflowSession(target);
+    if ('error' in session) {
+      this.sendJson(response, session.statusCode, { error: session.error });
+      return;
+    }
+
+    this.sendJson(response, 200, session.payload);
+  }
+
+  private async openManagedN8nWorkflow(response: ServerResponse, target: string): Promise<void> {
+    const session = await this.resolveManagedN8nWorkflowSession(target);
+    if ('error' in session) {
+      this.sendText(response, session.statusCode, session.error, 'text/plain; charset=utf-8');
+      return;
+    }
+
+    if (session.payload.mode === 'direct') {
+      response.writeHead(302, { Location: session.payload.targetUrl });
+      response.end();
+      return;
+    }
+
+    this.sendText(response, 200, session.payload.fallbackPage, 'text/html; charset=utf-8');
+  }
+
+  private async resolveManagedN8nWorkflowSession(target: string): Promise<
+    | { statusCode: number; error: string }
+    | {
+        payload:
+          | { mode: 'direct'; targetUrl: string }
+          | {
+              mode: 'managed';
+              targetUrl: string;
+              loginUrl: string;
+              credentials: {
+                email: string;
+                password: string;
+                firstName: string;
+                lastName: string;
+                createdAt: string;
+                url: string;
+              };
+              fallbackPage: string;
+            };
+      }
+  > {
+    if (!target) {
+      return { statusCode: 400, error: 'Workflow target URL is required.' };
+    }
+
+    const n8nConfig = new YagrN8nConfigService().getLocalConfig();
+    if (!n8nConfig.host) {
+      return { statusCode: 400, error: 'n8n is not configured yet.' };
+    }
+
+    let targetUrl: URL;
+    let configuredHost: URL;
+    try {
+      targetUrl = new URL(target);
+      configuredHost = new URL(n8nConfig.host);
+    } catch {
+      return { statusCode: 400, error: 'Workflow target URL is invalid.' };
+    }
+
+    if (targetUrl.origin !== configuredHost.origin) {
+      return { statusCode: 400, error: 'Workflow target URL does not match the configured n8n host.' };
+    }
+
+    const ownerCredentials = new ManagedN8nOwnerCredentialService().get(configuredHost.origin);
+    if (!ownerCredentials) {
+      return {
+        payload: {
+          mode: 'direct',
+          targetUrl: targetUrl.toString(),
+        },
+      };
+    }
+
+    const loginUrl = new URL('/rest/login', configuredHost.origin).toString();
+    return {
+      payload: {
+        mode: 'managed',
+        targetUrl: targetUrl.toString(),
+        loginUrl,
+        credentials: ownerCredentials,
+        fallbackPage: buildManagedN8nWorkflowOpenPage({
+          targetUrl: targetUrl.toString(),
+          loginUrl,
+          credentials: ownerCredentials,
+        }),
+      },
+    };
   }
 
   private async saveN8nConfig(input: { host: string; apiKey?: string; projectId: string; syncFolder: string }): Promise<string | undefined> {
@@ -665,6 +773,7 @@ class WebUiGateway implements Gateway {
           kind: event.kind,
           workflowId: event.workflowId,
           url: event.url,
+          targetUrl: event.targetUrl,
           title: event.title,
           diagram: event.diagram,
         });
@@ -752,46 +861,6 @@ class WebUiGateway implements Gateway {
       response.end();
     }
   }
-}
-
-async function fetchAvailableModels(provider: YagrModelProvider, apiKey: string): Promise<string[]> {
-  const endpoints: Partial<Record<YagrModelProvider, { url: string; map: (data: any) => string[] }>> = {
-    openrouter: {
-      url: 'https://openrouter.ai/api/v1/models',
-      map: (data) => data.data?.map((model: { id: string }) => model.id) ?? [],
-    },
-    openai: {
-      url: 'https://api.openai.com/v1/models',
-      map: (data) => data.data?.map((model: { id: string }) => model.id) ?? [],
-    },
-    groq: {
-      url: 'https://api.groq.com/openai/v1/models',
-      map: (data) => data.data?.map((model: { id: string }) => model.id) ?? [],
-    },
-    mistral: {
-      url: 'https://api.mistral.ai/v1/models',
-      map: (data) => data.data?.map((model: { id: string }) => model.id) ?? [],
-    },
-  };
-
-  const endpoint = endpoints[provider];
-  if (!endpoint) {
-    return [];
-  }
-
-  const response = await fetch(endpoint.url, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
-  }
-
-  const payload = await response.json();
-  return endpoint.map(payload).sort((left, right) => left.localeCompare(right));
 }
 
 async function resolveTelegramBotIdentity(botToken: string): Promise<{ username: string; firstName: string }> {

@@ -1,8 +1,14 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { YagrConfigService, type YagrLocalConfig } from '../config/yagr-config-service.js';
-
-export type YagrModelProvider = 'anthropic' | 'openai' | 'google' | 'groq' | 'mistral' | 'openrouter';
+import {
+  getDefaultBaseUrlForProvider,
+  getDefaultModelForProvider,
+  getProviderDefinition,
+  YAGR_MODEL_PROVIDERS,
+  type YagrModelProvider,
+} from './provider-registry.js';
+export type { YagrModelProvider } from './provider-registry.js';
 
 export interface YagrModelContextProfile {
   provider: YagrModelProvider;
@@ -32,9 +38,8 @@ interface YagrLanguageModelConfigStore {
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-3-5-sonnet-latest';
 const DEFAULT_OPENAI_MODEL = 'gpt-4o';
-const DEFAULT_OPENROUTER_MODEL = 'anthropic/claude-3.5-sonnet';
 const DEFAULT_RESERVED_OUTPUT_TOKENS = 8_192;
-const KNOWN_MODEL_PROVIDERS: YagrModelProvider[] = ['anthropic', 'openai', 'google', 'groq', 'mistral', 'openrouter'];
+const KNOWN_MODEL_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
 
 function inferContextWindowTokens(provider: YagrModelProvider, modelName: string): number {
   const normalized = modelName.toLowerCase();
@@ -112,15 +117,15 @@ export function resolveModelName(
     return localConfig.model;
   }
 
-  switch (provider) {
-    case 'openrouter': return DEFAULT_OPENROUTER_MODEL;
-    case 'anthropic': return DEFAULT_ANTHROPIC_MODEL;
-    case 'openai': return DEFAULT_OPENAI_MODEL;
-    case 'google': return 'gemini-1.5-pro-latest';
-    case 'groq': return 'llama-3.1-70b-versatile';
-    case 'mistral': return 'mistral-large-latest';
-    default: return DEFAULT_OPENAI_MODEL;
+  if (provider === 'anthropic') {
+    return DEFAULT_ANTHROPIC_MODEL;
   }
+
+  if (provider === 'openai') {
+    return DEFAULT_OPENAI_MODEL;
+  }
+
+  return getDefaultModelForProvider(provider);
 }
 
 export function resolveLanguageModelConfig(
@@ -140,17 +145,8 @@ export function resolveLanguageModelConfig(
 export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
   const resolvedConfig = resolveLanguageModelConfig(config);
   const { provider, model: modelName, apiKey, baseUrl: baseURL } = resolvedConfig;
+  const definition = getProviderDefinition(provider);
   const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
-
-  if (provider === 'openrouter') {
-    return createOpenAI({
-      apiKey,
-      baseURL: baseURL || 'https://openrouter.ai/api/v1',
-      headers,
-      name: 'openrouter',
-      compatibility: 'compatible',
-    })(modelName);
-  }
 
   if (provider === 'anthropic') {
     return createAnthropic({
@@ -159,11 +155,10 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
     })(modelName);
   }
 
-  // Default to OpenAI-compatible for others if possible, or specialized providers
-  if (provider === 'openai' || provider === 'groq' || provider === 'mistral') {
+  if (definition.usesOpenAiCompatibleApi) {
     return createOpenAI({
       apiKey,
-      baseURL,
+      baseURL: baseURL || definition.defaultBaseUrl,
       headers,
       name: provider,
       compatibility: 'compatible',
@@ -186,13 +181,5 @@ function getBaseUrlForProvider(
 ): string | undefined {
   const localConfig = configStore.getLocalConfig();
   const configuredBaseUrl = localConfig.provider === provider ? localConfig.baseUrl : undefined;
-
-  switch (provider) {
-    case 'openai': return configuredBaseUrl;
-    case 'anthropic': return configuredBaseUrl;
-    case 'openrouter': return 'https://openrouter.ai/api/v1';
-    case 'groq': return 'https://api.groq.com/openai/v1';
-    case 'mistral': return 'https://api.mistral.ai/v1';
-    default: return undefined;
-  }
+  return configuredBaseUrl || getDefaultBaseUrlForProvider(provider);
 }

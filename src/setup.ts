@@ -13,19 +13,20 @@ import { getGatewaySupervisorStatus } from './gateway/manager.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
 import type { GatewaySurface } from './gateway/types.js';
 import { resolveLanguageModelConfig, resolveModelName, resolveModelProvider, type YagrModelProvider } from './llm/create-language-model.js';
+import { fetchAvailableModels } from './llm/provider-discovery.js';
+import {
+  getDefaultBaseUrlForProvider,
+  isProviderConfigured,
+  providerNeedsBaseUrlInput,
+  YAGR_MODEL_PROVIDERS,
+} from './llm/provider-registry.js';
+import { bootstrapManagedLocalN8n } from './n8n-local/bootstrap.js';
 import { installManagedDockerN8n } from './n8n-local/docker-manager.js';
 import { markManagedN8nBootstrapStage } from './n8n-local/state.js';
 import { runSetupWizard, type SetupCallbacks } from './setup/setup-wizard.js';
 import { openExternalUrl } from './system/open-external.js';
 
-const VALID_PROVIDERS: YagrModelProvider[] = [
-  'anthropic',
-  'openai',
-  'google',
-  'groq',
-  'mistral',
-  'openrouter',
-];
+const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
 
 export interface YagrSetupStatus {
   ready: boolean;
@@ -86,8 +87,7 @@ export function getYagrSetupStatus(
 
   let llmConfigured = false;
   try {
-    const resolvedConfig = resolveLanguageModelConfig({}, yagrConfigService);
-    llmConfigured = Boolean(resolvedConfig.provider && resolvedConfig.model && resolvedConfig.apiKey);
+    llmConfigured = isProviderConfigured(yagrConfig, (provider) => yagrConfigService.getApiKey(provider));
   } catch {
     llmConfigured = false;
   }
@@ -159,6 +159,14 @@ export async function runYagrSetup(
       return installManagedDockerN8n();
     },
 
+    async bootstrapManagedLocalN8n(url) {
+      const result = await bootstrapManagedLocalN8n({ url });
+      if (result.apiKey) {
+        n8nConfigService.saveApiKey(url, result.apiKey);
+      }
+      return result;
+    },
+
     async openUrl(url) {
       await openExternalUrl(url);
     },
@@ -173,23 +181,27 @@ export async function runYagrSetup(
         provider: initialProvider,
         getApiKey: (prov) => yagrConfigService.getApiKey(prov),
         getDefaultModel: (prov) => cfg.provider === prov && cfg.model ? cfg.model : undefined,
-        getBaseUrl: (prov) => cfg.provider === prov ? cfg.baseUrl : getBaseUrlForProvider(prov),
-        needsBaseUrl: (prov) => ['groq', 'mistral', 'openrouter'].includes(prov),
+        getBaseUrl: (prov) => cfg.provider === prov ? cfg.baseUrl : getDefaultBaseUrlForProvider(prov),
+        needsBaseUrl: (prov) => providerNeedsBaseUrlInput(prov),
       };
     },
 
     async fetchModels(provider, apiKey) {
-      return fetchAvailableModels(provider, apiKey);
+      const cfg = yagrConfigService.getLocalConfig();
+      const baseUrl = cfg.provider === provider ? cfg.baseUrl : getDefaultBaseUrlForProvider(provider);
+      return fetchAvailableModels(provider, apiKey, baseUrl);
     },
 
     saveLlmConfig({ provider, apiKey, model, baseUrl }) {
       const cfg = yagrConfigService.getLocalConfig();
-      yagrConfigService.saveApiKey(provider, apiKey);
+      if (apiKey) {
+        yagrConfigService.saveApiKey(provider, apiKey);
+      }
       yagrConfigService.saveLocalConfig({
         ...cfg,
         provider,
         model,
-        baseUrl: baseUrl ?? getBaseUrlForProvider(provider),
+        baseUrl: baseUrl ?? getDefaultBaseUrlForProvider(provider),
       });
     },
 
@@ -265,31 +277,6 @@ async function refreshAiContext(credentials: { host: string; apiKey: string }): 
   }
 }
 
-function getBaseUrlForProvider(provider: YagrModelProvider): string | undefined {
-  switch (provider) {
-    case 'openrouter': return 'https://openrouter.ai/api/v1';
-    case 'openai': return undefined;
-    case 'groq': return 'https://api.groq.com/openai/v1';
-    case 'mistral': return 'https://api.mistral.ai/v1';
-    case 'anthropic': return undefined;
-    default: return undefined;
-  }
-}
-
-function validateUrl(value: string): string | undefined {
-  const normalized = sanitizeInputValue(value);
-  if (!normalized) {
-    return 'A URL is required.';
-  }
-
-  try {
-    new URL(normalized);
-    return undefined;
-  } catch {
-    return 'Enter a valid URL.';
-  }
-}
-
 function sanitizeInputValue(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
@@ -297,41 +284,4 @@ function sanitizeInputValue(value: string | undefined): string | undefined {
 
   const trimmed = value.trim();
   return trimmed.replace(/^['"]|['"]$/g, '');
-}
-async function fetchAvailableModels(provider: YagrModelProvider, apiKey: string): Promise<string[]> {
-  const endpoints: Partial<Record<YagrModelProvider, {
-    url: string;
-    map: (data: Record<string, unknown>) => string[];
-  }>> = {
-    openrouter: {
-      url: 'https://openrouter.ai/api/v1/models',
-      map: (data) => (data['data'] as Array<{ id: string }> | undefined)?.map((m) => m.id) ?? [],
-    },
-    openai: {
-      url: 'https://api.openai.com/v1/models',
-      map: (data) => (data['data'] as Array<{ id: string }> | undefined)?.map((m) => m.id) ?? [],
-    },
-    groq: {
-      url: 'https://api.groq.com/openai/v1/models',
-      map: (data) => (data['data'] as Array<{ id: string }> | undefined)?.map((m) => m.id) ?? [],
-    },
-    mistral: {
-      url: 'https://api.mistral.ai/v1/models',
-      map: (data) => (data['data'] as Array<{ id: string }> | undefined)?.map((m) => m.id) ?? [],
-    },
-  };
-
-  const endpoint = endpoints[provider];
-  if (!endpoint) return [];
-
-  try {
-    const response = await fetch(endpoint.url, {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    const payload = await response.json() as Record<string, unknown>;
-    return endpoint.map(payload).sort((a, b) => a.localeCompare(b));
-  } catch {
-    return [];
-  }
 }

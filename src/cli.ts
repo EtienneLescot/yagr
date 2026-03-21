@@ -29,15 +29,9 @@ import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { readManagedN8nState } from './n8n-local/state.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrSetup } from './setup.js';
 import { openExternalUrl } from './system/open-external.js';
+import { YAGR_MODEL_PROVIDERS } from './llm/provider-registry.js';
 
-const VALID_PROVIDERS: YagrModelProvider[] = [
-  'anthropic',
-  'openai',
-  'google',
-  'groq',
-  'mistral',
-  'openrouter',
-];
+const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
 
 interface ParsedArgs {
   command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
@@ -598,7 +592,7 @@ async function main(): Promise<void> {
     if (args.command === 'n8n-local-install') {
       const state = await installManagedDockerN8n();
       process.stdout.write(`Managed local n8n installed and started at ${state.url}\n`);
-      process.stdout.write('Next: open the URL, create the owner account, generate an API key, then run `yagr setup`.\n');
+      process.stdout.write('Next: run `yagr onboard` to continue with silent bootstrap and assisted fallback.\n');
       return;
     }
 
