@@ -120,6 +120,33 @@ export async function getManagedDirectN8nLogs(): Promise<string> {
   return fs.readFileSync(state.logFile, 'utf-8');
 }
 
+export async function getManagedDirectN8nStatus(): Promise<{
+  installed: boolean;
+  running: boolean;
+  healthy: boolean;
+  url?: string;
+  state?: ManagedN8nInstanceState;
+}> {
+  const state = readManagedN8nState();
+  if (!state || state.strategy !== 'direct') {
+    return {
+      installed: false,
+      running: false,
+      healthy: false,
+    };
+  }
+
+  const running = isPidAlive(state.pid);
+  const healthy = running ? await isManagedN8nHealthy(state.url) : false;
+  return {
+    installed: true,
+    running,
+    healthy,
+    url: state.url,
+    state,
+  };
+}
+
 async function isManagedN8nHealthy(url: string): Promise<boolean> {
   try {
     const response = await fetch(`${url}/healthz`);
@@ -235,4 +262,17 @@ function readLogTail(logFile: string, maxChars = 4000): string {
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isPidAlive(pid: number | undefined): boolean {
+  if (!pid) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }

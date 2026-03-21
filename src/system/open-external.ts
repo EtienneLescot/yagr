@@ -22,7 +22,7 @@ function resolveOpenCommand(platform: NodeJS.Platform, url: string): { file: str
   }
 
   if (platform === 'win32') {
-    return { file: 'cmd', args: ['/c', 'start', '', url] };
+    return { file: 'powershell', args: ['-NoProfile', '-Command', 'Start-Process', url] };
   }
 
   return { file: 'xdg-open', args: [url] };
