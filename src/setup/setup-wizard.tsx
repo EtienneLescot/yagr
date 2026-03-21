@@ -79,6 +79,7 @@ type Phase =
   | { kind: 'n8n-local-ready'; url: string; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
+  | { kind: 'llm-openai-auth'; provider: YagrModelProvider; cursor: number }
   | { kind: 'llm-reuse-config'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
   | { kind: 'llm-reuse-apikey'; provider: YagrModelProvider; existing: string; cursor: number }
   | { kind: 'llm-apikey'; provider: YagrModelProvider; err?: string }
@@ -738,7 +739,10 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.return) {
         const provider = VALID_PROVIDERS[phase.cursor];
         const existing = llmApiKeyDraftsRef.current[provider] ?? llmDef.getApiKey(provider);
-        if (!providerRequiresApiKey(provider)) {
+        if (provider === 'openai-proxy') {
+          setTextValue('');
+          setPhase({ kind: 'llm-openai-auth', provider, cursor: 0 });
+        } else if (!providerRequiresApiKey(provider)) {
           const defModel = llmDef.getDefaultModel(provider);
           transitionToLlmModelsLoading(provider, existing ?? '', defModel);
         } else if (existing) {
@@ -747,6 +751,17 @@ function SetupWizard({ callbacks, onDone }: {
         } else {
           setPhase({ kind: 'llm-apikey', provider });
           setTextValue(llmApiKeyDraftsRef.current[provider] ?? '');
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'llm-openai-auth') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      else if (key.return) {
+        if (phase.cursor === 0) {
+          const defModel = llmDef.getDefaultModel(phase.provider);
+          transitionToLlmModelsLoading(phase.provider, '', defModel, 'Yagr will verify your ChatGPT account with Codex and may open a browser sign-in flow.');
+        } else {
+          setPhase({ kind: 'llm-provider', initial: phase.provider, cursor: VALID_PROVIDERS.indexOf(phase.provider) });
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-reuse-apikey') {
@@ -831,7 +846,7 @@ function SetupWizard({ callbacks, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-openai-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'llm-model' && phase.models.length > 0);
 
   useInput((input, key) => {
@@ -1060,6 +1075,24 @@ function SetupWizard({ callbacks, onDone }: {
               maxLineWidth={listLineWidth}
             />
             <HintBar hints={['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
+      case 'llm-openai-auth':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="Connect ChatGPT account" />
+            <Text dimColor>  Yagr uses the Codex account runtime for `openai-proxy`.</Text>
+            <Text dimColor>  It will verify your local ChatGPT sign-in and may open a browser login flow if needed.</Text>
+            <SelectList
+              options={['Continue with ChatGPT sign-in', 'Back to providers'] as const}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              getHint={(v) => v.startsWith('Continue') ? 'recommended' : undefined}
+              maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
 

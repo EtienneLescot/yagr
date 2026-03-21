@@ -1,7 +1,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { YagrConfigService, type YagrLocalConfig } from '../config/yagr-config-service.js';
-import { getOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL } from './openai-account.js';
+import { createOpenAiAccountLanguageModel, getOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL } from './openai-account.js';
 import {
   getDefaultBaseUrlForProvider,
   getDefaultModelForProvider,
@@ -163,13 +163,7 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
       throw new Error('OpenAI account session not found. Run `codex --login` or `yagr setup` again.');
     }
 
-    return createOpenAI({
-      apiKey: resolvedApiKey,
-      baseURL: baseURL || OPENAI_ACCOUNT_BASE_URL,
-      headers,
-      name: provider,
-      compatibility: 'strict',
-    }).responses(modelName);
+    return createOpenAiAccountLanguageModel(modelName);
   }
 
   if (definition.usesOpenAiCompatibleApi) {
