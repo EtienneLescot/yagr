@@ -49,3 +49,17 @@ test('resolveLanguageModelConfig returns persisted provider model and api key', 
     baseUrl: 'https://openrouter.ai/api/v1',
   });
 });
+
+test('resolveLanguageModelConfig supports proxy providers without api keys', () => {
+  const configStore = createConfigStore(
+    { provider: 'anthropic-proxy', model: 'claude-sonnet-4', baseUrl: 'http://127.0.0.1:3456/v1' },
+    {},
+  );
+
+  assert.deepEqual(resolveLanguageModelConfig({}, configStore), {
+    provider: 'anthropic-proxy',
+    model: 'claude-sonnet-4',
+    apiKey: undefined,
+    baseUrl: 'http://127.0.0.1:3456/v1',
+  });
+});

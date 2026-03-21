@@ -1,0 +1,194 @@
+import type { YagrLocalConfig } from '../config/yagr-config-service.js';
+
+export type YagrModelProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'groq'
+  | 'mistral'
+  | 'openrouter'
+  | 'openai-proxy'
+  | 'anthropic-proxy'
+  | 'google-proxy'
+  | 'copilot-proxy';
+
+export interface YagrProviderDefinition {
+  id: YagrModelProvider;
+  defaultModel: string;
+  defaultBaseUrl?: string;
+  requiresApiKey: boolean;
+  usesOpenAiCompatibleApi: boolean;
+  modelDiscovery?: {
+    buildUrl: (baseUrl?: string) => string | undefined;
+    authMode: 'bearer-optional' | 'bearer-required' | 'none';
+    mapResponse: (data: Record<string, unknown>) => string[];
+  };
+}
+
+const MODEL_LIST_MAPPER = (data: Record<string, unknown>) =>
+  (data.data as Array<{ id: string }> | undefined)?.map((model) => model.id) ?? [];
+
+export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDefinition> = {
+  anthropic: {
+    id: 'anthropic',
+    defaultModel: 'claude-3-5-sonnet-latest',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: false,
+  },
+  openai: {
+    id: 'openai',
+    defaultModel: 'gpt-4o',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: () => 'https://api.openai.com/v1/models',
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  google: {
+    id: 'google',
+    defaultModel: 'gemini-1.5-pro-latest',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: false,
+  },
+  groq: {
+    id: 'groq',
+    defaultModel: 'llama-3.1-70b-versatile',
+    defaultBaseUrl: 'https://api.groq.com/openai/v1',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: () => 'https://api.groq.com/openai/v1/models',
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  mistral: {
+    id: 'mistral',
+    defaultModel: 'mistral-large-latest',
+    defaultBaseUrl: 'https://api.mistral.ai/v1',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: () => 'https://api.mistral.ai/v1/models',
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  openrouter: {
+    id: 'openrouter',
+    defaultModel: 'anthropic/claude-3.5-sonnet',
+    defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: () => 'https://openrouter.ai/api/v1/models',
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  'openai-proxy': {
+    id: 'openai-proxy',
+    defaultModel: 'gpt-5',
+    requiresApiKey: false,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: normalizeProxyModelsUrl,
+      authMode: 'bearer-optional',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  'anthropic-proxy': {
+    id: 'anthropic-proxy',
+    defaultModel: 'claude-sonnet-4',
+    defaultBaseUrl: 'http://127.0.0.1:3456/v1',
+    requiresApiKey: false,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: normalizeProxyModelsUrl,
+      authMode: 'bearer-optional',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  'google-proxy': {
+    id: 'google-proxy',
+    defaultModel: 'gemini-2.5-pro',
+    requiresApiKey: false,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: normalizeProxyModelsUrl,
+      authMode: 'bearer-optional',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  'copilot-proxy': {
+    id: 'copilot-proxy',
+    defaultModel: 'gpt-5.2-codex',
+    defaultBaseUrl: 'http://127.0.0.1:3000/v1',
+    requiresApiKey: false,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: normalizeProxyModelsUrl,
+      authMode: 'bearer-optional',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+};
+
+export const YAGR_MODEL_PROVIDERS = Object.freeze(Object.keys(YAGR_PROVIDER_DEFINITIONS) as YagrModelProvider[]);
+
+export function getProviderDefinition(provider: YagrModelProvider): YagrProviderDefinition {
+  return YAGR_PROVIDER_DEFINITIONS[provider];
+}
+
+export function getDefaultBaseUrlForProvider(provider: YagrModelProvider): string | undefined {
+  return getProviderDefinition(provider).defaultBaseUrl;
+}
+
+export function getDefaultModelForProvider(provider: YagrModelProvider): string {
+  return getProviderDefinition(provider).defaultModel;
+}
+
+export function providerNeedsBaseUrlInput(provider: YagrModelProvider): boolean {
+  return provider.endsWith('-proxy') || provider === 'groq' || provider === 'mistral' || provider === 'openrouter';
+}
+
+export function providerRequiresApiKey(provider: YagrModelProvider): boolean {
+  return getProviderDefinition(provider).requiresApiKey;
+}
+
+export function isProviderConfigured(localConfig: YagrLocalConfig, getApiKey: (provider: YagrModelProvider) => string | undefined): boolean {
+  if (!localConfig.provider || !localConfig.model) {
+    return false;
+  }
+
+  const definition = getProviderDefinition(localConfig.provider);
+  if (definition.requiresApiKey && !getApiKey(localConfig.provider)) {
+    return false;
+  }
+
+  if (providerNeedsBaseUrlInput(localConfig.provider) && !(localConfig.baseUrl || definition.defaultBaseUrl)) {
+    return false;
+  }
+
+  return true;
+}
+
+function normalizeProxyModelsUrl(baseUrl?: string): string | undefined {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+  if (!normalizedBaseUrl) {
+    return undefined;
+  }
+
+  return normalizedBaseUrl.endsWith('/models') ? normalizedBaseUrl : `${normalizedBaseUrl}/models`;
+}
+
+function normalizeBaseUrl(baseUrl?: string): string | undefined {
+  const trimmed = baseUrl?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}

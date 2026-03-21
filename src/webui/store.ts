@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type Provider = 'anthropic' | 'openai' | 'google' | 'groq' | 'mistral' | 'openrouter';
+import type { YagrModelProvider as Provider } from '../llm/provider-registry.js';
 
 export interface ConfigSnapshot {
   setupStatus: {
@@ -40,6 +40,7 @@ export interface ChatWorkflowEmbed {
   kind: 'workflow';
   workflowId: string;
   url: string;
+  targetUrl?: string;
   title?: string;
   diagram?: string;
 }

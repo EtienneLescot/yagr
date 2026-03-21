@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { promisify } from 'node:util';
 import { DEFAULT_N8N_PORT, inspectLocalN8nBootstrap } from './detect.js';
@@ -12,6 +13,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_N8N_IMAGE = 'docker.n8n.io/n8nio/n8n:stable';
+const CONTAINER_N8N_PORT = 5678;
 const DEFAULT_HEALTH_TIMEOUT_MS = 180_000;
 const DEFAULT_EDITOR_TIMEOUT_MS = 90_000;
 
@@ -35,8 +37,9 @@ export async function installManagedDockerN8n(options: InstallManagedDockerN8nOp
   }
 
   const paths = ensureManagedN8nDirs();
-  const port = options.port ?? assessment.preferredPort ?? DEFAULT_N8N_PORT;
-  const image = options.image ?? DEFAULT_N8N_IMAGE;
+  const existingState = readManagedN8nState();
+  const port = options.port ?? existingState?.port ?? assessment.preferredPort ?? DEFAULT_N8N_PORT;
+  const image = options.image ?? existingState?.image ?? DEFAULT_N8N_IMAGE;
 
   writeDockerComposeFiles({ image, port });
   updateManagedN8nState(() => buildManagedN8nState({
@@ -132,7 +135,7 @@ export async function getManagedDockerN8nLogs(tail = 100): Promise<string> {
 function buildEnvFile(input: { image: string; port: number }): string {
   return [
     `N8N_IMAGE=${input.image}`,
-    `N8N_PORT=${input.port}`,
+    `YAGR_N8N_HOST_PORT=${input.port}`,
     'GENERIC_TIMEZONE=UTC',
     'TZ=UTC',
     'N8N_HOST=127.0.0.1',
@@ -153,7 +156,7 @@ function buildComposeFile(): string {
     '    image: ${N8N_IMAGE}',
     '    restart: unless-stopped',
     '    ports:',
-    '      - "127.0.0.1:${N8N_PORT}:5678"',
+    `      - "127.0.0.1:\${YAGR_N8N_HOST_PORT}:${CONTAINER_N8N_PORT}"`,
     '    env_file:',
     '      - .env',
     '    volumes:',
@@ -169,9 +172,14 @@ async function runDockerCompose(args: string[]): Promise<{ stdout: string; stder
     timeout: 120_000,
     env: {
       ...process.env,
-      COMPOSE_PROJECT_NAME: 'yagr-n8n',
+      COMPOSE_PROJECT_NAME: getComposeProjectName(rootDir),
     },
   });
+}
+
+function getComposeProjectName(rootDir: string): string {
+  const digest = crypto.createHash('sha1').update(rootDir).digest('hex').slice(0, 10);
+  return `yagr-n8n-${digest}`;
 }
 
 async function isComposeServiceRunning(): Promise<boolean> {

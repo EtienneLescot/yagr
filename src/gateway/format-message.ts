@@ -12,12 +12,18 @@ import type { YagrToolEvent } from '../types.js';
 export interface WorkflowEmbed {
   workflowId: string;
   url: string;
+  targetUrl?: string;
   title?: string;
 }
 
 export function extractWorkflowEmbed(event: YagrToolEvent): WorkflowEmbed | undefined {
   if (event.type === 'embed' && event.kind === 'workflow') {
-    return { workflowId: event.workflowId, url: event.url, title: event.title };
+    return {
+      workflowId: event.workflowId,
+      url: event.url,
+      targetUrl: event.targetUrl,
+      title: event.title,
+    };
   }
   return undefined;
 }
@@ -28,16 +34,25 @@ export function extractWorkflowEmbed(event: YagrToolEvent): WorkflowEmbed | unde
 
 export function formatWorkflowLinkPlain(embed: WorkflowEmbed): string {
   const label = embed.title ?? `Workflow ${embed.workflowId}`;
-  return `🔗 ${label}\n   ${embed.url}`;
+  const displayUrl = embed.targetUrl ?? embed.url;
+  if (embed.targetUrl && embed.targetUrl !== embed.url) {
+    return `🔗 ${label}\n   ${displayUrl}\n   Open via Yagr: ${embed.url}`;
+  }
+  return `🔗 ${label}\n   ${displayUrl}`;
 }
 
 export function formatWorkflowLinkHtml(embed: WorkflowEmbed): string {
   const label = escapeHtml(embed.title ?? `Workflow ${embed.workflowId}`);
-  return `🔗 <b>${label}</b>\n${embed.url}`;
+  const displayUrl = escapeHtml(embed.targetUrl ?? embed.url);
+  return `🔗 <a href="${escapeHtml(embed.url)}">${label}</a>\n${displayUrl}`;
 }
 
 export function formatWorkflowLinkTerminal(embed: WorkflowEmbed): string {
   const label = embed.title ?? `Workflow ${embed.workflowId}`;
+  const displayUrl = embed.targetUrl ?? embed.url;
+  if (embed.targetUrl && embed.targetUrl !== embed.url) {
+    return `🔗 \x1b]8;;${embed.url}\x07${label}\x1b]8;;\x07\n   ${displayUrl}`;
+  }
   return `🔗 \x1b]8;;${embed.url}\x07${label}\x1b]8;;\x07`;
 }
 

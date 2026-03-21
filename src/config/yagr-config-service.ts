@@ -2,7 +2,7 @@ import Conf from 'conf';
 import fs from 'node:fs';
 import { ensureYagrHomeDir, getYagrPaths } from './yagr-home.js';
 import type { GatewaySurface } from '../gateway/types.js';
-import type { YagrModelProvider } from '../llm/create-language-model.js';
+import type { YagrModelProvider } from '../llm/provider-registry.js';
 
 export function normalizeGatewaySurfaces(surfaces: readonly string[] | undefined): GatewaySurface[] {
   const normalized: GatewaySurface[] = [];

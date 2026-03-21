@@ -3,6 +3,7 @@ import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import type { GatewaySurface } from '../gateway/types.js';
 import type { YagrModelProvider } from '../llm/create-language-model.js';
+import { providerRequiresApiKey, YAGR_MODEL_PROVIDERS } from '../llm/provider-registry.js';
 import type { ManagedN8nInstanceState } from '../n8n-local/state.js';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -12,9 +13,7 @@ const CHECK = '✓';
 const DOT = '·';
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-const VALID_PROVIDERS: YagrModelProvider[] = [
-  'anthropic', 'openai', 'google', 'groq', 'mistral', 'openrouter',
-];
+const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
 
 const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: string }> = [
   { value: 'telegram', label: 'Telegram', hint: 'Bot-based chat gateway' },
@@ -27,6 +26,7 @@ export interface SetupCallbacks {
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
   saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string }): Promise<void>;
   installManagedLocalN8n(): Promise<ManagedN8nInstanceState>;
+  bootstrapManagedLocalN8n(url: string): Promise<{ mode: 'silent' | 'assisted'; apiKey?: string; reason?: string }>;
   openUrl(url: string): Promise<void>;
   getLlmDefaults(): {
     provider?: YagrModelProvider;
@@ -35,8 +35,8 @@ export interface SetupCallbacks {
     getBaseUrl(prov: YagrModelProvider): string | undefined;
     needsBaseUrl(prov: YagrModelProvider): boolean;
   };
-  fetchModels(provider: YagrModelProvider, apiKey: string): Promise<string[]>;
-  saveLlmConfig(p: { provider: YagrModelProvider; apiKey: string; model: string; baseUrl?: string }): void;
+  fetchModels(provider: YagrModelProvider, apiKey?: string): Promise<string[]>;
+  saveLlmConfig(p: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string }): void;
   getSurfaceDefaults(): { surfaces: GatewaySurface[] };
   getTelegramToken(): string | undefined;
   setupTelegram(token: string): Promise<{ username: string }>;
@@ -68,7 +68,7 @@ type Phase =
   | { kind: 'n8n-syncfolder'; url: string; apiKey: string; project: IProject; def: string; err?: string }
   | { kind: 'n8n-saving'; url: string; apiKey: string; project: IProject; syncFolder: string; log?: string }
   | { kind: 'n8n-local-installing' }
-  | { kind: 'n8n-local-ready'; url: string; cursor: number }
+  | { kind: 'n8n-local-ready'; url: string; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
   | { kind: 'llm-reuse-config'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
@@ -431,7 +431,18 @@ function SetupWizard({ callbacks, onDone }: {
       try {
         const state = await callbacks.installManagedLocalN8n();
         if (guard !== asyncGuard.current) return;
-        setPhase({ kind: 'n8n-local-ready', url: state.url, cursor: 0 });
+        const bootstrap = await callbacks.bootstrapManagedLocalN8n(state.url);
+        if (guard !== asyncGuard.current) return;
+        if (bootstrap.mode === 'silent' && bootstrap.apiKey) {
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: bootstrap.apiKey });
+          return;
+        }
+        setPhase({
+          kind: 'n8n-local-ready',
+          url: state.url,
+          cursor: 0,
+          note: bootstrap.reason ? `Silent bootstrap fallback: ${bootstrap.reason}` : undefined,
+        });
       } catch (err) {
         if (guard !== asyncGuard.current) return;
         setPhase({ kind: 'error', message: (err as Error).message });
@@ -566,7 +577,7 @@ function SetupWizard({ callbacks, onDone }: {
 
   const handleLlmApiKeySubmit = useCallback((provider: YagrModelProvider) => (value: string) => {
     const key = value.trim();
-    if (!key) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'llm-apikey' }>, err: 'API key is required.' })); return; }
+    if (!key && providerRequiresApiKey(provider)) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'llm-apikey' }>, err: 'API key is required.' })); return; }
     llmApiKeyDraftsRef.current[provider] = key;
     const defModel = llmDef.getDefaultModel(provider);
     setPhase({ kind: 'llm-models-loading', provider, apiKey: key, defModel });
@@ -860,6 +871,8 @@ function SetupWizard({ callbacks, onDone }: {
             <FieldLabel label="Local n8n is ready" />
             <Text dimColor>  Instance URL: {phase.url}</Text>
             <Text dimColor>  Yagr waited for the n8n editor to finish starting before showing this step.</Text>
+            <Text dimColor>  Yagr attempted a silent owner/API bootstrap first.</Text>
+            {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
             <Text dimColor>  You will first create the owner account, then create an API key for Yagr.</Text>
             <SelectList
               options={['Open n8n in the browser', 'I will open it myself'] as const}
@@ -986,6 +999,9 @@ function SetupWizard({ callbacks, onDone }: {
         return (
           <Box flexDirection="column">
             <FieldLabel label={`${phase.provider} API key`} />
+            {!providerRequiresApiKey(phase.provider) ? (
+              <Text dimColor>  Optional for local proxy providers. Leave empty if your proxy handles account auth.</Text>
+            ) : null}
             <Box marginLeft={2}>
               <WizardTextInput
                 value={textValue}
@@ -995,7 +1011,7 @@ function SetupWizard({ callbacks, onDone }: {
                 }}
                 onSubmit={handleLlmApiKeySubmit(phase.provider)}
                 mask="●"
-                placeholder="your-api-key"
+                placeholder={providerRequiresApiKey(phase.provider) ? 'your-api-key' : 'optional'}
               />
             </Box>
             {phase.err ? <ErrorLine message={phase.err} /> : null}
