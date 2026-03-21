@@ -63,3 +63,17 @@ test('resolveLanguageModelConfig supports proxy providers without api keys', () 
     baseUrl: 'http://127.0.0.1:3456/v1',
   });
 });
+
+test('resolveLanguageModelConfig supports OpenAI account-backed provider without api key', () => {
+  const configStore = createConfigStore(
+    { provider: 'openai-proxy', model: 'gpt-5.4' },
+    {},
+  );
+
+  assert.deepEqual(resolveLanguageModelConfig({}, configStore), {
+    provider: 'openai-proxy',
+    model: 'gpt-5.4',
+    apiKey: undefined,
+    baseUrl: 'https://chatgpt.com/backend-api',
+  });
+});

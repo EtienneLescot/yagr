@@ -1,4 +1,5 @@
 import type { YagrLocalConfig } from '../config/yagr-config-service.js';
+import { OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL, OPENAI_ACCOUNT_MODEL_CATALOG } from './openai-account.js';
 
 export type YagrModelProvider =
   | 'anthropic'
@@ -18,6 +19,15 @@ export interface YagrProviderDefinition {
   defaultBaseUrl?: string;
   requiresApiKey: boolean;
   usesOpenAiCompatibleApi: boolean;
+  experimental?: boolean;
+  setupHint?: string;
+  managedProxy?: {
+    packageName: string;
+    executable: string;
+    args?: string[];
+    readyTimeoutMs?: number;
+    startupNotes?: string[];
+  };
   modelDiscovery?: {
     buildUrl: (baseUrl?: string) => string | undefined;
     authMode: 'bearer-optional' | 'bearer-required' | 'none';
@@ -40,6 +50,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     defaultModel: 'gpt-4o',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: true,
+    setupHint: 'API key',
     modelDiscovery: {
       buildUrl: () => 'https://api.openai.com/v1/models',
       authMode: 'bearer-required',
@@ -90,21 +101,20 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   'openai-proxy': {
     id: 'openai-proxy',
-    defaultModel: 'gpt-5',
+    defaultModel: OPENAI_ACCOUNT_DEFAULT_MODEL,
+    defaultBaseUrl: OPENAI_ACCOUNT_BASE_URL,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
-    modelDiscovery: {
-      buildUrl: normalizeProxyModelsUrl,
-      authMode: 'bearer-optional',
-      mapResponse: MODEL_LIST_MAPPER,
-    },
+    setupHint: 'ChatGPT account',
   },
   'anthropic-proxy': {
     id: 'anthropic-proxy',
     defaultModel: 'claude-sonnet-4',
     defaultBaseUrl: 'http://127.0.0.1:3456/v1',
+    experimental: true,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
+    setupHint: 'Manual local proxy',
     modelDiscovery: {
       buildUrl: normalizeProxyModelsUrl,
       authMode: 'bearer-optional',
@@ -114,8 +124,10 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   'google-proxy': {
     id: 'google-proxy',
     defaultModel: 'gemini-2.5-pro',
+    experimental: true,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
+    setupHint: 'Account flow in progress',
     modelDiscovery: {
       buildUrl: normalizeProxyModelsUrl,
       authMode: 'bearer-optional',
@@ -126,8 +138,10 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     id: 'copilot-proxy',
     defaultModel: 'gpt-5.2-codex',
     defaultBaseUrl: 'http://127.0.0.1:3000/v1',
+    experimental: true,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
+    setupHint: 'Manual local proxy',
     modelDiscovery: {
       buildUrl: normalizeProxyModelsUrl,
       authMode: 'bearer-optional',
@@ -151,11 +165,23 @@ export function getDefaultModelForProvider(provider: YagrModelProvider): string 
 }
 
 export function providerNeedsBaseUrlInput(provider: YagrModelProvider): boolean {
+  if (provider === 'openai-proxy') {
+    return false;
+  }
+
   return provider.endsWith('-proxy') || provider === 'groq' || provider === 'mistral' || provider === 'openrouter';
 }
 
 export function providerRequiresApiKey(provider: YagrModelProvider): boolean {
   return getProviderDefinition(provider).requiresApiKey;
+}
+
+export function isExperimentalProvider(provider: YagrModelProvider): boolean {
+  return getProviderDefinition(provider).experimental === true;
+}
+
+export function getProviderSetupHint(provider: YagrModelProvider): string | undefined {
+  return getProviderDefinition(provider).setupHint;
 }
 
 export function isProviderConfigured(localConfig: YagrLocalConfig, getApiKey: (provider: YagrModelProvider) => string | undefined): boolean {
@@ -182,6 +208,14 @@ function normalizeProxyModelsUrl(baseUrl?: string): string | undefined {
   }
 
   return normalizedBaseUrl.endsWith('/models') ? normalizedBaseUrl : `${normalizedBaseUrl}/models`;
+}
+
+export function getStaticModelCatalogForProvider(provider: YagrModelProvider): string[] {
+  if (provider === 'openai-proxy') {
+    return [...OPENAI_ACCOUNT_MODEL_CATALOG];
+  }
+
+  return [];
 }
 
 function normalizeBaseUrl(baseUrl?: string): string | undefined {

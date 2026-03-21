@@ -3,7 +3,7 @@ import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import type { GatewaySurface } from '../gateway/types.js';
 import type { YagrModelProvider } from '../llm/create-language-model.js';
-import { providerRequiresApiKey, YAGR_MODEL_PROVIDERS } from '../llm/provider-registry.js';
+import { getProviderSetupHint, isExperimentalProvider, providerRequiresApiKey, YAGR_MODEL_PROVIDERS } from '../llm/provider-registry.js';
 import type { ManagedN8nInstanceState } from '../n8n-local/state.js';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -35,6 +35,14 @@ export interface SetupCallbacks {
     getBaseUrl(prov: YagrModelProvider): string | undefined;
     needsBaseUrl(prov: YagrModelProvider): boolean;
   };
+  prepareProvider(provider: YagrModelProvider, apiKey?: string): Promise<{
+    ready: boolean;
+    apiKey?: string;
+    baseUrl?: string;
+    models?: string[];
+    notes?: string[];
+    error?: string;
+  }>;
   fetchModels(provider: YagrModelProvider, apiKey?: string): Promise<string[]>;
   saveLlmConfig(p: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string }): void;
   getSurfaceDefaults(): { surfaces: GatewaySurface[] };
@@ -74,8 +82,8 @@ type Phase =
   | { kind: 'llm-reuse-config'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
   | { kind: 'llm-reuse-apikey'; provider: YagrModelProvider; existing: string; cursor: number }
   | { kind: 'llm-apikey'; provider: YagrModelProvider; err?: string }
-  | { kind: 'llm-models-loading'; provider: YagrModelProvider; apiKey: string; defModel: string | undefined }
-  | { kind: 'llm-model'; provider: YagrModelProvider; apiKey: string; models: string[]; defModel: string | undefined; cursor: number }
+  | { kind: 'llm-models-loading'; provider: YagrModelProvider; apiKey: string; defModel: string | undefined; note?: string }
+  | { kind: 'llm-model'; provider: YagrModelProvider; apiKey: string; models: string[]; defModel: string | undefined; cursor: number; note?: string }
   | { kind: 'llm-baseurl'; provider: YagrModelProvider; apiKey: string; model: string; def: string; err?: string }
   | { kind: 'surfaces'; cursor: number; selected: GatewaySurface[] }
   | { kind: 'telegram-reuse-token'; surfaces: GatewaySurface[]; existing: string; cursor: number }
@@ -400,6 +408,7 @@ function SetupWizard({ callbacks, onDone }: {
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const asyncGuard = useRef(0);
   const llmApiKeyDraftsRef = useRef<Partial<Record<YagrModelProvider, string>>>({});
+  const llmBaseUrlDraftsRef = useRef<Partial<Record<YagrModelProvider, string>>>({});
   const terminalRows = stdout?.rows ?? process.stdout.rows ?? 24;
   const terminalColumns = stdout?.columns ?? process.stdout.columns ?? 80;
   const listLineWidth = Math.max(12, terminalColumns - 6);
@@ -488,8 +497,8 @@ function SetupWizard({ callbacks, onDone }: {
         if (llmProvider) {
           const existingApiKey = llmDef.getApiKey(llmProvider);
           const existingModel = llmDef.getDefaultModel(llmProvider);
-          if (existingApiKey && existingModel) {
-            setPhase({ kind: 'llm-reuse-config', provider: llmProvider, apiKey: existingApiKey, model: existingModel, cursor: 0 });
+          if (existingModel && (existingApiKey || !providerRequiresApiKey(llmProvider))) {
+            setPhase({ kind: 'llm-reuse-config', provider: llmProvider, apiKey: existingApiKey ?? '', model: existingModel, cursor: 0 });
             return;
           }
         }
@@ -507,22 +516,45 @@ function SetupWizard({ callbacks, onDone }: {
     const guard = ++asyncGuard.current;
     void (async () => {
       try {
-        const models = await callbacks.fetchModels(phase.provider, phase.apiKey);
+        let models: string[] = [];
+        let resolvedApiKey = phase.apiKey;
+        let note = phase.note;
+
+        const prepared = await callbacks.prepareProvider(phase.provider, phase.apiKey || undefined);
+        if (guard !== asyncGuard.current) return;
+        if (prepared.ready) {
+          if (prepared.baseUrl) {
+            llmBaseUrlDraftsRef.current[phase.provider] = prepared.baseUrl;
+          }
+          if (prepared.apiKey !== undefined) {
+            resolvedApiKey = prepared.apiKey;
+            llmApiKeyDraftsRef.current[phase.provider] = prepared.apiKey;
+          }
+          if (prepared.notes && prepared.notes.length > 0) {
+            note = prepared.notes.join(' ');
+          }
+          models = prepared.models ?? [];
+        }
+
+        if (models.length === 0) {
+          models = await callbacks.fetchModels(phase.provider, resolvedApiKey || undefined);
+        }
         if (guard !== asyncGuard.current) return;
         const displayedOptions = getDisplayedModelOptions(models);
         const idx = phase.defModel ? displayedOptions.indexOf(phase.defModel) : -1;
         setPhase({
           kind: 'llm-model',
-          provider: phase.provider, apiKey: phase.apiKey,
+          provider: phase.provider, apiKey: resolvedApiKey,
           models, defModel: phase.defModel,
           cursor: idx >= 0 ? idx : 0,
+          note,
         });
       } catch {
         if (guard !== asyncGuard.current) return;
         setPhase({
           kind: 'llm-model',
           provider: phase.provider, apiKey: phase.apiKey,
-          models: [], defModel: phase.defModel, cursor: 0,
+          models: [], defModel: phase.defModel, cursor: 0, note: phase.note,
         });
       }
     })();
@@ -575,14 +607,6 @@ function SetupWizard({ callbacks, onDone }: {
     setPhase({ kind: 'n8n-saving', url, apiKey, project, syncFolder: folder });
   }, []);
 
-  const handleLlmApiKeySubmit = useCallback((provider: YagrModelProvider) => (value: string) => {
-    const key = value.trim();
-    if (!key && providerRequiresApiKey(provider)) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'llm-apikey' }>, err: 'API key is required.' })); return; }
-    llmApiKeyDraftsRef.current[provider] = key;
-    const defModel = llmDef.getDefaultModel(provider);
-    setPhase({ kind: 'llm-models-loading', provider, apiKey: key, defModel });
-  }, [llmDef]);
-
   const handleBaseUrlSubmit = useCallback((provider: YagrModelProvider, apiKey: string, model: string) => (value: string) => {
     const url = value.trim();
     if (url) {
@@ -598,6 +622,32 @@ function SetupWizard({ callbacks, onDone }: {
     if (!token || !token.includes(':')) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'telegram-token' }>, err: 'Enter a valid BotFather token.' })); return; }
     setPhase({ kind: 'telegram-connecting', surfaces, token });
   }, []);
+
+  const transitionToLlmModelsLoading = useCallback((provider: YagrModelProvider, apiKey: string, defModel: string | undefined, note?: string) => {
+    setTextValue('');
+    setPhase({
+      kind: 'llm-models-loading',
+      provider,
+      apiKey,
+      defModel,
+      ...(note ? { note } : {}),
+    });
+  }, []);
+
+  const handleLlmApiKeySubmit = useCallback((provider: YagrModelProvider) => (value: string) => {
+    const key = value.trim();
+    if (!key && providerRequiresApiKey(provider)) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'llm-apikey' }>, err: 'API key is required.' })); return; }
+    llmApiKeyDraftsRef.current[provider] = key;
+    const defModel = llmDef.getDefaultModel(provider);
+    transitionToLlmModelsLoading(provider, key, defModel);
+  }, [llmDef, transitionToLlmModelsLoading]);
+
+  const saveLlmAndContinue = useCallback((provider: YagrModelProvider, apiKey: string, model: string, note?: string) => {
+    const draftedBaseUrl = llmBaseUrlDraftsRef.current[provider];
+    callbacks.saveLlmConfig({ provider, apiKey, model, baseUrl: draftedBaseUrl || undefined });
+    setTextValue('');
+    setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
+  }, [callbacks, surfDef]);
 
   const handleSelectKey = useCallback((input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean; escape: boolean }) => {
     if (phase.kind === 'n8n-mode') {
@@ -668,9 +718,12 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.return) {
         if (phase.cursor === 0) {
           llmApiKeyDraftsRef.current[phase.provider] = phase.apiKey;
-          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model, baseUrl: llmDef.getBaseUrl(phase.provider) });
+          const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider] ?? llmDef.getBaseUrl(phase.provider);
+          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model, baseUrl: draftedBaseUrl });
+          setTextValue('');
           setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
         } else {
+          setTextValue('');
           setPhase({ kind: 'llm-provider', initial: phase.provider, cursor: VALID_PROVIDERS.indexOf(phase.provider) });
         }
       } else if (key.escape) cancel('Setup cancelled.');
@@ -680,7 +733,11 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.return) {
         const provider = VALID_PROVIDERS[phase.cursor];
         const existing = llmApiKeyDraftsRef.current[provider] ?? llmDef.getApiKey(provider);
-        if (existing) {
+        if (!providerRequiresApiKey(provider)) {
+          const defModel = llmDef.getDefaultModel(provider);
+          transitionToLlmModelsLoading(provider, existing ?? '', defModel);
+        } else if (existing) {
+          setTextValue('');
           setPhase({ kind: 'llm-reuse-apikey', provider, existing, cursor: 0 });
         } else {
           setPhase({ kind: 'llm-apikey', provider });
@@ -694,7 +751,7 @@ function SetupWizard({ callbacks, onDone }: {
         if (phase.cursor === 0) {
           const defModel = llmDef.getDefaultModel(phase.provider);
           llmApiKeyDraftsRef.current[phase.provider] = phase.existing;
-          setPhase({ kind: 'llm-models-loading', provider: phase.provider, apiKey: phase.existing, defModel });
+          transitionToLlmModelsLoading(phase.provider, phase.existing, defModel);
         } else {
           setPhase({ kind: 'llm-apikey', provider: phase.provider });
           setTextValue(llmApiKeyDraftsRef.current[phase.provider] ?? '');
@@ -707,18 +764,24 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.return) {
         const selected = allOptions[phase.cursor];
         if (selected === '__custom__') {
+          if (phase.provider === 'openai-proxy') {
+            return;
+          }
           setPhase({ ...phase, models: [] });
           setTextValue(phase.defModel ?? '');
           return;
         }
         const model = selected;
+        const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider];
+        const defaultBaseUrl = draftedBaseUrl ?? llmDef.getBaseUrl(phase.provider);
         const needsUrl = llmDef.needsBaseUrl(phase.provider);
-        if (needsUrl || llmDef.getBaseUrl(phase.provider)) {
-          setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model, def: llmDef.getBaseUrl(phase.provider) ?? '' });
-          setTextValue(llmDef.getBaseUrl(phase.provider) ?? '');
+        if (draftedBaseUrl) {
+          saveLlmAndContinue(phase.provider, phase.apiKey, model, phase.note);
+        } else if (needsUrl || defaultBaseUrl) {
+          setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model, def: defaultBaseUrl ?? '' });
+          setTextValue(defaultBaseUrl ?? '');
         } else {
-          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model });
-          setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
+          saveLlmAndContinue(phase.provider, phase.apiKey, model, phase.note);
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'surfaces') {
@@ -971,7 +1034,14 @@ function SetupWizard({ callbacks, onDone }: {
               options={VALID_PROVIDERS}
               cursor={phase.cursor}
               getLabel={(v) => v}
-              getHint={(v) => v === phase.initial ? 'currently configured' : undefined}
+              getHint={(v) => {
+                const parts = [
+                  v === phase.initial ? 'currently configured' : undefined,
+                  isExperimentalProvider(v) ? 'experimental' : undefined,
+                  getProviderSetupHint(v),
+                ].filter(Boolean);
+                return parts.length > 0 ? parts.join(' · ') : undefined;
+              }}
               maxVisibleRows={getListViewportHeight(terminalRows, 10)}
               maxLineWidth={listLineWidth}
             />
@@ -1023,15 +1093,23 @@ function SetupWizard({ callbacks, onDone }: {
         return (
           <Box flexDirection="column">
             <SpinnerDisplay message={`Fetching available models for ${phase.provider}…`} frame={spinnerFrame} />
+            {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
           </Box>
         );
 
       case 'llm-model': {
         const modelOptions = getDisplayedModelOptions(phase.models);
+        const manualEntryDisabled = phase.provider === 'openai-proxy' && phase.models.length === 0;
         return (
           <Box flexDirection="column">
             <FieldLabel label={`Default model  ·  ${phase.provider}`} />
-            {phase.models.length === 0 ? (
+            {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
+            {manualEntryDisabled ? (
+              <Box flexDirection="column" marginLeft={2}>
+                <Text color="red">Unable to fetch models for {phase.provider}.</Text>
+                <Text dimColor>Retry setup after the proxy/account flow is available, or use a stable API-key provider for now.</Text>
+              </Box>
+            ) : phase.models.length === 0 ? (
               <Box marginLeft={2}>
                 <WizardTextInput
                   value={textValue}
@@ -1039,19 +1117,22 @@ function SetupWizard({ callbacks, onDone }: {
                   onSubmit={(v) => {
                     const m = v.trim() || phase.defModel || '';
                     if (!m) return;
+                    const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider];
+                    const defaultBaseUrl = draftedBaseUrl ?? llmDef.getBaseUrl(phase.provider);
                     const needsUrl = llmDef.needsBaseUrl(phase.provider);
-                    if (needsUrl || llmDef.getBaseUrl(phase.provider)) {
-                      setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model: m, def: llmDef.getBaseUrl(phase.provider) ?? '' });
-                      setTextValue(llmDef.getBaseUrl(phase.provider) ?? '');
+                    if (draftedBaseUrl) {
+                      saveLlmAndContinue(phase.provider, phase.apiKey, m, phase.note);
+                    } else if (needsUrl || defaultBaseUrl) {
+                      setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model: m, def: defaultBaseUrl ?? '' });
+                      setTextValue(defaultBaseUrl ?? '');
                     } else {
-                      callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: m });
-                      setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
+                      saveLlmAndContinue(phase.provider, phase.apiKey, m, phase.note);
                     }
                   }}
-                  placeholder={phase.defModel}
-                />
-              </Box>
-            ) : (
+                placeholder={phase.defModel}
+              />
+            </Box>
+          ) : (
               <SelectList
                 options={modelOptions}
                 cursor={phase.cursor}
@@ -1061,7 +1142,13 @@ function SetupWizard({ callbacks, onDone }: {
                 maxLineWidth={listLineWidth}
               />
             )}
-            <HintBar hints={phase.models.length > 0 ? ['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel'] : ['Enter ↵  confirm', 'Ctrl+C  cancel']} />
+            <HintBar hints={
+              manualEntryDisabled
+                ? ['Ctrl+C  cancel']
+                : phase.models.length > 0
+                  ? ['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel']
+                  : ['Enter ↵  confirm', 'Ctrl+C  cancel']
+            } />
           </Box>
         );
       }

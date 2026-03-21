@@ -24,17 +24,24 @@ import {
   startManagedDockerN8n,
   stopManagedDockerN8n,
 } from './n8n-local/docker-manager.js';
+import {
+  getManagedDirectN8nLogs,
+  installManagedDirectN8n,
+  startManagedDirectN8n,
+  stopManagedDirectN8n,
+} from './n8n-local/direct-manager.js';
 import { formatLocalN8nBootstrapAssessment, inspectLocalN8nBootstrap } from './n8n-local/detect.js';
 import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { readManagedN8nState } from './n8n-local/state.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrSetup } from './setup.js';
 import { openExternalUrl } from './system/open-external.js';
 import { YAGR_MODEL_PROVIDERS } from './llm/provider-registry.js';
+import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
   startTarget?: 'webui' | 'tui';
   prompt?: string;
   interactive: boolean;
@@ -132,6 +139,21 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (argv[0] === 'gateway' && argv[1] === 'status') {
     parsed.command = 'gateway-status';
     return parsed;
+  }
+
+  if (argv[0] === 'proxy' && argv[1] === 'start') {
+    parsed.command = 'proxy-start';
+    startIndex = 2;
+  }
+
+  if (argv[0] === 'proxy' && argv[1] === 'status') {
+    parsed.command = 'proxy-status';
+    startIndex = 2;
+  }
+
+  if (argv[0] === 'proxy' && argv[1] === 'stop') {
+    parsed.command = 'proxy-stop';
+    startIndex = 2;
   }
 
   if (argv[0] === 'telegram' && argv[1] === 'setup') {
@@ -416,6 +438,9 @@ Commands:
 
   gateway start                Start the gateway supervisor in the foreground
   gateway status               Show gateway status (JSON)
+  proxy start                  Start a managed local model proxy
+  proxy status                 Show managed proxy status (JSON)
+  proxy stop                   Stop a managed local model proxy
 
   telegram setup               Configure the Telegram gateway
   telegram start               Start the Telegram gateway in the foreground
@@ -557,6 +582,32 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (args.command === 'proxy-status') {
+      const payload = args.provider
+        ? getProxyRuntimeStatus(args.provider)
+        : listProxyRuntimeStatuses();
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      return;
+    }
+
+    if (args.command === 'proxy-start') {
+      if (!args.provider) {
+        throw new Error(`proxy start requires --provider. Use one of: ${VALID_PROVIDERS.join(', ')}.`);
+      }
+      const status = startProviderProxy(args.provider);
+      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+      return;
+    }
+
+    if (args.command === 'proxy-stop') {
+      if (!args.provider) {
+        throw new Error(`proxy stop requires --provider. Use one of: ${VALID_PROVIDERS.join(', ')}.`);
+      }
+      const status = stopProviderProxy(args.provider);
+      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+      return;
+    }
+
     if (args.command === 'telegram-status') {
       const status = getTelegramGatewayStatus(configService);
       process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
@@ -590,14 +641,20 @@ async function main(): Promise<void> {
     }
 
     if (args.command === 'n8n-local-install') {
-      const state = await installManagedDockerN8n();
+      const assessment = await inspectLocalN8nBootstrap();
+      const state = assessment.recommendedStrategy === 'direct'
+        ? await installManagedDirectN8n()
+        : await installManagedDockerN8n();
       process.stdout.write(`Managed local n8n installed and started at ${state.url}\n`);
       process.stdout.write('Next: run `yagr onboard` to continue with silent bootstrap and assisted fallback.\n');
       return;
     }
 
     if (args.command === 'n8n-local-start') {
-      const state = await startManagedDockerN8n();
+      const current = readManagedN8nState();
+      const state = current?.strategy === 'direct'
+        ? await startManagedDirectN8n()
+        : await startManagedDockerN8n();
       process.stdout.write(`Managed local n8n is running at ${state.url}\n`);
       return;
     }
@@ -609,13 +666,19 @@ async function main(): Promise<void> {
     }
 
     if (args.command === 'n8n-local-stop') {
-      const state = await stopManagedDockerN8n();
+      const current = readManagedN8nState();
+      const state = current?.strategy === 'direct'
+        ? await stopManagedDirectN8n()
+        : await stopManagedDockerN8n();
       process.stdout.write(`Managed local n8n stopped for ${state.url}\n`);
       return;
     }
 
     if (args.command === 'n8n-local-logs') {
-      const logs = await getManagedDockerN8nLogs();
+      const current = readManagedN8nState();
+      const logs = current?.strategy === 'direct'
+        ? await getManagedDirectN8nLogs()
+        : await getManagedDockerN8nLogs();
       process.stdout.write(`${logs}\n`);
       return;
     }
