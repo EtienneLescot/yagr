@@ -7,8 +7,11 @@ import type {
   LanguageModelV1,
   LanguageModelV1CallOptions,
   LanguageModelV1CallWarning,
+  LanguageModelV1FunctionTool,
+  LanguageModelV1FunctionToolCall,
   LanguageModelV1Prompt,
   LanguageModelV1StreamPart,
+  LanguageModelV1ToolChoice,
 } from '@ai-sdk/provider';
 
 export const OPENAI_ACCOUNT_BASE_URL = 'https://chatgpt.com/backend-api';
@@ -326,6 +329,7 @@ export function createOpenAiAccountLanguageModel(modelId: string): LanguageModel
         text: execution.text,
         finishReason: execution.finishReason,
         usage: execution.usage,
+        ...(execution.toolCalls ? { toolCalls: execution.toolCalls } : {}),
         rawCall: {
           rawPrompt: options.prompt,
           rawSettings: { modelId },
@@ -371,8 +375,9 @@ async function runOpenAiAccountCompletion(
   options: Pick<LanguageModelV1CallOptions, 'prompt' | 'mode' | 'inputFormat'>,
 ): Promise<{
   text: string;
-  finishReason: 'stop' | 'error';
+  finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown';
   usage: { promptTokens: number; completionTokens: number };
+  toolCalls?: LanguageModelV1FunctionToolCall[];
   warnings: LanguageModelV1CallWarning[];
 }> {
   const session = await ensureOpenAiAccountSession();
@@ -380,7 +385,9 @@ async function runOpenAiAccountCompletion(
     throw new Error('OpenAI account session not found. Run `codex --login` to sign in.');
   }
 
-  const warnings = buildCodexWarnings(options);
+  const regularMode = options.mode.type === 'regular' ? options.mode : undefined;
+  const tools = getFunctionTools(options.mode);
+  const warnings = buildCodexWarnings(options, tools);
   const accountId = extractChatGptAccountId(session.accessToken);
   const { instructions, input } = convertPromptToCodexInput(options.prompt);
 
@@ -392,7 +399,7 @@ async function runOpenAiAccountCompletion(
     instructions: instructions || 'You are a helpful assistant.',
     input,
     text: { verbosity: 'medium' },
-    tool_choice: 'auto',
+    ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice) } : { tool_choice: 'auto' }),
     parallel_tool_calls: true,
   };
 
@@ -422,6 +429,7 @@ async function runOpenAiAccountCompletion(
   let text = '';
   let inputTokens = 0;
   let outputTokens = 0;
+  const toolCalls = new Map<string, LanguageModelV1FunctionToolCall>();
 
   for await (const event of parseCodexSSE(response.body)) {
     const type = typeof event.type === 'string' ? event.type : undefined;
@@ -431,10 +439,54 @@ async function runOpenAiAccountCompletion(
       if (typeof event.delta === 'string') {
         text += event.delta;
       }
+    } else if (type === 'response.output_item.added' || type === 'response.output_item.done') {
+      const item = readResponseOutputItem(event);
+      const toolCall = extractCodexToolCallFromItem(item, toolCalls.size);
+      if (toolCall) {
+        toolCalls.set(toolCall.toolCallId, toolCall);
+      }
+    } else if (type === 'response.function_call_arguments.delta') {
+      const itemId = readOptionalString(event.item_id) || readOptionalString(event.call_id);
+      if (!itemId) {
+        continue;
+      }
+      const existing = toolCalls.get(itemId);
+      if (!existing || typeof event.delta !== 'string') {
+        continue;
+      }
+      toolCalls.set(itemId, {
+        ...existing,
+        args: `${existing.args}${event.delta}`,
+      });
+    } else if (type === 'response.function_call_arguments.done') {
+      const itemId = readOptionalString(event.item_id) || readOptionalString(event.call_id);
+      if (!itemId) {
+        continue;
+      }
+      const existing = toolCalls.get(itemId);
+      if (!existing) {
+        continue;
+      }
+      const finalArgs = readOptionalString(event.arguments);
+      if (finalArgs) {
+        toolCalls.set(itemId, {
+          ...existing,
+          args: finalArgs,
+        });
+      }
     } else if (type === 'response.completed') {
-      const resp = event.response as { usage?: { input_tokens?: number; output_tokens?: number } } | undefined;
+      const resp = event.response as {
+        usage?: { input_tokens?: number; output_tokens?: number };
+        output?: unknown[];
+      } | undefined;
       inputTokens = resp?.usage?.input_tokens ?? 0;
       outputTokens = resp?.usage?.output_tokens ?? 0;
+      for (const item of Array.isArray(resp?.output) ? resp.output : []) {
+        const toolCall = extractCodexToolCallFromItem(item, toolCalls.size);
+        if (toolCall) {
+          toolCalls.set(toolCall.toolCallId, toolCall);
+        }
+      }
     } else if (type === 'response.failed') {
       const resp = event.response as { error?: { message?: string } } | undefined;
       throw new Error(resp?.error?.message || 'Codex response failed.');
@@ -446,8 +498,9 @@ async function runOpenAiAccountCompletion(
 
   return {
     text,
-    finishReason: 'stop',
+    finishReason: toolCalls.size > 0 ? 'tool-calls' : 'stop',
     usage: { promptTokens: inputTokens, completionTokens: outputTokens },
+    ...(toolCalls.size > 0 ? { toolCalls: [...toolCalls.values()] } : {}),
     warnings,
   };
 }
@@ -472,10 +525,10 @@ function extractChatGptAccountId(token: string): string {
 
 function convertPromptToCodexInput(prompt: LanguageModelV1Prompt): {
   instructions: string | undefined;
-  input: Array<{ role: string; content: Array<{ type: string; text: string }> }>;
+  input: Array<Record<string, unknown>>;
 } {
   let instructions: string | undefined;
-  const input: Array<{ role: string; content: Array<{ type: string; text: string }> }> = [];
+  const input: Array<Record<string, unknown>> = [];
 
   for (const message of prompt) {
     if (message.role === 'system') {
@@ -486,12 +539,34 @@ function convertPromptToCodexInput(prompt: LanguageModelV1Prompt): {
       const text = message.content.map((p) => p.type === 'text' ? p.text : `[${p.type}]`).join('\n');
       input.push({ role: 'user', content: [{ type: 'input_text', text }] });
     } else if (message.role === 'assistant') {
-      const text = message.content.map((p) => {
-        if (p.type === 'text' || p.type === 'reasoning') return p.text;
-        if (p.type === 'tool-call') return `[tool-call ${p.toolName}] ${JSON.stringify(p.args)}`;
-        return `[${p.type}]`;
-      }).join('\n');
-      input.push({ role: 'assistant', content: [{ type: 'output_text', text }] });
+      const text = message.content
+        .filter((p) => p.type === 'text' || p.type === 'reasoning')
+        .map((p) => p.text)
+        .join('\n')
+        .trim();
+      if (text) {
+        input.push({ role: 'assistant', content: [{ type: 'output_text', text }] });
+      }
+
+      for (const part of message.content) {
+        if (part.type !== 'tool-call') {
+          continue;
+        }
+        input.push({
+          type: 'function_call',
+          call_id: part.toolCallId,
+          name: part.toolName,
+          arguments: JSON.stringify(part.args ?? {}),
+        });
+      }
+    } else {
+      for (const part of message.content) {
+        input.push({
+          type: 'function_call_output',
+          call_id: part.toolCallId,
+          output: stringifyToolResult(part.result),
+        });
+      }
     }
   }
 
@@ -525,13 +600,107 @@ async function* parseCodexSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<
   }
 }
 
-function buildCodexWarnings(options: Pick<LanguageModelV1CallOptions, 'mode'>): LanguageModelV1CallWarning[] {
+function buildCodexWarnings(
+  options: Pick<LanguageModelV1CallOptions, 'mode'>,
+  functionTools: LanguageModelV1FunctionTool[],
+): LanguageModelV1CallWarning[] {
   if (options.mode.type !== 'regular' || !options.mode.tools || options.mode.tools.length === 0) {
     return [];
   }
-  return options.mode.tools.map((tool) => ({
-    type: 'unsupported-tool' as const,
-    tool,
-    details: 'openai-proxy does not expose Yagr tool-calls to the Codex backend.',
+
+  return options.mode.tools
+    .filter((tool) => tool.type !== 'function' || !functionTools.includes(tool))
+    .map((tool) => ({
+      type: 'unsupported-tool' as const,
+      tool,
+      details: 'openai-proxy currently supports only function tools on the Codex backend.',
+    }));
+}
+
+function getFunctionTools(mode: LanguageModelV1CallOptions['mode']): LanguageModelV1FunctionTool[] {
+  if (mode.type !== 'regular' || !Array.isArray(mode.tools) || mode.tools.length === 0) {
+    return [];
+  }
+
+  return mode.tools.filter((tool): tool is LanguageModelV1FunctionTool => tool.type === 'function');
+}
+
+function toCodexTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string, unknown>> {
+  return tools.map((tool) => ({
+    type: 'function',
+    name: tool.name,
+    ...(tool.description ? { description: tool.description } : {}),
+    parameters: tool.parameters,
   }));
+}
+
+function toCodexToolChoice(toolChoice: LanguageModelV1ToolChoice | undefined): unknown {
+  if (!toolChoice || toolChoice.type === 'auto') {
+    return 'auto';
+  }
+  if (toolChoice.type === 'none' || toolChoice.type === 'required') {
+    return toolChoice.type;
+  }
+  if (toolChoice.type === 'tool') {
+    return {
+      type: 'function',
+      name: toolChoice.toolName,
+    };
+  }
+  return 'auto';
+}
+
+function readResponseOutputItem(event: Record<string, unknown>): unknown {
+  if (event.item && typeof event.item === 'object') {
+    return event.item;
+  }
+  if (event.output_item && typeof event.output_item === 'object') {
+    return event.output_item;
+  }
+  return undefined;
+}
+
+function extractCodexToolCallFromItem(item: unknown, index: number): LanguageModelV1FunctionToolCall | undefined {
+  if (!item || typeof item !== 'object') {
+    return undefined;
+  }
+
+  const record = item as Record<string, unknown>;
+  if (record.type !== 'function_call') {
+    return undefined;
+  }
+
+  const toolName = readOptionalString(record.name);
+  if (!toolName) {
+    return undefined;
+  }
+
+  const toolCallId = readOptionalString(record.call_id)
+    || readOptionalString(record.id)
+    || `openai-account-tool-call-${index + 1}`;
+  const args = typeof record.arguments === 'string'
+    ? record.arguments
+    : JSON.stringify(record.arguments ?? {});
+
+  return {
+    toolCallType: 'function',
+    toolCallId,
+    toolName,
+    args,
+  };
+}
+
+function stringifyToolResult(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return String(value);
+  }
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }

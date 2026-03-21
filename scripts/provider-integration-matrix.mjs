@@ -556,6 +556,9 @@ async function runYagrAdvancedScenarioAttempt({
   prompt,
   timeoutMs,
 }) {
+  const workflowDir = resolveActiveWorkflowDir();
+  const beforeSnapshot = snapshotWorkflowFiles(workflowDir);
+
   return await new Promise((resolve) => {
     const cliPath = path.join(process.cwd(), 'dist', 'cli.js');
     const args = [
@@ -564,7 +567,6 @@ async function runYagrAdvancedScenarioAttempt({
       '--model', model,
       '--max-steps', '10',
       '--hide-thinking',
-      '--hide-execution',
       prompt,
     ];
 
@@ -590,7 +592,25 @@ async function runYagrAdvancedScenarioAttempt({
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code === 0) {
-        resolve({ ok: true });
+        const afterSnapshot = snapshotWorkflowFiles(workflowDir);
+        const validation = validateAdvancedScenarioResult({
+          stdout,
+          stderr,
+          prompt,
+          workflowDir,
+          beforeSnapshot,
+          afterSnapshot,
+        });
+        if (validation.ok) {
+          resolve({ ok: true });
+          return;
+        }
+
+        const logPath = writeAdvancedFailureLog(provider, { code, stdout, stderr, prompt, model });
+        resolve({
+          ok: false,
+          error: logPath ? `${validation.error} (log: ${logPath})` : validation.error,
+        });
         return;
       }
       const merged = `${stdout}\n${stderr}`.trim().replace(/\s+/g, ' ');
@@ -607,6 +627,129 @@ async function runYagrAdvancedScenarioAttempt({
       });
     });
   });
+}
+
+function validateAdvancedScenarioResult({
+  stdout,
+  stderr,
+  prompt,
+  workflowDir,
+  beforeSnapshot,
+  afterSnapshot,
+}) {
+  const merged = `${stdout}\n${stderr}`;
+  const normalized = merged.replace(/\s+/g, ' ').trim();
+
+  const blockerPatterns = [
+    /need your n8n api key/i,
+    /please send:\s*-?\s*`?n8n_api_key`?/i,
+    /i(?:’|'| a)?m blocked on .*api key/i,
+    /i do not have access to .*n8nac/i,
+    /unable to run workspace commands/i,
+    /unable to use the required n8nac tools/i,
+  ];
+
+  if (blockerPatterns.some((pattern) => pattern.test(normalized))) {
+    return {
+      ok: false,
+      error: `CLI scenario exited cleanly but the agent reported a blocker instead of executing workflow tools: ${truncate(normalized, 220)}`,
+    };
+  }
+
+  const changedWorkflows = diffWorkflowSnapshots(beforeSnapshot, afterSnapshot);
+  if (changedWorkflows.length === 0) {
+    return {
+      ok: false,
+      error: `CLI scenario exited cleanly but created or modified no .workflow.ts file in ${workflowDir || 'the active workflow directory'}: ${truncate(normalized, 220)}`,
+    };
+  }
+
+  const promptValidation = validateWorkflowMatchesPrompt(prompt, changedWorkflows);
+  if (!promptValidation.ok) {
+    return {
+      ok: false,
+      error: promptValidation.error,
+    };
+  }
+
+  return { ok: true };
+}
+
+function resolveActiveWorkflowDir() {
+  try {
+    const configPath = path.join(os.homedir(), '.yagr', 'n8n-workspace', 'n8nac-config.json');
+    if (!fs.existsSync(configPath)) {
+      return '';
+    }
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const instanceIdentifier = String(config.instanceIdentifier || '').trim();
+    const projectId = String(config.projectId || '').trim();
+    if (!instanceIdentifier || !projectId) {
+      return '';
+    }
+    return path.join(os.homedir(), '.yagr', 'n8n-workspace', 'workflows', instanceIdentifier, projectId);
+  } catch {
+    return '';
+  }
+}
+
+function snapshotWorkflowFiles(workflowDir) {
+  if (!workflowDir || !fs.existsSync(workflowDir)) {
+    return new Map();
+  }
+
+  const entries = new Map();
+  for (const entry of fs.readdirSync(workflowDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.workflow.ts')) {
+      continue;
+    }
+    const filePath = path.join(workflowDir, entry.name);
+    const content = fs.readFileSync(filePath, 'utf8');
+    entries.set(filePath, {
+      content,
+      mtimeMs: fs.statSync(filePath).mtimeMs,
+    });
+  }
+  return entries;
+}
+
+function diffWorkflowSnapshots(beforeSnapshot, afterSnapshot) {
+  const changed = [];
+  for (const [filePath, after] of afterSnapshot.entries()) {
+    const before = beforeSnapshot.get(filePath);
+    if (!before || before.content !== after.content || before.mtimeMs !== after.mtimeMs) {
+      changed.push({
+        filePath,
+        content: after.content,
+      });
+    }
+  }
+  return changed;
+}
+
+function validateWorkflowMatchesPrompt(prompt, changedWorkflows) {
+  const normalizedPrompt = String(prompt || '').toLowerCase();
+  if (!normalizedPrompt.includes('manual trigger') || !normalizedPrompt.includes('status="ok"')) {
+    return { ok: true };
+  }
+
+  const matchingWorkflow = changedWorkflows.find(({ content }) => {
+    const normalizedContent = String(content || '').toLowerCase();
+    const hasManualTrigger = normalizedContent.includes('manualtrigger');
+    const hasSetNode = normalizedContent.includes('set');
+    const hasStatusOk = normalizedContent.includes('status') && normalizedContent.includes('ok');
+    return hasManualTrigger && hasSetNode && hasStatusOk;
+  });
+
+  if (matchingWorkflow) {
+    return { ok: true };
+  }
+
+  const createdFiles = changedWorkflows.map(({ filePath }) => path.basename(filePath)).join(', ');
+  return {
+    ok: false,
+    error: `CLI scenario created or modified workflow files but none matched the requested shape (expected Manual Trigger + Set status=\"ok\"). Files: ${createdFiles || 'none'}`,
+  };
 }
 
 function isTransientRateLimit(message) {
