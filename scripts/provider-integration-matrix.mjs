@@ -13,6 +13,7 @@ const {
   YAGR_MODEL_PROVIDERS,
   getDefaultBaseUrlForProvider,
   getDefaultModelForProvider,
+  getProviderDisplayName,
   getProviderDefinition,
   isOAuthAccountProvider,
 } = await import('../dist/llm/provider-registry.js');
@@ -43,7 +44,7 @@ const requestedProviders = (providersFromCli || process.env.YAGR_IT_PROVIDERS ||
   .map((entry) => entry.trim())
   .filter(Boolean);
 const providers = requestedProviders.length > 0
-  ? requestedProviders
+  ? requestedProviders.map((entry) => normalizeProviderSelector(entry))
   : [...YAGR_MODEL_PROVIDERS];
 
 configureWritableOAuthPaths();
@@ -173,11 +174,23 @@ async function runProvider(provider) {
       baseUrl: setupRuntime?.baseUrl || configuredBaseUrl,
     });
 
-    const response = await withTimeout(model.doGenerate({
-      inputFormat: 'prompt',
-      mode: { type: 'regular' },
-      prompt: [{ role: 'user', content: [{ type: 'text', text: 'Reply with exactly: OK' }] }],
-    }), INFERENCE_TIMEOUT_MS);
+    let response;
+    try {
+      response = await withTimeout(model.doGenerate({
+        inputFormat: 'prompt',
+        mode: { type: 'regular' },
+        prompt: [{ role: 'user', content: [{ type: 'text', text: 'Reply with exactly: OK' }] }],
+      }), INFERENCE_TIMEOUT_MS);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isTransientRateLimit(message)) {
+        return {
+          status: 'SKIP',
+          note: `Transient provider rate limit: ${truncate(message, 180)}`,
+        };
+      }
+      throw error;
+    }
 
     const text = String(response?.text || '').trim();
     if (!text) {
@@ -224,6 +237,12 @@ async function runProvider(provider) {
         note: `CLI scenario succeeded with model ${chosenModel}.`,
       };
     }
+    if (isTransientRateLimit(result.error || '')) {
+      return {
+        status: 'SKIP',
+        note: `Transient provider rate limit: ${truncate(result.error || '', 180)}`,
+      };
+    }
     return {
       status: 'FAIL',
       note: result.error,
@@ -232,6 +251,7 @@ async function runProvider(provider) {
 
   return {
     provider,
+    providerLabel: getProviderDisplayName(provider),
     setup: serializeStep(setup),
     modelListing: serializeStep(modelListing),
     inference: serializeStep(inference),
@@ -403,7 +423,7 @@ function printTable(rows) {
     ? ['Provider', 'Setup', 'Model Listing', 'Inference', 'Advanced Scenario']
     : ['Provider', 'Setup', 'Model Listing', 'Inference'];
   const renderedRows = rows.map((row) => ([
-    row.provider,
+    `${row.providerLabel} (${row.provider})`,
     formatCell(row.setup.status, row.setup.note),
     formatCell(row.modelListing.status, row.modelListing.note),
     formatCell(row.inference.status, row.inference.note),
@@ -451,7 +471,7 @@ function writeMarkdownReport(rows, outputPath) {
     '# Provider Integration Matrix',
     '',
     `- Generated at: ${new Date().toISOString()}`,
-    `- Providers: ${rows.map((row) => `\`${row.provider}\``).join(', ')}`,
+    `- Providers: ${rows.map((row) => `\`${row.providerLabel} (${row.provider})\``).join(', ')}`,
     `- Timeouts: setup/model=${DEFAULT_TIMEOUT_MS}ms, inference=${INFERENCE_TIMEOUT_MS}ms`,
     `- Advanced scenario: ${advanced ? `enabled (timeout=${advancedTimeoutMs}ms)` : 'disabled'}`,
     '',
@@ -471,8 +491,8 @@ function writeMarkdownReport(rows, outputPath) {
       : ['| Provider | Setup | Model Listing | Inference |', '| --- | --- | --- | --- |']),
     ...rows.map((row) =>
       advanced
-        ? `| \`${escapeMd(row.provider)}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} | ${formatMarkdownCell(row.advancedScenario)} |`
-        : `| \`${escapeMd(row.provider)}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} |`),
+        ? `| \`${escapeMd(`${row.providerLabel} (${row.provider})`)}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} | ${formatMarkdownCell(row.advancedScenario)} |`
+        : `| \`${escapeMd(`${row.providerLabel} (${row.provider})`)}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} |`),
     '',
   ];
 
@@ -498,7 +518,39 @@ function readProvidersFromCli(rawArgv) {
   return '';
 }
 
+function normalizeProviderSelector(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  const aliases = {
+    'claude-api': 'anthropic',
+    'claude-token': 'anthropic-proxy',
+    'openai-oauth': 'openai-proxy',
+    'gemini-oauth': 'google-proxy',
+    'github-oauth': 'copilot-proxy',
+    'copilot-oauth': 'copilot-proxy',
+  };
+
+  const resolved = aliases[normalized] || normalized;
+  if (!YAGR_MODEL_PROVIDERS.includes(resolved)) {
+    throw new Error(`Unknown provider selector "${value}". Known providers: ${YAGR_MODEL_PROVIDERS.join(', ')}`);
+  }
+  return resolved;
+}
+
 async function runYagrAdvancedScenario({
+  provider,
+  model,
+  prompt,
+  timeoutMs,
+}) {
+  return await runYagrAdvancedScenarioAttempt({
+    provider,
+    model,
+    prompt,
+    timeoutMs,
+  });
+}
+
+async function runYagrAdvancedScenarioAttempt({
   provider,
   model,
   prompt,
@@ -555,6 +607,17 @@ async function runYagrAdvancedScenario({
       });
     });
   });
+}
+
+function isTransientRateLimit(message) {
+  const normalized = String(message || '').toLowerCase();
+  return (
+    normalized.includes('rate limit')
+    || normalized.includes('resource_exhausted')
+    || normalized.includes('too many requests')
+    || normalized.includes('http 429')
+    || normalized.includes('status code 429')
+  );
 }
 
 function writeAdvancedFailureLog(provider, payload) {
