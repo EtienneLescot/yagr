@@ -106,7 +106,7 @@ test('resolveLegacyConfStorePath follows the Linux XDG config convention', () =>
     '/tmp/home',
   );
 
-  assert.equal(legacyPath, '/tmp/xdg-config/yagr-nodejs/credentials.json');
+  assert.equal(legacyPath, path.join('/tmp/xdg-config', 'yagr-nodejs', 'credentials.json'));
 });
 
 test('resolveLegacyConfStorePath uses platform separators on Windows', () => {
