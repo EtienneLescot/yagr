@@ -255,10 +255,11 @@ function createSetupCallbacks(
           : 'If the browser does not open, copy the URL above and visit it manually.';
         return {
           kind: 'input',
-          title: 'Connect OpenAI account',
+          title: 'Connect OpenAI account (ChatGPT Plus)',
           instructions: [
             'Open this URL in your browser and sign in with your ChatGPT account:',
             challenge.authUrl,
+            'This uses your ChatGPT subscription — no API credits are consumed.',
             callbackHint,
           ],
           placeholder: challenge.callbackServerStarted

@@ -115,7 +115,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     defaultBaseUrl: OPENAI_ACCOUNT_BASE_URL,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
-    setupHint: 'Use your OpenAI account, no API key',
+    setupHint: 'Uses your ChatGPT subscription, no API credits',
     modelDiscovery: {
       buildUrl: () => `${OPENAI_ACCOUNT_BASE_URL}/models`,
       authMode: 'bearer-required',
