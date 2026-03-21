@@ -272,15 +272,14 @@ function createSetupCallbacks(
       if (provider === 'anthropic-proxy') {
         return {
           kind: 'input',
-          title: 'Connect Anthropic account',
+          title: 'Connect Claude token',
           instructions: [
-            'Choose one mode:',
-            '• Anthropic token (paste setup-token from `claude setup-token`)',
-            '• Anthropic API key (starts with `sk-ant-`)',
-            'Paste setup-token or API key below.',
+            'On a machine where Claude CLI is installed and logged in, run:',
+            'claude setup-token',
+            'Paste the generated setup-token below.',
           ],
-          placeholder: 'setup-token or sk-ant-...',
-          submitLabel: 'Continue',
+          placeholder: 'Paste setup-token',
+          submitLabel: 'Continue with setup-token',
         };
       }
 
@@ -352,7 +351,7 @@ function createSetupCallbacks(
       if (provider === 'anthropic-proxy') {
         const credential = input.trim();
         if (!credential) {
-          return { ok: false, error: 'Paste an Anthropic setup-token or API key.' };
+          return { ok: false, error: 'Paste a Claude setup-token.' };
         }
         return { ok: true, apiKey: credential };
       }

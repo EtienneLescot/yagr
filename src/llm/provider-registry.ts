@@ -52,6 +52,7 @@ const GOOGLE_OPENAI_MODEL_LIST_MAPPER = (data: Record<string, unknown>) =>
 export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDefinition> = {
   anthropic: {
     id: 'anthropic',
+    displayName: 'Claude API',
     defaultModel: 'claude-sonnet-4-5',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
@@ -142,11 +143,11 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   },
   'anthropic-proxy': {
     id: 'anthropic-proxy',
-    displayName: 'Claude OAuth',
+    displayName: 'Claude Token',
     defaultModel: ANTHROPIC_ACCOUNT_DEFAULT_MODEL,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: false,
-    setupHint: 'Use your Anthropic account (via Claude Code), no API key',
+    setupHint: 'Use a Claude setup-token from `claude setup-token`',
   },
   'google-proxy': {
     id: 'google-proxy',

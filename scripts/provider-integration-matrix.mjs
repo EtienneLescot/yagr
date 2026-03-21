@@ -290,7 +290,7 @@ function getProviderApiKey(provider) {
     mistral: process.env.MISTRAL_API_KEY || process.env.MISTRAL_LLM_API_KEY,
     openrouter: process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_LLM_API_KEY,
     'openai-proxy': process.env.YAGR_OPENAI_PROXY_TOKEN,
-    'anthropic-proxy': process.env.YAGR_ANTHROPIC_SETUP_TOKEN || process.env.ANTHROPIC_API_KEY,
+    'anthropic-proxy': process.env.YAGR_ANTHROPIC_SETUP_TOKEN,
     'google-proxy': process.env.YAGR_GEMINI_ACCESS_TOKEN,
     'copilot-proxy': process.env.YAGR_COPILOT_TOKEN,
   };
