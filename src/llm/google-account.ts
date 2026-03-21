@@ -201,68 +201,32 @@ export async function validateGeminiAccountRuntime(modelId = GEMINI_ACCOUNT_DEFA
   }
 }
 
-export async function fetchGeminiOAuthModels(accessToken: string): Promise<string[]> {
-  return await probeGeminiModelsViaCodeAssist(accessToken);
-}
+// Models known to work with the CodeAssist backend via Google OAuth.
+// The generativelanguage.googleapis.com/v1beta/models API is NOT accessible
+// with CodeAssist OAuth scopes (cloud-platform), and there is no model listing
+// endpoint on the CodeAssist API itself.  This curated list matches what
+// OpenClaw ships for its google-gemini-cli provider.
+const KNOWN_GEMINI_CODE_ASSIST_MODELS = [
+  'gemini-3.1-pro-preview',
+  'gemini-3-pro-preview',
+  'gemini-3-flash-preview',
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+];
 
-async function probeGeminiModelsViaCodeAssist(accessToken: string): Promise<string[]> {
-  const project = await loadGeminiCodeAssistProject(accessToken);
-  const debugDiscovery = process.env.YAGR_DEBUG_MODEL_DISCOVERY === '1';
-  const envCandidates = process.env.YAGR_GEMINI_MODEL_PROBE_LIST?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
-  const candidateModels = envCandidates.length > 0
-    ? envCandidates
-    : [
-      'gemini-3.1-pro-preview',
-      'gemini-3.1-flash-preview',
-      'gemini-3-pro-preview',
-      'gemini-3-flash-preview',
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-2.0-flash',
-    ];
+export async function fetchGeminiOAuthModels(_accessToken: string): Promise<string[]> {
+  const envOverride = process.env.YAGR_GEMINI_MODEL_LIST?.split(',').map(s => s.trim()).filter(Boolean);
+  const models = envOverride && envOverride.length > 0
+    ? envOverride
+    : [...KNOWN_GEMINI_CODE_ASSIST_MODELS];
 
-  const available = new Set<string>();
-  for (const modelId of candidateModels) {
-    let accepted = false;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const response = await fetchWithTimeout(`${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:generateContent`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({
-            model: modelId,
-            project,
-            request: {
-              contents: [{ role: 'user', parts: [{ text: 'OK' }] }],
-            },
-          }),
-        }, 8_000);
-
-        if (response.status === 200 || response.status === 429) {
-          available.add(modelId);
-          accepted = true;
-        }
-        if (debugDiscovery) {
-          process.stderr.write(`[yagr] gemini code-assist probe model=${modelId} attempt=${attempt + 1} http=${response.status}\n`);
-        }
-        if (accepted || response.status !== 408) {
-          break;
-        }
-      } catch (error) {
-        if (debugDiscovery) {
-          const message = error instanceof Error ? error.message : String(error);
-          process.stderr.write(`[yagr] gemini code-assist probe model=${modelId} attempt=${attempt + 1} error=${message}\n`);
-        }
-      }
-    }
+  if (process.env.YAGR_DEBUG_MODEL_DISCOVERY === '1') {
+    process.stderr.write(`[yagr] gemini models (curated list): ${models.join(', ')}\n`);
   }
 
-  return [...available].sort((a, b) => a.localeCompare(b));
+  return models;
 }
 
 export function createGeminiAccountLanguageModel(modelId: string): LanguageModelV1 {

@@ -12,7 +12,7 @@ import {
   ensureGeminiAccountSession,
   fetchGeminiOAuthModels,
 } from './google-account.js';
-import { readCachedModelCatalog, writeCachedModelCatalog } from './model-catalog-cache.js';
+import { writeCachedModelCatalog } from './model-catalog-cache.js';
 import {
   ensureAnthropicAccountSession,
   fetchAnthropicAccountModels,
@@ -87,24 +87,29 @@ export async function prepareProviderRuntime(
     }
 
     let models: string[] = [];
-    let usedCacheFallback = false;
+    let discoveryError: string | undefined;
     try {
       const discovered = await withTimeout(fetchOpenAiAccountModels(session.accessToken), 6_000);
       if (discovered.length > 0) {
         models = discovered;
         writeCachedModelCatalog(provider, discovered);
       }
-    } catch {
-      // Fallback to cache.
-    }
-    if (models.length === 0) {
-      models = readCachedModelCatalog(provider);
-      usedCacheFallback = models.length > 0;
+    } catch (error) {
+      discoveryError = error instanceof Error ? error.message : String(error);
     }
 
     const sessionNote = session.source === 'codex'
       ? 'Connected through backward-compatible Codex CLI session.'
       : 'Connected through Yagr-managed OpenAI OAuth.';
+
+    const notes = [sessionNote];
+    if (discoveryError) {
+      notes.push(`Model discovery failed: ${discoveryError}`);
+    } else if (models.length > 0) {
+      notes.push('Model discovery completed from OpenAI account.');
+    } else {
+      notes.push('Model discovery returned no models for this account.');
+    }
 
     return {
       ready: true,
@@ -113,16 +118,10 @@ export async function prepareProviderRuntime(
         baseUrl: OPENAI_ACCOUNT_BASE_URL,
         apiKey: session.accessToken,
         models,
-        notes: [
-          sessionNote,
-          usedCacheFallback ? 'Using locally cached OpenAI account models.' : 'Model discovery completed from OpenAI account.',
-        ],
+        notes,
         autoStarted: false,
       },
-      notes: [
-        sessionNote,
-        usedCacheFallback ? 'Using locally cached OpenAI account models.' : 'Model discovery completed from OpenAI account.',
-      ],
+      notes,
     };
   }
 
@@ -146,7 +145,6 @@ export async function prepareProviderRuntime(
     }
 
     let models: string[] = [];
-    let usedCacheFallback = false;
     let discoveryError: string | undefined;
     try {
       const discovered = await withTimeout(fetchAnthropicAccountModels(session.apiKey), 6_000);
@@ -157,19 +155,13 @@ export async function prepareProviderRuntime(
     } catch (error) {
       discoveryError = error instanceof Error ? error.message : String(error);
     }
-    if (models.length === 0) {
-      models = readCachedModelCatalog(provider);
-      usedCacheFallback = models.length > 0;
-    }
 
     const sourceNote = session.source === 'env'
       ? 'Connected through ANTHROPIC_API_KEY environment variable.'
       : 'Connected through Claude Code CLI credentials.';
 
     const notes = [sourceNote];
-    if (usedCacheFallback) {
-      notes.push('Using locally cached Anthropic models; live discovery did not complete in time.');
-    } else if (discoveryError) {
+    if (discoveryError) {
       notes.push(`Model discovery failed: ${discoveryError}`);
     } else if (models.length > 0) {
       notes.push('Model discovery completed from Anthropic API.');
@@ -202,9 +194,7 @@ export async function prepareProviderRuntime(
     }
 
     let models: string[] = [];
-    let usedCacheFallback = false;
     let discoveryError: string | undefined;
-    let scopeInsufficient = false;
     try {
       const discovered = await withTimeout(fetchGeminiOAuthModels(session.accessToken), 13_000);
       if (discovered.length > 0) {
@@ -213,23 +203,13 @@ export async function prepareProviderRuntime(
       }
     } catch (error) {
       discoveryError = error instanceof Error ? error.message : String(error);
-      scopeInsufficient = discoveryError.toLowerCase().includes('insufficient authentication scopes')
-        || discoveryError.toLowerCase().includes('access_token_scope_insufficient')
-        || discoveryError.toLowerCase().includes('http 403');
-    }
-
-    if (models.length === 0 && !scopeInsufficient) {
-      models = readCachedModelCatalog(provider);
-      usedCacheFallback = models.length > 0;
     }
 
     const notes = ['Connected through Yagr-managed Gemini OAuth.'];
-    if (usedCacheFallback) {
-      notes.push('Using locally cached Gemini models; live discovery did not complete in time.');
+    if (discoveryError) {
+      notes.push(`Model discovery failed: ${discoveryError}`);
     } else if (models.length > 0) {
       notes.push('Model discovery completed from Gemini OAuth.');
-    } else if (discoveryError) {
-      notes.push(`Model discovery failed: ${discoveryError}`);
     } else {
       notes.push('Model discovery returned no models for this account/session.');
     }
@@ -274,19 +254,27 @@ export async function prepareProviderRuntime(
     }
 
     let models: string[] = [];
-    let usedCacheFallback = false;
+    let discoveryError: string | undefined;
     try {
       const discovered = await withTimeout(fetchGitHubCopilotModels(runtimeAuth.token, runtimeAuth.baseUrl), 6_000);
       if (discovered.length > 0) {
         models = discovered;
         writeCachedModelCatalog(provider, discovered);
       }
-    } catch {
-      // Fallback to cache.
+    } catch (error) {
+      discoveryError = error instanceof Error ? error.message : String(error);
     }
-    if (models.length === 0) {
-      models = readCachedModelCatalog(provider);
-      usedCacheFallback = models.length > 0;
+
+    const copilotNotes = [
+      'Connected through Yagr-managed GitHub device login and Copilot token exchange.',
+      'Runtime validated with GitHub Copilot.',
+    ];
+    if (discoveryError) {
+      copilotNotes.push(`Model discovery failed: ${discoveryError}`);
+    } else if (models.length > 0) {
+      copilotNotes.push('Model discovery completed from Copilot runtime.');
+    } else {
+      copilotNotes.push('Model discovery returned no models for this account.');
     }
 
     return {
@@ -295,18 +283,10 @@ export async function prepareProviderRuntime(
         provider,
         baseUrl: runtimeAuth.baseUrl,
         models,
-        notes: [
-          'Connected through Yagr-managed GitHub device login and Copilot token exchange.',
-          'Runtime validated with GitHub Copilot.',
-          usedCacheFallback ? 'Using locally cached Copilot models.' : 'Model discovery completed from Copilot runtime.',
-        ],
+        notes: copilotNotes,
         autoStarted: false,
       },
-      notes: [
-        'Connected through Yagr-managed GitHub device login and Copilot token exchange.',
-        'Runtime validated with GitHub Copilot.',
-        usedCacheFallback ? 'Using locally cached Copilot models.' : 'Model discovery completed from Copilot runtime.',
-      ],
+      notes: copilotNotes,
     };
   }
 
