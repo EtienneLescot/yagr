@@ -51,6 +51,7 @@ interface ParsedArgs {
   maxSteps?: number;
   showThinking: boolean;
   showExecution: boolean;
+  debug: boolean;
   yes: boolean;
   dryRun: boolean;
   resetScope?: YagrResetScope;
@@ -61,6 +62,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     interactive: false,
     showThinking: true,
     showExecution: true,
+    debug: false,
     yes: false,
     dryRun: false,
   };
@@ -130,6 +132,11 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (argv[0] === 'llm' && argv[1] === 'setup') {
     parsed.command = 'llm-setup';
     startIndex = 2;
+  }
+
+  if (argv[0] === 'llm-setup') {
+    parsed.command = 'llm-setup';
+    startIndex = 1;
   }
 
   if (argv[0] === 'start') {
@@ -279,6 +286,11 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === '--hide-command-executions') {
       parsed.showExecution = false;
+      continue;
+    }
+
+    if (arg === '--debug') {
+      parsed.debug = true;
       continue;
     }
 
@@ -513,6 +525,7 @@ Agent options (for \`yagr [prompt]\` and most commands):
   --interactive, -i            Keep the session open after the prompt
   --hide-thinking              Hide agent thinking output
   --hide-execution             Hide tool execution output
+  --debug                      Enable debug logs for setup/model discovery
   --yes                        Auto-confirm destructive operations
   --dry-run                    Preview without making changes
 
@@ -622,6 +635,9 @@ async function main(): Promise<void> {
     }
 
     if (args.command === 'llm-setup') {
+      if (args.debug) {
+        process.env.YAGR_DEBUG_MODEL_DISCOVERY = '1';
+      }
       await runYagrLlmSetup(configService);
       return;
     }
