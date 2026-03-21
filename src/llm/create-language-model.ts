@@ -161,6 +161,19 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
     })(modelName);
   }
 
+  if (provider === 'openai') {
+    const openaiProvider = createOpenAI({
+      apiKey: resolvedApiKey,
+      baseURL: baseURL || definition.defaultBaseUrl,
+      headers,
+      name: provider,
+      compatibility: 'compatible',
+    });
+    // SSOT for direct OpenAI API-key provider:
+    // route all text generation through the Responses API.
+    return openaiProvider.responses(modelName);
+  }
+
   if (provider === 'openai-proxy') {
     if (!resolvedApiKey) {
       throw new Error('OpenAI account session not found. Run `yagr setup` again.');
@@ -182,16 +195,151 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
   }
 
   if (definition.usesOpenAiCompatibleApi) {
-    return createOpenAI({
+    const providerClient = createOpenAI({
       apiKey: resolvedApiKey,
       baseURL: baseURL || definition.defaultBaseUrl,
       headers,
       name: provider,
-      compatibility: 'compatible',
-    })(modelName);
+      compatibility: getOpenAiCompatibilityMode(provider),
+      fetch: getOpenAiFetchOverride(provider),
+    });
+
+    const providerSettings = getOpenAiCompatibleProviderSettings(provider);
+    return providerSettings
+      ? providerClient(modelName, providerSettings)
+      : providerClient(modelName);
   }
 
   throw new Error(`Provider ${provider} is not yet fully implemented in createLanguageModel`);
+}
+
+function getOpenAiCompatibilityMode(provider: YagrModelProvider): 'strict' | 'compatible' {
+  return 'compatible';
+}
+
+function getOpenAiFetchOverride(provider: YagrModelProvider): typeof fetch | undefined {
+  if (provider !== 'mistral') {
+    return undefined;
+  }
+
+  return async (input, init) => {
+    const response = await fetch(input, init);
+    const contentType = response.headers.get('content-type')?.toLowerCase() || '';
+    if (contentType.includes('text/event-stream')) {
+      return response;
+    }
+
+    const payload = await response.clone().text().catch(() => '');
+
+    if (response.ok) {
+      if (payload.trim()) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(payload);
+        } catch {
+          throw new Error(`Mistral API returned non-JSON payload: ${truncateForError(payload.replace(/\s+/g, ' ').trim(), 280)}`);
+        }
+
+        const normalized = normalizeMistralToolCalls(parsed);
+        if (normalized !== parsed) {
+          return new Response(JSON.stringify(normalized), {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
+        }
+      }
+      return response;
+    }
+
+    const compact = payload.replace(/\s+/g, ' ').trim();
+    throw new Error(`Mistral API error ${response.status}: ${truncateForError(compact, 280)}`);
+  };
+}
+
+function truncateForError(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function normalizeMistralToolCalls(payload: unknown): unknown {
+  if (!payload || typeof payload !== 'object') {
+    return payload;
+  }
+
+  const root = payload as { choices?: unknown[] };
+  if (!Array.isArray(root.choices) || root.choices.length === 0) {
+    return payload;
+  }
+
+  let mutated = false;
+  const choices = root.choices.map((choice) => {
+    if (!choice || typeof choice !== 'object') {
+      return choice;
+    }
+    const record = choice as { message?: { tool_calls?: unknown[] } };
+    const toolCalls = record.message?.tool_calls;
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
+      return choice;
+    }
+
+    let choiceMutated = false;
+    const normalizedToolCalls = toolCalls.map((toolCall) => {
+      if (!toolCall || typeof toolCall !== 'object') {
+        return toolCall;
+      }
+      const callRecord = toolCall as Record<string, unknown>;
+      if (typeof callRecord.type === 'string' && callRecord.type.length > 0) {
+        return toolCall;
+      }
+      choiceMutated = true;
+      return {
+        ...callRecord,
+        type: 'function',
+      };
+    });
+
+    if (!choiceMutated) {
+      return choice;
+    }
+
+    mutated = true;
+    return {
+      ...(choice as Record<string, unknown>),
+      message: {
+        ...(record.message as Record<string, unknown>),
+        tool_calls: normalizedToolCalls,
+      },
+    };
+  });
+
+  if (!mutated) {
+    return payload;
+  }
+
+  return {
+    ...(payload as Record<string, unknown>),
+    choices,
+  };
+}
+
+function getOpenAiCompatibleProviderSettings(provider: YagrModelProvider):
+  | { useLegacyFunctionCalling?: boolean; parallelToolCalls?: boolean; structuredOutputs?: boolean; simulateStreaming?: boolean }
+  | undefined {
+  if (provider === 'mistral') {
+    return {
+      // Reduce tool-call surface complexity for better compatibility.
+      parallelToolCalls: false,
+      // Mistral OpenAI-compatible endpoints can emit non-JSON fragments during tool
+      // argument generation; disabling strict structured parsing avoids hard failures.
+      structuredOutputs: false,
+      simulateStreaming: true,
+    };
+  }
+
+  return undefined;
 }
 
 function getApiKeyForProvider(

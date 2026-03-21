@@ -3,6 +3,7 @@ import { generateText, streamText, type CoreMessage } from 'ai';
 import type { Engine } from '../engine/engine.js';
 import { createLanguageModel } from '../llm/create-language-model.js';
 import { resolveModelContextProfile } from '../llm/create-language-model.js';
+import type { YagrModelProvider } from '../llm/provider-registry.js';
 import type {
   YagrAgentState,
   YagrContextCompactionEvent,
@@ -614,6 +615,46 @@ async function executePhase(
 }> {
   throwIfAborted(options.abortSignal);
 
+  if (options.provider === 'mistral') {
+    const result = await generateText({
+      abortSignal: options.abortSignal,
+      model: createLanguageModel(options),
+      system: systemPrompt,
+      tools,
+      messages,
+      maxSteps,
+    });
+
+    for (const step of result.steps) {
+      await recordStep(state, options, {
+        stepType: step.stepType,
+        finishReason: String(step.finishReason),
+        toolCalls: step.toolCalls.map((toolCall: { toolName: string; args: unknown }) => ({
+          toolName: toolCall.toolName,
+          args: toolCall.args,
+        })),
+        toolResults: step.toolResults.map((toolResult: { toolName: string; result: unknown }) => ({
+          toolName: toolResult.toolName,
+          result: toolResult.result,
+        })),
+        text: step.text,
+      });
+    }
+
+    const finalText = sanitizeAssistantOutput(result.text);
+    if (finalText) {
+      await options.onTextDelta?.(finalText);
+    }
+
+    return {
+      text: finalText,
+      finishReason: String(result.finishReason),
+      steps: result.steps.length,
+      toolCalls: result.toolCalls.map((toolCall: { toolName: string }) => ({ toolName: toolCall.toolName })),
+      responseMessages: result.response.messages,
+    };
+  }
+
   let recordedSteps = 0;
   const recordedToolNames = new Set<string>();
 
@@ -624,7 +665,7 @@ async function executePhase(
     tools,
     messages,
     maxSteps,
-    toolCallStreaming: true,
+    toolCallStreaming: shouldUseToolCallStreaming(options.provider),
     onStepFinish: async (stepResult) => {
       recordedSteps += 1;
       for (const toolCall of stepResult.toolCalls) {
@@ -689,6 +730,13 @@ async function executePhase(
     toolCalls: resolved[3].map((toolCall) => ({ toolName: toolCall.toolName })),
     responseMessages: response.messages,
   };
+}
+
+function shouldUseToolCallStreaming(provider?: YagrModelProvider): boolean {
+  if (provider === 'mistral') {
+    return false;
+  }
+  return true;
 }
 
 async function transitionPhase(state: RunState, options: YagrRunOptions, phase: YagrRunPhase, status: YagrPhaseEvent['status'], message: string): Promise<void> {

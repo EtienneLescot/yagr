@@ -34,7 +34,7 @@ export interface YagrProviderDefinition {
   };
   modelDiscovery?: {
     buildUrl: (baseUrl?: string) => string | undefined;
-    authMode: 'bearer-optional' | 'bearer-required' | 'none';
+    authMode: 'bearer-optional' | 'bearer-required' | 'x-api-key-required' | 'none';
     mapResponse: (data: Record<string, unknown>) => string[];
   };
 }
@@ -42,12 +42,24 @@ export interface YagrProviderDefinition {
 const MODEL_LIST_MAPPER = (data: Record<string, unknown>) =>
   (data.data as Array<{ id: string }> | undefined)?.map((model) => model.id) ?? [];
 
+const GOOGLE_OPENAI_MODEL_LIST_MAPPER = (data: Record<string, unknown>) =>
+  (data.data as Array<{ id: string }> | undefined)
+    ?.map((model) => model.id?.replace(/^models\//, ''))
+    .filter((id) => typeof id === 'string' && /^gemini-/i.test(id))
+    .filter((id): id is string => Boolean(id))
+  ?? [];
+
 export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDefinition> = {
   anthropic: {
     id: 'anthropic',
-    defaultModel: 'claude-3-5-sonnet-latest',
+    defaultModel: 'claude-sonnet-4-5',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
+    modelDiscovery: {
+      buildUrl: () => 'https://api.anthropic.com/v1/models',
+      authMode: 'x-api-key-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
   },
   openai: {
     id: 'openai',
@@ -65,9 +77,15 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   google: {
     id: 'google',
     displayName: 'Gemini API Key',
-    defaultModel: 'gemini-1.5-pro-latest',
+    defaultModel: 'gemini-2.5-flash',
+    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     requiresApiKey: true,
-    usesOpenAiCompatibleApi: false,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: () => 'https://generativelanguage.googleapis.com/v1beta/openai/models',
+      authMode: 'bearer-required',
+      mapResponse: GOOGLE_OPENAI_MODEL_LIST_MAPPER,
+    },
   },
   groq: {
     id: 'groq',
