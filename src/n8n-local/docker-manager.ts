@@ -33,10 +33,10 @@ export interface ManagedDockerN8nStatus {
 export async function installManagedDockerN8n(options: InstallManagedDockerN8nOptions = {}): Promise<ManagedN8nInstanceState> {
   const assessment = await inspectLocalN8nBootstrap();
   if (!assessment.docker.available) {
-    throw new Error('Docker is not available on this machine. Run `yagr n8n doctor` for details.');
+    throw new Error('Docker is not running. Choose the local managed n8n option without Docker, or install/run Docker.');
   }
   if (assessment.docker.reachable === false) {
-    throw new Error('Docker is not started. Please start Docker and try again.');
+    throw new Error('Docker is not running. Choose the local managed n8n option without Docker, or install/run Docker.');
   }
 
   const paths = ensureManagedN8nDirs();
