@@ -1,4 +1,4 @@
-import { getDefaultBaseUrlForProvider, getProviderDefinition, getStaticModelCatalogForProvider, type YagrModelProvider } from './provider-registry.js';
+import { getDefaultBaseUrlForProvider, getProviderDefinition, type YagrModelProvider } from './provider-registry.js';
 
 export async function fetchAvailableModels(
   provider: YagrModelProvider,
@@ -6,10 +6,6 @@ export async function fetchAvailableModels(
   baseUrl?: string,
 ): Promise<string[]> {
   const definition = getProviderDefinition(provider);
-  const staticCatalog = getStaticModelCatalogForProvider(provider);
-  if (staticCatalog.length > 0) {
-    return staticCatalog;
-  }
   const discovery = definition.modelDiscovery;
   if (!discovery) {
     return [];

@@ -50,6 +50,18 @@ export interface SetupCallbacks {
     notes?: string[];
     error?: string;
   }>;
+  startAccountAuth(provider: YagrModelProvider): Promise<{
+    kind: 'none' | 'input';
+    title?: string;
+    instructions?: string[];
+    placeholder?: string;
+    submitLabel?: string;
+    state?: string;
+  }>;
+  completeAccountAuth(provider: YagrModelProvider, input: string, state?: string): Promise<{
+    ok: boolean;
+    error?: string;
+  }>;
   fetchModels(provider: YagrModelProvider, apiKey?: string): Promise<string[]>;
   saveLlmConfig(p: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string }): void;
   getSurfaceDefaults(): { surfaces: GatewaySurface[] };
@@ -63,10 +75,14 @@ export interface SetupResult {
   telegramDeepLink?: string;
 }
 
-export function runSetupWizard(callbacks: SetupCallbacks): Promise<SetupResult> {
+export interface SetupWizardOptions {
+  mode?: 'full' | 'llm-only';
+}
+
+export function runSetupWizard(callbacks: SetupCallbacks, options: SetupWizardOptions = {}): Promise<SetupResult> {
   return new Promise((resolve) => {
     const { unmount } = render(
-      <SetupWizard callbacks={callbacks} onDone={(result) => { unmount(); resolve(result); }} />,
+      <SetupWizard callbacks={callbacks} options={options} onDone={(result) => { unmount(); resolve(result); }} />,
     );
   });
 }
@@ -87,6 +103,7 @@ type Phase =
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
   | { kind: 'llm-account-auth'; provider: YagrModelProvider; cursor: number }
+  | { kind: 'llm-account-input'; provider: YagrModelProvider; title: string; instructions: string[]; placeholder?: string; submitLabel: string; state?: string; err?: string }
   | { kind: 'llm-reuse-config'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
   | { kind: 'llm-reuse-apikey'; provider: YagrModelProvider; existing: string; cursor: number }
   | { kind: 'llm-apikey'; provider: YagrModelProvider; err?: string }
@@ -134,8 +151,8 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
     return {
       title: 'Connect Gemini account',
       body: [
-        'Yagr uses the Gemini CLI OAuth session for your Google account.',
-        'It will verify the local session and may open a browser login flow if needed.',
+        'Yagr runs a native Google OAuth flow for your Gemini account.',
+        'It will show a browser URL and ask you to paste the redirect URL back here.',
       ],
       continueLabel: 'Continue with Gemini sign-in',
     };
@@ -145,8 +162,8 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
     return {
       title: 'Connect GitHub Copilot account',
       body: [
-        'Yagr uses your GitHub login and exchanges it for a Copilot runtime token.',
-        'It may open the GitHub browser login flow if needed.',
+        'Yagr runs a native GitHub device login and exchanges it for a Copilot runtime token.',
+        'It will show a verification URL and code in the terminal.',
       ],
       continueLabel: 'Continue with GitHub sign-in',
     };
@@ -165,7 +182,7 @@ function Rule(): JSX.Element {
   return <Text dimColor>{'─'.repeat(56)}</Text>;
 }
 
-function Header({ phase }: { phase: Phase }): JSX.Element {
+function Header({ phase, mode }: { phase: Phase; mode: 'full' | 'llm-only' }): JSX.Element {
   const section = sectionFor(phase);
   const idx = sectionIndex(phase);
   const isDone = phase.kind === 'done' || phase.kind === 'cancelled' || phase.kind === 'error';
@@ -176,7 +193,9 @@ function Header({ phase }: { phase: Phase }): JSX.Element {
         <Text color="cyan" bold>◈  Yagr Setup</Text>
         {!isDone && (
           <Text dimColor>
-            {`${idx === 1 ? '●' : '○'}${idx === 2 ? '●' : '○'}${idx === 3 ? '●' : '○'}  step ${idx} / 3`}
+            {mode === 'llm-only'
+              ? '●  step 1 / 1'
+              : `${idx === 1 ? '●' : '○'}${idx === 2 ? '●' : '○'}${idx === 3 ? '●' : '○'}  step ${idx} / 3`}
           </Text>
         )}
       </Box>
@@ -446,8 +465,9 @@ function MultiSelectList({
 
 // ─── Main wizard component ────────────────────────────────────────────────────
 
-function SetupWizard({ callbacks, onDone }: {
+function SetupWizard({ callbacks, options, onDone }: {
   callbacks: SetupCallbacks;
+  options?: SetupWizardOptions;
   onDone: (result: SetupResult) => void;
 }): JSX.Element {
   const app = useApp();
@@ -455,8 +475,30 @@ function SetupWizard({ callbacks, onDone }: {
   const n8nDef = callbacks.getN8nDefaults();
   const llmDef = callbacks.getLlmDefaults();
   const surfDef = callbacks.getSurfaceDefaults();
+  const mode = options?.mode ?? 'full';
 
-  const [phase, setPhase] = useState<Phase>({ kind: 'n8n-mode', cursor: 0 });
+  const [phase, setPhase] = useState<Phase>(() => {
+    if (mode === 'llm-only') {
+      const llmProvider = llmDef.provider;
+      if (llmProvider) {
+        const existingApiKey = llmDef.getApiKey(llmProvider);
+        const existingModel = llmDef.getDefaultModel(llmProvider);
+        if (existingModel && (existingApiKey || !providerRequiresApiKey(llmProvider))) {
+          return { kind: 'llm-reuse-config', provider: llmProvider, apiKey: existingApiKey ?? '', model: existingModel, cursor: 0 };
+        }
+
+        return {
+          kind: 'llm-provider',
+          initial: llmProvider,
+          cursor: Math.max(0, VALID_PROVIDERS.indexOf(llmProvider)),
+        };
+      }
+
+      return { kind: 'llm-provider', cursor: 0 };
+    }
+
+    return { kind: 'n8n-mode', cursor: 0 };
+  });
   const [textValue, setTextValue] = useState('');
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const asyncGuard = useRef(0);
@@ -711,12 +753,38 @@ function SetupWizard({ callbacks, onDone }: {
     transitionToLlmModelsLoading(provider, key, defModel);
   }, [llmDef, transitionToLlmModelsLoading]);
 
+  const handleAccountAuthSubmit = useCallback((provider: YagrModelProvider, state?: string) => (value: string) => {
+    void (async () => {
+      try {
+        const result = await callbacks.completeAccountAuth(provider, value, state);
+        if (!result.ok) {
+          setPhase((current) => current.kind === 'llm-account-input'
+            ? { ...current, err: result.error || 'Authentication failed.' }
+            : current);
+          return;
+        }
+
+        const defModel = llmDef.getDefaultModel(provider);
+        transitionToLlmModelsLoading(provider, '', defModel);
+      } catch (error) {
+        setPhase((current) => current.kind === 'llm-account-input'
+          ? { ...current, err: error instanceof Error ? error.message : String(error) }
+          : current);
+      }
+    })();
+  }, [callbacks, llmDef, transitionToLlmModelsLoading]);
+
   const saveLlmAndContinue = useCallback((provider: YagrModelProvider, apiKey: string, model: string, note?: string) => {
     const draftedBaseUrl = llmBaseUrlDraftsRef.current[provider];
     callbacks.saveLlmConfig({ provider, apiKey, model, baseUrl: draftedBaseUrl || undefined });
     setTextValue('');
+    if (mode === 'llm-only') {
+      setPhase({ kind: 'done', n8nHost: '', n8nProject: '', provider, model, surfaces: surfDef.surfaces });
+      setTimeout(() => { onDone({ ok: true }); app.exit(); }, 250);
+      return;
+    }
     setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
-  }, [callbacks, surfDef]);
+  }, [app, callbacks, mode, onDone, surfDef]);
 
   const handleSelectKey = useCallback((input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean; escape: boolean }) => {
     if (phase.kind === 'n8n-mode') {
@@ -821,13 +889,51 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
       else if (key.return) {
         if (phase.cursor === 0) {
-          const defModel = llmDef.getDefaultModel(phase.provider);
-          const authCopy = getProviderAuthCopy(phase.provider);
-          transitionToLlmModelsLoading(phase.provider, '', defModel, authCopy.body.join(' '));
+          void (async () => {
+            try {
+              const authStep = await callbacks.startAccountAuth(phase.provider);
+              const authUrl = (authStep.instructions ?? [])
+                .map((line) => line.match(/https?:\/\/\S+/)?.[0])
+                .find(Boolean);
+              if (authUrl) {
+                void callbacks.openUrl(authUrl).catch(() => {
+                  // Browser auto-open is best effort only.
+                });
+              }
+              if (authStep.kind === 'input') {
+                setPhase({
+                  kind: 'llm-account-input',
+                  provider: phase.provider,
+                  title: authStep.title ?? getProviderAuthCopy(phase.provider).title,
+                  instructions: authStep.instructions ?? [],
+                  placeholder: authStep.placeholder,
+                  submitLabel: authStep.submitLabel ?? 'Continue',
+                  state: authStep.state,
+                });
+                setTextValue('');
+                return;
+              }
+
+              const defModel = llmDef.getDefaultModel(phase.provider);
+              const authCopy = getProviderAuthCopy(phase.provider);
+              transitionToLlmModelsLoading(phase.provider, '', defModel, authCopy.body.join(' '));
+            } catch (error) {
+              setPhase({
+                kind: 'llm-account-input',
+                provider: phase.provider,
+                title: getProviderAuthCopy(phase.provider).title,
+                instructions: getProviderAuthCopy(phase.provider).body,
+                submitLabel: 'Continue',
+                err: error instanceof Error ? error.message : String(error),
+              });
+            }
+          })();
         } else {
           setPhase({ kind: 'llm-provider', initial: phase.provider, cursor: VALID_PROVIDERS.indexOf(phase.provider) });
         }
       } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'llm-account-input') {
+      if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-reuse-apikey') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
@@ -848,9 +954,6 @@ function SetupWizard({ callbacks, onDone }: {
       else if (key.return) {
         const selected = allOptions[phase.cursor];
         if (selected === '__custom__') {
-          if (isOAuthAccountProvider(phase.provider)) {
-            return;
-          }
           setPhase({ ...phase, models: [] });
           setTextValue(phase.defModel ?? '');
           return;
@@ -920,7 +1023,7 @@ function SetupWizard({ callbacks, onDone }: {
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      <Header phase={phase} />
+      <Header phase={phase} mode={mode} />
       {renderPhase()}
     </Box>
   );
@@ -1164,6 +1267,26 @@ function SetupWizard({ callbacks, onDone }: {
         );
         }
 
+      case 'llm-account-input':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label={phase.title} />
+            {phase.instructions.map((line, index) => (
+              <Text key={`${index}-${line}`} dimColor>  {line}</Text>
+            ))}
+            <Box marginLeft={2} marginTop={1}>
+              <WizardTextInput
+                value={textValue}
+                onChange={setTextValue}
+                onSubmit={handleAccountAuthSubmit(phase.provider, phase.state)}
+                placeholder={phase.placeholder}
+              />
+            </Box>
+            {phase.err ? <ErrorLine message={phase.err} /> : null}
+            <HintBar hints={[`${phase.submitLabel}  (Enter ↵)`, 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
       case 'llm-reuse-apikey':
         return (
           <Box flexDirection="column">
@@ -1205,26 +1328,23 @@ function SetupWizard({ callbacks, onDone }: {
         );
 
       case 'llm-models-loading':
+        const loadingMessage = isOAuthAccountProvider(phase.provider)
+          ? `Finalizing ${getProviderDisplayName(phase.provider)} account and fetching models…`
+          : `Fetching available models for ${getProviderDisplayName(phase.provider)}…`;
         return (
           <Box flexDirection="column">
-            <SpinnerDisplay message={`Fetching available models for ${getProviderDisplayName(phase.provider)}…`} frame={spinnerFrame} />
+            <SpinnerDisplay message={loadingMessage} frame={spinnerFrame} />
             {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
           </Box>
         );
 
       case 'llm-model': {
         const modelOptions = getDisplayedModelOptions(phase.models);
-        const manualEntryDisabled = isOAuthAccountProvider(phase.provider) && phase.models.length === 0;
         return (
           <Box flexDirection="column">
             <FieldLabel label={`Default model  ·  ${getProviderDisplayName(phase.provider)}`} />
             {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
-            {manualEntryDisabled ? (
-              <Box flexDirection="column" marginLeft={2}>
-                <Text color="red">Unable to fetch models for {getProviderDisplayName(phase.provider)}.</Text>
-                <Text dimColor>Retry setup after the proxy/account flow is available, or use a stable API-key provider for now.</Text>
-              </Box>
-            ) : phase.models.length === 0 ? (
+            {phase.models.length === 0 ? (
               <Box marginLeft={2}>
                 <WizardTextInput
                   value={textValue}
@@ -1258,11 +1378,9 @@ function SetupWizard({ callbacks, onDone }: {
               />
             )}
             <HintBar hints={
-              manualEntryDisabled
-                ? ['Ctrl+C  cancel']
-                : phase.models.length > 0
-                  ? ['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel']
-                  : ['Enter ↵  confirm', 'Ctrl+C  cancel']
+              phase.models.length > 0
+                ? ['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel']
+                : ['Enter ↵  confirm', 'Ctrl+C  cancel']
             } />
           </Box>
         );

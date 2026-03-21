@@ -1,6 +1,8 @@
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash, randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type {
   LanguageModelV1,
@@ -9,32 +11,77 @@ import type {
   LanguageModelV1Prompt,
   LanguageModelV1StreamPart,
 } from '@ai-sdk/provider';
+import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 
 export const GEMINI_ACCOUNT_DEFAULT_MODEL = 'gemini-2.5-pro';
-export const GEMINI_ACCOUNT_MODEL_CATALOG = Object.freeze([
-  'gemini-2.5-pro',
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-]);
 
-interface GeminiOauthFile {
-  token?: string;
+const GEMINI_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GEMINI_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GEMINI_USERINFO_URL = 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json';
+const GEMINI_MODELS_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_REDIRECT_URI = 'http://localhost:8085/oauth2callback';
+const GEMINI_SCOPES = [
+  'https://www.googleapis.com/auth/cloud-platform',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+];
+const GEMINI_OAUTH_PERSONAL_AUTH_TYPE = 'oauth-personal';
+
+interface GeminiCliOauthFile {
   access_token?: string;
+  scope?: string;
+  token_type?: string;
+  id_token?: string;
+  expiry_date?: number;
   refresh_token?: string;
-  expiry_date?: number | string;
-  expires_at?: number | string;
+}
+
+interface GeminiStoredSession {
+  provider: 'google-proxy';
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
   email?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface GeminiOauthTokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in: number;
 }
 
 export interface GeminiAccountSession {
-  accessToken?: string;
-  refreshToken?: string;
-  expiresAt?: number;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
   email?: string;
-  authPath: string;
 }
 
-const GEMINI_OAUTH_PERSONAL_AUTH_TYPE = 'oauth-personal';
+export interface GeminiAccountAuthChallenge {
+  authUrl: string;
+  verifier: string;
+  callbackServerStarted: boolean;
+}
+
+interface PendingGeminiCallbackServer {
+  expectedState: string;
+  server: http.Server;
+  waitForRedirectUrl: Promise<string>;
+  timeout: NodeJS.Timeout;
+}
+
+let pendingGeminiCallbackServer: PendingGeminiCallbackServer | undefined;
+const completedGeminiCallbacks = new Map<string, { url: string; capturedAt: number }>();
+
+interface GeminiModelsResponse {
+  models?: Array<{
+    name?: string;
+    supportedGenerationMethods?: string[];
+  }>;
+  nextPageToken?: string;
+}
 
 export function getGeminiConfigDir(): string {
   return process.env.YAGR_GEMINI_CONFIG_DIR || path.join(os.homedir(), '.gemini');
@@ -48,52 +95,47 @@ export function getGeminiSettingsPath(): string {
   return process.env.YAGR_GEMINI_SETTINGS_PATH || path.join(getGeminiConfigDir(), 'settings.json');
 }
 
+export function getGeminiSessionPath(): string {
+  const override = process.env.YAGR_GEMINI_SESSION_PATH?.trim();
+  if (override) {
+    return override;
+  }
+
+  ensureYagrHomeDir();
+  return path.join(getYagrPaths().accountAuthDir, 'gemini-oauth.json');
+}
+
 function getGeminiExecutable(): string {
   return process.env.YAGR_GEMINI_CLI_PATH || 'gemini';
 }
 
 export function getGeminiAccountSession(): GeminiAccountSession | undefined {
-  const authPath = getGeminiAuthPath();
-  if (!fs.existsSync(authPath)) {
+  const stored = readStoredGeminiSession();
+  if (!stored) {
     return undefined;
   }
 
-  try {
-    const parsed = JSON.parse(fs.readFileSync(authPath, 'utf8')) as GeminiOauthFile;
-    const accessToken = readOptionalString(parsed.access_token) || readOptionalString(parsed.token);
-    const refreshToken = readOptionalString(parsed.refresh_token);
-    const expiresAt = normalizeEpochMillis(parsed.expiry_date ?? parsed.expires_at);
-    if (!accessToken && !refreshToken) {
-      return undefined;
-    }
-
-    return {
-      accessToken,
-      refreshToken,
-      expiresAt,
-      email: readOptionalString(parsed.email),
-      authPath,
-    };
-  } catch {
-    return undefined;
-  }
+  return {
+    accessToken: stored.accessToken,
+    refreshToken: stored.refreshToken,
+    expiresAt: stored.expiresAt,
+    email: stored.email,
+  };
 }
 
 export async function ensureGeminiAccountSession(): Promise<GeminiAccountSession | undefined> {
-  ensureGeminiCliSettings();
-
-  const existingSession = getGeminiAccountSession();
-  if (existingSession) {
-    return existingSession;
+  const stored = readStoredGeminiSession();
+  if (stored) {
+    const refreshed = await refreshGeminiSessionIfNeeded(stored);
+    syncGeminiCliFiles(refreshed);
+    return {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken,
+      expiresAt: refreshed.expiresAt,
+      email: refreshed.email,
+    };
   }
-
-  const loginSucceeded = await runGeminiLogin();
-  if (!loginSucceeded) {
-    return undefined;
-  }
-
-  ensureGeminiCliSettings();
-  return getGeminiAccountSession();
+  return undefined;
 }
 
 export function ensureGeminiCliSettings(): void {
@@ -113,19 +155,6 @@ export function ensureGeminiCliSettings(): void {
     settings.selectedAuthType = GEMINI_OAUTH_PERSONAL_AUTH_TYPE;
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   }
-}
-
-async function runGeminiLogin(): Promise<boolean> {
-  return await new Promise((resolve) => {
-    const child = spawn(getGeminiExecutable(), [], {
-      stdio: 'inherit',
-      env: buildGeminiEnvironment(),
-      cwd: process.cwd(),
-    });
-
-    child.on('error', () => resolve(false));
-    child.on('exit', (code) => resolve(code === 0));
-  });
 }
 
 export async function validateGeminiAccountRuntime(modelId = GEMINI_ACCOUNT_DEFAULT_MODEL): Promise<{
@@ -153,6 +182,56 @@ export async function validateGeminiAccountRuntime(modelId = GEMINI_ACCOUNT_DEFA
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+export async function fetchGeminiOAuthModels(accessToken: string): Promise<string[]> {
+  const discovered = new Set<string>();
+  let pageToken: string | undefined;
+  const startedAt = Date.now();
+  const maxElapsedMs = 12_000;
+  const maxPages = 20;
+
+  for (let page = 0; page < maxPages; page += 1) {
+    if (Date.now() - startedAt >= maxElapsedMs) {
+      break;
+    }
+
+    const params = new URLSearchParams();
+    params.set('pageSize', '1000');
+    if (pageToken) {
+      params.set('pageToken', pageToken);
+    }
+
+    const response = await fetchWithTimeout(`${GEMINI_MODELS_URL}${params.toString() ? `?${params.toString()}` : ''}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+    }, 4_000);
+
+    if (!response.ok) {
+      break;
+    }
+
+    const payload = await response.json() as GeminiModelsResponse;
+    for (const model of payload.models ?? []) {
+      const supportsGeneration = (model.supportedGenerationMethods ?? []).includes('generateContent');
+      if (!supportsGeneration) {
+        continue;
+      }
+      const modelName = model.name?.replace(/^models\//, '').trim();
+      if (modelName) {
+        discovered.add(modelName);
+      }
+    }
+
+    if (!payload.nextPageToken) {
+      break;
+    }
+    pageToken = payload.nextPageToken;
+  }
+
+  return [...discovered].sort((a, b) => a.localeCompare(b));
 }
 
 export function createGeminiAccountLanguageModel(modelId: string): LanguageModelV1 {
@@ -220,17 +299,17 @@ async function runGeminiExec(
   };
   warnings: LanguageModelV1CallWarning[];
 }> {
+  const session = await ensureGeminiAccountSession();
+  if (!session) {
+    throw new Error('Gemini OAuth session not found. Run `yagr setup` again.');
+  }
+
+  syncGeminiCliFiles(session);
   ensureGeminiCliSettings();
 
   const warnings = buildGeminiWarnings(options);
   const prompt = flattenPrompt(options.prompt);
-  const args = [
-    '--model',
-    modelId,
-    '--sandbox=false',
-    '--prompt',
-    prompt,
-  ];
+  const args = ['--model', modelId, '--sandbox=false', '--prompt', prompt];
 
   return await new Promise((resolve, reject) => {
     const child = spawn(getGeminiExecutable(), args, {
@@ -265,6 +344,446 @@ async function runGeminiExec(
       });
     });
   });
+}
+
+export async function beginGeminiAccountAuth(): Promise<GeminiAccountAuthChallenge> {
+  const credentials = resolveGeminiOAuthClientConfig();
+  const { verifier, challenge } = generatePkce();
+  const callbackServerStarted = await startGeminiCallbackServer(verifier);
+  return {
+    authUrl: buildGeminiAuthUrl(credentials.clientId, challenge, verifier),
+    verifier,
+    callbackServerStarted,
+  };
+}
+
+export async function completeGeminiAccountAuth(callbackInput: string, verifier: string): Promise<GeminiAccountSession> {
+  const credentials = resolveGeminiOAuthClientConfig();
+  const resolvedInput = callbackInput.trim() || await waitForGeminiCallbackRedirect(verifier);
+  const parsed = parseGeminiCallbackInput(resolvedInput, verifier);
+  if ('error' in parsed) {
+    throw new Error(parsed.error);
+  }
+
+  const tokenResponse = await exchangeGeminiCodeForTokens(parsed.code, verifier, credentials);
+  const email = await resolveGoogleEmail(tokenResponse.access_token);
+  const nowIso = new Date().toISOString();
+  const stored: GeminiStoredSession = {
+    provider: 'google-proxy',
+    accessToken: tokenResponse.access_token,
+    refreshToken: tokenResponse.refresh_token || '',
+    expiresAt: Date.now() + tokenResponse.expires_in * 1000 - 5 * 60 * 1000,
+    email,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+
+  if (!stored.refreshToken) {
+    throw new Error('No refresh token received from Google OAuth. Retry the consent flow.');
+  }
+
+  writeStoredGeminiSession(stored);
+  syncGeminiCliFiles(stored);
+  return {
+    accessToken: stored.accessToken,
+    refreshToken: stored.refreshToken,
+    expiresAt: stored.expiresAt,
+    email: stored.email,
+  };
+}
+
+async function startGeminiCallbackServer(expectedState: string): Promise<boolean> {
+  stopGeminiCallbackServer();
+
+  let resolveRedirect: ((value: string) => void) | undefined;
+  let rejectRedirect: ((error: Error) => void) | undefined;
+  const waitForRedirectUrl = new Promise<string>((resolve, reject) => {
+    resolveRedirect = resolve;
+    rejectRedirect = reject;
+  });
+
+  const server = http.createServer((req, res) => {
+    const requestUrl = new URL(req.url || '/', GEMINI_REDIRECT_URI);
+    if (requestUrl.pathname !== '/oauth2callback') {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Not Found');
+      return;
+    }
+
+    const state = requestUrl.searchParams.get('state');
+    const code = requestUrl.searchParams.get('code');
+    const oauthError = requestUrl.searchParams.get('error');
+
+    if (oauthError) {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(`OAuth error: ${oauthError}. Return to terminal and retry.`);
+      storeCompletedGeminiCallback(expectedState, requestUrl.toString());
+      resolveRedirect?.(requestUrl.toString());
+      stopGeminiCallbackServer();
+      return;
+    }
+
+    if (!code || state !== expectedState) {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Invalid callback. Return to terminal and retry.');
+      storeCompletedGeminiCallback(expectedState, requestUrl.toString());
+      resolveRedirect?.(requestUrl.toString());
+      stopGeminiCallbackServer();
+      return;
+    }
+
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('<html><body><h3>Gemini account connected.</h3><p>You can return to Yagr.</p></body></html>');
+    storeCompletedGeminiCallback(expectedState, requestUrl.toString());
+    resolveRedirect?.(requestUrl.toString());
+    stopGeminiCallbackServer();
+  });
+
+  const timeout = setTimeout(() => {
+    rejectRedirect?.(new Error('Gemini OAuth callback timeout. Retry and complete sign-in in the browser.'));
+    stopGeminiCallbackServer();
+  }, 3 * 60_000);
+
+  pendingGeminiCallbackServer = {
+    expectedState,
+    server,
+    waitForRedirectUrl,
+    timeout,
+  };
+
+  const listenResult = await new Promise<boolean>((resolve) => {
+    server.once('error', (error) => {
+      rejectRedirect?.(error instanceof Error ? error : new Error(String(error)));
+      stopGeminiCallbackServer();
+      resolve(false);
+    });
+    server.listen(8085, () => {
+      resolve(true);
+    });
+  });
+
+  return listenResult;
+}
+
+async function waitForGeminiCallbackRedirect(expectedState: string): Promise<string> {
+  const completed = completedGeminiCallbacks.get(expectedState);
+  if (completed) {
+    completedGeminiCallbacks.delete(expectedState);
+    return completed.url;
+  }
+
+  const pending = pendingGeminiCallbackServer;
+  if (!pending || pending.expectedState !== expectedState) {
+    throw new Error('Gemini callback listener is not active. Paste the redirect URL manually.');
+  }
+  return await pending.waitForRedirectUrl;
+}
+
+function stopGeminiCallbackServer(): void {
+  const pending = pendingGeminiCallbackServer;
+  if (!pending) {
+    return;
+  }
+
+  clearTimeout(pending.timeout);
+  pendingGeminiCallbackServer = undefined;
+  try {
+    pending.server.close();
+  } catch {
+    // Ignore close errors.
+  }
+}
+
+function storeCompletedGeminiCallback(state: string, url: string): void {
+  pruneCompletedGeminiCallbacks();
+  completedGeminiCallbacks.set(state, { url, capturedAt: Date.now() });
+}
+
+function pruneCompletedGeminiCallbacks(): void {
+  const cutoff = Date.now() - 5 * 60_000;
+  for (const [state, callback] of completedGeminiCallbacks.entries()) {
+    if (callback.capturedAt < cutoff) {
+      completedGeminiCallbacks.delete(state);
+    }
+  }
+}
+
+async function refreshGeminiSessionIfNeeded(session: GeminiStoredSession): Promise<GeminiStoredSession> {
+  if (session.expiresAt - Date.now() > 60_000) {
+    return session;
+  }
+
+  const credentials = resolveGeminiOAuthClientConfig();
+  const body = new URLSearchParams({
+    client_id: credentials.clientId,
+    grant_type: 'refresh_token',
+    refresh_token: session.refreshToken,
+  });
+  if (credentials.clientSecret) {
+    body.set('client_secret', credentials.clientSecret);
+  }
+
+  const response = await fetch(GEMINI_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      Accept: '*/*',
+      'User-Agent': 'google-api-nodejs-client/9.15.1',
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini token refresh failed: ${await response.text()}`);
+  }
+
+  const data = await response.json() as GeminiOauthTokenResponse;
+  const refreshed: GeminiStoredSession = {
+    ...session,
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token || session.refreshToken,
+    expiresAt: Date.now() + data.expires_in * 1000 - 5 * 60 * 1000,
+    updatedAt: new Date().toISOString(),
+  };
+  writeStoredGeminiSession(refreshed);
+  return refreshed;
+}
+
+function readStoredGeminiSession(): GeminiStoredSession | undefined {
+  const sessionPath = getGeminiSessionPath();
+  if (!fs.existsSync(sessionPath)) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(sessionPath, 'utf8')) as GeminiStoredSession;
+    if (!parsed.accessToken || !parsed.refreshToken) {
+      return undefined;
+    }
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeStoredGeminiSession(session: GeminiStoredSession): void {
+  const sessionPath = getGeminiSessionPath();
+  fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+  fs.writeFileSync(sessionPath, JSON.stringify(session, null, 2));
+}
+
+function syncGeminiCliFiles(session: GeminiAccountSession): void {
+  const authPath = getGeminiAuthPath();
+  fs.mkdirSync(path.dirname(authPath), { recursive: true });
+  const payload: GeminiCliOauthFile = {
+    access_token: session.accessToken,
+    scope: GEMINI_SCOPES.join(' '),
+    token_type: 'Bearer',
+    expiry_date: session.expiresAt,
+    refresh_token: session.refreshToken,
+  };
+  fs.writeFileSync(authPath, JSON.stringify(payload, null, 2));
+  ensureGeminiCliSettings();
+}
+
+function resolveGeminiOAuthClientConfig(): { clientId: string; clientSecret?: string } {
+  const envClientId = process.env.YAGR_GEMINI_OAUTH_CLIENT_ID?.trim()
+    || process.env.OPENCLAW_GEMINI_OAUTH_CLIENT_ID?.trim()
+    || process.env.GEMINI_CLI_OAUTH_CLIENT_ID?.trim();
+  const envClientSecret = process.env.YAGR_GEMINI_OAUTH_CLIENT_SECRET?.trim()
+    || process.env.OPENCLAW_GEMINI_OAUTH_CLIENT_SECRET?.trim()
+    || process.env.GEMINI_CLI_OAUTH_CLIENT_SECRET?.trim();
+  if (envClientId) {
+    return {
+      clientId: envClientId,
+      clientSecret: envClientSecret || undefined,
+    };
+  }
+
+  const extracted = extractGeminiCliCredentials();
+  if (extracted) {
+    return extracted;
+  }
+
+  throw new Error(
+    'Gemini OAuth client credentials could not be resolved. Install Gemini CLI or set YAGR_GEMINI_OAUTH_CLIENT_ID.',
+  );
+}
+
+function extractGeminiCliCredentials(): { clientId: string; clientSecret: string } | null {
+  const geminiPath = findGeminiExecutablePath();
+  if (!geminiPath) {
+    return null;
+  }
+
+  const resolvedGeminiPath = safeRealpath(geminiPath);
+  const binDir = path.dirname(geminiPath);
+  const candidateDirs = dedupePaths([
+    path.dirname(path.dirname(resolvedGeminiPath)),
+    path.join(path.dirname(resolvedGeminiPath), 'node_modules', '@google', 'gemini-cli'),
+    path.join(binDir, 'node_modules', '@google', 'gemini-cli'),
+    path.join(path.dirname(binDir), 'node_modules', '@google', 'gemini-cli'),
+    path.join(path.dirname(binDir), 'lib', 'node_modules', '@google', 'gemini-cli'),
+  ]);
+
+  const candidatePaths: string[] = [];
+  for (const dir of candidateDirs) {
+    candidatePaths.push(
+      path.join(dir, 'node_modules', '@google', 'gemini-cli-core', 'dist', 'src', 'code_assist', 'oauth2.js'),
+      path.join(dir, 'node_modules', '@google', 'gemini-cli-core', 'dist', 'code_assist', 'oauth2.js'),
+    );
+  }
+
+  for (const candidate of candidatePaths) {
+    if (!fs.existsSync(candidate)) {
+      continue;
+    }
+    const content = fs.readFileSync(candidate, 'utf8');
+    const clientId = content.match(/(\d+-[a-z0-9]+\.apps\.googleusercontent\.com)/)?.[1];
+    const clientSecret = content.match(/(GOCSPX-[A-Za-z0-9_-]+)/)?.[1];
+    if (clientId && clientSecret) {
+      return { clientId, clientSecret };
+    }
+  }
+
+  return null;
+}
+
+function findGeminiExecutablePath(): string | undefined {
+  const executable = process.env.YAGR_GEMINI_CLI_PATH?.trim();
+  if (executable && fs.existsSync(executable)) {
+    return executable;
+  }
+
+  for (const directory of (process.env.PATH ?? '').split(path.delimiter)) {
+    for (const executableName of ['gemini', 'gemini.cmd', 'gemini.bat', 'gemini.exe']) {
+      const candidate = path.join(directory, executableName);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function safeRealpath(value: string): string {
+  try {
+    return fs.realpathSync(value);
+  } catch {
+    return value;
+  }
+}
+
+function dedupePaths(paths: string[]): string[] {
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of paths) {
+    const key = process.platform === 'win32' ? entry.replace(/\\/g, '/').toLowerCase() : entry;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(entry);
+  }
+  return deduped;
+}
+
+function generatePkce(): { verifier: string; challenge: string } {
+  const verifier = randomBytes(32).toString('hex');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  return { verifier, challenge };
+}
+
+function buildGeminiAuthUrl(clientId: string, challenge: string, verifier: string): string {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: 'code',
+    redirect_uri: GEMINI_REDIRECT_URI,
+    scope: GEMINI_SCOPES.join(' '),
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state: verifier,
+    access_type: 'offline',
+    prompt: 'consent',
+  });
+  return `${GEMINI_AUTH_URL}?${params.toString()}`;
+}
+
+function parseGeminiCallbackInput(
+  input: string,
+  expectedState: string,
+): { code: string; state: string } | { error: string } {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return { error: 'No input provided.' };
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const code = url.searchParams.get('code');
+    const state = url.searchParams.get('state') ?? expectedState;
+    if (!code) {
+      return { error: 'Missing code parameter in redirect URL.' };
+    }
+    if (state !== expectedState) {
+      return { error: 'OAuth state mismatch.' };
+    }
+    return { code, state };
+  } catch {
+    return { error: 'Paste the full redirect URL, not only the code.' };
+  }
+}
+
+async function exchangeGeminiCodeForTokens(
+  code: string,
+  verifier: string,
+  credentials: { clientId: string; clientSecret?: string },
+): Promise<GeminiOauthTokenResponse> {
+  const body = new URLSearchParams({
+    client_id: credentials.clientId,
+    code,
+    grant_type: 'authorization_code',
+    redirect_uri: GEMINI_REDIRECT_URI,
+    code_verifier: verifier,
+  });
+  if (credentials.clientSecret) {
+    body.set('client_secret', credentials.clientSecret);
+  }
+
+  const response = await fetch(GEMINI_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      Accept: '*/*',
+      'User-Agent': 'google-api-nodejs-client/9.15.1',
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini token exchange failed: ${await response.text()}`);
+  }
+
+  return await response.json() as GeminiOauthTokenResponse;
+}
+
+async function resolveGoogleEmail(accessToken: string): Promise<string | undefined> {
+  try {
+    const response = await fetch(GEMINI_USERINFO_URL, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+    const payload = await response.json() as Record<string, unknown>;
+    return typeof payload.email === 'string' ? payload.email : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function buildGeminiWarnings(options: Pick<LanguageModelV1CallOptions, 'mode'>): LanguageModelV1CallWarning[] {
@@ -324,19 +843,15 @@ function extractCliError(stdout: string, stderr: string): string | undefined {
   return lines.at(-1);
 }
 
-function readOptionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-function normalizeEpochMillis(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value > 10_000_000_000 ? value : value * 1000;
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
   }
-  if (typeof value === 'string' && value.trim().length > 0) {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isFinite(parsed)) {
-      return parsed > 10_000_000_000 ? parsed : parsed * 1000;
-    }
-  }
-  return undefined;
 }
