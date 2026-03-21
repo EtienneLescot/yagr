@@ -8,8 +8,10 @@ import {
   buildManagedN8nState,
   markManagedN8nBootstrapStage,
   readManagedN8nState,
+  resolveManagedN8nBootstrapStage,
   writeManagedN8nState,
 } from '../dist/n8n-local/state.js';
+import { YagrN8nConfigService } from '../dist/config/n8n-config-service.js';
 
 test('markManagedN8nBootstrapStage updates the managed instance state for the matching URL', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-state-'));
@@ -28,6 +30,33 @@ test('markManagedN8nBootstrapStage updates the managed instance state for the ma
     const next = markManagedN8nBootstrapStage(state.url, 'connected');
     assert.equal(next?.bootstrapStage, 'connected');
     assert.equal(readManagedN8nState()?.bootstrapStage, 'connected');
+  } finally {
+    if (previousHome !== undefined) {
+      process.env.YAGR_HOME = previousHome;
+    } else {
+      delete process.env.YAGR_HOME;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('resolveManagedN8nBootstrapStage returns connected for a configured managed-local instance', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-state-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const configService = new YagrN8nConfigService();
+    configService.saveApiKey('http://127.0.0.1:5678', 'test-api-key');
+    configService.saveLocalConfig({
+      host: 'http://127.0.0.1:5678',
+      syncFolder: 'workflows',
+      projectId: 'personal',
+      projectName: 'Personal',
+      runtimeSource: 'managed-local',
+    });
+
+    assert.equal(resolveManagedN8nBootstrapStage('http://127.0.0.1:5678'), 'connected');
   } finally {
     if (previousHome !== undefined) {
       process.env.YAGR_HOME = previousHome;
