@@ -1,7 +1,7 @@
 # Provider Integration Matrix
 
-- Generated at: 2026-03-21T23:40:15.920Z
-- Providers: `OpenAI (openai-proxy)`
+- Generated at: 2026-03-21T23:42:58.326Z
+- Providers: `OpenAI (openai)`
 - Timeouts: setup/model=60000ms, inference=75000ms
 - Advanced scenario: enabled (timeout=120000ms)
 
@@ -18,4 +18,4 @@
 
 | Provider | Setup | Model Listing | Inference | Advanced Scenario |
 | --- | --- | --- | --- | --- |
-| `OpenAI (openai-proxy)` | **PASS**<br>8 models: gpt-5.1, gpt-5.1-codex-max, gpt-5.1-codex-mini, gpt-5.2, gpt-5.2-codex, gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.4 | **PASS**<br>8 models: gpt-5.1, gpt-5.1-codex-max, gpt-5.1-codex-mini, gpt-5.2, gpt-5.2-codex, gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.4 | **PASS**<br>Model gpt-5.1-codex-mini responded (2 chars). | **PASS**<br>CLI scenario succeeded with model gpt-5.1-codex-mini. |
+| `OpenAI (openai)` | **PASS**<br>API key detected in environment. | **PASS**<br>129 models: babbage-002, chatgpt-image-latest, dall-e-2, dall-e-3, davinci-002, gpt-3.5-turbo, gpt-3.5-turbo-0125, gpt-3.5-turbo-1106 (+121 more) | **PASS**<br>Model gpt-4.1-mini responded (2 chars). | **PASS**<br>CLI scenario succeeded with model gpt-4.1-mini. |
