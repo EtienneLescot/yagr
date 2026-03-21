@@ -3,13 +3,15 @@ import path from 'node:path';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 
 export interface ManagedN8nInstanceState {
-  strategy: 'docker';
-  image: string;
+  strategy: 'docker' | 'direct';
+  image?: string;
   port: number;
   url: string;
-  composeFile: string;
-  envFile: string;
+  composeFile?: string;
+  envFile?: string;
   dataDir: string;
+  logFile?: string;
+  pid?: number;
   status: 'created' | 'starting' | 'ready' | 'stopped' | 'error';
   bootstrapStage: 'runtime-only' | 'owner-pending' | 'api-key-pending' | 'connected';
   createdAt: string;
@@ -23,6 +25,7 @@ export interface ManagedN8nPaths {
   composeFile: string;
   envFile: string;
   dataDir: string;
+  logFile: string;
 }
 
 export function getManagedN8nPaths(): ManagedN8nPaths {
@@ -33,6 +36,7 @@ export function getManagedN8nPaths(): ManagedN8nPaths {
     composeFile: path.join(managedN8nDir, 'compose.yaml'),
     envFile: path.join(managedN8nDir, '.env'),
     dataDir: path.join(managedN8nDir, 'data'),
+    logFile: path.join(managedN8nDir, 'runtime.log'),
   };
 }
 
@@ -64,23 +68,28 @@ export function writeManagedN8nState(state: ManagedN8nInstanceState): ManagedN8n
 }
 
 export function buildManagedN8nState(input: {
+  strategy?: ManagedN8nInstanceState['strategy'];
   image: string;
   port: number;
   status?: ManagedN8nInstanceState['status'];
   bootstrapStage?: ManagedN8nInstanceState['bootstrapStage'];
   lastError?: string;
+  pid?: number;
+  logFile?: string;
 }): ManagedN8nInstanceState {
   const paths = ensureManagedN8nDirs();
   const now = new Date().toISOString();
 
   return {
-    strategy: 'docker',
-    image: input.image,
+    strategy: input.strategy ?? 'docker',
+    image: input.image || undefined,
     port: input.port,
     url: `http://127.0.0.1:${input.port}`,
-    composeFile: paths.composeFile,
-    envFile: paths.envFile,
+    composeFile: input.strategy === 'direct' ? undefined : paths.composeFile,
+    envFile: input.strategy === 'direct' ? undefined : paths.envFile,
     dataDir: paths.dataDir,
+    logFile: input.logFile ?? paths.logFile,
+    pid: input.pid,
     status: input.status ?? 'created',
     bootstrapStage: input.bootstrapStage ?? 'runtime-only',
     createdAt: now,

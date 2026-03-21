@@ -19,6 +19,7 @@
     "yagr:onboard": "YAGR_HOME=.yagr-test-workspace node dist/cli.js onboard",
     "yagr:start": "YAGR_HOME=.yagr-test-workspace node dist/cli.js start",
     "yagr:gateway:status": "YAGR_HOME=.yagr-test-workspace node dist/cli.js gateway status",
+    "yagr:dev": "node scripts/yagr-dev-scenario.mjs",
     "yagr:test:workspace": "node scripts/yagr-test-workspace.mjs pwd",
     "yagr:test:init": "node scripts/yagr-test-workspace.mjs init",
     "yagr:test:agent": "node scripts/yagr-test-workspace.mjs agent",

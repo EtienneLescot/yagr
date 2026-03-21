@@ -1,6 +1,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { YagrConfigService, type YagrLocalConfig } from '../config/yagr-config-service.js';
+import { getOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL } from './openai-account.js';
 import {
   getDefaultBaseUrlForProvider,
   getDefaultModelForProvider,
@@ -146,18 +147,34 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
   const resolvedConfig = resolveLanguageModelConfig(config);
   const { provider, model: modelName, apiKey, baseUrl: baseURL } = resolvedConfig;
   const definition = getProviderDefinition(provider);
-  const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
+  const sessionApiKey = provider === 'openai-proxy' ? getOpenAiAccountSession()?.accessToken : undefined;
+  const resolvedApiKey = apiKey || sessionApiKey;
+  const headers = resolvedApiKey ? { Authorization: `Bearer ${resolvedApiKey}` } : undefined;
 
   if (provider === 'anthropic') {
     return createAnthropic({
-      apiKey,
+      apiKey: resolvedApiKey,
       baseURL,
     })(modelName);
   }
 
+  if (provider === 'openai-proxy') {
+    if (!resolvedApiKey) {
+      throw new Error('OpenAI account session not found. Run `codex --login` or `yagr setup` again.');
+    }
+
+    return createOpenAI({
+      apiKey: resolvedApiKey,
+      baseURL: baseURL || OPENAI_ACCOUNT_BASE_URL,
+      headers,
+      name: provider,
+      compatibility: 'strict',
+    }).responses(modelName);
+  }
+
   if (definition.usesOpenAiCompatibleApi) {
     return createOpenAI({
-      apiKey,
+      apiKey: resolvedApiKey,
       baseURL: baseURL || definition.defaultBaseUrl,
       headers,
       name: provider,

@@ -20,8 +20,11 @@ import {
   providerNeedsBaseUrlInput,
   YAGR_MODEL_PROVIDERS,
 } from './llm/provider-registry.js';
+import { prepareProviderRuntime } from './llm/proxy-runtime.js';
 import { bootstrapManagedLocalN8n } from './n8n-local/bootstrap.js';
+import { installManagedDirectN8n } from './n8n-local/direct-manager.js';
 import { installManagedDockerN8n } from './n8n-local/docker-manager.js';
+import { inspectLocalN8nBootstrap } from './n8n-local/detect.js';
 import { markManagedN8nBootstrapStage } from './n8n-local/state.js';
 import { runSetupWizard, type SetupCallbacks } from './setup/setup-wizard.js';
 import { openExternalUrl } from './system/open-external.js';
@@ -156,7 +159,14 @@ export async function runYagrSetup(
     },
 
     async installManagedLocalN8n() {
-      return installManagedDockerN8n();
+      const assessment = await inspectLocalN8nBootstrap();
+      if (assessment.recommendedStrategy === 'docker') {
+        return installManagedDockerN8n();
+      }
+      if (assessment.recommendedStrategy === 'direct') {
+        return installManagedDirectN8n();
+      }
+      throw new Error('No supported automatic local n8n runtime is available. Run `yagr n8n doctor` for details.');
     },
 
     async bootstrapManagedLocalN8n(url) {
@@ -183,6 +193,23 @@ export async function runYagrSetup(
         getDefaultModel: (prov) => cfg.provider === prov && cfg.model ? cfg.model : undefined,
         getBaseUrl: (prov) => cfg.provider === prov ? cfg.baseUrl : getDefaultBaseUrlForProvider(prov),
         needsBaseUrl: (prov) => providerNeedsBaseUrlInput(prov),
+      };
+    },
+
+    async prepareProvider(provider, apiKey) {
+      const cfg = yagrConfigService.getLocalConfig();
+      const prepared = await prepareProviderRuntime(provider, {
+        apiKey,
+        baseUrl: cfg.provider === provider ? cfg.baseUrl : getDefaultBaseUrlForProvider(provider),
+      });
+
+      return {
+        ready: prepared.ready,
+        apiKey: prepared.runtime?.apiKey,
+        baseUrl: prepared.runtime?.baseUrl,
+        models: prepared.runtime?.models,
+        notes: prepared.notes,
+        error: prepared.reason,
       };
     },
 
