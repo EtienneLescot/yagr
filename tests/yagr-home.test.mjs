@@ -63,6 +63,7 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
     const paths = getYagrPaths();
     assert.equal(paths.homeDir, path.resolve(getYagrLaunchDir(), '.yagr-test-workspace'));
     assert.equal(paths.n8nWorkspaceDir, path.join(paths.homeDir, 'n8n-workspace'));
+    assert.equal(paths.managedN8nDir, path.join(paths.homeDir, 'n8n'));
     assert.equal(paths.workspaceInstructionsPath, path.join(paths.n8nWorkspaceDir, 'AGENTS.md'));
     assert.equal(paths.yagrConfigPath, path.join(paths.homeDir, 'yagr-config.json'));
     assert.equal(paths.yagrCredentialsPath, path.join(paths.homeDir, 'credentials.json'));

@@ -3,6 +3,7 @@ import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import type { GatewaySurface } from '../gateway/types.js';
 import type { YagrModelProvider } from '../llm/create-language-model.js';
+import type { ManagedN8nInstanceState } from '../n8n-local/state.js';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ export interface SetupCallbacks {
   getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string };
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
   saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string }): Promise<void>;
+  installManagedLocalN8n(): Promise<ManagedN8nInstanceState>;
   getLlmDefaults(): {
     provider?: YagrModelProvider;
     getApiKey(prov: YagrModelProvider): string | undefined;
@@ -56,6 +58,7 @@ export function runSetupWizard(callbacks: SetupCallbacks): Promise<SetupResult> 
 // ─── Phase state machine ──────────────────────────────────────────────────────
 
 type Phase =
+  | { kind: 'n8n-mode'; cursor: number }
   | { kind: 'n8n-url'; def: string; err?: string }
   | { kind: 'n8n-reuse-apikey'; url: string; existing: string; cursor: number }
   | { kind: 'n8n-apikey'; url: string; err?: string }
@@ -63,6 +66,8 @@ type Phase =
   | { kind: 'n8n-project'; url: string; apiKey: string; projects: IProject[]; cursor: number }
   | { kind: 'n8n-syncfolder'; url: string; apiKey: string; project: IProject; def: string; err?: string }
   | { kind: 'n8n-saving'; url: string; apiKey: string; project: IProject; syncFolder: string; log?: string }
+  | { kind: 'n8n-local-installing' }
+  | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
   | { kind: 'llm-reuse-config'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
   | { kind: 'llm-reuse-apikey'; provider: YagrModelProvider; existing: string; cursor: number }
@@ -388,8 +393,8 @@ function SetupWizard({ callbacks, onDone }: {
   const llmDef = callbacks.getLlmDefaults();
   const surfDef = callbacks.getSurfaceDefaults();
 
-  const [phase, setPhase] = useState<Phase>({ kind: 'n8n-url', def: n8nDef.url });
-  const [textValue, setTextValue] = useState(n8nDef.url);
+  const [phase, setPhase] = useState<Phase>({ kind: 'n8n-mode', cursor: 0 });
+  const [textValue, setTextValue] = useState('');
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const asyncGuard = useRef(0);
   const llmApiKeyDraftsRef = useRef<Partial<Record<YagrModelProvider, string>>>({});
@@ -397,7 +402,7 @@ function SetupWizard({ callbacks, onDone }: {
   const terminalColumns = stdout?.columns ?? process.stdout.columns ?? 80;
   const listLineWidth = Math.max(12, terminalColumns - 6);
 
-  const isLoading = phase.kind === 'n8n-connecting' || phase.kind === 'n8n-saving'
+  const isLoading = phase.kind === 'n8n-connecting' || phase.kind === 'n8n-saving' || phase.kind === 'n8n-local-installing'
     || phase.kind === 'llm-models-loading' || phase.kind === 'telegram-connecting';
 
   useEffect(() => {
@@ -416,6 +421,32 @@ function SetupWizard({ callbacks, onDone }: {
       cancel('Setup cancelled.');
     }
   });
+
+  useEffect(() => {
+    if (phase.kind !== 'n8n-local-installing') return;
+    const guard = ++asyncGuard.current;
+    void (async () => {
+      try {
+        const state = await callbacks.installManagedLocalN8n();
+        if (guard !== asyncGuard.current) return;
+        const existing = callbacks.getN8nDefaults(state.url).apiKey;
+        if (existing) {
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: existing });
+          return;
+        }
+        setPhase({
+          kind: 'n8n-local-auth',
+          url: state.url,
+          message: 'Yagr installed a local n8n instance. Open the URL, create the owner account, generate an API key in Settings > n8n API, then paste it here.',
+        });
+        setTextValue('');
+      } catch (err) {
+        if (guard !== asyncGuard.current) return;
+        setPhase({ kind: 'error', message: (err as Error).message });
+        setTimeout(() => { onDone({ ok: false }); app.exit(); }, 2000);
+      }
+    })();
+  }, [phase.kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (phase.kind !== 'n8n-connecting') return;
@@ -566,7 +597,18 @@ function SetupWizard({ callbacks, onDone }: {
   }, []);
 
   const handleSelectKey = useCallback((input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean; escape: boolean }) => {
-    if (phase.kind === 'n8n-reuse-apikey') {
+    if (phase.kind === 'n8n-mode') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      else if (key.return) {
+        if (phase.cursor === 0) {
+          setPhase({ kind: 'n8n-local-installing' });
+        } else {
+          setPhase({ kind: 'n8n-url', def: n8nDef.url });
+          setTextValue(n8nDef.url);
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'n8n-reuse-apikey') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
       else if (key.return) {
@@ -686,7 +728,7 @@ function SetupWizard({ callbacks, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-mode', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'llm-model' && phase.models.length > 0);
 
   useInput((input, key) => {
@@ -703,6 +745,26 @@ function SetupWizard({ callbacks, onDone }: {
 
   function renderPhase(): JSX.Element {
     switch (phase.kind) {
+      case 'n8n-mode':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="n8n setup path" />
+            <Text dimColor>  Choose the lowest-friction way to connect Yagr to n8n.</Text>
+            <SelectList
+              options={[
+                'Install a new local n8n instance',
+                'Use an existing n8n instance',
+              ] as const}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              getHint={(v) => v.startsWith('Install') ? 'Yagr-managed local runtime' : 'Cloud or self-managed instance'}
+              maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
       case 'n8n-url':
         return (
           <Box flexDirection="column">
@@ -758,6 +820,32 @@ function SetupWizard({ callbacks, onDone }: {
         return (
           <Box flexDirection="column">
             <SpinnerDisplay message={`Connecting to ${phase.url}…`} frame={spinnerFrame} />
+          </Box>
+        );
+
+      case 'n8n-local-installing':
+        return (
+          <Box flexDirection="column">
+            <SpinnerDisplay message="Installing and starting a Yagr-managed local n8n instance…" frame={spinnerFrame} />
+          </Box>
+        );
+
+      case 'n8n-local-auth':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="Local n8n API key" />
+            <Text dimColor>  Local instance URL: {phase.url}</Text>
+            <Text dimColor>  {phase.message}</Text>
+            <Box marginLeft={2} marginTop={1}>
+              <WizardTextInput
+                value={textValue}
+                onChange={setTextValue}
+                onSubmit={handleN8nApiKeySubmit(phase.url)}
+                mask="●"
+                placeholder="Paste the new n8n API key"
+              />
+            </Box>
+            <HintBar hints={['Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
 
