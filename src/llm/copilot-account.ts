@@ -16,6 +16,9 @@ const GITHUB_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
 const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
 const GITHUB_ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token';
 const COPILOT_TOKEN_URL = 'https://api.github.com/copilot_internal/v2/token';
+const COPILOT_USER_AGENT = 'GitHubCopilotChat/0.26.7';
+const COPILOT_EDITOR_VERSION = 'vscode/1.96.2';
+const COPILOT_EDITOR_PLUGIN_VERSION = 'copilot-chat/0.26.7';
 
 interface GitHubStoredSession {
   provider: 'copilot-proxy';
@@ -167,11 +170,15 @@ export async function fetchGitHubCopilotModels(token: string, baseUrl = DEFAULT_
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
-      'User-Agent': 'GitHubCopilotChat/0.26.7',
+      'User-Agent': COPILOT_USER_AGENT,
+      'Editor-Version': COPILOT_EDITOR_VERSION,
+      'Editor-Plugin-Version': COPILOT_EDITOR_PLUGIN_VERSION,
     },
   });
   if (!response.ok) {
-    throw new Error(`GitHub Copilot model discovery failed: HTTP ${response.status}`);
+    const body = await response.text().catch(() => '');
+    const detail = body.trim();
+    throw new Error(detail || `GitHub Copilot model discovery failed: HTTP ${response.status}`);
   }
 
   const payload = await response.json() as { data?: Array<{ id?: string }> };
@@ -260,7 +267,9 @@ async function runGitHubCopilotCompletion(
       Authorization: `Bearer ${runtimeAuth.token}`,
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      'User-Agent': 'GitHubCopilotChat/0.26.7',
+      'User-Agent': COPILOT_USER_AGENT,
+      'Editor-Version': COPILOT_EDITOR_VERSION,
+      'Editor-Plugin-Version': COPILOT_EDITOR_PLUGIN_VERSION,
     },
     body: JSON.stringify({
       model: modelId,
