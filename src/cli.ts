@@ -32,6 +32,10 @@ import {
   stopManagedDirectN8n,
 } from './n8n-local/direct-manager.js';
 import { formatLocalN8nBootstrapAssessment, inspectLocalN8nBootstrap } from './n8n-local/detect.js';
+import {
+  ensureConfiguredManagedN8nRunning,
+  getConfiguredExternalN8nReachabilityWarning,
+} from './n8n-local/managed-runtime.js';
 import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { readManagedN8nState } from './n8n-local/state.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrLlmSetup, runYagrSetup } from './setup.js';
@@ -421,6 +425,7 @@ async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
 }
 
 async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  await ensureManagedN8nAtLaunch();
   await refreshN8nWorkspaceInstructionsAtLaunch();
   const supervisorStatus = getGatewaySupervisorStatus(configService);
 
@@ -487,6 +492,21 @@ async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Pro
     model: args.model,
     maxSteps: args.maxSteps,
   }, configService);
+}
+
+async function ensureManagedN8nAtLaunch(): Promise<void> {
+  const externalWarning = await getConfiguredExternalN8nReachabilityWarning();
+  if (externalWarning) {
+    process.stderr.write(`Warning: ${externalWarning}\n`);
+  }
+
+  const result = await ensureConfiguredManagedN8nRunning();
+  if (!result.started || !result.state) {
+    return;
+  }
+
+  const modeLabel = result.state.strategy === 'direct' ? 'non-Docker' : 'Docker';
+  process.stdout.write(`Restarted Yagr-managed n8n (${modeLabel}) at ${result.state.url}\n`);
 }
 
 async function refreshN8nWorkspaceInstructionsAtLaunch(): Promise<void> {
@@ -827,6 +847,7 @@ async function main(): Promise<void> {
   }
 
   if (args.command === 'gateway-start') {
+    await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
     await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
       provider: args.provider,
@@ -846,12 +867,14 @@ async function main(): Promise<void> {
     }
 
     if (args.startTarget === 'tui') {
+      await ensureManagedN8nAtLaunch();
       await refreshN8nWorkspaceInstructionsAtLaunch();
       await runTui(args);
       return;
     }
 
     if (args.startTarget === 'webui') {
+      await ensureManagedN8nAtLaunch();
       await refreshN8nWorkspaceInstructionsAtLaunch();
       await runWebUi(args, configService);
       return;
@@ -870,6 +893,7 @@ async function main(): Promise<void> {
         return;
       }
     }
+    await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
     await runTui(args);
     return;
@@ -883,12 +907,14 @@ async function main(): Promise<void> {
         return;
       }
     }
+    await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
     await runWebUi(args, configService);
     return;
   }
 
   if (args.command === 'telegram-start') {
+    await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
     await runTelegramGateway(async () => await createN8nEngineFromWorkspace(), {
       provider: args.provider,
@@ -898,6 +924,7 @@ async function main(): Promise<void> {
     return;
   }
 
+  await ensureManagedN8nAtLaunch();
   await refreshN8nWorkspaceInstructionsAtLaunch();
   const engine = await createN8nEngineFromWorkspace();
 

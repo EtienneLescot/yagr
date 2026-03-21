@@ -44,7 +44,7 @@ const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: strin
 export interface SetupCallbacks {
   getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string };
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
-  saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string }): Promise<void>;
+  saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string; runtimeSource: 'managed-local' | 'external' }): Promise<void>;
   installManagedLocalN8n(strategy: 'docker' | 'direct' | 'auto'): Promise<ManagedN8nInstanceState>;
   bootstrapManagedLocalN8n(url: string): Promise<{ mode: 'silent' | 'assisted'; apiKey?: string; reason?: string }>;
   openUrl(url: string): Promise<void>;
@@ -108,10 +108,10 @@ type Phase =
   | { kind: 'n8n-url'; def: string; err?: string }
   | { kind: 'n8n-reuse-apikey'; url: string; existing: string; cursor: number }
   | { kind: 'n8n-apikey'; url: string; err?: string }
-  | { kind: 'n8n-connecting'; url: string; apiKey: string }
-  | { kind: 'n8n-project'; url: string; apiKey: string; projects: IProject[]; cursor: number }
-  | { kind: 'n8n-syncfolder'; url: string; apiKey: string; project: IProject; def: string; err?: string }
-  | { kind: 'n8n-saving'; url: string; apiKey: string; project: IProject; syncFolder: string; log?: string }
+  | { kind: 'n8n-connecting'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external' }
+  | { kind: 'n8n-project'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; projects: IProject[]; cursor: number }
+  | { kind: 'n8n-syncfolder'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; project: IProject; def: string; err?: string }
+  | { kind: 'n8n-saving'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; project: IProject; syncFolder: string; log?: string }
   | { kind: 'n8n-local-installing'; startedAt: number; strategy: 'docker' | 'direct' | 'auto' }
   | { kind: 'n8n-local-ready'; url: string; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
@@ -573,12 +573,12 @@ function SetupWizard({ callbacks, options, onDone }: {
         const bootstrap = await callbacks.bootstrapManagedLocalN8n(state.url);
         if (guard !== asyncGuard.current) return;
         if (bootstrap.mode === 'silent' && bootstrap.apiKey) {
-          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: bootstrap.apiKey });
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: bootstrap.apiKey, runtimeSource: 'managed-local' });
           return;
         }
         const existing = callbacks.getN8nDefaults(state.url).apiKey;
         if (existing) {
-          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: existing });
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: existing, runtimeSource: 'managed-local' });
           return;
         }
         setPhase({
@@ -608,13 +608,13 @@ function SetupWizard({ callbacks, options, onDone }: {
         if (projects.length === 1) {
           setPhase({
             kind: 'n8n-syncfolder',
-            url: phase.url, apiKey: phase.apiKey,
+            url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource,
             project: projects[0],
             def: n8nDef.syncFolder ?? 'workflows',
           });
           setTextValue(n8nDef.syncFolder ?? 'workflows');
         } else {
-          setPhase({ kind: 'n8n-project', url: phase.url, apiKey: phase.apiKey, projects, cursor: 0 });
+          setPhase({ kind: 'n8n-project', url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource, projects, cursor: 0 });
         }
       } catch (err) {
         if (guard !== asyncGuard.current) return;
@@ -629,7 +629,7 @@ function SetupWizard({ callbacks, options, onDone }: {
     const guard = ++asyncGuard.current;
     void (async () => {
       try {
-        await callbacks.saveN8nConfig({ url: phase.url, apiKey: phase.apiKey, project: phase.project, syncFolder: phase.syncFolder });
+        await callbacks.saveN8nConfig({ url: phase.url, apiKey: phase.apiKey, project: phase.project, syncFolder: phase.syncFolder, runtimeSource: phase.runtimeSource });
         if (guard !== asyncGuard.current) return;
         const llmProvider = llmDef.provider;
         if (llmProvider) {
@@ -753,13 +753,13 @@ function SetupWizard({ callbacks, options, onDone }: {
   const handleN8nApiKeySubmit = useCallback((url: string) => (value: string) => {
     const key = value.trim();
     if (!key) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'n8n-apikey' }>, err: 'API key is required.' })); return; }
-    setPhase({ kind: 'n8n-connecting', url, apiKey: key });
+    setPhase({ kind: 'n8n-connecting', url, apiKey: key, runtimeSource: 'external' });
   }, []);
 
-  const handleSyncFolderSubmit = useCallback((url: string, apiKey: string, project: IProject) => (value: string) => {
+  const handleSyncFolderSubmit = useCallback((url: string, apiKey: string, runtimeSource: 'managed-local' | 'external', project: IProject) => (value: string) => {
     const folder = value.trim();
     if (!folder) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'n8n-syncfolder' }>, err: 'Sync folder is required.' })); return; }
-    setPhase({ kind: 'n8n-saving', url, apiKey, project, syncFolder: folder });
+    setPhase({ kind: 'n8n-saving', url, apiKey, runtimeSource, project, syncFolder: folder });
   }, []);
 
   const handleBaseUrlSubmit = useCallback((provider: YagrModelProvider, apiKey: string, model: string) => (value: string) => {
@@ -857,7 +857,7 @@ function SetupWizard({ callbacks, options, onDone }: {
             }
             const existing = callbacks.getN8nDefaults(phase.url).apiKey;
             if (existing) {
-              setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: existing });
+              setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: existing, runtimeSource: 'managed-local' });
               return;
             }
             setPhase({
@@ -881,7 +881,7 @@ function SetupWizard({ callbacks, options, onDone }: {
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
       else if (key.return) {
         if (phase.cursor === 0) {
-          setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: phase.existing });
+          setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: phase.existing, runtimeSource: 'external' });
         } else {
           setPhase({ kind: 'n8n-apikey', url: phase.url });
           setTextValue('');
@@ -892,7 +892,7 @@ function SetupWizard({ callbacks, options, onDone }: {
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(phase.projects.length - 1, phase.cursor + 1) });
       else if (key.return) {
         const project = phase.projects[phase.cursor];
-        setPhase({ kind: 'n8n-syncfolder', url: phase.url, apiKey: phase.apiKey, project, def: n8nDef.syncFolder ?? 'workflows' });
+        setPhase({ kind: 'n8n-syncfolder', url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource, project, def: n8nDef.syncFolder ?? 'workflows' });
         setTextValue(n8nDef.syncFolder ?? 'workflows');
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-reuse-config') {
@@ -1262,7 +1262,7 @@ function SetupWizard({ callbacks, options, onDone }: {
               <WizardTextInput
                 value={textValue}
                 onChange={setTextValue}
-                onSubmit={handleSyncFolderSubmit(phase.url, phase.apiKey, phase.project)}
+                onSubmit={handleSyncFolderSubmit(phase.url, phase.apiKey, phase.runtimeSource, phase.project)}
                 placeholder="workflows"
               />
             </Box>
