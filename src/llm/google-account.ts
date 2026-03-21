@@ -19,6 +19,11 @@ const GEMINI_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GEMINI_USERINFO_URL = 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json';
 const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 const CODE_ASSIST_API_VERSION = 'v1internal';
+const CODE_ASSIST_CLIENT_METADATA = JSON.stringify({
+  ideType: 'IDE_UNSPECIFIED',
+  platform: 'PLATFORM_UNSPECIFIED',
+  pluginType: 'GEMINI',
+});
 const GEMINI_REDIRECT_URI = 'http://localhost:8085/oauth2callback';
 const GEMINI_SCOPES = [
   'https://www.googleapis.com/auth/cloud-platform',
@@ -42,6 +47,7 @@ interface GeminiStoredSession {
   refreshToken: string;
   expiresAt: number;
   email?: string;
+  projectId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -57,6 +63,7 @@ export interface GeminiAccountSession {
   refreshToken: string;
   expiresAt: number;
   email?: string;
+  projectId?: string;
 }
 
 export interface GeminiAccountAuthChallenge {
@@ -74,6 +81,9 @@ interface PendingGeminiCallbackServer {
 
 let pendingGeminiCallbackServer: PendingGeminiCallbackServer | undefined;
 const completedGeminiCallbacks = new Map<string, { url: string; capturedAt: number }>();
+
+// In-memory cache for the CodeAssist project ID (resolved once per process).
+let cachedCodeAssistProjectId: string | undefined;
 
 interface CodeAssistLoadResponse {
   currentTier?: {
@@ -130,6 +140,7 @@ export function getGeminiAccountSession(): GeminiAccountSession | undefined {
     refreshToken: stored.refreshToken,
     expiresAt: stored.expiresAt,
     email: stored.email,
+    projectId: stored.projectId,
   };
 }
 
@@ -143,6 +154,7 @@ export async function ensureGeminiAccountSession(): Promise<GeminiAccountSession
       refreshToken: refreshed.refreshToken,
       expiresAt: refreshed.expiresAt,
       email: refreshed.email,
+      projectId: refreshed.projectId,
     };
   }
   return undefined;
@@ -207,13 +219,13 @@ export async function validateGeminiAccountRuntime(modelId = GEMINI_ACCOUNT_DEFA
 // endpoint on the CodeAssist API itself.  This curated list matches what
 // OpenClaw ships for its google-gemini-cli provider.
 const KNOWN_GEMINI_CODE_ASSIST_MODELS = [
-  'gemini-3.1-pro-preview',
-  'gemini-3-pro-preview',
-  'gemini-3-flash-preview',
   'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.0-flash',
   'gemini-1.5-flash',
+  'gemini-3-flash-preview',
+  'gemini-3-pro-preview',
+  'gemini-3.1-pro-preview',
 ];
 
 export async function fetchGeminiOAuthModels(_accessToken: string): Promise<string[]> {
@@ -301,13 +313,16 @@ async function runGeminiExec(
 
   const warnings = buildGeminiWarnings(options);
   const prompt = flattenPrompt(options.prompt);
-  const project = await loadGeminiCodeAssistProject(session.accessToken);
+  const project = await resolveCodeAssistProject(session);
   const response = await fetchWithTimeout(`${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:generateContent`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${session.accessToken}`,
       'Content-Type': 'application/json',
       Accept: 'application/json',
+      'User-Agent': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
+      'X-Goog-Api-Client': `gl-node/${process.versions.node}`,
+      'Client-Metadata': CODE_ASSIST_CLIENT_METADATA,
     },
     body: JSON.stringify({
       model: modelId,
@@ -315,12 +330,13 @@ async function runGeminiExec(
       request: {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
       },
+      userAgent: 'yagr',
     }),
   }, 20_000);
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new Error(`Gemini Code Assist runtime failed (HTTP ${response.status})${body ? `: ${body.slice(0, 200)}` : ''}`);
+    throw formatCodeAssistError(response.status, body, modelId);
   }
 
   const payload = await response.json() as CodeAssistGenerateResponse;
@@ -357,6 +373,15 @@ export async function completeGeminiAccountAuth(callbackInput: string, verifier:
 
   const tokenResponse = await exchangeGeminiCodeForTokens(parsed.code, verifier, credentials);
   const email = await resolveGoogleEmail(tokenResponse.access_token);
+  // Resolve the CodeAssist project immediately so it is persisted in the session
+  // and subsequent inference calls skip the extra loadCodeAssist round-trip.
+  let projectId: string | undefined;
+  try {
+    projectId = await loadGeminiCodeAssistProject(tokenResponse.access_token);
+    cachedCodeAssistProjectId = projectId;
+  } catch {
+    // Non-fatal: will be resolved lazily on first inference call.
+  }
   const nowIso = new Date().toISOString();
   const stored: GeminiStoredSession = {
     provider: 'google-proxy',
@@ -364,6 +389,7 @@ export async function completeGeminiAccountAuth(callbackInput: string, verifier:
     refreshToken: tokenResponse.refresh_token || '',
     expiresAt: Date.now() + tokenResponse.expires_in * 1000 - 5 * 60 * 1000,
     email,
+    projectId,
     createdAt: nowIso,
     updatedAt: nowIso,
   };
@@ -379,6 +405,7 @@ export async function completeGeminiAccountAuth(callbackInput: string, verifier:
     refreshToken: stored.refreshToken,
     expiresAt: stored.expiresAt,
     email: stored.email,
+    projectId: stored.projectId,
   };
 }
 
@@ -830,21 +857,45 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: num
   }
 }
 
+async function resolveCodeAssistProject(session: GeminiAccountSession): Promise<string> {
+  // Return from in-memory cache (fastest)
+  if (cachedCodeAssistProjectId) {
+    return cachedCodeAssistProjectId;
+  }
+  // Return from stored session (avoids network call)
+  if (session.projectId) {
+    cachedCodeAssistProjectId = session.projectId;
+    return session.projectId;
+  }
+  // Fetch from API (first time only)
+  const project = await loadGeminiCodeAssistProject(session.accessToken);
+  cachedCodeAssistProjectId = project;
+  // Persist in session so future processes skip the API call too
+  const stored = readStoredGeminiSession();
+  if (stored && !stored.projectId) {
+    stored.projectId = project;
+    writeStoredGeminiSession(stored);
+  }
+  return project;
+}
+
 async function loadGeminiCodeAssistProject(accessToken: string): Promise<string> {
+  const metadata = {
+    ideType: 'IDE_UNSPECIFIED' as const,
+    platform: 'PLATFORM_UNSPECIFIED' as const,
+    pluginType: 'GEMINI' as const,
+  };
   const response = await fetchWithTimeout(`${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:loadCodeAssist`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       Accept: 'application/json',
+      'User-Agent': 'google-api-nodejs-client/9.15.1',
+      'X-Goog-Api-Client': `gl-node/${process.versions.node}`,
+      'Client-Metadata': JSON.stringify(metadata),
     },
-    body: JSON.stringify({
-      metadata: {
-        ideType: 'IDE_UNSPECIFIED',
-        platform: 'PLATFORM_UNSPECIFIED',
-        pluginType: 'GEMINI',
-      },
-    }),
+    body: JSON.stringify({ metadata }),
   }, 8_000);
 
   if (!response.ok) {
@@ -858,4 +909,24 @@ async function loadGeminiCodeAssistProject(accessToken: string): Promise<string>
     throw new Error('Gemini Code Assist did not return a project id.');
   }
   return project;
+}
+
+function formatCodeAssistError(status: number, body: string, modelId: string): Error {
+  if (status === 429) {
+    const resetMatch = body.match(/reset after (\d+)s/);
+    const resetHint = resetMatch ? ` (resets in ${resetMatch[1]}s)` : '';
+    return new Error(
+      `Rate limit exceeded for model "${modelId}"${resetHint}. ` +
+      'The Gemini free tier has strict per-model quotas. Wait a moment or try a different model.',
+    );
+  }
+  if (status === 404) {
+    return new Error(
+      `Model "${modelId}" is not available on your Gemini account. ` +
+      'It may not be supported for your tier or region. Choose a different model.',
+    );
+  }
+  return new Error(
+    `Gemini Code Assist request failed (HTTP ${status})${body ? `: ${body.slice(0, 200)}` : ''}`,
+  );
 }
