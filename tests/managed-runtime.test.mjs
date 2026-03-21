@@ -49,6 +49,45 @@ test('getConfiguredManagedN8nState returns managed state when configured host ma
   assert.equal(state?.url, 'http://127.0.0.1:5678');
 });
 
+test('getConfiguredManagedN8nState accepts legacy configs without runtimeSource when host matches managed n8n', async (t) => {
+  const previousHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-managed-runtime-'));
+  process.env.YAGR_HOME = tempHome;
+
+  t.after(() => {
+    if (previousHome === undefined) {
+      delete process.env.YAGR_HOME;
+    } else {
+      process.env.YAGR_HOME = previousHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  const { buildManagedN8nState, writeManagedN8nState } = await import(stateModulePath);
+  const { YagrN8nConfigService } = await import(configModulePath);
+  const { getConfiguredManagedN8nState } = await import(modulePath);
+
+  writeManagedN8nState(buildManagedN8nState({
+    strategy: 'direct',
+    image: '',
+    port: 5678,
+    status: 'ready',
+    bootstrapStage: 'connected',
+  }));
+
+  const configService = new YagrN8nConfigService();
+  configService.saveLocalConfig({
+    host: 'http://127.0.0.1:5678',
+    syncFolder: 'workflows',
+    projectId: 'p1',
+    projectName: 'Demo',
+  });
+
+  const state = getConfiguredManagedN8nState(configService);
+  assert.ok(state);
+  assert.equal(configService.getLocalConfig().runtimeSource, undefined);
+});
+
 test('getConfiguredManagedN8nState ignores external configured instances even when the host matches', async (t) => {
   const previousHome = process.env.YAGR_HOME;
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-managed-runtime-'));

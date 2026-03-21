@@ -22,16 +22,49 @@ function normalizeUrlOrigin(url: string | undefined): string | undefined {
   }
 }
 
+function resolveConfiguredRuntimeSource(configService: YagrN8nConfigService): {
+  source: 'managed-local' | 'external' | undefined;
+  localConfig: ReturnType<YagrN8nConfigService['getLocalConfig']>;
+  managedState: ManagedN8nInstanceState | undefined;
+} {
+  const localConfig = configService.getLocalConfig();
+  const managedState = readManagedN8nState();
+
+  if (localConfig.runtimeSource) {
+    return {
+      source: localConfig.runtimeSource,
+      localConfig,
+      managedState,
+    };
+  }
+
+  const configuredHost = normalizeUrlOrigin(localConfig.host);
+  const managedHost = normalizeUrlOrigin(managedState?.url);
+
+  if (configuredHost && managedHost && configuredHost === managedHost) {
+    return {
+      source: 'managed-local',
+      localConfig,
+      managedState,
+    };
+  }
+
+  return {
+    source: 'external',
+    localConfig,
+    managedState,
+  };
+}
+
 export function getConfiguredManagedN8nState(
   configService = new YagrN8nConfigService(),
 ): ManagedN8nInstanceState | undefined {
-  const localConfig = configService.getLocalConfig();
-  if (localConfig.runtimeSource !== 'managed-local') {
+  const { source, localConfig, managedState } = resolveConfiguredRuntimeSource(configService);
+  if (source !== 'managed-local') {
     return undefined;
   }
 
   const configuredHost = normalizeUrlOrigin(localConfig.host);
-  const managedState = readManagedN8nState();
   if (!configuredHost || !managedState) {
     return undefined;
   }
@@ -69,8 +102,8 @@ export async function ensureConfiguredManagedN8nRunning(
 export async function getConfiguredExternalN8nReachabilityWarning(
   configService = new YagrN8nConfigService(),
 ): Promise<string | undefined> {
-  const localConfig = configService.getLocalConfig();
-  if (localConfig.runtimeSource === 'managed-local') {
+  const { source, localConfig } = resolveConfiguredRuntimeSource(configService);
+  if (source !== 'external') {
     return undefined;
   }
 
