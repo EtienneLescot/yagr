@@ -1,6 +1,6 @@
 # Provider Integration Matrix
 
-- Generated at: 2026-03-21T12:34:11.208Z
+- Generated at: 2026-03-21T12:44:10.008Z
 - Providers: `groq`
 - Timeouts: setup/model=60000ms, inference=75000ms
 - Advanced scenario: enabled (timeout=120000ms)

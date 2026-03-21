@@ -11,7 +11,7 @@ const DEFAULT_PRESERVE_RECENT_MESSAGES = 6;
 const MAX_TRANSCRIPT_CHARS = 24_000;
 
 function providerOptionsForCompaction(provider?: YagrLanguageModelConfig['provider']): { openai?: { strictSchemas: boolean } } | undefined {
-  if (provider === 'openai') {
+  if (provider === 'openai' || provider === 'groq') {
     return { openai: { strictSchemas: false } };
   }
   return undefined;
