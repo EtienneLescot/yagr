@@ -12,7 +12,7 @@ import type {
 } from '@ai-sdk/provider';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 
-export const GEMINI_ACCOUNT_DEFAULT_MODEL = 'gemini-2.5-pro';
+export const GEMINI_ACCOUNT_DEFAULT_MODEL = 'gemini-3-flash-preview';
 
 const GEMINI_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GEMINI_TOKEN_URL = 'https://oauth2.googleapis.com/token';
