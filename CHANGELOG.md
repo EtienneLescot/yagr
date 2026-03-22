@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.12](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.11...yagr@v0.2.12) (2026-03-22)
+
+
+### Features
+
+* replace YAGR_MODEL_PROVIDERS with YAGR_SELECTABLE_MODEL_PROVIDERS for improved provider filtering ([b7c717e](https://github.com/EtienneLescot/yagr/commit/b7c717e37377329542ee9cb6e84845c2dfcce5fc))
+
 ## [0.2.11](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.10...yagr@v0.2.11) (2026-03-22)
 
 
