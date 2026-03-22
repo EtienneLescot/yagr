@@ -168,6 +168,9 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
 };
 
 export const YAGR_MODEL_PROVIDERS = Object.freeze(Object.keys(YAGR_PROVIDER_DEFINITIONS) as YagrModelProvider[]);
+export const YAGR_SELECTABLE_MODEL_PROVIDERS = Object.freeze(
+  YAGR_MODEL_PROVIDERS.filter((provider) => provider !== 'groq'),
+);
 
 export function getProviderDefinition(provider: YagrModelProvider): YagrProviderDefinition {
   return YAGR_PROVIDER_DEFINITIONS[provider];
