@@ -9,7 +9,7 @@ import {
   isExperimentalProvider,
   isOAuthAccountProvider,
   providerRequiresApiKey,
-  YAGR_MODEL_PROVIDERS,
+  YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
 import type { ManagedN8nInstanceState } from '../n8n-local/state.js';
 
@@ -28,12 +28,12 @@ const PROVIDER_WIZARD_ORDER: YagrModelProvider[] = [
   'google',
   'google-proxy',
   'copilot-proxy',
-  'groq',
   'mistral',
   'openrouter',
 ];
 
-const VALID_PROVIDERS: YagrModelProvider[] = PROVIDER_WIZARD_ORDER.filter((provider) => YAGR_MODEL_PROVIDERS.includes(provider));
+const SELECTABLE_PROVIDER_SET = new Set<YagrModelProvider>(YAGR_SELECTABLE_MODEL_PROVIDERS);
+const VALID_PROVIDERS: YagrModelProvider[] = PROVIDER_WIZARD_ORDER.filter((provider) => SELECTABLE_PROVIDER_SET.has(provider));
 
 const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: string }> = [
   { value: 'telegram', label: 'Telegram', hint: 'Bot-based chat gateway' },
@@ -1298,6 +1298,7 @@ function SetupWizard({ callbacks, options, onDone }: {
         return (
           <Box flexDirection="column">
             <FieldLabel label="Default LLM provider" />
+            <Text color="yellow">  Warning: select only tool-capable models for Yagr agent runs.</Text>
             <SelectList
               options={VALID_PROVIDERS}
               cursor={phase.cursor}
@@ -1418,6 +1419,7 @@ function SetupWizard({ callbacks, options, onDone }: {
         return (
           <Box flexDirection="column">
             <FieldLabel label={`Default model  ·  ${getProviderDisplayName(phase.provider)}`} />
+            <Text color="yellow">  Warning: select only tool-capable models.</Text>
             {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
             {phase.models.length === 0 ? (
               <Box marginLeft={2}>

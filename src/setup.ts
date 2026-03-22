@@ -21,7 +21,7 @@ import {
   getDefaultBaseUrlForProvider,
   isProviderConfigured,
   providerNeedsBaseUrlInput,
-  YAGR_MODEL_PROVIDERS,
+  YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from './llm/provider-registry.js';
 import { prepareProviderRuntime } from './llm/proxy-runtime.js';
 import { bootstrapManagedLocalN8n } from './n8n-local/bootstrap.js';
@@ -32,7 +32,7 @@ import { markManagedN8nBootstrapStage } from './n8n-local/state.js';
 import { runSetupWizard, type SetupCallbacks } from './setup/setup-wizard.js';
 import { openExternalUrl } from './system/open-external.js';
 
-const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
+const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
 
 export interface YagrSetupStatus {
   ready: boolean;

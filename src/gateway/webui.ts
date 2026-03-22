@@ -37,7 +37,7 @@ import {
   getDefaultBaseUrlForProvider,
   isProviderConfigured,
   providerRequiresApiKey,
-  YAGR_MODEL_PROVIDERS,
+  YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 const __filename = fileURLToPath(import.meta.url);
@@ -45,7 +45,7 @@ const __dirname = path.dirname(__filename);
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 3789;
-const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
+const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
 const ACTIVE_WEBUI_SURFACES = ['webui'] as const;
 
 const WEB_UI_HTML = `<!doctype html>

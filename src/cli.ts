@@ -39,10 +39,10 @@ import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { readManagedN8nState } from './n8n-local/state.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrLlmSetup, runYagrSetup } from './setup.js';
 import { openExternalUrl } from './system/open-external.js';
-import { YAGR_MODEL_PROVIDERS } from './llm/provider-registry.js';
+import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
 
-const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
+const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
