@@ -1,7 +1,9 @@
 import { YagrAgent } from '../agent.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { runInteractiveGateway } from './interactive-ui.js';
 import { resolveLanguageModelConfig, resolveModelProvider, type YagrModelProvider } from '../llm/create-language-model.js';
+import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRunOptions } from '../types.js';
 
 export interface CliGatewayOptions extends YagrRunOptions {
@@ -26,6 +28,7 @@ async function ensureProvider(options: CliGatewayOptions): Promise<YagrModelProv
 
 export async function runCliGateway(agent: YagrAgent, options: CliGatewayOptions = {}): Promise<void> {
   const configService = new YagrConfigService();
+  const setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
   const savedConfig = configService.getLocalConfig();
 
   const provider = await ensureProvider({
@@ -47,11 +50,11 @@ export async function runCliGateway(agent: YagrAgent, options: CliGatewayOptions
     baseUrl: resolvedConfig.baseUrl,
   };
 
-  configService.saveLocalConfig({
-    ...savedConfig,
+  setupService.saveResolvedCliModelSelection({
     provider,
-    model: effectiveOptions.model,
+    model: resolvedConfig.model,
     baseUrl: effectiveOptions.baseUrl,
+    apiKey: effectiveOptions.apiKey,
   });
 
   if (options.prompt && !options.interactive) {

@@ -102,7 +102,8 @@ Responsabilite actuelle:
 
 Observation actuelle:
 
-- certaines facades portent aussi de la logique applicative de setup/configuration
+- les facades se limitent maintenant a l'I/O, aux sessions et a une orchestration legere
+- les mutations setup/config et l'etat metier associe sont delegues aux services applicatifs partages
 
 ### Setup / wizard / bootstrap
 
