@@ -5,6 +5,7 @@ import { YagrSessionAgent } from '../agent.js';
 import { YagrConfigService, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import type { EngineRuntimePort } from '../engine/engine.js';
+import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import {
@@ -488,8 +489,13 @@ class TelegramGateway implements Gateway {
       };
 
       const embeds: WorkflowEmbed[] = [];
+      const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
       const result = await (await this.getAgent(chatId)).run(prompt, {
         ...this.options,
+        provider: resolvedConfig.provider,
+        model: resolvedConfig.model,
+        apiKey: resolvedConfig.apiKey,
+        baseUrl: resolvedConfig.baseUrl,
         display: undefined,
         satisfiedRequiredActionIds: satisfiedRequiredActions.map((action) => action.id),
         onPhaseChange: async (event) => {
