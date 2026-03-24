@@ -18,6 +18,7 @@ import {
   normalizeToolChoiceForCapability,
   type YagrModelCapabilityProfile,
 } from './model-capabilities.js';
+import { normalizeFunctionToolParametersSchema } from './tool-schema.js';
 
 export const OPENAI_ACCOUNT_BASE_URL = 'https://chatgpt.com/backend-api';
 export const OPENAI_ACCOUNT_DEFAULT_MODEL = 'gpt-5.1-codex-mini';
@@ -644,7 +645,9 @@ function toCodexTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string
     type: 'function',
     name: tool.name,
     ...(tool.description ? { description: tool.description } : {}),
-    parameters: tool.parameters,
+    parameters: normalizeFunctionToolParametersSchema(tool.parameters, {
+      forceRequiredObjectProperties: true,
+    }),
   }));
 }
 
