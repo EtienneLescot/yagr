@@ -391,7 +391,7 @@ const PAD = 16;
 
 function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | null {
   const graph = React.useMemo(() => parseWorkflowMap(diagram), [diagram]);
-  if (!graph || graph.nodes.length === 0) return null;
+  if (!graph || graph.nodes.length === 0) return <pre className="workflowDiagram">{diagram}</pre>;
 
   const maxCol = Math.max(...graph.nodes.map((n) => n.col));
   const maxRowPerCol = new Map<number, number>();

@@ -15,9 +15,9 @@ export interface YagrModelCapabilityProfile {
   prefersStrictToolSchemas: boolean;
 }
 
-type CapabilityFlags = Omit<YagrModelCapabilityProfile, 'provider' | 'model' | 'toolCalling'>;
+export type CapabilityFlags = Omit<YagrModelCapabilityProfile, 'provider' | 'model' | 'toolCalling'>;
 
-const CAPABILITY_FLAGS: Record<YagrToolCallingCapability, CapabilityFlags> = {
+export const CAPABILITY_FLAGS: Record<YagrToolCallingCapability, CapabilityFlags> = {
   native: {
     supportsParallelToolCalls: true,
     supportsStructuredOutputs: true,
@@ -129,7 +129,7 @@ export function resolveModelCapabilityProfile(input: {
         supportsStreamingToolCalls: false,
       });
     case 'google':
-      return buildProfile(provider, model, 'compatible');
+      return buildProfile(provider, model, 'native');
     case 'groq':
       return buildProfile(provider, model, 'compatible');
     case 'mistral':

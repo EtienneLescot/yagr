@@ -561,6 +561,7 @@ function importGitHubCliSession(): GitHubStoredSession | undefined {
       updatedAt: nowIso,
     };
     writeStoredGitHubSession(imported);
+    process.stderr.write(`[yagr] Imported GitHub CLI session from ${hostsPath}\n`);
     return imported;
   } catch {
     return undefined;

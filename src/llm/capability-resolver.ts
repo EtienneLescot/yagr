@@ -3,40 +3,12 @@ import {
   type YagrProviderModelMetadata,
 } from './provider-metadata.js';
 import type { YagrModelProvider } from './provider-registry.js';
-import type { YagrModelCapabilityProfile, YagrToolCallingCapability } from './model-capabilities.js';
-
-type CapabilityFlags = Omit<YagrModelCapabilityProfile, 'provider' | 'model' | 'toolCalling'>;
-
-const CAPABILITY_FLAGS: Record<YagrToolCallingCapability, CapabilityFlags> = {
-  native: {
-    supportsParallelToolCalls: true,
-    supportsStructuredOutputs: true,
-    supportsStreamingToolCalls: true,
-    supportsForcedToolChoice: true,
-    prefersStrictToolSchemas: false,
-  },
-  compatible: {
-    supportsParallelToolCalls: false,
-    supportsStructuredOutputs: false,
-    supportsStreamingToolCalls: true,
-    supportsForcedToolChoice: true,
-    prefersStrictToolSchemas: false,
-  },
-  weak: {
-    supportsParallelToolCalls: false,
-    supportsStructuredOutputs: false,
-    supportsStreamingToolCalls: false,
-    supportsForcedToolChoice: false,
-    prefersStrictToolSchemas: false,
-  },
-  none: {
-    supportsParallelToolCalls: false,
-    supportsStructuredOutputs: false,
-    supportsStreamingToolCalls: false,
-    supportsForcedToolChoice: false,
-    prefersStrictToolSchemas: false,
-  },
-};
+import {
+  CAPABILITY_FLAGS,
+  type CapabilityFlags,
+  type YagrModelCapabilityProfile,
+  type YagrToolCallingCapability,
+} from './model-capabilities.js';
 
 function buildProfile(
   provider: YagrModelProvider,
