@@ -79,16 +79,24 @@ Observation actuelle:
 ### Tooling
 
 - `src/tools/build-tools.ts`
+- `src/tools/toolsets.ts`
 - `src/tools/*.ts`
+- `src/runtime/tool-runtime-strategy.ts`
+- `src/runtime/policy-hooks.ts`
 
 Responsabilite actuelle:
 
 - construire la surface d'outils exposee au runtime
 - fournir des outils workspace, n8nac, workflow et required action
+- normaliser les groupes d'outils et les contraintes post-sync
+- faire porter par la strategie runtime la selection de surface et le mode de tool calling
 
 Observation actuelle:
 
-- la surface reste plate, mais elle est maintenant filtree par la strategie runtime pour exposer une capacite coherente selon `native / compatible / weak / none`
+- `src/tools/toolsets.ts` definit maintenant le SSOT des groupes d'outils runtime (`core`, `discovery`, `edit`, `workflow execution`)
+- `src/runtime/tool-runtime-strategy.ts` choisit maintenant explicitement la surface exposee, le mode `parallel / sequential / disabled` et les tools autorises apres un `push/verify`
+- `src/runtime/policy-hooks.ts` consomme cette politique runtime au lieu de porter sa propre allowlist implicite
+- la surface reste plate cote implementation, mais elle est maintenant filtree et contrainte de maniere coherente selon `native / compatible / weak / none`
 - le bridge `n8nac` privilegie desormais le repertoire de sync actif lors des retries `push`, ce qui evite une partie des divergences entre instances/scope locaux
 - le tool `presentWorkflowResult` et ses embeds workflow sont maintenant traites comme une sortie produit de premier plan: le harness `advanced` verifie explicitement la presence d'une banniere workflow complete avec URL et diagramme quand un workflow a ete cree/pousse
 
@@ -190,7 +198,7 @@ flowchart LR
 ## Points d'attention actuels
 
 - La couche providers a maintenant un contrat plugin de base, mais tous les adapters ne sont pas encore amincis jusqu'au minimum souhaitable.
-- La frontiere tooling/providers est plus propre, mais reste encore implicite au lieu d'etre formalisee par un vrai contrat de negociation.
+- La frontiere tooling/providers est maintenant centralisee autour d'une strategie runtime unique et de groupes d'outils normalises; il reste surtout a finir l'amincissement des adapters providers eux-memes.
 - Le SSOT applicatif est partiellement duplique entre `setup.ts` et `gateway/webui.ts`.
 - Le contrat `Engine` agrege encore plusieurs responsabilites pour compatibilite, mais le prompt, le runtime et les gateways consomment maintenant des ports plus fins (`EngineIdentityPort`, `EngineRuntimePort`, etc.) au lieu du contrat complet.
 - La capture de la reponse finale utilisateur dans le harness `advanced` remonte maintenant correctement le resultat final du run, et la presence d'une banniere workflow complete est verifiee. La formulation finale reste encore perfectible sur certains providers.

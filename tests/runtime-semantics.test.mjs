@@ -12,6 +12,7 @@ import {
   createWorkflowPresentationGuardHook,
   wrapToolsWithRuntimeHooks,
 } from '../dist/runtime/policy-hooks.js';
+import { resolveToolRuntimeStrategy } from '../dist/runtime/tool-runtime-strategy.js';
 import { collectRequiredActions } from '../dist/runtime/required-actions.js';
 import {
   buildGroundedSummary,
@@ -144,6 +145,7 @@ test('workflow presentation is allowed when the caller already provides a diagra
 });
 
 test('workflow sync guard blocks exploratory tools after a successful push', async () => {
+  const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
   const wrappedTools = wrapToolsWithRuntimeHooks(
     {
       n8nac: {
@@ -157,7 +159,7 @@ test('workflow sync guard blocks exploratory tools after a successful push', asy
         execute: async () => ({ ok: true }),
       },
     },
-    [createWorkflowSyncCompletionGuardHook()],
+    [createWorkflowSyncCompletionGuardHook(strategy)],
     () => ({ runId: 'run-sync-1', phase: 'sync', state: 'running' }),
   );
 
@@ -171,6 +173,7 @@ test('workflow sync guard blocks exploratory tools after a successful push', asy
 });
 
 test('workflow sync guard still allows final presentation after a successful push', async () => {
+  const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
   const wrappedTools = wrapToolsWithRuntimeHooks(
     {
       n8nac: {
@@ -184,7 +187,7 @@ test('workflow sync guard still allows final presentation after a successful pus
         execute: async () => ({ presented: true }),
       },
     },
-    [createWorkflowSyncCompletionGuardHook()],
+    [createWorkflowSyncCompletionGuardHook(strategy)],
     () => ({ runId: 'run-sync-2', phase: 'sync', state: 'running' }),
   );
 

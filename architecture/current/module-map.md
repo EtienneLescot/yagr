@@ -65,6 +65,7 @@ Responsabilites actuelles:
 Observation actuelle:
 
 - le runtime consomme maintenant `EngineRuntimePort` plutot que le contrat `Engine` complet
+- le runtime choisit maintenant seul la surface d'outils, le mode de tool calling et la politique post-sync via `tool-runtime-strategy.ts` puis `policy-hooks.ts`
 
 ### `src/llm/`
 
@@ -105,6 +106,7 @@ Familles actuelles:
 - outils workspace
 - outils de statut et interaction
 - pont `n8nac`
+- groupes normalises de surface outillage dans `toolsets.ts`
 
 ```mermaid
 flowchart LR
@@ -129,6 +131,8 @@ flowchart LR
 Observation actuelle:
 
 - les tools ne dependent plus du contrat `Engine` monolithique partout: ils consomment maintenant des ports cibles selon leur responsabilite
+- `toolsets.ts` est maintenant le SSOT des groupes d'outils exposes au runtime
+- `build-tools.ts` applique la surface d'outils decidee par la strategie runtime au lieu de porter sa propre politique implicite
 
 ### `src/gateway/`
 
