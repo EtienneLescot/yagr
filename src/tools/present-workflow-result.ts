@@ -20,6 +20,18 @@ export function extractWorkflowMapHeader(source: string): string | undefined {
   return source.slice(start, end + '</workflow-map>'.length).trim();
 }
 
+export function resolveWorkflowDiagramFromFilePath(filePath: string): string | undefined {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return undefined;
+  }
+
+  try {
+    return extractWorkflowMapHeader(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return undefined;
+  }
+}
+
 function findWorkflowFileById(rootDir: string, workflowId: string): string | undefined {
   if (!rootDir || !fs.existsSync(rootDir)) {
     return undefined;
