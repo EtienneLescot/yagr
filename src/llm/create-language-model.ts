@@ -6,6 +6,11 @@ import { createGitHubCopilotLanguageModel } from './copilot-account.js';
 import { createGeminiAccountLanguageModel } from './google-account.js';
 import { createOpenAiAccountLanguageModel, getOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL } from './openai-account.js';
 import {
+  getOpenAiCompatibleProviderSettingsForCapability,
+  resolveModelCapabilityProfile,
+  type YagrModelCapabilityProfile,
+} from './model-capabilities.js';
+import {
   getDefaultBaseUrlForProvider,
   getDefaultModelForProvider,
   getProviderDefinition,
@@ -149,6 +154,7 @@ export function resolveLanguageModelConfig(
 export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
   const resolvedConfig = resolveLanguageModelConfig(config);
   const { provider, model: modelName, apiKey, baseUrl: baseURL } = resolvedConfig;
+  const capabilityProfile = resolveModelCapabilityProfile({ provider, model: modelName });
   const definition = getProviderDefinition(provider);
   const sessionApiKey = provider === 'openai-proxy' ? getOpenAiAccountSession()?.accessToken : undefined;
   const resolvedApiKey = apiKey || sessionApiKey;
@@ -179,19 +185,19 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
       throw new Error('OpenAI account session not found. Run `yagr setup` again.');
     }
 
-    return createOpenAiAccountLanguageModel(modelName);
+    return createOpenAiAccountLanguageModel(modelName, capabilityProfile);
   }
 
   if (provider === 'anthropic-proxy') {
-    return createAnthropicAccountLanguageModel(modelName, resolvedApiKey);
+    return createAnthropicAccountLanguageModel(modelName, resolvedApiKey, capabilityProfile);
   }
 
   if (provider === 'google-proxy') {
-    return createGeminiAccountLanguageModel(modelName);
+    return createGeminiAccountLanguageModel(modelName, capabilityProfile);
   }
 
   if (provider === 'copilot-proxy') {
-    return createGitHubCopilotLanguageModel(modelName);
+    return createGitHubCopilotLanguageModel(modelName, capabilityProfile);
   }
 
   if (definition.usesOpenAiCompatibleApi) {
@@ -204,7 +210,7 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
       fetch: getOpenAiFetchOverride(provider),
     });
 
-    const providerSettings = getOpenAiCompatibleProviderSettings(provider);
+    const providerSettings = getOpenAiCompatibleProviderSettings(provider, capabilityProfile);
     return providerSettings
       ? providerClient(modelName, providerSettings)
       : providerClient(modelName);
@@ -325,21 +331,24 @@ function normalizeMistralToolCalls(payload: unknown): unknown {
   };
 }
 
-function getOpenAiCompatibleProviderSettings(provider: YagrModelProvider):
+function getOpenAiCompatibleProviderSettings(
+  provider: YagrModelProvider,
+  capabilityProfile: YagrModelCapabilityProfile,
+):
   | { useLegacyFunctionCalling?: boolean; parallelToolCalls?: boolean; structuredOutputs?: boolean; simulateStreaming?: boolean }
   | undefined {
+  const baseSettings = getOpenAiCompatibleProviderSettingsForCapability(capabilityProfile);
+
   if (provider === 'mistral') {
     return {
-      // Reduce tool-call surface complexity for better compatibility.
-      parallelToolCalls: false,
+      ...baseSettings,
       // Mistral OpenAI-compatible endpoints can emit non-JSON fragments during tool
       // argument generation; disabling strict structured parsing avoids hard failures.
-      structuredOutputs: false,
       simulateStreaming: true,
     };
   }
 
-  return undefined;
+  return baseSettings;
 }
 
 function getApiKeyForProvider(

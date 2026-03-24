@@ -1,5 +1,6 @@
 export { YagrAgent } from './agent.js';
 export { YagrRunEngine } from './runtime/run-engine.js';
+export { resolveToolRuntimeStrategy } from './runtime/tool-runtime-strategy.js';
 export {
   createN8nEngineFromWorkspace,
   loadN8nEngineConfig,
@@ -46,6 +47,23 @@ export {
   resolveModelName,
   resolveModelProvider,
 } from './llm/create-language-model.js';
+export {
+  fetchAndCacheProviderMetadata,
+  clearProviderMetadataCache,
+  getCachedProviderModelMetadata,
+  warmProviderMetadataCacheFromDiscovery,
+} from './llm/provider-metadata.js';
+export {
+  filterFunctionToolsForCapability,
+  getOpenAiCompatibleProviderSettingsForCapability,
+  getProviderOptionsForCapability,
+  normalizeToolChoiceForCapability,
+  resolveModelCapabilityProfile,
+} from './llm/model-capabilities.js';
+export {
+  classifyOpenRouterMetadataCapability,
+  resolveCapabilityProfileFromMetadata,
+} from './llm/capability-resolver.js';
 export {
   buildYagrSetupStatus,
   getYagrSetupStatus,
@@ -113,6 +131,14 @@ export type {
   WorkflowSpecNode,
   WorkflowValidationResult,
 } from './types.js';
+export type {
+  YagrModelCapabilityProfile,
+  YagrToolCallingCapability,
+} from './llm/model-capabilities.js';
+export type {
+  YagrExecutionMode,
+  YagrToolRuntimeStrategy,
+} from './runtime/tool-runtime-strategy.js';
 
 export type {
   YagrGatewayConfig,

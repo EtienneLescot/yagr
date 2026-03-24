@@ -11,6 +11,7 @@ import type {
   LanguageModelV1StreamPart,
 } from '@ai-sdk/provider';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
+import type { YagrModelCapabilityProfile } from './model-capabilities.js';
 
 export const GEMINI_ACCOUNT_DEFAULT_MODEL = 'gemini-3-flash-preview';
 
@@ -145,7 +146,7 @@ export function getGeminiAccountSession(): GeminiAccountSession | undefined {
 }
 
 export async function ensureGeminiAccountSession(): Promise<GeminiAccountSession | undefined> {
-  const stored = readStoredGeminiSession();
+  const stored = readStoredGeminiSession() ?? importGeminiCliSession();
   if (stored) {
     const refreshed = await refreshGeminiSessionIfNeeded(stored);
     syncGeminiCliFiles(refreshed);
@@ -241,14 +242,17 @@ export async function fetchGeminiOAuthModels(_accessToken: string): Promise<stri
   return models;
 }
 
-export function createGeminiAccountLanguageModel(modelId: string): LanguageModelV1 {
+export function createGeminiAccountLanguageModel(
+  modelId: string,
+  capabilityProfile?: YagrModelCapabilityProfile,
+): LanguageModelV1 {
   return {
     specificationVersion: 'v1',
     provider: 'google-proxy.gemini',
     modelId,
     defaultObjectGenerationMode: undefined,
     supportsImageUrls: false,
-    supportsStructuredOutputs: false,
+    supportsStructuredOutputs: Boolean(capabilityProfile?.supportsStructuredOutputs),
     async doGenerate(options) {
       const execution = await runGeminiExec(modelId, options);
       return {
@@ -733,6 +737,37 @@ function readStoredGeminiSession(): GeminiStoredSession | undefined {
       return undefined;
     }
     return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function importGeminiCliSession(): GeminiStoredSession | undefined {
+  const authPath = getGeminiAuthPath();
+  if (!fs.existsSync(authPath)) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(authPath, 'utf8')) as GeminiCliOauthFile;
+    const accessToken = parsed.access_token?.trim();
+    const refreshToken = parsed.refresh_token?.trim();
+    const expiresAt = typeof parsed.expiry_date === 'number' ? parsed.expiry_date : 0;
+    if (!accessToken || !refreshToken || !Number.isFinite(expiresAt) || expiresAt <= 0) {
+      return undefined;
+    }
+
+    const nowIso = new Date().toISOString();
+    const imported: GeminiStoredSession = {
+      provider: 'google-proxy',
+      accessToken,
+      refreshToken,
+      expiresAt,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    writeStoredGeminiSession(imported);
+    return imported;
   } catch {
     return undefined;
   }

@@ -17,8 +17,12 @@ import { createSearchWorkspaceTool } from './search-workspace.js';
 import { createWriteWorkspaceFileTool } from './write-workspace-file.js';
 import { createPresentWorkflowResultTool } from './present-workflow-result.js';
 
-export function buildTools(engine: Engine, observer?: ToolExecutionObserver) {
-  return {
+export function buildTools(
+  engine: Engine,
+  observer?: ToolExecutionObserver,
+  options: { allowedToolNames?: string[] } = {},
+) {
+  const allTools = {
     reportProgress: createReportProgressTool(observer),
     requestRequiredAction: createRequestRequiredActionTool(observer),
     n8nac: createN8nAcTool(observer),
@@ -36,4 +40,13 @@ export function buildTools(engine: Engine, observer?: ToolExecutionObserver) {
     deleteWorkspaceFile: createDeleteWorkspaceFileTool(observer),
     presentWorkflowResult: createPresentWorkflowResultTool(observer),
   };
+
+  if (!options.allowedToolNames || options.allowedToolNames.length === 0) {
+    return allTools;
+  }
+
+  const allowed = new Set(options.allowedToolNames);
+  return Object.fromEntries(
+    Object.entries(allTools).filter(([toolName]) => allowed.has(toolName)),
+  );
 }
