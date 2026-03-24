@@ -84,6 +84,7 @@ Observation actuelle:
 
 - la surface reste plate, mais elle est maintenant filtree par la strategie runtime pour exposer une capacite coherente selon `native / compatible / weak / none`
 - le bridge `n8nac` privilegie desormais le repertoire de sync actif lors des retries `push`, ce qui evite une partie des divergences entre instances/scope locaux
+- le tool `presentWorkflowResult` et ses embeds workflow sont maintenant traites comme une sortie produit de premier plan: le harness `advanced` verifie explicitement la presence d'une banniere workflow complete avec URL et diagramme quand un workflow a ete cree/pousse
 
 ### Gateway / facades
 
@@ -180,4 +181,4 @@ flowchart LR
 - La frontiere tooling/providers est plus propre, mais reste encore implicite au lieu d'etre formalisee par un vrai contrat de negociation.
 - Le SSOT applicatif est partiellement duplique entre `setup.ts` et `gateway/webui.ts`.
 - Le contrat `Engine` agrege plusieurs responsabilites.
-- La capture de la reponse finale utilisateur dans le harness `advanced` remonte maintenant correctement le resultat final du run, mais la formulation finale reste encore un resume technique plutot qu'une vraie reponse produit.
+- La capture de la reponse finale utilisateur dans le harness `advanced` remonte maintenant correctement le resultat final du run, et la presence d'une banniere workflow complete est verifiee. La formulation finale reste encore perfectible sur certains providers.

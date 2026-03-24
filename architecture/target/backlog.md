@@ -12,8 +12,6 @@ Tout ce qui est deja implemente doit etre documente dans `../current/`, pas ici.
 | `in-progress` | Setup SSOT | Finir d'extraire les duplications restantes entre `src/setup.ts`, `src/gateway/webui.ts` et les autres facades | Une couche applicative unique pilote setup/configuration |
 | `in-progress` | Providers | Continuer d'amincir les adapters autour du contrat `ProviderPlugin` | Les providers ne gardent que auth, transport et conversion minimale |
 | `in-progress` | Tooling | Formaliser davantage l'interface tooling/providers et durcir le chemin `none` | La strategie `native / compatible / weak / none` devient pleinement systematique |
-| `in-progress` | OpenRouter | Enrichir encore la resolution metadata si necessaire au-dela de `models` et `endpoints` | Le profil de capacite reste principalement derive de metadata dynamiques |
-| `todo` | Final response | Transformer la sortie finale du runtime en vraie reponse utilisateur plutot qu'en resume technique | Les tests advanced remontent une reponse plus produit et moins interne |
 | `todo` | Google Proxy | Requalifier `google-proxy` puis decider refonte propre ou suppression | Pas de provider ambigu qui degrade Gemini |
 | `todo` | Engine ports | Decouper l'interface `Engine` en ports plus fins | Backend plus composable et responsabilites mieux separees |
 | `todo` | Facades | Amincir Telegram/WebUI/TUI/CLI | Facades reduites a I/O, session et orchestration legere |
