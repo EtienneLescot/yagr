@@ -5,7 +5,7 @@ Ce dossier est le point d'entree de la documentation architecturale du repo.
 Il est volontairement scinde en deux zones:
 
 - `current/`: documentation durable de l'architecture actuelle du codebase
-- `target/`: documentation ephemere de l'architecture cible et du chemin pour y parvenir
+- `target/`: documentation ephemere reduite au backlog restant
 
 ## Regles de maintenance
 
@@ -31,9 +31,8 @@ Cette partie est ephemere.
 
 Elle doit:
 
-- decrire la cible architecturale
-- lister les ecarts entre l'existant et la cible
-- suivre le backlog de convergence
+- contenir uniquement le backlog restant
+- rester minimale et rapidement supprimable
 
 Elle doit etre reduite puis supprimee au fur et a mesure:
 
@@ -52,9 +51,7 @@ architecture/
 │   ├── module-map.md
 │   └── runtime-flows.md
 └── target/
-    ├── README.md
-    ├── architecture-target.md
-    └── refactor-backlog.md
+    └── backlog.md
 ```
 
 ## Usage attendu
@@ -64,6 +61,4 @@ Ordre de lecture recommande:
 1. `current/system-overview.md`
 2. `current/module-map.md`
 3. `current/runtime-flows.md`
-4. `target/architecture-target.md`
-5. `target/refactor-backlog.md`
-6. `target/provider-capability-implementation-plan.md`
+4. `target/backlog.md`
