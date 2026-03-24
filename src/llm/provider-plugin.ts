@@ -3,7 +3,6 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropicAccountLanguageModel } from './anthropic-account.js';
 import { createGitHubCopilotLanguageModel } from './copilot-account.js';
-import { createGeminiAccountLanguageModel } from './google-account.js';
 import {
   getOpenAiCompatibleProviderSettingsForCapability,
   type YagrModelCapabilityProfile,
@@ -133,10 +132,6 @@ function buildModelFactory(
 
   if (provider === 'anthropic-proxy') {
     return ({ model, apiKey, capabilityProfile }) => createAnthropicAccountLanguageModel(model, apiKey, capabilityProfile);
-  }
-
-  if (provider === 'google-proxy') {
-    return ({ model, capabilityProfile }) => createGeminiAccountLanguageModel(model, capabilityProfile);
   }
 
   if (provider === 'copilot-proxy') {

@@ -106,7 +106,6 @@ Observation actuelle:
 - la separation commence a etre plus nette entre metadata provider, normalisation des capacites et strategie runtime
 - `ProviderPlugin` porte maintenant aussi la factory de modele et la discovery, ce qui retire les `switch` provider-specific de `create-language-model.ts` et `provider-discovery.ts`
 - les adapters providers gardent maintenant principalement auth, transport, conversion minimale et hooks metadata/discovery
-- `google-proxy` n'est plus expose comme provider supporte: le backend OAuth / Code Assist reste conserve en interne, mais il est retire des surfaces utilisateur et des runs provider par defaut tant qu'une refonte propre n'existe pas
 - la migration n'est pas terminee, mais la direction `metadata -> normalisation -> runtime strategy` existe maintenant dans le code
 - les providers OpenAI-compatible faibles ne sont plus artificiellement limites au premier tool visible
 - la strategie runtime commune pilote maintenant le mode `stream` vs `generate`, les directives inspect/execute/recovery et la reduction de surface d'outils pour le niveau `none`
@@ -283,5 +282,4 @@ flowchart LR
 
 - Le contrat `Engine` agrege encore plusieurs responsabilites pour compatibilite, meme si le prompt, le runtime et les gateways consomment deja des ports plus fins (`EngineIdentityPort`, `EngineRuntimePort`, etc.).
 - `setup.ts` reste un point d'orchestration historique, meme si les mutations et snapshots principaux sont remontes dans `setup/application-services.ts` et `setup/status.ts`.
-- `google-proxy` a ete retire de la surface supportee; une future reintroduction demanderait une vraie refonte, pas un simple rebranchement.
 - La capture de la reponse finale utilisateur et de la banniere workflow est maintenant bonne cote harness, mais la qualite redactionnelle varie encore selon les providers/modeles.

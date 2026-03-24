@@ -23,8 +23,8 @@ test('compatible strategy keeps tools but pushes conservative directives', () =>
   assert.ok(strategy.executeDirectives.some((line) => /one tool at a time/i.test(line)));
 });
 
-test('weak strategy keeps execution in generate mode for google-proxy', () => {
-  const strategy = resolveToolRuntimeStrategy('google-proxy', 'gemini-3-flash-preview');
+test('weak strategy keeps execution in generate mode for mistral', () => {
+  const strategy = resolveToolRuntimeStrategy('mistral', 'ministral-8b-latest');
 
   assert.equal(strategy.capabilityProfile.toolCalling, 'weak');
   assert.equal(strategy.executionMode, 'generate');

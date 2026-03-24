@@ -26,7 +26,6 @@ const PROVIDER_WIZARD_ORDER: YagrModelProvider[] = [
   'anthropic',
   'anthropic-proxy',
   'google',
-  'google-proxy',
   'copilot-proxy',
   'mistral',
   'openrouter',
@@ -170,17 +169,6 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
         'Paste the generated setup-token below.',
       ],
       continueLabel: 'Paste setup-token',
-    };
-  }
-
-  if (provider === 'google-proxy') {
-    return {
-      title: 'Connect Gemini account',
-      body: [
-        'Yagr runs a native Google OAuth flow for your Gemini account.',
-        'It will show a browser URL and ask you to paste the redirect URL back here.',
-      ],
-      continueLabel: 'Continue with Gemini sign-in',
     };
   }
 

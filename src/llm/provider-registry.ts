@@ -1,7 +1,6 @@
 import type { YagrLocalConfig } from '../config/yagr-config-service.js';
 import { DEFAULT_COPILOT_API_BASE_URL, GITHUB_COPILOT_DEFAULT_MODEL } from './copilot-account.js';
 import { ANTHROPIC_ACCOUNT_DEFAULT_MODEL } from './anthropic-account.js';
-import { GEMINI_ACCOUNT_DEFAULT_MODEL } from './google-account.js';
 import { OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL } from './openai-account.js';
 
 export type YagrModelProvider =
@@ -13,7 +12,6 @@ export type YagrModelProvider =
   | 'openrouter'
   | 'openai-proxy'
   | 'anthropic-proxy'
-  | 'google-proxy'
   | 'copilot-proxy';
 
 export interface YagrProviderDefinition {
@@ -149,16 +147,6 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     usesOpenAiCompatibleApi: false,
     setupHint: 'Claude setup-token from `claude setup-token`',
   },
-  'google-proxy': {
-    id: 'google-proxy',
-    displayName: 'Gemini',
-    defaultModel: GEMINI_ACCOUNT_DEFAULT_MODEL,
-    supported: false,
-    experimental: true,
-    requiresApiKey: false,
-    usesOpenAiCompatibleApi: false,
-    setupHint: 'Unsupported for now: unofficial Gemini OAuth / Code Assist backend, hidden until a clean rewrite exists',
-  },
   'copilot-proxy': {
     id: 'copilot-proxy',
     displayName: 'GitHub',
@@ -219,7 +207,7 @@ export function getProviderDisplayName(provider: YagrModelProvider): string {
 }
 
 export function isOAuthAccountProvider(provider: YagrModelProvider): boolean {
-  return provider === 'openai-proxy' || provider === 'anthropic-proxy' || provider === 'google-proxy' || provider === 'copilot-proxy';
+  return provider === 'openai-proxy' || provider === 'anthropic-proxy' || provider === 'copilot-proxy';
 }
 
 export function isProviderConfigured(localConfig: YagrLocalConfig, getApiKey: (provider: YagrModelProvider) => string | undefined): boolean {

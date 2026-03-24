@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { getProviderPlugin } from '../dist/llm/provider-plugin.js';
-import { YAGR_SELECTABLE_MODEL_PROVIDERS, isSupportedProvider } from '../dist/llm/provider-registry.js';
+import { YAGR_SELECTABLE_MODEL_PROVIDERS } from '../dist/llm/provider-registry.js';
 
 test('provider plugin exposes transport facts for openai-compatible and oauth providers', () => {
   const openRouterPlugin = getProviderPlugin('openrouter');
@@ -29,7 +29,6 @@ test('provider plugin owns factory and discovery hooks', () => {
   assert.equal(anthropicProxyPlugin.discovery, undefined);
 });
 
-test('google-proxy is no longer exposed as a supported selectable provider', () => {
-  assert.equal(isSupportedProvider('google-proxy'), false);
-  assert.equal(YAGR_SELECTABLE_MODEL_PROVIDERS.includes('google-proxy'), false);
+test('google API remains exposed while only supported providers stay selectable', () => {
+  assert.equal(YAGR_SELECTABLE_MODEL_PROVIDERS.includes('google'), true);
 });
