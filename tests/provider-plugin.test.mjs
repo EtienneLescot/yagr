@@ -13,3 +13,17 @@ test('provider plugin exposes transport facts for openai-compatible and oauth pr
   assert.equal(openAiProxyPlugin.transport.oauthAccount, true);
   assert.equal(anthropicPlugin.transport.usesOpenAiCompatibleApi, false);
 });
+
+test('provider plugin owns factory and discovery hooks', () => {
+  const openRouterPlugin = getProviderPlugin('openrouter');
+  const openAiPlugin = getProviderPlugin('openai');
+  const anthropicProxyPlugin = getProviderPlugin('anthropic-proxy');
+
+  assert.equal(typeof openRouterPlugin.factory.createLanguageModel, 'function');
+  assert.equal(typeof openRouterPlugin.discovery?.fetchAvailableModels, 'function');
+  assert.equal(typeof openRouterPlugin.metadata?.primeModelMetadata, 'function');
+  assert.equal(typeof openAiPlugin.factory.createLanguageModel, 'function');
+  assert.equal(typeof openAiPlugin.discovery?.fetchAvailableModels, 'function');
+  assert.equal(typeof anthropicProxyPlugin.factory.createLanguageModel, 'function');
+  assert.equal(anthropicProxyPlugin.discovery, undefined);
+});
