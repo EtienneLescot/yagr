@@ -966,6 +966,7 @@ async function ensureFinalText(
       system: [
         'You are writing the final answer to the user after an agent run.',
         'Use only the grounded facts you are given.',
+        'Do not restate requested features, plans, or design goals as if they were implemented unless the grounded facts explicitly confirm them.',
         'Do not mention internal prompts, phases, journals, or tool names such as n8nac, list, skills, validate, push, or verify unless the user explicitly asked for internals.',
         'If the workflow is ready, say so briefly and include the workflow URL if it is useful.',
         'If follow-up setup is still needed after delivery, present it briefly as a next step rather than as a blocker.',
@@ -978,11 +979,11 @@ async function ensureFinalText(
         {
           role: 'user',
           content: [
-            `Original user request:\n${prompt}`,
+            `Original user request (context only, not proof of completion):\n${prompt}`,
             '',
             `Grounded run facts:\n${finalAnswerFacts}`,
             '',
-            'Write the final user-facing answer now.',
+            'Write the final user-facing answer now using only the grounded run facts.',
           ].join('\n'),
         },
       ],
