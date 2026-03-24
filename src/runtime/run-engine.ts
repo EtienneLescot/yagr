@@ -3,6 +3,7 @@ import { generateText, streamText, type CoreMessage } from 'ai';
 import type { Engine } from '../engine/engine.js';
 import { createLanguageModel } from '../llm/create-language-model.js';
 import { resolveModelContextProfile } from '../llm/create-language-model.js';
+import { getProviderOptionsForCapability, resolveModelCapabilityProfile } from '../llm/model-capabilities.js';
 import type { YagrModelProvider } from '../llm/provider-registry.js';
 import type {
   YagrAgentState,
@@ -24,10 +25,8 @@ import { compactConversationContext } from './context-compaction.js';
 import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outcome.js';
 import { createDefaultRuntimeHooks, wrapToolsWithRuntimeHooks } from './policy-hooks.js';
 import { blockingStateForRequiredActions, collectRequiredActions } from './required-actions.js';
+import { resolveToolRuntimeStrategy, type YagrToolRuntimeStrategy } from './tool-runtime-strategy.js';
 
-const INSPECT_MAX_STEPS = 4;
-const EXECUTE_MAX_STEPS = 10;
-const EXECUTE_RECOVERY_MAX_STEPS = 6;
 const MAX_EXECUTION_ATTEMPTS = 3;
 const PHASE_ORDER: YagrRunPhase[] = ['inspect', 'plan', 'edit', 'validate', 'sync', 'verify', 'summarize'];
 const STREAM_FILTER_HOLDBACK = 256;
@@ -81,13 +80,6 @@ type RunState = {
   stepNumber: number;
 };
 
-function providerOptionsForRun(provider?: YagrModelProvider): { openai?: { strictSchemas: boolean } } | undefined {
-  if (provider === 'openai' || provider === 'groq') {
-    return { openai: { strictSchemas: false } };
-  }
-  return undefined;
-}
-
 function createAbortError(message = 'Yagr run stopped by user.'): Error {
   const error = new Error(message);
   error.name = 'AbortError';
@@ -114,7 +106,11 @@ function wrapInternal(text: string): string {
   return `${INTERNAL_TAG_OPEN}${text}${INTERNAL_TAG_CLOSE}`;
 }
 
-function createPhasePrompt(phase: 'inspect' | 'execute', userPrompt: string): string {
+function createPhasePrompt(
+  phase: 'inspect' | 'execute',
+  userPrompt: string,
+  strategy: YagrToolRuntimeStrategy,
+): string {
   if (phase === 'inspect') {
     return wrapInternal([
       'Yagr internal phase: inspect.',
@@ -123,6 +119,7 @@ function createPhasePrompt(phase: 'inspect' | 'execute', userPrompt: string): st
       'Do not reread the workspace AGENT.md or AGENTS.md file during inspect unless a specific later detail is missing from the current context.',
       'Favor correctness over speed in this phase. If an example or rule is likely to determine the right implementation, read it before acting.',
       'Do not claim completion in this phase.',
+      ...strategy.inspectDirectives,
       `Original request: ${userPrompt}`,
     ].join('\n'));
   }
@@ -132,6 +129,7 @@ function createPhasePrompt(phase: 'inspect' | 'execute', userPrompt: string): st
     'Complete the task end-to-end using the gathered context.',
     'When appropriate, author or edit workflow files, validate them, sync them, verify them, and then summarize what changed.',
     'Ask the user only when a specific missing value blocks execution.',
+    ...strategy.executeDirectives,
     `Original request: ${userPrompt}`,
   ].join('\n'));
 }
@@ -609,6 +607,7 @@ function buildRecoveryPrompt(outcome: RunOutcome, attemptNumber: number): string
 async function executePhase(
   state: RunState,
   options: YagrRunOptions,
+  strategy: YagrToolRuntimeStrategy,
   systemPrompt: string,
   tools: ReturnType<typeof buildTools>,
   messages: CoreMessage[],
@@ -622,7 +621,7 @@ async function executePhase(
 }> {
   throwIfAborted(options.abortSignal);
 
-  if (options.provider === 'mistral' || options.provider === 'copilot-proxy' || options.provider === 'openai-proxy') {
+  if (strategy.executionMode === 'generate') {
     const result = await generateText({
       abortSignal: options.abortSignal,
       model: createLanguageModel(options),
@@ -630,7 +629,7 @@ async function executePhase(
       tools,
       messages,
       maxSteps,
-      providerOptions: providerOptionsForRun(options.provider),
+      providerOptions: strategy.providerOptions,
     });
 
     for (const step of result.steps) {
@@ -673,8 +672,8 @@ async function executePhase(
     tools,
     messages,
     maxSteps,
-    toolCallStreaming: shouldUseToolCallStreaming(options.provider),
-    providerOptions: providerOptionsForRun(options.provider),
+    toolCallStreaming: strategy.toolCallStreaming,
+    providerOptions: strategy.providerOptions,
     onStepFinish: async (stepResult) => {
       recordedSteps += 1;
       for (const toolCall of stepResult.toolCalls) {
@@ -739,13 +738,6 @@ async function executePhase(
     toolCalls: resolved[3].map((toolCall) => ({ toolName: toolCall.toolName })),
     responseMessages: response.messages,
   };
-}
-
-function shouldUseToolCallStreaming(provider?: YagrModelProvider): boolean {
-  if (provider === 'mistral') {
-    return false;
-  }
-  return true;
 }
 
 async function transitionPhase(state: RunState, options: YagrRunOptions, phase: YagrRunPhase, status: YagrPhaseEvent['status'], message: string): Promise<void> {
@@ -833,9 +825,12 @@ export class YagrRunEngine {
       role: 'user',
       content: prompt,
     };
+    const runtimeStrategy = resolveToolRuntimeStrategy(options.provider, options.model);
     const runtimeHooks = [...createDefaultRuntimeHooks(), ...(options.runtimeHooks ?? [])];
     const baseTools = buildTools(this.engine, {
       onToolEvent: withRuntimeToolEvents(state, options),
+    }, {
+      allowedToolNames: runtimeStrategy.allowedToolNames,
     });
     const tools = wrapToolsWithRuntimeHooks(baseTools as any, runtimeHooks, () => ({
       runId: state.runId,
@@ -861,7 +856,7 @@ export class YagrRunEngine {
 
       const inspectInstruction: CoreMessage = {
         role: 'user',
-        content: createPhasePrompt('inspect', prompt),
+        content: createPhasePrompt('inspect', prompt, runtimeStrategy),
       };
       const inspectResult = await generateText({
         abortSignal: options.abortSignal,
@@ -869,8 +864,8 @@ export class YagrRunEngine {
         system: this.systemPrompt,
         tools,
         messages: [...executionContext, inspectInstruction],
-        maxSteps: Math.min(options.maxSteps ?? 8, INSPECT_MAX_STEPS),
-        providerOptions: providerOptionsForRun(options.provider),
+        maxSteps: Math.min(options.maxSteps ?? 8, runtimeStrategy.inspectMaxSteps),
+        providerOptions: runtimeStrategy.providerOptions,
       });
 
       for (const step of inspectResult.steps) {
@@ -901,7 +896,7 @@ export class YagrRunEngine {
 
       const executeInstruction: CoreMessage = {
         role: 'user',
-        content: createPhasePrompt('execute', prompt),
+        content: createPhasePrompt('execute', prompt, runtimeStrategy),
       };
       let executeMessages = [...executionContext, executeInstruction];
 
@@ -918,10 +913,13 @@ export class YagrRunEngine {
         const phaseResult = await executePhase(
           state,
           options,
+          runtimeStrategy,
           this.systemPrompt,
           tools,
           executeMessages,
-          attemptNumber === 1 ? (options.maxSteps ?? EXECUTE_MAX_STEPS) : Math.min(options.maxSteps ?? EXECUTE_MAX_STEPS, EXECUTE_RECOVERY_MAX_STEPS),
+          attemptNumber === 1
+            ? (options.maxSteps ?? runtimeStrategy.executeMaxSteps)
+            : Math.min(options.maxSteps ?? runtimeStrategy.executeMaxSteps, runtimeStrategy.recoveryMaxSteps),
         );
 
         if (phaseResult.text) {
@@ -969,6 +967,7 @@ export class YagrRunEngine {
         hasWorkflowWrites: analyzeRunOutcome(state.journal).hasWorkflowWrites,
         successfulValidate: Boolean(analyzeRunOutcome(state.journal).successfulValidate),
         successfulPush: Boolean(analyzeRunOutcome(state.journal).successfulPush),
+        successfulVerify: Boolean(analyzeRunOutcome(state.journal).successfulVerify),
         unresolvedFailureCount: analyzeRunOutcome(state.journal).unresolvedFailedActions.length,
         hooks: runtimeHooks,
         context: buildRuntimeContext(state),

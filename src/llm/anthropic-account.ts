@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import type { LanguageModelV1 } from '@ai-sdk/provider';
+import type { YagrModelCapabilityProfile } from './model-capabilities.js';
 
 export const ANTHROPIC_ACCOUNT_DEFAULT_MODEL = 'claude-sonnet-4-5';
 
@@ -151,7 +152,11 @@ export async function validateAnthropicAccountRuntime(
 
 // ─── Language model ────────────────────────────────────────────────────────────
 
-export function createAnthropicAccountLanguageModel(modelId: string, overrideApiKey?: string): LanguageModelV1 {
+export function createAnthropicAccountLanguageModel(
+  modelId: string,
+  overrideApiKey?: string,
+  _capabilityProfile?: YagrModelCapabilityProfile,
+): LanguageModelV1 {
   const session = getAnthropicAccountSession();
   const apiKey = overrideApiKey?.trim() || session?.apiKey;
   if (!apiKey) {

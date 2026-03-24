@@ -9,6 +9,7 @@ export interface CompletionGateInput {
   hasWorkflowWrites: boolean;
   successfulValidate: boolean;
   successfulPush: boolean;
+  successfulVerify: boolean;
   unresolvedFailureCount: number;
   hooks?: YagrRuntimeHook[];
   context: YagrRuntimeContext;
@@ -41,6 +42,10 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
 
   if (input.hasWorkflowWrites && !input.successfulPush) {
     reasons.push('Push has not been confirmed.');
+  }
+
+  if (input.hasWorkflowWrites && !input.successfulVerify) {
+    reasons.push('Remote verification has not been confirmed.');
   }
 
   const attempt: YagrCompletionAttempt = {

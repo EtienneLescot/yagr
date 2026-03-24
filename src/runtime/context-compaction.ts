@@ -1,6 +1,7 @@
 import { generateText, type CoreMessage } from 'ai';
 import type { YagrContextCompactionEvent, YagrLanguageModelConfig, YagrRunJournalEntry } from '../types.js';
 import { createLanguageModel } from '../llm/create-language-model.js';
+import { getProviderOptionsForCapability, resolveModelCapabilityProfile } from '../llm/model-capabilities.js';
 import { analyzeRunOutcome, formatObservedAction } from './outcome.js';
 import { collectRequiredActions } from './required-actions.js';
 import { INTERNAL_TAG_OPEN } from './run-engine.js';
@@ -10,11 +11,15 @@ const DEFAULT_THRESHOLD_PERCENT = 70;
 const DEFAULT_PRESERVE_RECENT_MESSAGES = 6;
 const MAX_TRANSCRIPT_CHARS = 24_000;
 
-function providerOptionsForCompaction(provider?: YagrLanguageModelConfig['provider']): { openai?: { strictSchemas: boolean } } | undefined {
-  if (provider === 'openai' || provider === 'groq') {
-    return { openai: { strictSchemas: false } };
+function providerOptionsForCompaction(
+  provider?: YagrLanguageModelConfig['provider'],
+  model?: YagrLanguageModelConfig['model'],
+): { openai?: { strictSchemas: boolean } } | undefined {
+  if (!provider || !model) {
+    return undefined;
   }
-  return undefined;
+
+  return getProviderOptionsForCapability(resolveModelCapabilityProfile({ provider, model }));
 }
 
 export interface ContextBudget {
@@ -205,7 +210,7 @@ async function generateCheckpointSummary(
             },
           ],
           maxSteps: 1,
-          providerOptions: providerOptionsForCompaction(llmConfig?.provider),
+          providerOptions: providerOptionsForCompaction(llmConfig?.provider, llmConfig?.model),
         })).text.trim();
 
     if (summary.length > 0) {

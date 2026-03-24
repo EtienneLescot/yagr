@@ -11,6 +11,11 @@ import type {
   LanguageModelV1ToolChoice,
 } from '@ai-sdk/provider';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
+import {
+  filterFunctionToolsForCapability,
+  normalizeToolChoiceForCapability,
+  type YagrModelCapabilityProfile,
+} from './model-capabilities.js';
 
 export const DEFAULT_COPILOT_API_BASE_URL = 'https://api.individual.githubcopilot.com';
 export const GITHUB_COPILOT_DEFAULT_MODEL = 'gpt-4.1';
@@ -95,6 +100,15 @@ export async function ensureGitHubCopilotSession(): Promise<GitHubCopilotSession
   if (existing) {
     return existing;
   }
+
+  const imported = importGitHubCliSession();
+  if (imported) {
+    return {
+      githubToken: imported.githubToken,
+      source: 'gh-cli',
+    };
+  }
+
   return undefined;
 }
 
@@ -192,16 +206,19 @@ export async function fetchGitHubCopilotModels(token: string, baseUrl = DEFAULT_
   return [...new Set(models)];
 }
 
-export function createGitHubCopilotLanguageModel(modelId: string): LanguageModelV1 {
+export function createGitHubCopilotLanguageModel(
+  modelId: string,
+  capabilityProfile?: YagrModelCapabilityProfile,
+): LanguageModelV1 {
   return {
     specificationVersion: 'v1',
     provider: 'copilot-proxy.github',
     modelId,
     defaultObjectGenerationMode: undefined,
     supportsImageUrls: false,
-    supportsStructuredOutputs: false,
+    supportsStructuredOutputs: Boolean(capabilityProfile?.supportsStructuredOutputs),
     async doGenerate(options) {
-      const execution = await runGitHubCopilotCompletion(modelId, options);
+      const execution = await runGitHubCopilotCompletion(modelId, options, capabilityProfile);
       return {
         text: execution.text,
         finishReason: execution.finishReason,
@@ -219,7 +236,7 @@ export function createGitHubCopilotLanguageModel(modelId: string): LanguageModel
       };
     },
     async doStream(options) {
-      const execution = await runGitHubCopilotCompletion(modelId, options);
+      const execution = await runGitHubCopilotCompletion(modelId, options, capabilityProfile);
       const stream = new ReadableStream<LanguageModelV1StreamPart>({
         start(controller) {
           if (execution.text) {
@@ -249,6 +266,7 @@ export function createGitHubCopilotLanguageModel(modelId: string): LanguageModel
 async function runGitHubCopilotCompletion(
   modelId: string,
   options: Pick<LanguageModelV1CallOptions, 'prompt' | 'mode' | 'inputFormat'>,
+  capabilityProfile?: YagrModelCapabilityProfile,
 ): Promise<{
   text: string;
   finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown';
@@ -266,7 +284,7 @@ async function runGitHubCopilotCompletion(
 
   const runtimeAuth = await resolveCopilotApiToken(session.githubToken);
   const regularMode = options.mode.type === 'regular' ? options.mode : undefined;
-  const tools = getFunctionTools(options.mode);
+  const tools = getFunctionTools(options.mode, capabilityProfile);
   const warnings = buildCopilotWarnings(options, tools);
   const response = await fetch(`${runtimeAuth.baseUrl}/chat/completions`, {
     method: 'POST',
@@ -281,7 +299,7 @@ async function runGitHubCopilotCompletion(
     body: JSON.stringify({
       model: modelId,
       messages: toOpenAiMessages(options.prompt),
-      ...(tools.length > 0 ? { tools: toOpenAiTools(tools), tool_choice: toOpenAiToolChoice(regularMode?.toolChoice) } : {}),
+      ...(tools.length > 0 ? { tools: toOpenAiTools(tools), tool_choice: toOpenAiToolChoice(regularMode?.toolChoice, capabilityProfile) } : {}),
       stream: false,
     }),
   });
@@ -430,6 +448,81 @@ function readStoredGitHubSession(): GitHubStoredSession | undefined {
   }
 }
 
+function importGitHubCliSession(): GitHubStoredSession | undefined {
+  const hostsPath = process.env.YAGR_GH_HOSTS_PATH?.trim() || path.join(process.env.HOME || '', '.config', 'gh', 'hosts.yml');
+  if (!hostsPath || !fs.existsSync(hostsPath)) {
+    return undefined;
+  }
+
+  try {
+    const content = fs.readFileSync(hostsPath, 'utf8');
+    const githubComBlock = extractYamlTopLevelBlock(content, 'github.com');
+    if (!githubComBlock) {
+      return undefined;
+    }
+
+    const token = extractYamlScalar(githubComBlock, 'oauth_token')?.trim();
+    if (!token) {
+      return undefined;
+    }
+
+    const nowIso = new Date().toISOString();
+    const imported: GitHubStoredSession = {
+      provider: 'copilot-proxy',
+      githubToken: token,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    writeStoredGitHubSession(imported);
+    return imported;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractYamlTopLevelBlock(content: string, key: string): string | undefined {
+  const lines = content.split(/\r?\n/);
+  const blockLines: string[] = [];
+  let inside = false;
+
+  for (const line of lines) {
+    if (!inside) {
+      if (line.trim() === `${key}:`) {
+        inside = true;
+      }
+      continue;
+    }
+
+    if (line.trim().length === 0) {
+      blockLines.push(line);
+      continue;
+    }
+
+    if (!/^\s/.test(line)) {
+      break;
+    }
+
+    blockLines.push(line);
+  }
+
+  return blockLines.length > 0 ? blockLines.join('\n') : undefined;
+}
+
+function extractYamlScalar(content: string, key: string): string | undefined {
+  const pattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*:\\s*(.+?)\\s*$`, 'm');
+  const match = content.match(pattern);
+  if (!match) {
+    return undefined;
+  }
+
+  const value = match[1].trim();
+  return value.replace(/^['"]|['"]$/g, '');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function writeStoredGitHubSession(session: GitHubStoredSession): void {
   const sessionPath = getGitHubSessionPath();
   fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
@@ -525,12 +618,14 @@ function buildCopilotWarnings(
 
 function getFunctionTools(
   mode: Pick<LanguageModelV1CallOptions, 'mode'>['mode'],
+  capabilityProfile?: YagrModelCapabilityProfile,
 ): LanguageModelV1FunctionTool[] {
   if (mode.type !== 'regular' || !Array.isArray(mode.tools) || mode.tools.length === 0) {
     return [];
   }
 
-  return mode.tools.filter((tool): tool is LanguageModelV1FunctionTool => tool.type === 'function');
+  const tools = mode.tools.filter((tool): tool is LanguageModelV1FunctionTool => tool.type === 'function');
+  return capabilityProfile ? filterFunctionToolsForCapability(tools, capabilityProfile) : tools;
 }
 
 function toOpenAiTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string, unknown>> {
@@ -544,18 +639,25 @@ function toOpenAiTools(tools: LanguageModelV1FunctionTool[]): Array<Record<strin
   }));
 }
 
-function toOpenAiToolChoice(toolChoice: LanguageModelV1ToolChoice | undefined): unknown {
-  if (!toolChoice || toolChoice.type === 'auto') {
+function toOpenAiToolChoice(
+  toolChoice: LanguageModelV1ToolChoice | undefined,
+  capabilityProfile?: YagrModelCapabilityProfile,
+): unknown {
+  const normalizedToolChoice = capabilityProfile
+    ? normalizeToolChoiceForCapability(toolChoice, capabilityProfile)
+    : toolChoice;
+
+  if (!normalizedToolChoice || normalizedToolChoice.type === 'auto') {
     return 'auto';
   }
-  if (toolChoice.type === 'none' || toolChoice.type === 'required') {
-    return toolChoice.type;
+  if (normalizedToolChoice.type === 'none' || normalizedToolChoice.type === 'required') {
+    return normalizedToolChoice.type;
   }
-  if (toolChoice.type === 'tool') {
+  if (normalizedToolChoice.type === 'tool') {
     return {
       type: 'function',
       function: {
-        name: toolChoice.toolName,
+        name: normalizedToolChoice.toolName,
       },
     };
   }

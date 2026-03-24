@@ -54,9 +54,67 @@ export function createWorkflowPresentationGuardHook(): YagrRuntimeHook {
   };
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+const TOOLS_ALLOWED_AFTER_SUCCESSFUL_SYNC = new Set([
+  'presentWorkflowResult',
+  'reportProgress',
+  'requestRequiredAction',
+]);
+
+export function createWorkflowSyncCompletionGuardHook(): YagrRuntimeHook {
+  let workflowSyncSettled = false;
+
+  return {
+    beforeTool: async ({ toolName }) => {
+      if (!workflowSyncSettled) {
+        return;
+      }
+
+      if (TOOLS_ALLOWED_AFTER_SUCCESSFUL_SYNC.has(toolName)) {
+        return;
+      }
+
+      return {
+        allowed: false,
+        message: 'Workflow already pushed and verified. Stop using tools now and return the final user-facing response.',
+      };
+    },
+    afterTool: async ({ toolName, args, result }) => {
+      if (toolName !== 'n8nac') {
+        return;
+      }
+
+      const normalizedArgs = asRecord(args);
+      const normalizedResult = asRecord(result);
+      const action = asString(normalizedArgs?.action);
+      const exitCode = asNumber(normalizedResult?.exitCode);
+
+      if (exitCode !== 0) {
+        return;
+      }
+
+      if (action === 'push' || action === 'verify') {
+        workflowSyncSettled = true;
+      }
+    },
+  };
+}
+
 export function createDefaultRuntimeHooks(): YagrRuntimeHook[] {
   return [
     createWorkflowPresentationGuardHook(),
+    createWorkflowSyncCompletionGuardHook(),
   ];
 }
 
