@@ -3,6 +3,7 @@ import path from 'node:path';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { getYagrLaunchDir, getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
+import { normalizeRenderableWorkflowDiagram } from '../gateway/workflow-diagram.js';
 import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import type { ToolExecutionObserver } from './observer.js';
 import { emitToolEvent } from './observer.js';
@@ -113,10 +114,10 @@ export function resolveLocalWorkflowDiagram(workflowId: string): string | undefi
 export function resolveWorkflowDiagram(workflowId: string, fallbackDiagram?: string): string | undefined {
   const localDiagram = resolveLocalWorkflowDiagram(workflowId);
   if (localDiagram) {
-    return localDiagram;
+    return normalizeRenderableWorkflowDiagram(localDiagram);
   }
 
-  return fallbackDiagram;
+  return normalizeRenderableWorkflowDiagram(fallbackDiagram);
 }
 
 export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver) {

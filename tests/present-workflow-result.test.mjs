@@ -61,3 +61,20 @@ test('resolveWorkflowDiagram prefers the local workflow file header over a fallb
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+
+test('resolveWorkflowDiagram drops a malformed fallback diagram', () => {
+  assert.equal(
+    resolveWorkflowDiagram('missing-workflow', '/**\n * stale diagram\n */'),
+    undefined,
+  );
+});
+
+test('resolveWorkflowDiagram accepts a renderable fallback diagram', () => {
+  assert.equal(
+    resolveWorkflowDiagram(
+      'missing-workflow',
+      ['<workflow-map>', '// Workflow : Demo', '// ROUTING MAP', '// Start', '// </workflow-map>'].join('\n'),
+    ),
+    ['<workflow-map>', '// Workflow : Demo', '// ROUTING MAP', '// Start', '// </workflow-map>'].join('\n'),
+  );
+});
