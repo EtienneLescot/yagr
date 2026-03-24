@@ -20,6 +20,14 @@ flowchart TD
     SRC --> SYSTEM[system/]
 ```
 
+Cette carte repond a la question "ou vit quoi ?" :
+
+- `runtime/` porte la boucle et les politiques d'execution
+- `llm/` porte les plugins providers, la metadata et la creation de modele
+- `tools/` porte les outils exposes au runtime
+- `gateway/` porte les facades
+- `setup/` porte la couche applicative de configuration
+
 ## Details par bloc
 
 ### `src/engine/`
@@ -67,6 +75,22 @@ Observation actuelle:
 - le runtime consomme maintenant `EngineRuntimePort` plutot que le contrat `Engine` complet
 - le runtime choisit maintenant seul la surface d'outils, le mode de tool calling et la politique post-sync via `tool-runtime-strategy.ts` puis `policy-hooks.ts`
 
+```mermaid
+flowchart LR
+    RE[run-engine.ts]
+    STRAT[tool-runtime-strategy.ts]
+    HOOKS[policy-hooks.ts]
+    GATE[completion-gate.ts]
+    OUT[outcome.ts]
+    ACT[required-actions.ts]
+
+    RE --> STRAT
+    RE --> HOOKS
+    RE --> GATE
+    RE --> OUT
+    RE --> ACT
+```
+
 ### `src/llm/`
 
 Fichiers clefs:
@@ -98,6 +122,24 @@ Dette structurelle:
 - les adapters providers sont maintenant recentres autour de `ProviderPlugin`
 - `google-proxy` a ete retire de la surface supportee; le code reste present en interne uniquement comme base de travail pour une future refonte
 
+```mermaid
+flowchart LR
+    REG[provider-registry.ts]
+    PLUG[provider-plugin.ts]
+    DISC[provider-discovery.ts]
+    META[provider-metadata.ts]
+    CAP[capability-resolver.ts]
+    CLM[create-language-model.ts]
+    ACC[*-account.ts]
+
+    REG --> PLUG
+    PLUG --> DISC
+    PLUG --> CLM
+    DISC --> META
+    META --> CAP
+    ACC --> PLUG
+```
+
 ### `src/tools/`
 
 Familles actuelles:
@@ -111,6 +153,8 @@ Familles actuelles:
 ```mermaid
 flowchart LR
     RT[Runtime]
+    POL[tool-runtime-strategy]
+    SETS[toolsets]
     BT[buildTools]
     WF[Workflow tools]
     WS[Workspace tools]
@@ -120,6 +164,9 @@ flowchart LR
     ENG[Engine]
 
     RT --> BT
+    RT --> POL
+    POL --> SETS
+    POL --> BT
     BT --> WF
     BT --> WS
     BT --> UX

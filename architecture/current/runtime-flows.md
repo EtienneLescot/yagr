@@ -10,8 +10,8 @@ sequenceDiagram
     participant F as Facade
     participant A as YagrSessionAgent
     participant R as YagrRunEngine
-    participant S as Runtime Strategy
-    participant M as LLM Layer
+    participant S as tool-runtime-strategy
+    participant M as ProviderPlugin/Model
     participant T as Tool Surface
     participant E as Engine
 
@@ -103,18 +103,40 @@ Observation:
 - le flux est maintenant structurellement `metadata -> normalisation -> runtime strategy`
 - `google-proxy` n'est plus un provider supporte en surface, meme si son code interne existe encore
 
+## 3bis. Resolution provider/capability
+
+```mermaid
+flowchart LR
+    REG[provider-registry]
+    PLUG[ProviderPlugin]
+    DISC[discovery]
+    META[metadata cache]
+    CAP[capability-resolver]
+    STRAT[tool-runtime-strategy]
+    MODEL[model factory]
+
+    REG --> PLUG
+    PLUG --> DISC
+    DISC --> META
+    META --> CAP
+    CAP --> STRAT
+    CAP --> MODEL
+    PLUG --> MODEL
+```
+
 ## 4. Flux tooling/runtime actuel
 
 ```mermaid
 flowchart LR
+    RUN[YagrRunEngine]
     CAP[Resolved capability profile]
     STRAT[tool-runtime-strategy]
     SETS[tools/toolsets]
     BUILD[build-tools]
     HOOKS[policy-hooks]
-    RUN[YagrRunEngine]
     TOOLS[Runtime tools]
 
+    RUN --> CAP
     CAP --> STRAT
     STRAT --> SETS
     STRAT --> BUILD
@@ -122,7 +144,6 @@ flowchart LR
     BUILD --> TOOLS
     HOOKS --> TOOLS
     TOOLS --> RUN
-    RUN --> STRAT
 ```
 
 Observation:
