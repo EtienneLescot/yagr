@@ -14,6 +14,7 @@ import {
   resolveTerminalWorkflowOpenUrl,
   workflowEmbedKey,
 } from './format-message.js';
+import { getUserFacingToolStatus } from '../tools/observer.js';
 import type {
   YagrAgentState,
   YagrContextCompactionEvent,
@@ -462,11 +463,12 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   }, [display.showResponses, pushEntry]);
 
   const handleToolEvent = useCallback((event: YagrToolEvent) => {
-    if (event.type === 'status' && event.toolName === 'reportProgress') {
+    const userFacingStatus = getUserFacingToolStatus(event);
+    if (userFacingStatus) {
       if (display.showThinking) {
-        pushEntry('narrative', 'Progression', event.message);
+        pushEntry('narrative', userFacingStatus.title, userFacingStatus.detail);
       }
-      setActiveOperationText(event.message);
+      setActiveOperationText(userFacingStatus.detail);
       return;
     }
 

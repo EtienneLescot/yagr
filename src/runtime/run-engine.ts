@@ -815,6 +815,42 @@ export function buildGroundedSummary(
   return lines.join('\n');
 }
 
+export function shouldForceGroundedFinalAnswer(
+  journal: YagrRunJournalEntry[],
+  requiredActions: YagrRequiredAction[] = [],
+): boolean {
+  const outcome = analyzeRunOutcome(journal);
+  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
+
+  if (requiredActions.length > 0) {
+    return true;
+  }
+
+  if (presentedWorkflow?.workflowUrl) {
+    return true;
+  }
+
+  return Boolean(outcome.hasWorkflowWrites && (outcome.successfulPush || outcome.successfulVerify));
+}
+
+export function finalAnswerSatisfiesGroundedWorkflowFacts(
+  text: string,
+  journal: YagrRunJournalEntry[],
+): boolean {
+  const normalizedText = sanitizeAssistantOutput(text);
+  if (!normalizedText) {
+    return false;
+  }
+
+  const outcome = analyzeRunOutcome(journal);
+  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
+  if (presentedWorkflow?.workflowUrl && !normalizedText.includes(presentedWorkflow.workflowUrl)) {
+    return false;
+  }
+
+  return true;
+}
+
 function buildFinalAnswerFacts(
   finishReason: string,
   journal: YagrRunJournalEntry[],
@@ -870,8 +906,9 @@ async function ensureFinalText(
   strategy: YagrToolRuntimeStrategy,
 ): Promise<string> {
   const sanitizedText = sanitizeAssistantOutput(existingText);
+  const forceGroundedFinalAnswer = shouldForceGroundedFinalAnswer(journal, requiredActions);
 
-  if (completionAccepted && sanitizedText && !looksLikeRawToolIntentText(sanitizedText)) {
+  if (completionAccepted && !forceGroundedFinalAnswer && sanitizedText && !looksLikeRawToolIntentText(sanitizedText)) {
     return sanitizedText;
   }
 
@@ -908,7 +945,11 @@ async function ensureFinalText(
     });
 
     const finalText = sanitizeAssistantOutput(result.text);
-    if (finalText && !looksLikeRawToolIntentText(finalText)) {
+    if (
+      finalText
+      && !looksLikeRawToolIntentText(finalText)
+      && finalAnswerSatisfiesGroundedWorkflowFacts(finalText, journal)
+    ) {
       return finalText;
     }
   } catch {

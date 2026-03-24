@@ -17,10 +17,12 @@ import { resolveToolRuntimeStrategy } from '../dist/runtime/tool-runtime-strateg
 import { collectRequiredActions } from '../dist/runtime/required-actions.js';
 import {
   buildGroundedSummary,
+  finalAnswerSatisfiesGroundedWorkflowFacts,
   INTERNAL_TAG_CLOSE,
   INTERNAL_TAG_OPEN,
   sanitizeAssistantOutput,
   sanitizeAssistantResponseMessages,
+  shouldForceGroundedFinalAnswer,
   shouldAbortForInternalPromptLeak,
   shouldAbortForRepetitiveAssistantOutput,
 } from '../dist/runtime/run-engine.js';
@@ -662,6 +664,53 @@ test('grounded summary falls back to successful push metadata when no presentWor
   assert.match(summary, /Lien du workflow: http:\/\/localhost:5678\/workflow\/wf-3/);
   assert.match(summary, /carte du workflow ci-dessous/i);
   assert.doesNotMatch(summary, /Actions n8nac en echec/);
+});
+
+test('final answer policy forces a grounded summary when a workflow URL is known', () => {
+  const journal = [
+    {
+      timestamp: '2026-03-23T16:01:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'workflow pushed',
+      phase: 'sync',
+      stepNumber: 1,
+      step: {
+        stepNumber: 1,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'sync',
+        text: '',
+        toolCalls: [
+          { toolName: 'writeWorkspaceFile', args: { path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'n8nac', args: { action: 'push', filename: 'workflows/demo.workflow.ts' } },
+        ],
+        toolResults: [
+          { toolName: 'writeWorkspaceFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
+          {
+            toolName: 'n8nac',
+            result: {
+              exitCode: 0,
+              verified: true,
+              workflowId: 'wf-3',
+              workflowUrl: 'http://localhost:5678/workflow/wf-3',
+              title: 'Demo Flow',
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  assert.equal(shouldForceGroundedFinalAnswer(journal, []), true);
+  assert.equal(
+    finalAnswerSatisfiesGroundedWorkflowFacts('Le workflow Demo Flow est pret.', journal),
+    false,
+  );
+  assert.equal(
+    finalAnswerSatisfiesGroundedWorkflowFacts('Le workflow Demo Flow est pret. Lien du workflow: http://localhost:5678/workflow/wf-3', journal),
+    true,
+  );
 });
 
 test('grounded summary stays user-facing when a workflow was only presented', () => {
