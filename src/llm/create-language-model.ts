@@ -64,7 +64,7 @@ function inferContextWindowTokens(provider: YagrModelProvider, modelName: string
     return 1_000_000;
   }
 
-  if (provider === 'groq' || provider === 'mistral' || provider === 'copilot-proxy') {
+  if (provider === 'mistral' || provider === 'copilot-proxy') {
     return 128_000;
   }
 
@@ -168,7 +168,6 @@ function getApiKeyForProvider(
     openai: ['OPENAI_LLM_API_KEY', 'OPENAI_API_KEY'],
     anthropic: ['ANTHROPIC_LLM_API_KEY', 'ANTHROPIC_API_KEY'],
     google: ['GOOGLE_GENERATIVE_AI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_LLM_API_KEY', 'GOOGLE_LLM_API_KEY'],
-    groq: ['GROQ_API_KEY', 'GROQ_LLM_API_KEY'],
     mistral: ['MISTRAL_API_KEY', 'MISTRAL_LLM_API_KEY'],
     openrouter: ['OPENROUTER_API_KEY', 'OPENROUTER_LLM_API_KEY'],
   };

@@ -45,7 +45,7 @@ const markdownPath = process.env.YAGR_IT_MARKDOWN_PATH || path.join(process.cwd(
 const advanced = args.has('--advanced') || process.env.YAGR_IT_ADVANCED === '1';
 const advancedPrompt = process.env.YAGR_IT_ADVANCED_PROMPT
   || 'Crée immédiatement un workflow n8n minimal avec exactement deux noeuds: un Manual Trigger puis un Set qui définit status=\"ok\". Ne me pose aucune question. Utilise les outils n8n disponibles, enregistre le workflow et pousse-le.';
-const advancedTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_TIMEOUT_MS, 120_000);
+const advancedTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_TIMEOUT_MS, 180_000);
 const forcedModel = String(process.env.YAGR_IT_FORCE_MODEL || '').trim();
 
 const providersFromCli = readProvidersFromCli(argv);
@@ -332,7 +332,6 @@ function getProviderApiKey(provider) {
       || process.env.GOOGLE_API_KEY
       || process.env.GEMINI_LLM_API_KEY
       || process.env.GOOGLE_LLM_API_KEY,
-    groq: process.env.GROQ_API_KEY || process.env.GROQ_LLM_API_KEY,
     mistral: process.env.MISTRAL_API_KEY || process.env.MISTRAL_LLM_API_KEY,
     openrouter: process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_LLM_API_KEY,
     'openai-proxy': process.env.YAGR_OPENAI_PROXY_TOKEN,
@@ -797,6 +796,13 @@ async function validateAdvancedScenarioResult({
     return {
       ok: false,
       error: remotePromptValidation.error || promptValidation.error,
+    };
+  }
+
+  if (!checklist?.hasPush) {
+    return {
+      ok: false,
+      error: `CLI scenario created a local workflow file but did not push it to the remote n8n instance: ${truncate(normalized, 220)}`,
     };
   }
 

@@ -7,7 +7,6 @@ export type YagrModelProvider =
   | 'anthropic'
   | 'openai'
   | 'google'
-  | 'groq'
   | 'mistral'
   | 'openrouter'
   | 'openai-proxy'
@@ -86,19 +85,6 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
       mapResponse: GOOGLE_OPENAI_MODEL_LIST_MAPPER,
     },
   },
-  groq: {
-    id: 'groq',
-    displayName: 'Groq',
-    defaultModel: 'llama-3.1-70b-versatile',
-    defaultBaseUrl: 'https://api.groq.com/openai/v1',
-    requiresApiKey: true,
-    usesOpenAiCompatibleApi: true,
-    modelDiscovery: {
-      buildUrl: () => 'https://api.groq.com/openai/v1/models',
-      authMode: 'bearer-required',
-      mapResponse: MODEL_LIST_MAPPER,
-    },
-  },
   mistral: {
     id: 'mistral',
     displayName: 'Mistral',
@@ -163,7 +149,7 @@ export const YAGR_SUPPORTED_MODEL_PROVIDERS = Object.freeze(
   YAGR_MODEL_PROVIDERS.filter((provider) => YAGR_PROVIDER_DEFINITIONS[provider].supported !== false),
 );
 export const YAGR_SELECTABLE_MODEL_PROVIDERS = Object.freeze(
-  YAGR_SUPPORTED_MODEL_PROVIDERS.filter((provider) => provider !== 'groq'),
+  YAGR_SUPPORTED_MODEL_PROVIDERS.filter((provider) => !isOAuthAccountProvider(provider) || isSupportedProvider(provider)),
 );
 
 export function getProviderDefinition(provider: YagrModelProvider): YagrProviderDefinition {
@@ -183,7 +169,7 @@ export function providerNeedsBaseUrlInput(provider: YagrModelProvider): boolean 
     return false;
   }
 
-  return provider.endsWith('-proxy') || provider === 'groq' || provider === 'mistral' || provider === 'openrouter';
+  return provider.endsWith('-proxy') || provider === 'mistral' || provider === 'openrouter';
 }
 
 export function providerRequiresApiKey(provider: YagrModelProvider): boolean {
