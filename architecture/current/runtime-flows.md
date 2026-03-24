@@ -46,6 +46,7 @@ Invariants runtime a conserver:
 - la completion est une responsabilite runtime, pas juste un texte assistant
 - un run ne doit pas etre "complete" uniquement parce que le modele s'arrete
 - les blocages et required actions doivent rester representes explicitement
+- une `requiredAction` peut maintenant etre bloquante ou non bloquante: les follow-ups de configuration ne doivent pas etre confondus avec un blocker terminal si le livrable actuel peut encore etre produit
 - les politiques produit doivent rester au-dessus du coeur runtime
 - si un run a deja engage du travail materiel, il doit finir par un resultat concret, une `requiredAction` structuree, ou une poursuite de la boucle; pas par un simple aveu d'echec en prose
 

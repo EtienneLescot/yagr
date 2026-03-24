@@ -836,6 +836,36 @@ test('completion gate stays blocked when a required action is still open', async
   assert.equal(decision.requiredActions.length, 1);
 });
 
+test('completion gate accepts non-blocking follow-up actions after a concrete result', async () => {
+  const decision = await evaluateCompletionGate({
+    text: 'Done.',
+    finishReason: 'stop',
+    requiredActions: [
+      {
+        id: 'follow-up-1',
+        kind: 'external',
+        title: 'Configure AI credential',
+        message: 'Add the provider credential before running the workflow in production.',
+        resumable: true,
+        blocking: false,
+      },
+    ],
+    attemptedMaterialWork: true,
+    hasConcreteResult: true,
+    hasWorkflowWrites: true,
+    successfulValidate: true,
+    successfulPush: true,
+    successfulVerify: true,
+    unresolvedFailureCount: 0,
+    context: { runId: 'run-followup-1', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, true);
+  assert.equal(decision.state, 'completed');
+  assert.equal(decision.requiredActions.length, 1);
+  assert.equal(decision.requiredActions[0].blocking, false);
+});
+
 test('beforeCompletion hook can inject a permission blocker', async () => {
   const decision = await evaluateCompletionGate({
     text: 'Done.',
@@ -869,6 +899,31 @@ test('beforeCompletion hook can inject a permission blocker', async () => {
   assert.equal(decision.accepted, false);
   assert.equal(decision.state, 'waiting_for_permission');
   assert.equal(decision.requiredActions[0].kind, 'permission');
+});
+
+test('requestRequiredAction normalizes blocking=false from tool results', () => {
+  const requiredActions = collectRequiredActions([
+    {
+      timestamp: '2026-03-24T10:02:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'follow-up action raised',
+      phase: 'summarize',
+      stepNumber: 1,
+      step: {
+        stepNumber: 1,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'summarize',
+        text: '',
+        toolCalls: [{ toolName: 'requestRequiredAction', args: { kind: 'external', title: 'Configure AI credential', message: 'Add the credential later.', blocking: false, resumable: true } }],
+        toolResults: [{ toolName: 'requestRequiredAction', result: { id: 'follow-up-2', kind: 'external', title: 'Configure AI credential', message: 'Add the credential later.', blocking: false, resumable: true } }],
+      },
+    },
+  ]);
+
+  assert.equal(requiredActions.length, 1);
+  assert.equal(requiredActions[0].blocking, false);
 });
 
 test('approved required action bypasses beforeTool permission blocker', async () => {

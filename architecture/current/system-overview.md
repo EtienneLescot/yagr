@@ -79,6 +79,7 @@ Observation actuelle:
 - les facades conversationnelles passent maintenant par `YagrSessionAgent`, sans dependre du contrat `Engine` complet
 - la completion runtime n'accepte plus un run qui a fait du travail materiel sans produire ni resultat concret ni `requiredAction` structuree
 - en cas de pseudo-fin, le runtime tente d'abord une continuation, puis une capture explicite de blocker via `requestRequiredAction`
+- `requestRequiredAction` porte maintenant une distinction generale `blocking` vs `follow-up`, ce qui permet au runtime de ne pas confondre une configuration post-livraison avec un vrai blocker de production du livrable courant
 
 ### LLM / providers
 
@@ -159,6 +160,7 @@ Observation actuelle:
 - le diagramme workflow est maintenant valide via le parseur partage `src/gateway/workflow-diagram.ts` avant presentation; un diagramme non renduable n'est plus expose aux facades
 - la resolution du runtime n8n est maintenant partagee entre guard runtime et bridge `n8nac`
 - `N8N_HOST` / `N8N_API_KEY` ne sont pas une source de verite du runtime produit; ils ne sont pris en compte que lorsque le harness automatise active explicitement `YAGR_ALLOW_N8N_ENV=1`
+- les required actions non bloquantes restent visibles dans les surfaces comme prochaines etapes, mais elles ne doivent plus forcer l'arret d'un run qui a deja un resultat concret
 
 ### Gateway / facades
 

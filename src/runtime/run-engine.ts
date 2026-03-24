@@ -26,7 +26,7 @@ import { evaluateCompletionGate, type CompletionGateDecision } from './completio
 import { compactConversationContext } from './context-compaction.js';
 import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outcome.js';
 import { createDefaultRuntimeHooksForStrategy, wrapToolsWithRuntimeHooks } from './policy-hooks.js';
-import { blockingStateForRequiredActions, collectRequiredActions } from './required-actions.js';
+import { blockingStateForRequiredActions, collectRequiredActions, splitRequiredActions } from './required-actions.js';
 import { resolveToolRuntimeStrategy, type YagrToolRuntimeStrategy } from './tool-runtime-strategy.js';
 
 const MAX_EXECUTION_ATTEMPTS = 3;
@@ -744,6 +744,7 @@ export function buildGroundedSummary(
 ): string {
   const lines: string[] = [];
   const outcome = analyzeRunOutcome(journal);
+  const { blocking: blockingRequiredActions, followUp: followUpRequiredActions } = splitRequiredActions(requiredActions);
   const workflowLabel = extractWorkflowLabel(outcome, journal);
   const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
   const presentedWorkflowUrl = presentedWorkflow?.workflowUrl;
@@ -794,8 +795,12 @@ export function buildGroundedSummary(
     lines.push('The run stopped because some execution steps still need correction.');
   }
 
-  if (requiredActions.length > 0 && !(outcome.successfulPush && outcome.successfulVerify)) {
-    lines.push(`Pending required actions: ${requiredActions.map((action) => action.title).join(', ')}`);
+  if (blockingRequiredActions.length > 0 && !(outcome.successfulPush && outcome.successfulVerify)) {
+    lines.push(`Pending required actions: ${blockingRequiredActions.map((action) => action.title).join(', ')}`);
+  }
+
+  if (followUpRequiredActions.length > 0 && (outcome.successfulPush || outcome.successfulVerify || presentedWorkflowUrl)) {
+    lines.push(`Next steps: ${followUpRequiredActions.map((action) => action.title).join(', ')}`);
   }
 
   if (outcome.hasWorkflowWrites && !outcome.successfulValidate) {
@@ -831,12 +836,17 @@ export function shouldForceGroundedFinalAnswer(
 ): boolean {
   const outcome = analyzeRunOutcome(journal);
   const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
+  const { blocking: blockingRequiredActions, followUp: followUpRequiredActions } = splitRequiredActions(requiredActions);
 
-  if (requiredActions.length > 0) {
+  if (blockingRequiredActions.length > 0) {
     return true;
   }
 
   if (presentedWorkflow?.workflowUrl) {
+    return true;
+  }
+
+  if (followUpRequiredActions.length > 0) {
     return true;
   }
 
@@ -867,6 +877,7 @@ function buildFinalAnswerFacts(
   requiredActions: YagrRequiredAction[],
 ): string {
   const outcome = analyzeRunOutcome(journal);
+  const { blocking: blockingRequiredActions, followUp: followUpRequiredActions } = splitRequiredActions(requiredActions);
   const workflowLabel = extractWorkflowLabel(outcome, journal);
   const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
   const lines: string[] = [];
@@ -898,8 +909,11 @@ function buildFinalAnswerFacts(
   if (outcome.blockingUnresolvedFailedActions.length > 0) {
     lines.push(`blocking_failed_actions=${outcome.blockingUnresolvedFailedActions.map(formatObservedAction).join(', ')}`);
   }
-  if (requiredActions.length > 0) {
-    lines.push(`required_actions=${requiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
+  if (blockingRequiredActions.length > 0) {
+    lines.push(`blocking_required_actions=${blockingRequiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
+  }
+  if (followUpRequiredActions.length > 0) {
+    lines.push(`follow_up_actions=${followUpRequiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
   }
 
   return lines.join('\n');
@@ -911,6 +925,8 @@ function buildCompletionRepairPrompt(): string {
     'The previous attempt ended without a concrete result or a structured blocker.',
     'Do not apologize and do not summarize a failure yet.',
     'Continue working until you either produce a real result or raise requestRequiredAction for the missing user input, permission, or external dependency that blocks progress.',
+    'Do not treat follow-up runtime configuration or post-deploy setup as a blocking reason to stop if you can still build, validate, save, or deploy the current artifact.',
+    'If the artifact can be delivered now but still needs later setup, prefer delivering it and raise requestRequiredAction with blocking=false for the next step.',
     'A plain-text statement that the task could not be completed is not an acceptable stopping point.',
   ].join(' '));
 }
@@ -952,6 +968,7 @@ async function ensureFinalText(
         'Use only the grounded facts you are given.',
         'Do not mention internal prompts, phases, journals, or tool names such as n8nac, list, skills, validate, push, or verify unless the user explicitly asked for internals.',
         'If the workflow is ready, say so briefly and include the workflow URL if it is useful.',
+        'If follow-up setup is still needed after delivery, present it briefly as a next step rather than as a blocker.',
         'Do not describe UI elements, cards, banners, embeds, diagrams, or presentation widgets.',
         'If the task is not complete, explain the real blocker briefly and concretely.',
         'Never invent success. Never mention unsupported details.',
