@@ -2,7 +2,7 @@ import type { LanguageModelV1 } from '@ai-sdk/provider';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropicAccountLanguageModel } from './anthropic-account.js';
-import { createGitHubCopilotLanguageModel } from './copilot-account.js';
+import { createGitHubCopilotLanguageModel, fetchGitHubCopilotModels } from './copilot-account.js';
 import {
   getOpenAiCompatibleProviderSettingsForCapability,
   type YagrModelCapabilityProfile,
@@ -91,6 +91,15 @@ function buildProviderPlugin(provider: YagrModelProvider): YagrProviderPlugin {
         await fetchAndCacheProviderMetadata(provider, apiKey, baseUrl).catch(() => undefined);
       },
     };
+  } else if (provider === 'copilot-proxy') {
+    plugin.metadata = {
+      warmDiscoveryPayload: (payload) => {
+        warmProviderMetadataCacheFromDiscovery(provider, payload);
+      },
+      primeModelMetadata: async ({ model, apiKey, baseUrl }) => {
+        await primeProviderModelMetadata(provider, model, apiKey, baseUrl).catch(() => undefined);
+      },
+    };
   }
 
   return plugin;
@@ -164,6 +173,33 @@ function buildProviderDiscovery(
   definition: YagrProviderDefinition,
 ): YagrProviderDiscoveryContract | undefined {
   const discovery = definition.modelDiscovery;
+  if (provider === 'copilot-proxy') {
+    return {
+      fetchAvailableModels: async ({ apiKey, baseUrl }) => {
+        if (!apiKey) {
+          return [];
+        }
+
+        const response = await fetch(`${baseUrl || getDefaultBaseUrlForProvider(provider)}/models`, {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: 'application/json',
+            'User-Agent': 'GitHubCopilotChat/0.26.7',
+            'Editor-Version': 'vscode/1.96.2',
+            'Editor-Plugin-Version': 'copilot-chat/0.26.7',
+          },
+        });
+        if (!response.ok) {
+          return [];
+        }
+
+        const payload = await response.json() as Record<string, unknown>;
+        getProviderPlugin(provider).metadata?.warmDiscoveryPayload?.(payload);
+        return fetchGitHubCopilotModels(apiKey, baseUrl || getDefaultBaseUrlForProvider(provider));
+      },
+    };
+  }
+
   if (!discovery) {
     return undefined;
   }

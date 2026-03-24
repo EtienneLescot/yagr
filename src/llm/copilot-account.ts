@@ -16,6 +16,7 @@ import {
   normalizeToolChoiceForCapability,
   type YagrModelCapabilityProfile,
 } from './model-capabilities.js';
+import { getCachedProviderModelMetadata, primeProviderModelMetadata } from './provider-metadata.js';
 
 export const DEFAULT_COPILOT_API_BASE_URL = 'https://api.individual.githubcopilot.com';
 export const GITHUB_COPILOT_DEFAULT_MODEL = 'gpt-4.1';
@@ -286,20 +287,53 @@ async function runGitHubCopilotCompletion(
   const regularMode = options.mode.type === 'regular' ? options.mode : undefined;
   const tools = getFunctionTools(options.mode, capabilityProfile);
   const warnings = buildCopilotWarnings(options, tools);
+  const endpoint = await resolveCopilotEndpoint(modelId, runtimeAuth.token, runtimeAuth.baseUrl);
+  const execution = endpoint === '/responses'
+    ? await runCopilotResponsesCompletion(modelId, options.prompt, tools, regularMode?.toolChoice, capabilityProfile, runtimeAuth)
+    : await runCopilotChatCompletions(modelId, options.prompt, tools, regularMode?.toolChoice, capabilityProfile, runtimeAuth);
+  return {
+    ...execution,
+    warnings,
+  };
+}
+
+async function resolveCopilotEndpoint(modelId: string, token: string, baseUrl: string): Promise<'/chat/completions' | '/responses'> {
+  const cached = getCachedProviderModelMetadata('copilot-proxy', modelId);
+  const cachedEndpoints = cached?.supportedEndpoints ?? [];
+  if (cachedEndpoints.includes('/responses') && !cachedEndpoints.includes('/chat/completions')) {
+    return '/responses';
+  }
+
+  await primeProviderModelMetadata('copilot-proxy', modelId, token, baseUrl).catch(() => undefined);
+  const metadata = getCachedProviderModelMetadata('copilot-proxy', modelId);
+  const supportedEndpoints = metadata?.supportedEndpoints ?? [];
+  if (supportedEndpoints.includes('/responses') && !supportedEndpoints.includes('/chat/completions')) {
+    return '/responses';
+  }
+
+  return '/chat/completions';
+}
+
+async function runCopilotChatCompletions(
+  modelId: string,
+  prompt: LanguageModelV1Prompt,
+  tools: LanguageModelV1FunctionTool[],
+  toolChoice: LanguageModelV1ToolChoice | undefined,
+  capabilityProfile: YagrModelCapabilityProfile | undefined,
+  runtimeAuth: { token: string; baseUrl: string },
+): Promise<{
+  text: string;
+  finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown';
+  usage: { promptTokens: number; completionTokens: number };
+  toolCalls?: LanguageModelV1FunctionToolCall[];
+}> {
   const response = await fetch(`${runtimeAuth.baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${runtimeAuth.token}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'User-Agent': COPILOT_USER_AGENT,
-      'Editor-Version': COPILOT_EDITOR_VERSION,
-      'Editor-Plugin-Version': COPILOT_EDITOR_PLUGIN_VERSION,
-    },
+    headers: buildCopilotHeaders(runtimeAuth.token),
     body: JSON.stringify({
       model: modelId,
-      messages: toOpenAiMessages(options.prompt),
-      ...(tools.length > 0 ? { tools: toOpenAiTools(tools), tool_choice: toOpenAiToolChoice(regularMode?.toolChoice, capabilityProfile) } : {}),
+      messages: toOpenAiMessages(prompt),
+      ...(tools.length > 0 ? { tools: toOpenAiTools(tools), tool_choice: toOpenAiToolChoice(toolChoice, capabilityProfile) } : {}),
       stream: false,
     }),
   });
@@ -311,13 +345,65 @@ async function runGitHubCopilotCompletion(
 
   const payload = await response.json() as Record<string, unknown>;
   const toolCalls = extractOpenAiToolCalls(payload);
-  const finishReason = normalizeFinishReason(payload, toolCalls);
+  const finishReason = normalizeChatCompletionsFinishReason(payload, toolCalls);
   return {
-    text: extractCopilotText(payload),
+    text: extractChatCompletionsText(payload),
     finishReason,
-    usage: extractOpenAiUsage(payload),
+    usage: extractChatCompletionsUsage(payload),
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
-    warnings,
+  };
+}
+
+async function runCopilotResponsesCompletion(
+  modelId: string,
+  prompt: LanguageModelV1Prompt,
+  tools: LanguageModelV1FunctionTool[],
+  toolChoice: LanguageModelV1ToolChoice | undefined,
+  capabilityProfile: YagrModelCapabilityProfile | undefined,
+  runtimeAuth: { token: string; baseUrl: string },
+): Promise<{
+  text: string;
+  finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown';
+  usage: { promptTokens: number; completionTokens: number };
+  toolCalls?: LanguageModelV1FunctionToolCall[];
+}> {
+  const { instructions, input } = convertPromptToResponsesInput(prompt);
+  const response = await fetch(`${runtimeAuth.baseUrl}/responses`, {
+    method: 'POST',
+    headers: buildCopilotHeaders(runtimeAuth.token),
+    body: JSON.stringify({
+      model: modelId,
+      ...(instructions ? { instructions } : {}),
+      input,
+      ...(tools.length > 0 ? { tools: toResponsesTools(tools), tool_choice: toResponsesToolChoice(toolChoice, capabilityProfile) } : {}),
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body.trim() || `GitHub Copilot responses completion failed: HTTP ${response.status}`);
+  }
+
+  const payload = await response.json() as Record<string, unknown>;
+  const toolCalls = extractResponsesToolCalls(payload);
+  const finishReason = normalizeResponsesFinishReason(payload, toolCalls);
+  return {
+    text: extractResponsesText(payload),
+    finishReason,
+    usage: extractResponsesUsage(payload),
+    ...(toolCalls.length > 0 ? { toolCalls } : {}),
+  };
+}
+
+function buildCopilotHeaders(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'User-Agent': COPILOT_USER_AGENT,
+    'Editor-Version': COPILOT_EDITOR_VERSION,
+    'Editor-Plugin-Version': COPILOT_EDITOR_PLUGIN_VERSION,
   };
 }
 
@@ -711,7 +797,90 @@ function toOpenAiMessages(prompt: LanguageModelV1Prompt): Array<Record<string, u
   }).flat();
 }
 
-function extractCopilotText(payload: Record<string, unknown>): string {
+function convertPromptToResponsesInput(prompt: LanguageModelV1Prompt): {
+  instructions: string | undefined;
+  input: Array<Record<string, unknown>>;
+} {
+  let instructions: string | undefined;
+  const input: Array<Record<string, unknown>> = [];
+
+  for (const message of prompt) {
+    if (message.role === 'system') {
+      instructions = message.content;
+      continue;
+    }
+    if (message.role === 'user') {
+      const text = message.content.map((p) => p.type === 'text' ? p.text : `[${p.type}]`).join('\n');
+      input.push({ role: 'user', content: [{ type: 'input_text', text }] });
+    } else if (message.role === 'assistant') {
+      const text = message.content
+        .filter((p) => p.type === 'text' || p.type === 'reasoning')
+        .map((p) => p.text)
+        .join('\n')
+        .trim();
+      if (text) {
+        input.push({ role: 'assistant', content: [{ type: 'output_text', text }] });
+      }
+
+      for (const part of message.content) {
+        if (part.type !== 'tool-call') {
+          continue;
+        }
+        input.push({
+          type: 'function_call',
+          call_id: part.toolCallId,
+          name: part.toolName,
+          arguments: JSON.stringify(part.args ?? {}),
+        });
+      }
+    } else {
+      for (const part of message.content) {
+        input.push({
+          type: 'function_call_output',
+          call_id: part.toolCallId,
+          output: stringifyToolResult(part.result),
+        });
+      }
+    }
+  }
+
+  return { instructions, input };
+}
+
+function toResponsesTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string, unknown>> {
+  return tools.map((tool) => ({
+    type: 'function',
+    name: tool.name,
+    ...(tool.description ? { description: tool.description } : {}),
+    parameters: tool.parameters,
+    strict: true,
+  }));
+}
+
+function toResponsesToolChoice(
+  toolChoice: LanguageModelV1ToolChoice | undefined,
+  capabilityProfile?: YagrModelCapabilityProfile,
+): unknown {
+  const normalizedToolChoice = capabilityProfile
+    ? normalizeToolChoiceForCapability(toolChoice, capabilityProfile)
+    : toolChoice;
+
+  if (!normalizedToolChoice || normalizedToolChoice.type === 'auto') {
+    return 'auto';
+  }
+  if (normalizedToolChoice.type === 'none' || normalizedToolChoice.type === 'required') {
+    return normalizedToolChoice.type;
+  }
+  if (normalizedToolChoice.type === 'tool') {
+    return {
+      type: 'function',
+      name: normalizedToolChoice.toolName,
+    };
+  }
+  return 'auto';
+}
+
+function extractChatCompletionsText(payload: Record<string, unknown>): string {
   const choices = payload.choices;
   if (!Array.isArray(choices) || choices.length === 0) {
     return '';
@@ -731,11 +900,46 @@ function extractCopilotText(payload: Record<string, unknown>): string {
   return '';
 }
 
-function extractOpenAiUsage(payload: Record<string, unknown>): { promptTokens: number; completionTokens: number } {
+function extractResponsesText(payload: Record<string, unknown>): string {
+  const outputText = readOptionalString(payload.output_text);
+  if (outputText) {
+    return outputText;
+  }
+
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  return output.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return [];
+    }
+
+    const record = entry as Record<string, unknown>;
+    if (record.type === 'message' && Array.isArray(record.content)) {
+      return record.content.flatMap((part) => {
+        if (!part || typeof part !== 'object') {
+          return [];
+        }
+        const partRecord = part as Record<string, unknown>;
+        return typeof partRecord.text === 'string' ? [partRecord.text] : [];
+      });
+    }
+
+    return [];
+  }).join('');
+}
+
+function extractChatCompletionsUsage(payload: Record<string, unknown>): { promptTokens: number; completionTokens: number } {
   const usage = payload.usage as Record<string, unknown> | undefined;
   return {
     promptTokens: typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : 0,
     completionTokens: typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : 0,
+  };
+}
+
+function extractResponsesUsage(payload: Record<string, unknown>): { promptTokens: number; completionTokens: number } {
+  const usage = payload.usage as Record<string, unknown> | undefined;
+  return {
+    promptTokens: typeof usage?.input_tokens === 'number' ? usage.input_tokens : 0,
+    completionTokens: typeof usage?.output_tokens === 'number' ? usage.output_tokens : 0,
   };
 }
 
@@ -775,7 +979,37 @@ function extractOpenAiToolCalls(payload: Record<string, unknown>): LanguageModel
     .filter((entry): entry is LanguageModelV1FunctionToolCall => Boolean(entry));
 }
 
-function normalizeFinishReason(
+function extractResponsesToolCalls(payload: Record<string, unknown>): LanguageModelV1FunctionToolCall[] {
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  return output
+    .map((entry, index) => {
+      if (!entry || typeof entry !== 'object') {
+        return undefined;
+      }
+
+      const call = entry as Record<string, unknown>;
+      if (call.type !== 'function_call') {
+        return undefined;
+      }
+
+      const id = readOptionalString(call.call_id) || readOptionalString(call.id) || `copilot-responses-tool-call-${index + 1}`;
+      const toolName = readOptionalString(call.name);
+      const args = readOptionalString(call.arguments);
+      if (!toolName || !args) {
+        return undefined;
+      }
+
+      return {
+        toolCallType: 'function' as const,
+        toolCallId: id,
+        toolName,
+        args,
+      };
+    })
+    .filter((entry): entry is LanguageModelV1FunctionToolCall => Boolean(entry));
+}
+
+function normalizeChatCompletionsFinishReason(
   payload: Record<string, unknown>,
   toolCalls: LanguageModelV1FunctionToolCall[],
 ): 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown' {
@@ -799,6 +1033,30 @@ function normalizeFinishReason(
   }
   if (raw === 'content_filter') {
     return 'content-filter';
+  }
+  return 'other';
+}
+
+function normalizeResponsesFinishReason(
+  payload: Record<string, unknown>,
+  toolCalls: LanguageModelV1FunctionToolCall[],
+): 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown' {
+  if (toolCalls.length > 0) {
+    return 'tool-calls';
+  }
+
+  const raw = readOptionalString(payload.status);
+  if (!raw) {
+    return 'unknown';
+  }
+  if (raw === 'completed') {
+    return 'stop';
+  }
+  if (raw === 'incomplete') {
+    return 'length';
+  }
+  if (raw === 'failed') {
+    return 'error';
   }
   return 'other';
 }

@@ -4,6 +4,7 @@ export interface YagrProviderModelMetadata {
   provider: YagrModelProvider;
   model: string;
   supportedParameters?: string[];
+  supportedEndpoints?: string[];
   inputModalities?: string[];
   outputModalities?: string[];
   contextWindow?: number;
@@ -179,6 +180,7 @@ function mergeProviderMetadata(
     ...left,
     ...right,
     supportedParameters: mergedSupportedParameters,
+    supportedEndpoints: mergeStringArrays(left.supportedEndpoints, right.supportedEndpoints),
     inputModalities: mergeStringArrays(left.inputModalities, right.inputModalities),
     outputModalities: mergeStringArrays(left.outputModalities, right.outputModalities),
     contextWindow: right.contextWindow ?? left.contextWindow,
@@ -226,15 +228,64 @@ function normalizeOpenRouterMetadata(payload: Record<string, unknown>): YagrProv
   return entries;
 }
 
+function normalizeCopilotMetadata(payload: Record<string, unknown>): YagrProviderModelMetadata[] {
+  const rawModels = Array.isArray(payload.data) ? payload.data : [];
+  const fetchedAt = new Date().toISOString();
+  const entries: YagrProviderModelMetadata[] = [];
+
+  for (const rawModel of rawModels) {
+    if (!rawModel || typeof rawModel !== 'object') {
+      continue;
+    }
+
+    const record = rawModel as Record<string, unknown>;
+    const model = typeof record.id === 'string' ? record.id.trim() : '';
+    if (!model) {
+      continue;
+    }
+
+    const capabilities = record.capabilities && typeof record.capabilities === 'object'
+      ? record.capabilities as Record<string, unknown>
+      : undefined;
+    const limits = capabilities?.limits && typeof capabilities.limits === 'object'
+      ? capabilities.limits as Record<string, unknown>
+      : undefined;
+    const supports = capabilities?.supports && typeof capabilities.supports === 'object'
+      ? capabilities.supports as Record<string, unknown>
+      : undefined;
+    const supportedParameters = [
+      supports?.tool_calls === true ? 'tools' : undefined,
+      supports?.tool_calls === true ? 'tool_choice' : undefined,
+      supports?.parallel_tool_calls === true ? 'parallel_tool_calls' : undefined,
+      supports?.structured_outputs === true ? 'response_format' : undefined,
+      supports?.reasoning_effort ? 'reasoning_effort' : undefined,
+    ].filter((entry): entry is string => Boolean(entry));
+
+    entries.push({
+      provider: 'copilot-proxy',
+      model,
+      ...(supportedParameters.length > 0 ? { supportedParameters } : {}),
+      supportedEndpoints: normalizeStringArray(record.supported_endpoints ?? record.supportedEndpoints),
+      contextWindow: asNumber(limits?.max_context_window_tokens),
+      maxOutputTokens: asNumber(limits?.max_output_tokens),
+      inputModalities: supports?.vision === true ? ['text', 'image'] : ['text'],
+      outputModalities: ['text'],
+      fetchedAt,
+    });
+  }
+
+  return entries;
+}
+
 export function warmProviderMetadataCacheFromDiscovery(
   provider: YagrModelProvider,
   payload: Record<string, unknown>,
 ): void {
-  if (provider !== 'openrouter') {
-    return;
+  if (provider === 'openrouter') {
+    cacheMetadataEntries(normalizeOpenRouterMetadata(payload));
+  } else if (provider === 'copilot-proxy') {
+    cacheMetadataEntries(normalizeCopilotMetadata(payload));
   }
-
-  cacheMetadataEntries(normalizeOpenRouterMetadata(payload));
 }
 
 function normalizeOpenRouterEndpointMetadata(
@@ -274,12 +325,7 @@ export async function fetchAndCacheProviderMetadata(
     model?: string;
   } = {},
 ): Promise<YagrProviderModelMetadata[]> {
-  if (provider !== 'openrouter') {
-    return [];
-  }
-
-  const resolvedBaseUrl = (baseUrl || OPENROUTER_DEFAULT_BASE_URL).replace(/\/$/, '');
-  const metadataUrl = `${resolvedBaseUrl}/models`;
+  const resolvedBaseUrl = (baseUrl || (provider === 'openrouter' ? OPENROUTER_DEFAULT_BASE_URL : '')).replace(/\/$/, '');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -288,7 +334,7 @@ export async function fetchAndCacheProviderMetadata(
     headers.Authorization = `Bearer ${apiKey}`;
   }
 
-  if (options.model) {
+  if (provider === 'openrouter' && options.model) {
     const encodedModelPath = options.model
       .split('/')
       .map((segment) => encodeURIComponent(segment))
@@ -309,6 +355,36 @@ export async function fetchAndCacheProviderMetadata(
     return [entry];
   }
 
+  if (provider === 'copilot-proxy') {
+    const response = await fetch(`${resolvedBaseUrl}/models`, {
+      headers: {
+        ...headers,
+        Accept: 'application/json',
+        'User-Agent': 'GitHubCopilotChat/0.26.7',
+        'Editor-Version': 'vscode/1.96.2',
+        'Editor-Plugin-Version': 'copilot-chat/0.26.7',
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch provider metadata: ${response.status} ${response.statusText}`);
+    }
+
+    const payload = await response.json() as Record<string, unknown>;
+    const entries = normalizeCopilotMetadata(payload);
+    cacheMetadataEntries(entries);
+
+    if (options.model) {
+      return entries.filter((entry) => entry.model === options.model);
+    }
+
+    return entries;
+  }
+
+  if (provider !== 'openrouter') {
+    return [];
+  }
+
+  const metadataUrl = `${resolvedBaseUrl}/models`;
   const response = await fetch(metadataUrl, { headers });
   if (!response.ok) {
     throw new Error(`Failed to fetch provider metadata: ${response.status} ${response.statusText}`);
@@ -332,8 +408,17 @@ export async function primeProviderModelMetadata(
   }
 
   const cached = getCachedProviderModelMetadata(provider, trimmedModel);
-  if (cached?.endpointVariants?.length || provider !== 'openrouter') {
+  if ((provider === 'openrouter' && cached?.endpointVariants?.length) || (provider !== 'openrouter' && cached)) {
     return cached;
+  }
+
+  if (provider === 'copilot-proxy') {
+    try {
+      const entries = await fetchAndCacheProviderMetadata(provider, apiKey, baseUrl, { model: trimmedModel });
+      return entries[0] ?? getCachedProviderModelMetadata(provider, trimmedModel);
+    } catch {
+      return getCachedProviderModelMetadata(provider, trimmedModel);
+    }
   }
 
   let warmed = cached;
