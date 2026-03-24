@@ -131,7 +131,10 @@ export function resolveModelCapabilityProfile(input: {
     case 'google':
       return buildProfile(provider, model, 'compatible');
     case 'google-proxy':
-      return buildProfile(provider, model, 'none');
+      return buildProfile(provider, model, 'weak', {
+        supportsStructuredOutputs: true,
+        supportsForcedToolChoice: true,
+      });
     case 'groq':
       return buildProfile(provider, model, 'compatible');
     case 'mistral':

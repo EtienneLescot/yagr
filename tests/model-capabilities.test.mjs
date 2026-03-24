@@ -46,7 +46,7 @@ test('resolveModelCapabilityProfile marks openai-proxy as compatible with reduce
   assert.equal(profile.supportsStreamingToolCalls, false);
 });
 
-test('resolveModelCapabilityProfile marks anthropic-proxy as native and google-proxy as none', () => {
+test('resolveModelCapabilityProfile marks anthropic-proxy as native and google-proxy as weak', () => {
   const anthropicProfile = resolveModelCapabilityProfile({
     provider: 'anthropic-proxy',
     model: 'claude-sonnet-4-5',
@@ -58,8 +58,9 @@ test('resolveModelCapabilityProfile marks anthropic-proxy as native and google-p
 
   assert.equal(anthropicProfile.toolCalling, 'native');
   assert.equal(anthropicProfile.supportsStructuredOutputs, true);
-  assert.equal(googleProxyProfile.toolCalling, 'none');
-  assert.equal(googleProxyProfile.supportsForcedToolChoice, false);
+  assert.equal(googleProxyProfile.toolCalling, 'weak');
+  assert.equal(googleProxyProfile.supportsStructuredOutputs, true);
+  assert.equal(googleProxyProfile.supportsForcedToolChoice, true);
 });
 
 test('resolveModelCapabilityProfile can classify weak and none openrouter models', () => {
@@ -157,8 +158,8 @@ test('capability helpers normalize tool exposure and forced choices', () => {
     model: 'gpt-5.1-codex-mini',
   });
   const noneProfile = resolveModelCapabilityProfile({
-    provider: 'google-proxy',
-    model: 'gemini-3-flash-preview',
+    provider: 'openrouter',
+    model: 'openai/text-embedding-3-small',
   });
 
   const tools = [

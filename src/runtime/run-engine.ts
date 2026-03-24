@@ -381,7 +381,60 @@ function collectToolNames(journal: YagrRunJournalEntry[]): Array<{ toolName: str
   return [...names].map((toolName) => ({ toolName }));
 }
 
-function buildGroundedSummary(
+function collectPresentedWorkflow(result: unknown): { workflowId?: string; workflowUrl?: string; title?: string } | undefined {
+  if (!result || typeof result !== 'object') {
+    return undefined;
+  }
+
+  const record = result as Record<string, unknown>;
+  const workflowId = typeof record.workflowId === 'string' ? record.workflowId : undefined;
+  const workflowUrl = typeof record.workflowUrl === 'string' ? record.workflowUrl : undefined;
+  const title = typeof record.title === 'string' ? record.title : undefined;
+
+  if (!workflowId && !workflowUrl && !title) {
+    return undefined;
+  }
+
+  return { workflowId, workflowUrl, title };
+}
+
+function extractWorkflowLabel(outcome: RunOutcome, journal: YagrRunJournalEntry[]): string | undefined {
+  const successfulPushTarget = outcome.successfulPush?.filename;
+  const workflowFilePath = successfulPushTarget
+    || outcome.writtenFiles.find((filePath) => filePath.endsWith('.workflow.ts'))
+    || outcome.updatedFiles.find((filePath) => filePath.endsWith('.workflow.ts'));
+
+  if (!workflowFilePath) {
+    return undefined;
+  }
+
+  const baseName = workflowFilePath.split('/').pop() ?? workflowFilePath;
+  return baseName.replace(/\.workflow\.ts$/i, '');
+}
+
+function extractPresentedWorkflowFromJournal(journal: YagrRunJournalEntry[]): { workflowId?: string; workflowUrl?: string; title?: string } | undefined {
+  for (let index = journal.length - 1; index >= 0; index -= 1) {
+    const entry = journal[index];
+    if (entry.type !== 'step' || !entry.step) {
+      continue;
+    }
+
+    for (let toolIndex = entry.step.toolCalls.length - 1; toolIndex >= 0; toolIndex -= 1) {
+      if (entry.step.toolCalls[toolIndex]?.toolName !== 'presentWorkflowResult') {
+        continue;
+      }
+
+      const presented = collectPresentedWorkflow(entry.step.toolResults[toolIndex]?.result);
+      if (presented) {
+        return presented;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+export function buildGroundedSummary(
   _prompt: string,
   finishReason: string,
   journal: YagrRunJournalEntry[],
@@ -389,16 +442,36 @@ function buildGroundedSummary(
 ): string {
   const lines: string[] = [];
   const outcome = analyzeRunOutcome(journal);
+  const workflowLabel = extractWorkflowLabel(outcome, journal);
+  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
 
-  if (outcome.writtenFiles.length > 0) {
+  if (outcome.hasWorkflowWrites && outcome.successfulPush) {
+    const workflowName = presentedWorkflow?.title || workflowLabel || 'le workflow';
+    const completionBits = [
+      `Le workflow ${workflowName === 'le workflow' ? workflowName : `\`${workflowName}\``} a ete cree`,
+      outcome.successfulValidate ? 'valide' : undefined,
+      outcome.successfulPush ? 'pousse vers n8n' : undefined,
+      outcome.successfulVerify ? 'verifie' : undefined,
+    ].filter(Boolean);
+
+    if (completionBits.length > 0) {
+      lines.push(`${completionBits.join(', ')}.`);
+    }
+
+    if (presentedWorkflow?.workflowUrl) {
+      lines.push(`Workflow: ${presentedWorkflow.workflowUrl}`);
+    }
+  }
+
+  if (lines.length === 0 && outcome.writtenFiles.length > 0) {
     lines.push(`Fichiers crees ou reecrits: ${outcome.writtenFiles.join(', ')}`);
   }
 
-  if (outcome.updatedFiles.length > 0) {
+  if (lines.length === 0 && outcome.updatedFiles.length > 0) {
     lines.push(`Fichiers modifies: ${outcome.updatedFiles.join(', ')}`);
   }
 
-  if (outcome.successfulActions.length > 0) {
+  if (lines.length === 0 && outcome.successfulActions.length > 0) {
     lines.push(`Actions n8nac reussies: ${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
   }
 
@@ -426,7 +499,7 @@ function buildGroundedSummary(
     lines.push('Le run s’est arrete alors que certaines actions avaient encore echoue. Une correction supplementaire reste necessaire ou un bloqueur externe persiste.');
   }
 
-  if (finishReason !== 'stop') {
+  if (lines.length === 0 && finishReason !== 'stop') {
     lines.push(`Le run s’est termine avec la raison: ${finishReason}.`);
   }
 

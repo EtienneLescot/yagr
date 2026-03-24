@@ -727,6 +727,12 @@ async function validateAdvancedScenarioResult({
   }
 
   if (checklist?.usedN8nac && checklist?.hasPush && (checklist?.hasVerify || checklist?.hasValidate)) {
+    if (checklist.wroteWorkflowFile && (!checklist.hasWorkflowEmbed || !checklist.hasWorkflowEmbedUrl || !checklist.hasWorkflowEmbedDiagram)) {
+      return {
+        ok: false,
+        error: 'CLI scenario completed the workflow actions but did not emit a complete workflow banner embed (url + diagram).',
+      };
+    }
     return { ok: true };
   }
 
@@ -865,6 +871,7 @@ function buildAdvancedChecklist({
   const actionNames = n8nacActions.map((action) => action.action);
   const commandStarts = (toolEvents || []).filter((event) => event.type === 'command-start' && event.toolName === 'n8nac');
   const commandEnds = (toolEvents || []).filter((event) => event.type === 'command-end' && event.toolName === 'n8nac');
+  const workflowEmbeds = (toolEvents || []).filter((event) => event.type === 'embed' && event.kind === 'workflow');
 
   return {
     usedN8nac: commandStarts.length > 0 || n8nacActions.length > 0,
@@ -877,6 +884,9 @@ function buildAdvancedChecklist({
     hasPush: Boolean(outcome.successfulPush),
     hasVerify: Boolean(outcome.successfulVerify),
     hasValidate: Boolean(outcome.successfulValidate),
+    hasWorkflowEmbed: workflowEmbeds.length > 0,
+    hasWorkflowEmbedUrl: workflowEmbeds.some((event) => Boolean(String(event.url || '').trim())),
+    hasWorkflowEmbedDiagram: workflowEmbeds.some((event) => Boolean(String(event.diagram || '').trim())),
     wroteWorkflowFile: Boolean(outcome.hasWorkflowWrites),
     changedWorkflowFileCount: (changedWorkflows || []).length,
     remoteWorkflowCount: Array.isArray(createdRemoteWorkflows) ? createdRemoteWorkflows.length : 0,
@@ -1340,6 +1350,9 @@ function formatAdvancedChecklistNote(checklist) {
     `actions=${checklist.actionNames.length > 0 ? checklist.actionNames.join('/') : 'none'}`,
     `push=${checklist.hasPush ? 'yes' : 'no'}`,
     `verify=${checklist.hasVerify ? 'yes' : 'no'}`,
+    `embed=${checklist.hasWorkflowEmbed ? 'yes' : 'no'}`,
+    `embedUrl=${checklist.hasWorkflowEmbedUrl ? 'yes' : 'no'}`,
+    `embedDiagram=${checklist.hasWorkflowEmbedDiagram ? 'yes' : 'no'}`,
     `workflowFile=${checklist.wroteWorkflowFile ? 'yes' : 'no'}`,
     `remoteCreated=${checklist.remoteWorkflowCount}`,
   ];
