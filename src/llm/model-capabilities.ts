@@ -130,8 +130,6 @@ export function resolveModelCapabilityProfile(input: {
       });
     case 'google':
       return buildProfile(provider, model, 'native');
-    case 'groq':
-      return buildProfile(provider, model, 'compatible');
     case 'mistral':
       return buildProfile(provider, model, 'weak');
     case 'openrouter':
