@@ -82,6 +82,23 @@ type RunState = {
   stepNumber: number;
 };
 
+type SyntheticN8nacIntent = {
+  action: string;
+  filename?: string;
+  validateFile?: string;
+  workflowId?: string;
+  listScope?: string;
+  n8nHost?: string;
+  n8nApiKey?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
+  projectIndex?: number | null;
+  skillsArgs?: string | null;
+  skillsArgv?: string[] | null;
+  syncFolder?: string | null;
+  resolveMode?: string | null;
+};
+
 function createAbortError(message = 'Yagr run stopped by user.'): Error {
   const error = new Error(message);
   error.name = 'AbortError';
@@ -106,6 +123,155 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 
 function wrapInternal(text: string): string {
   return `${INTERNAL_TAG_OPEN}${text}${INTERNAL_TAG_CLOSE}`;
+}
+
+function looksLikeRawToolIntentText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{')) {
+    return false;
+  }
+
+  const blocks = extractJsonObjectBlocks(trimmed);
+  if (blocks.length === 0) {
+    return false;
+  }
+
+  return blocks.join('') === trimmed && blocks.every((block) => {
+    try {
+      const parsed = JSON.parse(block) as Record<string, unknown>;
+      return typeof parsed.action === 'string';
+    } catch {
+      return false;
+    }
+  });
+}
+
+function extractJsonObjectBlocks(text: string): string[] {
+  const blocks: string[] = [];
+  let depth = 0;
+  let inString = false;
+  let escaping = false;
+  let start = -1;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+
+    if (character === '\\') {
+      escaping = true;
+      continue;
+    }
+
+    if (character === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (character === '{') {
+      if (depth === 0) {
+        start = index;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (character === '}') {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        blocks.push(text.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return blocks;
+}
+
+function parseSyntheticN8nacIntents(text: string): SyntheticN8nacIntent[] {
+  const intents: SyntheticN8nacIntent[] = [];
+  for (const block of extractJsonObjectBlocks(text)) {
+    try {
+      const parsed = JSON.parse(block) as Record<string, unknown>;
+      if (typeof parsed.action !== 'string') {
+        continue;
+      }
+      intents.push({
+        action: parsed.action,
+        filename: typeof parsed.filename === 'string' ? parsed.filename : undefined,
+        validateFile: typeof parsed.validateFile === 'string' ? parsed.validateFile : undefined,
+        workflowId: typeof parsed.workflowId === 'string' ? parsed.workflowId : undefined,
+        listScope: typeof parsed.listScope === 'string' ? parsed.listScope : undefined,
+        n8nHost: typeof parsed.n8nHost === 'string' ? parsed.n8nHost : undefined,
+        n8nApiKey: typeof parsed.n8nApiKey === 'string' || parsed.n8nApiKey === null ? parsed.n8nApiKey as string | null : undefined,
+        projectId: typeof parsed.projectId === 'string' || parsed.projectId === null ? parsed.projectId as string | null : undefined,
+        projectName: typeof parsed.projectName === 'string' || parsed.projectName === null ? parsed.projectName as string | null : undefined,
+        projectIndex: typeof parsed.projectIndex === 'number' ? parsed.projectIndex : undefined,
+        skillsArgs: typeof parsed.skillsArgs === 'string' || parsed.skillsArgs === null ? parsed.skillsArgs as string | null : undefined,
+        skillsArgv: Array.isArray(parsed.skillsArgv) ? parsed.skillsArgv.filter((value): value is string => typeof value === 'string') : undefined,
+        syncFolder: typeof parsed.syncFolder === 'string' || parsed.syncFolder === null ? parsed.syncFolder as string | null : undefined,
+        resolveMode: typeof parsed.resolveMode === 'string' || parsed.resolveMode === null ? parsed.resolveMode as string | null : undefined,
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return intents;
+}
+
+async function maybeExecuteSyntheticWeakIntents(
+  state: RunState,
+  options: YagrRunOptions,
+  strategy: YagrToolRuntimeStrategy,
+  tools: ReturnType<typeof buildTools>,
+  phaseResult: {
+    text: string;
+    toolCalls: Array<{ toolName: string }>;
+  },
+): Promise<boolean> {
+  if (strategy.capabilityProfile.toolCalling !== 'weak') {
+    return false;
+  }
+
+  if (phaseResult.toolCalls.length > 0) {
+    return false;
+  }
+
+  const intents = parseSyntheticN8nacIntents(phaseResult.text)
+    .filter((intent) => ['validate', 'push', 'verify'].includes(intent.action))
+    .slice(0, 3);
+
+  if (intents.length === 0) {
+    return false;
+  }
+
+  for (const intent of intents) {
+    const args = {
+      ...intent,
+      validateFile: intent.validateFile || (intent.action === 'validate' ? intent.filename : undefined),
+    };
+    const n8nacTool = tools.n8nac as unknown as {
+      execute: (toolArgs: Record<string, unknown>, toolOptions?: unknown) => Promise<unknown>;
+    };
+    const result = await n8nacTool.execute(args, undefined);
+    await recordStep(state, options, {
+      stepType: 'tool-result',
+      finishReason: 'tool-calls',
+      toolCalls: [{ toolName: 'n8nac', args }],
+      toolResults: [{ toolName: 'n8nac', result }],
+      text: '',
+    });
+  }
+
+  return true;
 }
 
 function createPhasePrompt(
@@ -468,7 +634,14 @@ async function maybeEmitSyntheticWorkflowEmbed(
 
   const workflowLink = resolveWorkflowOpenLink(fallbackWorkflow.workflowUrl);
   const pushTarget = outcome.successfulPush?.filename;
-  const diagram = pushTarget ? resolveWorkflowDiagramFromFilePath(pushTarget) : undefined;
+  const diagram = (pushTarget ? resolveWorkflowDiagramFromFilePath(pushTarget) : undefined)
+    || [
+      '<workflow-map>',
+      `// Workflow : ${fallbackWorkflow.title || fallbackWorkflow.workflowId || 'Workflow'}`,
+      '// ROUTING MAP',
+      '// Diagram unavailable in source; link card synthesized from successful push/verify facts.',
+      '</workflow-map>',
+    ].join('\n');
 
   await onToolEvent({
     type: 'embed',
@@ -552,7 +725,7 @@ export function buildGroundedSummary(
     lines.push(`Actions n8nac en echec: ${outcome.blockingUnresolvedFailedActions.map(formatObservedAction).join(', ')}`);
   }
 
-  if (requiredActions.length > 0) {
+  if (requiredActions.length > 0 && !(outcome.successfulPush && outcome.successfulVerify)) {
     lines.push(`Actions requises en attente: ${requiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
   }
 
@@ -589,7 +762,7 @@ function ensureFinalText(
 ): string {
   const sanitizedText = sanitizeAssistantOutput(existingText);
 
-  if (completionAccepted && sanitizedText) {
+  if (completionAccepted && sanitizedText && !looksLikeRawToolIntentText(sanitizedText)) {
     return sanitizedText;
   }
 
@@ -1083,9 +1256,17 @@ export class YagrRunEngine {
         toolCalls = phaseResult.toolCalls;
         responseMessages = [...responseMessages, ...sanitizeAssistantResponseMessages(phaseResult.responseMessages)];
 
+        const executedSyntheticIntents = await maybeExecuteSyntheticWeakIntents(
+          state,
+          options,
+          runtimeStrategy,
+          tools,
+          phaseResult,
+        );
+
         const outcome = analyzeRunOutcome(state.journal);
         const requiredActions = collectRequiredActions(state.journal);
-        if (!shouldAttemptRecovery(outcome, attemptNumber, requiredActions)) {
+        if (!shouldAttemptRecovery(outcome, attemptNumber, requiredActions) || executedSyntheticIntents) {
           break;
         }
 
