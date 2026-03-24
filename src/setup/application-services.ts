@@ -18,7 +18,7 @@ import {
 import { prepareProviderRuntime } from '../llm/proxy-runtime.js';
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import { resolveModelProvider } from '../llm/create-language-model.js';
-import { beginGitHubCopilotAuth, completeGitHubCopilotAuth } from '../llm/copilot-account.js';
+import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
 import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';
 import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
@@ -196,6 +196,10 @@ export class YagrSetupApplicationService {
     }
 
     if (provider === 'copilot-proxy') {
+      const session = await ensureGitHubCopilotSession();
+      if (session) {
+        return { kind: 'none' as const };
+      }
       const challenge = await beginGitHubCopilotAuth();
       return {
         kind: 'input' as const,
