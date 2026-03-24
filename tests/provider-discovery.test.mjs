@@ -134,3 +134,42 @@ test('primeProviderModelMetadata falls back to discovery metadata when endpoint 
     assert.equal(metadata.endpointVariants, undefined);
   });
 });
+
+test('primeProviderModelMetadata caches copilot supported endpoints from model discovery', async () => {
+  await withMockedFetch(async (url) => {
+    assert.equal(String(url), 'https://api.example.com/models');
+    return new Response(JSON.stringify({
+      data: [
+        {
+          id: 'gpt-5.1-codex-mini',
+          supported_endpoints: ['/responses'],
+          capabilities: {
+            supports: {
+              tool_calls: true,
+              parallel_tool_calls: true,
+              structured_outputs: true,
+            },
+            limits: {
+              max_context_window_tokens: 400_000,
+              max_output_tokens: 128_000,
+            },
+          },
+        },
+      ],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }, async () => {
+    const metadata = await primeProviderModelMetadata('copilot-proxy', 'gpt-5.1-codex-mini', 'copilot-token', 'https://api.example.com');
+
+    assert.ok(metadata);
+    assert.deepEqual(metadata.supportedEndpoints, ['/responses']);
+    assert.deepEqual(metadata.supportedParameters, [
+      'tools',
+      'tool_choice',
+      'parallel_tool_calls',
+      'response_format',
+    ]);
+  });
+});
