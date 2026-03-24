@@ -29,6 +29,7 @@ const { getYagrPaths } = await import('../dist/config/yagr-home.js');
 const { YagrAgent } = await import('../dist/agent.js');
 const { createN8nEngineFromWorkspace } = await import('../dist/config/load-n8n-engine-config.js');
 const { analyzeRunOutcome, formatObservedAction } = await import('../dist/runtime/outcome.js');
+const { resolveToolRuntimeStrategy } = await import('../dist/runtime/tool-runtime-strategy.js');
 
 const DEFAULT_TIMEOUT_MS = toInt(process.env.YAGR_IT_TIMEOUT_MS, 60_000);
 const INFERENCE_TIMEOUT_MS = toInt(process.env.YAGR_IT_INFERENCE_TIMEOUT_MS, 75_000);
@@ -169,12 +170,14 @@ async function runProvider(provider) {
     };
   }, DEFAULT_TIMEOUT_MS);
 
+  const chosenModel = chooseModel(setupRuntime?.models, modelListing.models, provider);
+  const toolingLevel = resolveToolRuntimeStrategy(provider, chosenModel).capabilityProfile.toolCalling;
+
   const inference = await runStep(async () => {
     if (setup.status === 'SKIP') {
       return { status: 'SKIP', note: 'Skipped because setup is not available.' };
     }
 
-    const chosenModel = chooseModel(setupRuntime?.models, modelListing.models, provider);
     const model = createLanguageModel({
       provider,
       model: chosenModel,
@@ -238,7 +241,6 @@ async function runProvider(provider) {
       };
     }
 
-    const chosenModel = chooseModel(setupRuntime?.models, modelListing.models, provider);
     const result = await runYagrAdvancedScenario({ provider, model: chosenModel, prompt: advancedPrompt, timeoutMs: advancedTimeoutMs });
     const checklistNote = formatAdvancedChecklistNote(result.checklist);
     if (result.ok) {
@@ -266,6 +268,8 @@ async function runProvider(provider) {
   return {
     provider,
     providerLabel: getProviderDisplayName(provider),
+    chosenModel,
+    toolingLevel,
     setup: serializeStep(setup),
     modelListing: serializeStep(modelListing),
     inference: serializeStep(inference),
@@ -459,10 +463,12 @@ function toInt(input, fallback) {
 
 function printTable(rows) {
   const headers = advanced
-    ? ['Provider', 'Setup', 'Model Listing', 'Inference', 'Advanced Scenario']
-    : ['Provider', 'Setup', 'Model Listing', 'Inference'];
+    ? ['Provider', 'Model', 'Tooling', 'Setup', 'Model Listing', 'Inference', 'Advanced Scenario']
+    : ['Provider', 'Model', 'Tooling', 'Setup', 'Model Listing', 'Inference'];
   const renderedRows = rows.map((row) => ([
     `${row.providerLabel} (${row.provider})`,
+    truncate(row.chosenModel || '', 38),
+    row.toolingLevel || '',
     formatCell(row.setup),
     formatCell(row.modelListing),
     formatCell(row.inference),
@@ -483,10 +489,7 @@ function printTable(rows) {
 }
 
 function formatCell(step) {
-  const responseSuffix = step.response
-    ? ` response: ${truncate(compactText(step.response), 110)}`
-    : '';
-  return `${step.status} - ${truncate(step.note || '', 110)}${responseSuffix}`;
+  return `${step.status} - ${truncate(step.note || '', 120)}`;
 }
 
 function truncate(text, max) {
@@ -526,15 +529,19 @@ function writeMarkdownReport(rows, outputPath) {
     `| inference | ${totals.inference.PASS ?? 0} | ${totals.inference.FAIL ?? 0} | ${totals.inference.SKIP ?? 0} |`,
     ...(advanced ? [`| advanced-scenario | ${rows.filter((r) => r.advancedScenario.status === 'PASS').length} | ${rows.filter((r) => r.advancedScenario.status === 'FAIL').length} | ${rows.filter((r) => r.advancedScenario.status === 'SKIP').length} |`] : []),
     '',
-    '## Details',
+    '## Provider Overview',
     '',
     ...(advanced
-      ? ['| Provider | Setup | Model Listing | Inference | Advanced Scenario |', '| --- | --- | --- | --- | --- |']
-      : ['| Provider | Setup | Model Listing | Inference |', '| --- | --- | --- | --- |']),
+      ? ['| Provider | Model | Tooling | Setup | Model Listing | Inference | Advanced Scenario |', '| --- | --- | --- | --- | --- | --- | --- |']
+      : ['| Provider | Model | Tooling | Setup | Model Listing | Inference |', '| --- | --- | --- | --- | --- | --- |']),
     ...rows.map((row) =>
       advanced
-        ? `| \`${escapeMd(`${row.providerLabel} (${row.provider})`)}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} | ${formatMarkdownCell(row.advancedScenario)} |`
-        : `| \`${escapeMd(`${row.providerLabel} (${row.provider})`)}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} |`),
+        ? `| \`${escapeMd(`${row.providerLabel} (${row.provider})`)}\` | \`${escapeMd(row.chosenModel || '')}\` | \`${escapeMd(row.toolingLevel || '')}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} | ${formatMarkdownCell(row.advancedScenario)} |`
+        : `| \`${escapeMd(`${row.providerLabel} (${row.provider})`)}\` | \`${escapeMd(row.chosenModel || '')}\` | \`${escapeMd(row.toolingLevel || '')}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} |`),
+    '',
+    '## Detailed Results',
+    '',
+    ...rows.flatMap((row) => renderMarkdownProviderSection(row)),
     '',
   ];
 
@@ -543,10 +550,45 @@ function writeMarkdownReport(rows, outputPath) {
 }
 
 function formatMarkdownCell(step) {
-  const response = step.response
-    ? `<br>Response: ${escapeMd(compactText(step.response || ''))}`
-    : '';
-  return `**${step.status}**<br>${escapeMd(step.note || '')}${response}`;
+  return `**${step.status}**<br>${escapeMd(step.note || '')}`;
+}
+
+function renderMarkdownProviderSection(row) {
+  const lines = [
+    `### ${row.providerLabel} (${row.provider})`,
+    '',
+    `- Model: \`${row.chosenModel || ''}\``,
+    `- Tooling level: \`${row.toolingLevel || ''}\``,
+    `- Setup: **${row.setup.status}**`,
+    `- Model listing: **${row.modelListing.status}**`,
+    `- Inference: **${row.inference.status}**`,
+  ];
+
+  if (advanced) {
+    lines.push(`- Advanced scenario: **${row.advancedScenario.status}**`);
+  }
+
+  lines.push('');
+  lines.push('**Notes**');
+  lines.push('');
+  lines.push(`- Setup: ${row.setup.note || 'n/a'}`);
+  lines.push(`- Model listing: ${row.modelListing.note || 'n/a'}`);
+  lines.push(`- Inference: ${row.inference.note || 'n/a'}`);
+  if (advanced) {
+    lines.push(`- Advanced scenario: ${row.advancedScenario.note || 'n/a'}`);
+  }
+
+  if (advanced && row.advancedScenario.response) {
+    lines.push('');
+    lines.push('**Advanced Final Response**');
+    lines.push('');
+    lines.push('```text');
+    lines.push(row.advancedScenario.response.trim());
+    lines.push('```');
+  }
+
+  lines.push('');
+  return lines;
 }
 
 function escapeMd(text) {
