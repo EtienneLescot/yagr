@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { generateText, streamText, type CoreMessage } from 'ai';
 import type { Engine } from '../engine/engine.js';
 import { createLanguageModel } from '../llm/create-language-model.js';
-import { resolveModelContextProfile } from '../llm/create-language-model.js';
+import { resolveLanguageModelConfig, resolveModelContextProfile } from '../llm/create-language-model.js';
 import { getProviderOptionsForCapability, resolveModelCapabilityProfile } from '../llm/model-capabilities.js';
+import { getProviderPlugin } from '../llm/provider-plugin.js';
 import type { YagrModelProvider } from '../llm/provider-registry.js';
 import type {
   YagrAgentState,
@@ -825,7 +826,13 @@ export class YagrRunEngine {
       role: 'user',
       content: prompt,
     };
-    const runtimeStrategy = resolveToolRuntimeStrategy(options.provider, options.model);
+    const resolvedModelConfig = resolveLanguageModelConfig(options);
+    await getProviderPlugin(resolvedModelConfig.provider).metadata?.primeModelMetadata?.({
+      model: resolvedModelConfig.model,
+      apiKey: resolvedModelConfig.apiKey,
+      baseUrl: resolvedModelConfig.baseUrl,
+    });
+    const runtimeStrategy = resolveToolRuntimeStrategy(resolvedModelConfig.provider, resolvedModelConfig.model);
     const runtimeHooks = [...createDefaultRuntimeHooks(), ...(options.runtimeHooks ?? [])];
     const baseTools = buildTools(this.engine, {
       onToolEvent: withRuntimeToolEvents(state, options),

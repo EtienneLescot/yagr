@@ -17,9 +17,9 @@ Quand un item passe a `done`, il doit etre retire rapidement de cette page et la
 | --- | --- | --- | --- |
 | `in-progress` | Setup SSOT | Extraire des services applicatifs communs a partir de `src/setup.ts` et `src/gateway/webui.ts` | Une partie du chemin commun existe dans `src/setup/application-services.ts`, a poursuivre jusqu'a suppression des duplications restantes |
 | `in-progress` | Providers | Introduire une resolution `metadata -> normalisation -> strategie runtime` | Le resolver, le cache metadata et la strategie runtime commune existent, a etendre encore aux metadata dynamiques multi-providers et aux adapters fins |
-| `todo` | Providers | Introduire un contrat `ProviderPlugin` avec adapters fins | Providers plus fins, logique commune centralisee |
+| `in-progress` | Providers | Introduire un contrat `ProviderPlugin` avec adapters fins | Le contrat plugin existe; il reste a migrer plus de logique provider dans ces adapters fins |
 | `in-progress` | Tooling | Introduire une vraie strategie runtime `native / compatible / weak / none` | Le runtime commun pilote deja les modes principaux; il reste a mieux formaliser le contrat tooling/providers et le chemin `none` |
-| `in-progress` | OpenRouter | Brancher les metadonnees dynamiques OpenRouter (`models`, `endpoints`, `supported_parameters`) | Le fetch `models` et la normalisation existent; il reste a enrichir avec les endpoints et d'autres metadata fines |
+| `in-progress` | OpenRouter | Brancher les metadonnees dynamiques OpenRouter (`models`, `endpoints`, `supported_parameters`) | Les fetch `models` et `endpoints` existent pour alimenter le profil de capacite; il reste a etendre encore les metadata fines si necessaire |
 | `todo` | Google Proxy | Requalifier `google-proxy` et decider refonte propre ou suppression | Pas de provider ambigu qui expose Gemini sans tool calling propre |
 | `todo` | Engine ports | Decouper l'interface `Engine` en ports plus fins | Contrats plus propres et backend plus composable |
 | `todo` | Facades | Amincir Telegram/WebUI/TUI/CLI | Facades reduites a I/O et orchestration de session |

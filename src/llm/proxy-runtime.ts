@@ -22,6 +22,7 @@ import {
 } from './anthropic-account.js';
 import { ensureOpenAiAccountSession, fetchOpenAiAccountModels, OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL, validateOpenAiAccountRuntime } from './openai-account.js';
 import { fetchAvailableModels } from './provider-discovery.js';
+import { getProviderPlugin } from './provider-plugin.js';
 import { getDefaultBaseUrlForProvider, getProviderDefinition, isOAuthAccountProvider, type YagrModelProvider } from './provider-registry.js';
 
 interface ProxyRuntimeEntry {
@@ -297,8 +298,10 @@ export async function prepareProviderRuntime(
   }
 
   const definition = getProviderDefinition(provider);
+  const plugin = getProviderPlugin(provider);
+  const managedProxy = definition.managedProxy;
   const baseUrl = options.baseUrl || getDefaultBaseUrlForProvider(provider);
-  if (!definition.usesOpenAiCompatibleApi || !baseUrl) {
+  if (!plugin.transport.usesOpenAiCompatibleApi || !baseUrl) {
     return {
       ready: false,
       notes: [],
@@ -321,7 +324,7 @@ export async function prepareProviderRuntime(
     };
   }
 
-  if (!definition.managedProxy) {
+  if (!plugin.transport.managedProxy || !managedProxy) {
     if (isOAuthAccountProvider(provider)) {
       return {
         ready: false,
@@ -337,7 +340,7 @@ export async function prepareProviderRuntime(
 
   const stateEntry = getRuntimeState().providers?.[provider];
   if (stateEntry?.pid && isProcessRunning(stateEntry.pid)) {
-    const runningModels = await waitForModels(provider, options.apiKey, stateEntry.baseUrl, definition.managedProxy.readyTimeoutMs ?? 30_000);
+    const runningModels = await waitForModels(provider, options.apiKey, stateEntry.baseUrl, managedProxy.readyTimeoutMs ?? 30_000);
     if (runningModels.length > 0) {
       return {
         ready: true,
@@ -346,17 +349,17 @@ export async function prepareProviderRuntime(
           baseUrl: stateEntry.baseUrl,
           apiKey: options.apiKey,
           models: runningModels,
-          notes: definition.managedProxy.startupNotes ?? [],
+          notes: managedProxy.startupNotes ?? [],
           logPath: stateEntry.logPath,
           autoStarted: false,
         },
-        notes: definition.managedProxy.startupNotes ?? [],
+        notes: managedProxy.startupNotes ?? [],
       };
     }
   }
 
   const started = startManagedProxy(provider, baseUrl);
-  const models = await waitForModels(provider, options.apiKey, started.baseUrl, definition.managedProxy.readyTimeoutMs ?? 30_000);
+  const models = await waitForModels(provider, options.apiKey, started.baseUrl, managedProxy.readyTimeoutMs ?? 30_000);
   if (models.length > 0) {
     return {
       ready: true,
@@ -365,11 +368,11 @@ export async function prepareProviderRuntime(
         baseUrl: started.baseUrl,
         apiKey: options.apiKey,
         models,
-        notes: definition.managedProxy.startupNotes ?? [],
+        notes: managedProxy.startupNotes ?? [],
         logPath: started.logPath,
         autoStarted: true,
       },
-      notes: definition.managedProxy.startupNotes ?? [],
+      notes: managedProxy.startupNotes ?? [],
     };
   }
 
@@ -377,14 +380,14 @@ export async function prepareProviderRuntime(
     ready: false,
     reason: `Managed proxy for ${provider} did not become ready. Check ${started.logPath}.`,
     notes: [
-      ...(definition.managedProxy.startupNotes ?? []),
+      ...(managedProxy.startupNotes ?? []),
       `Proxy logs: ${started.logPath}`,
     ],
   };
 }
 
 function startManagedProxy(provider: YagrModelProvider, baseUrl: string): ProxyRuntimeEntry {
-  const definition = getProviderDefinition(provider);
+  const definition = getProviderPlugin(provider).definition;
   const managed = definition.managedProxy;
   if (!managed) {
     throw new Error(`Provider ${provider} does not have a managed proxy runtime.`);
@@ -426,7 +429,7 @@ function startManagedProxy(provider: YagrModelProvider, baseUrl: string): ProxyR
 }
 
 export function startProviderProxy(provider: YagrModelProvider, options: { baseUrl?: string } = {}): ProxyRuntimeStatus {
-  const definition = getProviderDefinition(provider);
+  const definition = getProviderPlugin(provider).definition;
   if (!definition.managedProxy) {
     throw new Error(`Provider ${provider} does not have a managed proxy runtime yet.`);
   }
@@ -473,7 +476,7 @@ export function stopProviderProxy(provider: YagrModelProvider): ProxyRuntimeStat
 }
 
 export function getProxyRuntimeStatus(provider: YagrModelProvider): ProxyRuntimeStatus {
-  const definition = getProviderDefinition(provider);
+  const plugin = getProviderPlugin(provider);
   const entry = getRuntimeState().providers?.[provider];
   return {
     provider,
@@ -483,7 +486,7 @@ export function getProxyRuntimeStatus(provider: YagrModelProvider): ProxyRuntime
     command: entry?.command,
     logPath: entry?.logPath,
     startedAt: entry?.startedAt,
-    managed: Boolean(definition.managedProxy),
+    managed: plugin.transport.managedProxy,
   };
 }
 

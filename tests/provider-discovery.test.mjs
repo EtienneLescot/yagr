@@ -5,6 +5,7 @@ import { fetchAvailableModels } from '../dist/llm/provider-discovery.js';
 import {
   clearProviderMetadataCache,
   getCachedProviderModelMetadata,
+  primeProviderModelMetadata,
 } from '../dist/llm/provider-metadata.js';
 
 async function withMockedFetch(mockedFetch, run) {
@@ -46,5 +47,58 @@ test('fetchAvailableModels warms openrouter metadata cache from discovery payloa
       getCachedProviderModelMetadata('openrouter', 'openai/gpt-5')?.supportedParameters,
       ['tools', 'tool_choice', 'parallel_tool_calls'],
     );
+  });
+});
+
+test('primeProviderModelMetadata merges openrouter endpoint capabilities into cached model metadata', async () => {
+  await withMockedFetch(async (url) => {
+    const normalizedUrl = String(url);
+
+    if (normalizedUrl.endsWith('/models')) {
+      return new Response(JSON.stringify({
+        data: [
+          {
+            id: 'openai/gpt-5',
+            supported_parameters: ['tools'],
+            architecture: {
+              input_modalities: ['text'],
+              output_modalities: ['text'],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response(JSON.stringify({
+      data: [
+        {
+          provider_name: 'OpenAI',
+          provider_slug: 'openai',
+          supported_parameters: ['tool_choice', 'parallel_tool_calls', 'response_format'],
+          context_length: 400_000,
+          max_completion_tokens: 128_000,
+        },
+      ],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }, async () => {
+    await fetchAvailableModels('openrouter', 'or-key');
+    await primeProviderModelMetadata('openrouter', 'openai/gpt-5', 'or-key');
+
+    const metadata = getCachedProviderModelMetadata('openrouter', 'openai/gpt-5');
+    assert.ok(metadata);
+    assert.deepEqual(metadata.supportedParameters, [
+      'tools',
+      'tool_choice',
+      'parallel_tool_calls',
+      'response_format',
+    ]);
+    assert.equal(metadata.endpointVariants?.length, 1);
+    assert.equal(metadata.endpointVariants?.[0]?.providerSlug, 'openai');
   });
 });

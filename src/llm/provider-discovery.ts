@@ -1,5 +1,5 @@
 import { getDefaultBaseUrlForProvider, getProviderDefinition, type YagrModelProvider } from './provider-registry.js';
-import { warmProviderMetadataCacheFromDiscovery } from './provider-metadata.js';
+import { getProviderPlugin } from './provider-plugin.js';
 
 export async function fetchAvailableModels(
   provider: YagrModelProvider,
@@ -43,7 +43,7 @@ export async function fetchAvailableModels(
     }
 
     const payload = await response.json() as Record<string, unknown>;
-    warmProviderMetadataCacheFromDiscovery(provider, payload);
+    getProviderPlugin(provider).metadata?.warmDiscoveryPayload?.(payload);
     return discovery.mapResponse(payload).sort((left, right) => left.localeCompare(right));
   } catch {
     return [];
