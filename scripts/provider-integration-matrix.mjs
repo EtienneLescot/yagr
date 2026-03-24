@@ -12,6 +12,7 @@ dotenvConfig({ path: '.env.test', quiet: true, override: true });
 
 const {
   YAGR_MODEL_PROVIDERS,
+  YAGR_SUPPORTED_MODEL_PROVIDERS,
   getDefaultBaseUrlForProvider,
   getDefaultModelForProvider,
   getProviderDisplayName,
@@ -52,7 +53,7 @@ const requestedProviders = (providersFromCli || process.env.YAGR_IT_PROVIDERS ||
   .filter(Boolean);
 const providers = requestedProviders.length > 0
   ? requestedProviders.map((entry) => normalizeProviderSelector(entry))
-  : [...YAGR_MODEL_PROVIDERS];
+  : [...YAGR_SUPPORTED_MODEL_PROVIDERS];
 
 configureWritableOAuthPaths();
 

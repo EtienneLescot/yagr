@@ -7,10 +7,6 @@ Tout ce qui est deja implemente doit etre documente dans `../current/`, pas ici.
 
 ## Restant a faire
 
-| Status | Theme | Objective de sortie | Definition de done |
-| --- | --- | --- | --- |
-| `todo` | Google Proxy | A refondre proprement avec capacites explicites | `google-proxy` est refonddu proprement avec capacites explicites et les tests advanced passent |
-
 ## Regle de vie
 
 - Quand un item est termine, il est retire de cette page.
