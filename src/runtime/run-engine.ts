@@ -3,7 +3,6 @@ import { generateText, streamText, type CoreMessage } from 'ai';
 import type { EngineRuntimePort } from '../engine/engine.js';
 import { createLanguageModel } from '../llm/create-language-model.js';
 import { resolveLanguageModelConfig, resolveModelContextProfile } from '../llm/create-language-model.js';
-import { getProviderOptionsForCapability, resolveModelCapabilityProfile } from '../llm/model-capabilities.js';
 import { getProviderPlugin } from '../llm/provider-plugin.js';
 import type { YagrModelProvider } from '../llm/provider-registry.js';
 import type {
@@ -24,7 +23,7 @@ import { buildTools } from '../tools/index.js';
 import { evaluateCompletionGate } from './completion-gate.js';
 import { compactConversationContext } from './context-compaction.js';
 import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outcome.js';
-import { createDefaultRuntimeHooks, wrapToolsWithRuntimeHooks } from './policy-hooks.js';
+import { createDefaultRuntimeHooksForStrategy, wrapToolsWithRuntimeHooks } from './policy-hooks.js';
 import { blockingStateForRequiredActions, collectRequiredActions } from './required-actions.js';
 import { resolveToolRuntimeStrategy, type YagrToolRuntimeStrategy } from './tool-runtime-strategy.js';
 
@@ -931,11 +930,11 @@ export class YagrRunEngine {
       baseUrl: resolvedModelConfig.baseUrl,
     });
     const runtimeStrategy = resolveToolRuntimeStrategy(resolvedModelConfig.provider, resolvedModelConfig.model);
-    const runtimeHooks = [...createDefaultRuntimeHooks(), ...(options.runtimeHooks ?? [])];
+    const runtimeHooks = [...createDefaultRuntimeHooksForStrategy(runtimeStrategy), ...(options.runtimeHooks ?? [])];
     const baseTools = buildTools(this.engine, {
       onToolEvent: withRuntimeToolEvents(state, options),
     }, {
-      allowedToolNames: runtimeStrategy.allowedToolNames,
+      allowedToolNames: runtimeStrategy.tooling.availableToolNames,
     });
     const tools = wrapToolsWithRuntimeHooks(baseTools as any, runtimeHooks, () => ({
       runId: state.runId,

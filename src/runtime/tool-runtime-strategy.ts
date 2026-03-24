@@ -1,24 +1,68 @@
 import { getProviderOptionsForCapability, resolveModelCapabilityProfile, type YagrModelCapabilityProfile } from '../llm/model-capabilities.js';
 import type { YagrModelProvider } from '../llm/provider-registry.js';
+import {
+  CORE_TOOL_NAMES,
+  FULL_RUNTIME_TOOL_NAMES,
+  MINIMAL_RUNTIME_TOOL_NAMES,
+  POST_SYNC_RUNTIME_TOOL_NAMES,
+} from '../tools/toolsets.js';
 
 export type YagrExecutionMode = 'stream' | 'generate';
+export type YagrToolCallMode = 'parallel' | 'sequential' | 'disabled';
+
+export interface YagrToolingPolicy {
+  availableToolNames: string[];
+  allowedToolNamesAfterWorkflowSync: string[];
+  toolCallMode: YagrToolCallMode;
+  executionCriticalToolNames: string[];
+}
 
 export interface YagrToolRuntimeStrategy {
   capabilityProfile: YagrModelCapabilityProfile;
+  tooling: YagrToolingPolicy;
   executionMode: YagrExecutionMode;
   toolCallStreaming: boolean;
   providerOptions?: { openai?: { strictSchemas: boolean } };
   inspectMaxSteps: number;
   executeMaxSteps: number;
   recoveryMaxSteps: number;
-  allowedToolNames?: string[];
   inspectDirectives: string[];
   executeDirectives: string[];
   recoveryDirectives: string[];
 }
 
-const FULL_TOOLSET: string[] | undefined = undefined;
-const MINIMAL_TOOLSET = ['reportProgress', 'requestRequiredAction'];
+function buildToolingPolicy(capabilityProfile: YagrModelCapabilityProfile): YagrToolingPolicy {
+  switch (capabilityProfile.toolCalling) {
+    case 'native':
+      return {
+        availableToolNames: [...FULL_RUNTIME_TOOL_NAMES],
+        allowedToolNamesAfterWorkflowSync: [...POST_SYNC_RUNTIME_TOOL_NAMES],
+        toolCallMode: capabilityProfile.supportsParallelToolCalls ? 'parallel' : 'sequential',
+        executionCriticalToolNames: [...FULL_RUNTIME_TOOL_NAMES].filter((toolName) => !CORE_TOOL_NAMES.includes(toolName as any)),
+      };
+    case 'compatible':
+      return {
+        availableToolNames: [...FULL_RUNTIME_TOOL_NAMES],
+        allowedToolNamesAfterWorkflowSync: [...POST_SYNC_RUNTIME_TOOL_NAMES],
+        toolCallMode: 'sequential',
+        executionCriticalToolNames: [...FULL_RUNTIME_TOOL_NAMES].filter((toolName) => !CORE_TOOL_NAMES.includes(toolName as any)),
+      };
+    case 'weak':
+      return {
+        availableToolNames: [...FULL_RUNTIME_TOOL_NAMES],
+        allowedToolNamesAfterWorkflowSync: [...POST_SYNC_RUNTIME_TOOL_NAMES],
+        toolCallMode: 'sequential',
+        executionCriticalToolNames: [...FULL_RUNTIME_TOOL_NAMES].filter((toolName) => !CORE_TOOL_NAMES.includes(toolName as any)),
+      };
+    case 'none':
+      return {
+        availableToolNames: [...MINIMAL_RUNTIME_TOOL_NAMES],
+        allowedToolNamesAfterWorkflowSync: [...POST_SYNC_RUNTIME_TOOL_NAMES],
+        toolCallMode: 'disabled',
+        executionCriticalToolNames: [],
+      };
+  }
+}
 
 export function resolveToolRuntimeStrategy(
   provider?: YagrModelProvider,
@@ -31,6 +75,7 @@ export function resolveToolRuntimeStrategy(
 
   const base = {
     capabilityProfile,
+    tooling: buildToolingPolicy(capabilityProfile),
     executionMode: capabilityProfile.supportsStreamingToolCalls ? 'stream' as const : 'generate' as const,
     toolCallStreaming: capabilityProfile.supportsStreamingToolCalls,
     providerOptions: getProviderOptionsForCapability(capabilityProfile),
@@ -43,7 +88,6 @@ export function resolveToolRuntimeStrategy(
         inspectMaxSteps: 4,
         executeMaxSteps: 10,
         recoveryMaxSteps: 6,
-        allowedToolNames: FULL_TOOLSET,
         inspectDirectives: [],
         executeDirectives: [
           'Tool calling is natively supported. Prefer direct, minimal tool use and stop after push and verify succeed.',
@@ -56,7 +100,6 @@ export function resolveToolRuntimeStrategy(
         inspectMaxSteps: 4,
         executeMaxSteps: 8,
         recoveryMaxSteps: 5,
-        allowedToolNames: FULL_TOOLSET,
         inspectDirectives: [
           'Treat tool use as single-step and conservative. Avoid broad exploration once the required path is clear.',
         ],
@@ -75,7 +118,6 @@ export function resolveToolRuntimeStrategy(
         inspectMaxSteps: 3,
         executeMaxSteps: 6,
         recoveryMaxSteps: 4,
-        allowedToolNames: FULL_TOOLSET,
         inspectDirectives: [
           'Keep inspection shallow and task-directed.',
         ],
@@ -96,7 +138,6 @@ export function resolveToolRuntimeStrategy(
         inspectMaxSteps: 2,
         executeMaxSteps: 3,
         recoveryMaxSteps: 2,
-        allowedToolNames: MINIMAL_TOOLSET,
         inspectDirectives: [
           'Do not attempt tool use for execution-critical work in this mode.',
         ],

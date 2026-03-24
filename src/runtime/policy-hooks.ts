@@ -1,4 +1,5 @@
 import { tool } from 'ai';
+import type { YagrToolRuntimeStrategy } from './tool-runtime-strategy.js';
 import type { YagrAgentState, YagrRunPhase, YagrRuntimeContext, YagrRuntimeHook } from '../types.js';
 import { resolveLocalWorkflowDiagram } from '../tools/present-workflow-result.js';
 
@@ -10,6 +11,41 @@ type ToolLike = {
 };
 
 type ToolMap = Record<string, ToolLike>;
+
+const DEFAULT_POST_SYNC_ALLOWED_TOOL_NAMES = [
+  'presentWorkflowResult',
+  'reportProgress',
+  'requestRequiredAction',
+];
+
+function createFallbackRuntimeStrategy(): YagrToolRuntimeStrategy {
+  return {
+    capabilityProfile: {
+      provider: 'openai',
+      model: 'fallback',
+      toolCalling: 'native',
+      supportsParallelToolCalls: true,
+      supportsStructuredOutputs: true,
+      supportsStreamingToolCalls: true,
+      supportsForcedToolChoice: true,
+      prefersStrictToolSchemas: false,
+    },
+    tooling: {
+      allowedToolNamesAfterWorkflowSync: DEFAULT_POST_SYNC_ALLOWED_TOOL_NAMES,
+      availableToolNames: [],
+      toolCallMode: 'parallel',
+      executionCriticalToolNames: [],
+    },
+    executionMode: 'stream',
+    toolCallStreaming: true,
+    inspectMaxSteps: 0,
+    executeMaxSteps: 0,
+    recoveryMaxSteps: 0,
+    inspectDirectives: [],
+    executeDirectives: [],
+    recoveryDirectives: [],
+  };
+}
 
 function buildWorkflowPresentationRequiredAction(workflowId: string) {
   return {
@@ -66,14 +102,9 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
-const TOOLS_ALLOWED_AFTER_SUCCESSFUL_SYNC = new Set([
-  'presentWorkflowResult',
-  'reportProgress',
-  'requestRequiredAction',
-]);
-
-export function createWorkflowSyncCompletionGuardHook(): YagrRuntimeHook {
+export function createWorkflowSyncCompletionGuardHook(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook {
   let workflowSyncSettled = false;
+  const toolsAllowedAfterSuccessfulSync = new Set(strategy.tooling.allowedToolNamesAfterWorkflowSync);
 
   return {
     beforeTool: async ({ toolName }) => {
@@ -81,7 +112,7 @@ export function createWorkflowSyncCompletionGuardHook(): YagrRuntimeHook {
         return;
       }
 
-      if (TOOLS_ALLOWED_AFTER_SUCCESSFUL_SYNC.has(toolName)) {
+      if (toolsAllowedAfterSuccessfulSync.has(toolName)) {
         return;
       }
 
@@ -112,9 +143,13 @@ export function createWorkflowSyncCompletionGuardHook(): YagrRuntimeHook {
 }
 
 export function createDefaultRuntimeHooks(): YagrRuntimeHook[] {
+  return createDefaultRuntimeHooksForStrategy(createFallbackRuntimeStrategy());
+}
+
+export function createDefaultRuntimeHooksForStrategy(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook[] {
   return [
     createWorkflowPresentationGuardHook(),
-    createWorkflowSyncCompletionGuardHook(),
+    createWorkflowSyncCompletionGuardHook(strategy),
   ];
 }
 
@@ -175,7 +210,6 @@ export function wrapToolsWithRuntimeHooks<T extends ToolMap>(
             result,
           });
         }
-
         return result;
       },
     } as any);

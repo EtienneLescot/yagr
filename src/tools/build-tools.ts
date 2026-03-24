@@ -20,6 +20,7 @@ import { createRequestRequiredActionTool } from './request-required-action.js';
 import { createSearchWorkspaceTool } from './search-workspace.js';
 import { createWriteWorkspaceFileTool } from './write-workspace-file.js';
 import { createPresentWorkflowResultTool } from './present-workflow-result.js';
+import { FULL_RUNTIME_TOOL_NAMES } from './toolsets.js';
 
 export function buildTools(
   engine: NodeCatalogPort & TemplateCatalogPort & WorkflowLifecyclePort,
@@ -45,12 +46,13 @@ export function buildTools(
     presentWorkflowResult: createPresentWorkflowResultTool(observer),
   };
 
-  if (!options.allowedToolNames || options.allowedToolNames.length === 0) {
-    return allTools;
-  }
+  const requestedToolNames = options.allowedToolNames && options.allowedToolNames.length > 0
+    ? options.allowedToolNames
+    : [...FULL_RUNTIME_TOOL_NAMES];
 
-  const allowed = new Set(options.allowedToolNames);
   return Object.fromEntries(
-    Object.entries(allTools).filter(([toolName]) => allowed.has(toolName)),
-  );
+    requestedToolNames
+      .filter((toolName) => toolName in allTools)
+      .map((toolName) => [toolName, allTools[toolName as keyof typeof allTools]]),
+  ) as typeof allTools;
 }
