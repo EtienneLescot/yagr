@@ -40,6 +40,13 @@ Observation:
 - `YagrRunEngine` choisit lui-meme la strategie runtime, la surface d'outils et les hooks associes
 - le flux est maintenant explicitement pilote par `tool-runtime-strategy.ts`
 
+Invariants runtime a conserver:
+
+- la completion est une responsabilite runtime, pas juste un texte assistant
+- un run ne doit pas etre "complete" uniquement parce que le modele s'arrete
+- les blocages et required actions doivent rester representes explicitement
+- les politiques produit doivent rester au-dessus du coeur runtime
+
 ## 2. Setup et onboarding
 
 ```mermaid

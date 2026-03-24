@@ -9,6 +9,8 @@ Elle doit toujours refleter le code tel qu'il existe maintenant.
 - `system-overview.md`: vue d'ensemble des grands blocs logiques
 - `module-map.md`: cartographie plus fine par dossier et responsabilites
 - `runtime-flows.md`: flux transverses importants
+- `n8n-local.md`: architecture actuelle du bootstrap n8n local et de sa strategie de test
+- `tui-ux.md`: principes durables de l'UX agentique TUI
 
 Les trois pages doivent rester coherentes entre elles:
 
