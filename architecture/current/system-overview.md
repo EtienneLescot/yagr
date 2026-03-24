@@ -6,20 +6,53 @@ Cette page decrit les grands blocs logiques actuellement presents dans le repo.
 
 ```mermaid
 flowchart TD
-    User[User] --> Facades[Facades and Gateways]
-    Facades --> Agent[YagrSessionAgent]
-    Agent --> Runtime[YagrRunEngine]
-    Runtime --> LLM[LLM and Provider Layer]
-    Runtime --> RTS[Runtime Tool Strategy]
-    Runtime --> Tools[Tool Surface]
-    Tools --> Engine[Engine]
-    Tools --> Workspace[Workspace and File Tools]
-    Tools --> N8nac[n8nac CLI Bridge]
-    Engine --> N8n[n8n Engine]
-    Facades --> Setup[Setup and Configuration]
-    Setup --> Config[Config Services]
-    Setup --> N8nLocal[Managed Local n8n]
+    User[User]
+
+    subgraph Interfaces[Interfaces]
+      Facades[WebUI / Telegram / CLI / TUI]
+    end
+
+    subgraph Application[Application]
+      Agent[YagrSessionAgent]
+      Runtime[YagrRunEngine]
+      Setup[Setup Application Services]
+    end
+
+    subgraph RuntimePolicy[Runtime Policy]
+      RTS[tool-runtime-strategy]
+      Hooks[policy-hooks]
+      Toolsets[tools/toolsets]
+    end
+
+    subgraph Infra[Infrastructure]
+      LLM[LLM / Provider Plugins]
+      Tools[Runtime Tool Surface]
+      Engine[Engine Ports and n8n Engine]
+      Config[Config Services]
+      N8nLocal[Managed Local n8n]
+    end
+
+    User --> Facades
+    Facades --> Agent
+    Facades --> Setup
+    Agent --> Runtime
+    Runtime --> RTS
+    Runtime --> Hooks
+    Runtime --> Toolsets
+    Runtime --> LLM
+    Runtime --> Tools
+    Setup --> Config
+    Setup --> N8nLocal
+    Setup --> LLM
+    Tools --> Engine
 ```
+
+Cette vue doit se lire ainsi:
+
+- les facades parlent au session agent et a la couche setup
+- le runtime consomme une politique outillage explicite
+- les providers sont resolves via plugins
+- l'execution reelle passe par les tools puis les ports engine/infrastructure
 
 ## Blocs principaux
 
@@ -78,6 +111,27 @@ Observation actuelle:
 - les providers OpenAI-compatible faibles ne sont plus artificiellement limites au premier tool visible
 - la strategie runtime commune pilote maintenant le mode `stream` vs `generate`, les directives inspect/execute/recovery et la reduction de surface d'outils pour le niveau `none`
 
+```mermaid
+flowchart LR
+    CFG[Resolved config]
+    REG[provider-registry]
+    PLUG[ProviderPlugin]
+    META[provider-metadata]
+    CAP[capability-resolver]
+    FACT[plugin factory]
+    SDK[AI SDK model]
+    DISC[plugin discovery]
+
+    CFG --> REG
+    REG --> PLUG
+    PLUG --> DISC
+    DISC --> META
+    META --> CAP
+    CAP --> FACT
+    PLUG --> FACT
+    FACT --> SDK
+```
+
 ### Tooling
 
 - `src/tools/build-tools.ts`
@@ -120,6 +174,24 @@ Observation actuelle:
 
 - les facades se limitent maintenant a l'I/O, aux sessions et a une orchestration legere
 - les mutations setup/config et l'etat metier associe sont delegues aux services applicatifs partages
+
+```mermaid
+flowchart LR
+    UI[WebUI / Telegram / CLI / TUI]
+    GW[gateway handlers]
+    SA[YagrSessionAgent]
+    SS[setup/status]
+    AS[setup/application-services]
+    CFG[config services]
+    N8N[n8n-local / n8n API]
+
+    UI --> GW
+    GW --> SA
+    GW --> SS
+    GW --> AS
+    AS --> CFG
+    AS --> N8N
+```
 
 ### Setup / wizard / bootstrap
 
@@ -171,15 +243,21 @@ flowchart LR
       TUI[TUI]
     end
 
-    subgraph Core
+    subgraph Application
       AG[YagrSessionAgent]
       RE[YagrRunEngine]
-      TOOLS[buildTools]
+      AS[setup/application-services]
+      ST[setup/status]
     end
 
-    subgraph Infra
-      LLM[LLM Layer]
-      ENG[Engine]
+    subgraph RuntimePolicy
+      STRAT[tool-runtime-strategy]
+      TOOLS[buildTools + toolsets]
+    end
+
+    subgraph Infrastructure
+      LLM[Provider Plugins + AI SDK]
+      ENG[Engine Ports / n8n Engine]
       CFG[Config Services]
       N8NLOCAL[n8n-local]
     end
@@ -188,13 +266,17 @@ flowchart LR
     WEB --> AG
     CLI --> AG
     TUI --> AG
+    TG --> AS
+    WEB --> AS
+    CLI --> AS
     AG --> RE
+    WEB --> ST
+    RE --> STRAT
     RE --> LLM
     RE --> TOOLS
     TOOLS --> ENG
-    WEB --> CFG
-    TG --> CFG
-    WEB --> N8NLOCAL
+    AS --> CFG
+    AS --> N8NLOCAL
 ```
 
 ## Points d'attention actuels

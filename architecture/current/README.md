@@ -10,6 +10,12 @@ Elle doit toujours refleter le code tel qu'il existe maintenant.
 - `module-map.md`: cartographie plus fine par dossier et responsabilites
 - `runtime-flows.md`: flux transverses importants
 
+Les trois pages doivent rester coherentes entre elles:
+
+- `system-overview.md` montre les couches et les frontieres
+- `module-map.md` montre ou vivent concretement les modules
+- `runtime-flows.md` montre comment les appels traversent ces couches
+
 ## Convention
 
 Quand une responsabilite change, il faut mettre a jour:
