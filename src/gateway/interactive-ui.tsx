@@ -8,13 +8,17 @@ import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
 import {
+  mapPhaseEventToUserVisibleUpdate,
+  mapStateEventToUserVisibleUpdate,
+  mapToolEventToUserVisibleUpdate,
+} from '../runtime/user-visible-updates.js';
+import {
   type WorkflowEmbed,
   buildWorkflowBannerTerminal,
   extractWorkflowEmbed,
   resolveTerminalWorkflowOpenUrl,
   workflowEmbedKey,
 } from './format-message.js';
-import { getUserFacingToolStatus } from '../tools/observer.js';
 import type {
   YagrAgentState,
   YagrContextCompactionEvent,
@@ -463,12 +467,12 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   }, [display.showResponses, pushEntry]);
 
   const handleToolEvent = useCallback((event: YagrToolEvent) => {
-    const userFacingStatus = getUserFacingToolStatus(event);
+    const userFacingStatus = mapToolEventToUserVisibleUpdate(event);
     if (userFacingStatus) {
       if (display.showThinking) {
-        pushEntry('narrative', userFacingStatus.title, userFacingStatus.detail);
+        pushEntry('narrative', userFacingStatus.title, userFacingStatus.detail ?? userFacingStatus.title);
       }
-      setActiveOperationText(userFacingStatus.detail);
+      setActiveOperationText(userFacingStatus.detail ?? userFacingStatus.title);
       return;
     }
 
@@ -551,14 +555,15 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
         satisfiedRequiredActionIds: approvedRequiredActionIds,
         onCompaction: handleCompaction,
         onPhaseChange: async (event) => {
+          const update = mapPhaseEventToUserVisibleUpdate(event);
           if (event.status === 'started') {
             setCurrentPhase(event.phase);
             setPhaseStatusText(event.message);
 
-            if (display.showThinking) {
-              pushEntry('narrative', phaseLabel(event.phase), event.message);
+            if (display.showThinking && update) {
+              pushEntry('narrative', update.title, update.detail ?? event.message);
             }
-            setActiveOperationText(event.message);
+            setActiveOperationText(update?.detail ?? event.message);
           } else if (event.phase === 'summarize') {
             setPhaseStatusText('Reponse prete.');
             setActiveOperationText('Preparation de la reponse finale.');
@@ -567,13 +572,19 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
           await options.onPhaseChange?.(event);
         },
         onStateChange: async (event: YagrStateEvent) => {
+          const update = mapStateEventToUserVisibleUpdate(event);
           setCurrentState(event.state);
           setPhaseStatusText(event.message);
 
-          if (event.state === 'waiting_for_permission' || event.state === 'waiting_for_input' || event.state === 'failed_terminal' || event.state === 'resumable') {
-            pushEntry('interrupt', event.state === 'failed_terminal' ? 'Erreur' : 'Action requise', event.message);
+          if (update) {
+            pushEntry(
+              update.tone === 'error' ? 'interrupt' : 'narrative',
+              update.title,
+              update.detail ?? event.message,
+              update.tone === 'error' ? 'strong' : 'normal',
+            );
           }
-          setActiveOperationText(event.message);
+          setActiveOperationText(update?.detail ?? event.message);
 
           await options.onStateChange?.(event);
         },
