@@ -30,6 +30,7 @@ const { YagrAgent } = await import('../dist/agent.js');
 const { createN8nEngineFromWorkspace } = await import('../dist/config/load-n8n-engine-config.js');
 const { analyzeRunOutcome, formatObservedAction } = await import('../dist/runtime/outcome.js');
 const { resolveToolRuntimeStrategy } = await import('../dist/runtime/tool-runtime-strategy.js');
+const { collectRequiredActions, splitRequiredActions } = await import('../dist/runtime/required-actions.js');
 
 const DEFAULT_TIMEOUT_MS = toInt(process.env.YAGR_IT_TIMEOUT_MS, 60_000);
 const INFERENCE_TIMEOUT_MS = toInt(process.env.YAGR_IT_INFERENCE_TIMEOUT_MS, 75_000);
@@ -250,6 +251,7 @@ async function runProvider(provider) {
           ? `CLI scenario succeeded with model ${chosenModel}. ${checklistNote}`
           : `CLI scenario succeeded with model ${chosenModel}.`,
         response: result.assistantResponse || '',
+        checklist: result.checklist,
       };
     }
     if (isTransientRateLimit(result.error || '')) {
@@ -262,6 +264,7 @@ async function runProvider(provider) {
       status: 'FAIL',
       note: checklistNote ? `${result.error} ${checklistNote}` : result.error,
       response: result.assistantResponse || '',
+      checklist: result.checklist,
     };
   }, advancedTimeoutMs + 5_000);
 
@@ -315,6 +318,7 @@ function serializeStep(step) {
     status: step.status,
     note: step.note || '',
     response: step.response || '',
+    checklist: step.checklist,
   };
 }
 
@@ -576,6 +580,10 @@ function renderMarkdownProviderSection(row) {
   lines.push(`- Inference: ${row.inference.note || 'n/a'}`);
   if (advanced) {
     lines.push(`- Advanced scenario: ${row.advancedScenario.note || 'n/a'}`);
+    if (row.advancedScenario.checklist) {
+      lines.push(`- Advanced blocking actions: ${row.advancedScenario.checklist.blockingRequiredActionTitles?.join(', ') || 'none'}`);
+      lines.push(`- Advanced follow-ups: ${row.advancedScenario.checklist.followUpRequiredActionTitles?.join(', ') || 'none'}`);
+    }
   }
 
   if (advanced && row.advancedScenario.response) {
@@ -903,6 +911,8 @@ function buildAdvancedChecklist({
   createdRemoteWorkflows,
 }) {
   const outcome = analyzeRunOutcome(journal || []);
+  const requiredActions = collectRequiredActions(journal || []);
+  const { blocking: blockingRequiredActions, followUp: followUpRequiredActions } = splitRequiredActions(requiredActions);
   const n8nacActions = [...outcome.successfulActions, ...outcome.failedActions];
   const actionNames = n8nacActions.map((action) => action.action);
   const commandStarts = (toolEvents || []).filter((event) => event.type === 'command-start' && event.toolName === 'n8nac');
@@ -926,6 +936,10 @@ function buildAdvancedChecklist({
     wroteWorkflowFile: Boolean(outcome.hasWorkflowWrites),
     changedWorkflowFileCount: (changedWorkflows || []).length,
     remoteWorkflowCount: Array.isArray(createdRemoteWorkflows) ? createdRemoteWorkflows.length : 0,
+    blockingRequiredActionCount: blockingRequiredActions.length,
+    followUpRequiredActionCount: followUpRequiredActions.length,
+    blockingRequiredActionTitles: blockingRequiredActions.map((action) => action.title),
+    followUpRequiredActionTitles: followUpRequiredActions.map((action) => action.title),
   };
 }
 
@@ -1391,6 +1405,8 @@ function formatAdvancedChecklistNote(checklist) {
     `embedDiagram=${checklist.hasWorkflowEmbedDiagram ? 'yes' : 'no'}`,
     `workflowFile=${checklist.wroteWorkflowFile ? 'yes' : 'no'}`,
     `remoteCreated=${checklist.remoteWorkflowCount}`,
+    `blockingActions=${checklist.blockingRequiredActionCount}`,
+    `followUps=${checklist.followUpRequiredActionCount}`,
   ];
   return parts.join(', ');
 }
