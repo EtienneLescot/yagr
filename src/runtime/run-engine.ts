@@ -20,6 +20,8 @@ import type {
   YagrToolEvent,
 } from '../types.js';
 import { buildTools } from '../tools/index.js';
+import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
+import { resolveWorkflowDiagramFromFilePath } from '../tools/present-workflow-result.js';
 import { evaluateCompletionGate } from './completion-gate.js';
 import { compactConversationContext } from './context-compaction.js';
 import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outcome.js';
@@ -397,6 +399,18 @@ function collectPresentedWorkflow(result: unknown): { workflowId?: string; workf
   return { workflowId, workflowUrl, title };
 }
 
+function collectWorkflowPresentationFromOutcome(outcome: RunOutcome): { workflowId?: string; workflowUrl?: string; title?: string } | undefined {
+  const workflowId = outcome.successfulVerify?.workflowId ?? outcome.successfulPush?.workflowId;
+  const workflowUrl = outcome.successfulVerify?.workflowUrl ?? outcome.successfulPush?.workflowUrl;
+  const title = outcome.successfulVerify?.title ?? outcome.successfulPush?.title;
+
+  if (!workflowId && !workflowUrl && !title) {
+    return undefined;
+  }
+
+  return { workflowId, workflowUrl, title };
+}
+
 function extractWorkflowLabel(outcome: RunOutcome, journal: YagrRunJournalEntry[]): string | undefined {
   const successfulPushTarget = outcome.successfulPush?.filename;
   const workflowFilePath = successfulPushTarget
@@ -433,6 +447,41 @@ function extractPresentedWorkflowFromJournal(journal: YagrRunJournalEntry[]): { 
   return undefined;
 }
 
+async function maybeEmitSyntheticWorkflowEmbed(
+  outcome: RunOutcome,
+  journal: YagrRunJournalEntry[],
+  onToolEvent: YagrRunOptions['onToolEvent'],
+): Promise<void> {
+  if (!onToolEvent) {
+    return;
+  }
+
+  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
+  if (presentedWorkflow?.workflowUrl) {
+    return;
+  }
+
+  const fallbackWorkflow = collectWorkflowPresentationFromOutcome(outcome);
+  if (!fallbackWorkflow?.workflowId || !fallbackWorkflow.workflowUrl) {
+    return;
+  }
+
+  const workflowLink = resolveWorkflowOpenLink(fallbackWorkflow.workflowUrl);
+  const pushTarget = outcome.successfulPush?.filename;
+  const diagram = pushTarget ? resolveWorkflowDiagramFromFilePath(pushTarget) : undefined;
+
+  await onToolEvent({
+    type: 'embed',
+    toolName: 'presentWorkflowResult',
+    kind: 'workflow',
+    workflowId: fallbackWorkflow.workflowId,
+    url: workflowLink.openUrl,
+    targetUrl: workflowLink.targetUrl,
+    title: fallbackWorkflow.title,
+    diagram,
+  });
+}
+
 export function buildGroundedSummary(
   _prompt: string,
   finishReason: string,
@@ -442,7 +491,7 @@ export function buildGroundedSummary(
   const lines: string[] = [];
   const outcome = analyzeRunOutcome(journal);
   const workflowLabel = extractWorkflowLabel(outcome, journal);
-  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
+  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
   const presentedWorkflowUrl = presentedWorkflow?.workflowUrl;
 
   if (outcome.hasWorkflowWrites && outcome.successfulPush) {
@@ -499,8 +548,8 @@ export function buildGroundedSummary(
     lines.push(`Actions n8nac reussies: ${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
   }
 
-  if (outcome.unresolvedFailedActions.length > 0) {
-    lines.push(`Actions n8nac en echec: ${outcome.unresolvedFailedActions.map(formatObservedAction).join(', ')}`);
+  if (outcome.blockingUnresolvedFailedActions.length > 0) {
+    lines.push(`Actions n8nac en echec: ${outcome.blockingUnresolvedFailedActions.map(formatObservedAction).join(', ')}`);
   }
 
   if (requiredActions.length > 0) {
@@ -519,7 +568,7 @@ export function buildGroundedSummary(
     lines.push('La verification distante n’a pas ete confirmee.');
   }
 
-  if (outcome.hasWorkflowWrites && outcome.unresolvedFailedActions.length > 0) {
+  if (outcome.hasWorkflowWrites && outcome.blockingUnresolvedFailedActions.length > 0) {
     lines.push('Le run s’est arrete alors que certaines actions avaient encore echoue. Une correction supplementaire reste necessaire ou un bloqueur externe persiste.');
   }
 
@@ -661,7 +710,7 @@ function shouldAttemptRecovery(outcome: RunOutcome, attemptNumber: number, requi
     return false;
   }
 
-  if (outcome.unresolvedFailedActions.length > 0) {
+  if (outcome.blockingUnresolvedFailedActions.length > 0) {
     return true;
   }
 
@@ -1063,16 +1112,17 @@ export class YagrRunEngine {
       steps += inspectResult.steps.length;
       throwIfAborted(options.abortSignal);
       const requiredActions = collectRequiredActions(state.journal);
+      const finalOutcome = analyzeRunOutcome(state.journal);
       const completionDecision = await evaluateCompletionGate({
         text,
         finishReason,
         requiredActions,
         satisfiedRequiredActionIds: options.satisfiedRequiredActionIds,
-        hasWorkflowWrites: analyzeRunOutcome(state.journal).hasWorkflowWrites,
-        successfulValidate: Boolean(analyzeRunOutcome(state.journal).successfulValidate),
-        successfulPush: Boolean(analyzeRunOutcome(state.journal).successfulPush),
-        successfulVerify: Boolean(analyzeRunOutcome(state.journal).successfulVerify),
-        unresolvedFailureCount: analyzeRunOutcome(state.journal).unresolvedFailedActions.length,
+        hasWorkflowWrites: finalOutcome.hasWorkflowWrites,
+        successfulValidate: Boolean(finalOutcome.successfulValidate),
+        successfulPush: Boolean(finalOutcome.successfulPush),
+        successfulVerify: Boolean(finalOutcome.successfulVerify),
+        unresolvedFailureCount: finalOutcome.blockingUnresolvedFailedActions.length,
         hooks: runtimeHooks,
         context: buildRuntimeContext(state),
       });
@@ -1089,6 +1139,7 @@ export class YagrRunEngine {
       }
 
       throwIfAborted(options.abortSignal);
+      await maybeEmitSyntheticWorkflowEmbed(finalOutcome, state.journal, options.onToolEvent);
       text = ensureFinalText(prompt, finishReason, state.journal, text, completionDecision.requiredActions, completionDecision.accepted);
 
       if (state.currentPhase && state.currentPhase !== 'summarize') {

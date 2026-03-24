@@ -8,6 +8,7 @@ import { evaluateCompletionGate } from '../dist/runtime/completion-gate.js';
 import { analyzeRunOutcome } from '../dist/runtime/outcome.js';
 import {
   createDefaultRuntimeHooks,
+  createN8nSetupGuardHook,
   createWorkflowSyncCompletionGuardHook,
   createWorkflowPresentationGuardHook,
   wrapToolsWithRuntimeHooks,
@@ -201,6 +202,30 @@ test('workflow sync guard still allows final presentation after a successful pus
   assert.equal(presentResult.presented, true);
 });
 
+test('n8n setup guard blocks speculative init_auth when the workspace is already configured', async () => {
+  const wrappedTools = wrapToolsWithRuntimeHooks(
+    {
+      n8nac: {
+        description: 'n8nac',
+        parameters: undefined,
+        execute: async () => ({ exitCode: 0 }),
+      },
+    },
+    [createN8nSetupGuardHook()],
+    () => ({ runId: 'run-setup-1', phase: 'plan', state: 'running' }),
+  );
+
+  const result = await wrappedTools.n8nac.execute({
+    action: 'init_auth',
+    n8nHost: 'http://localhost:5678',
+    n8nApiKey: 'secret',
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.match(result.error, /already initialized/i);
+});
+
 test('later successful retry clears an earlier unresolved n8nac failure', () => {
   const journal = [
     {
@@ -270,6 +295,113 @@ test('setup_check is ignored in observed n8nac failures', () => {
 
   assert.equal(outcome.failedActions.length, 0);
   assert.equal(outcome.unresolvedFailedActions.length, 0);
+});
+
+test('push with built-in verify resolves prior verify failures and carries workflow facts', () => {
+  const journal = [
+    {
+      timestamp: '2026-03-23T15:00:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'verify failed',
+      phase: 'verify',
+      stepNumber: 1,
+      step: {
+        stepNumber: 1,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'verify',
+        text: '',
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'verify', workflowId: 'wf-1' } }],
+        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1 } }],
+      },
+    },
+    {
+      timestamp: '2026-03-23T15:01:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'push succeeded with verify',
+      phase: 'sync',
+      stepNumber: 2,
+      step: {
+        stepNumber: 2,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'sync',
+        text: '',
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'push', filename: 'workflows/demo.workflow.ts' } }],
+        toolResults: [{
+          toolName: 'n8nac',
+          result: {
+            exitCode: 0,
+            verified: true,
+            workflowId: 'wf-1',
+            workflowUrl: 'http://localhost:5678/workflow/wf-1',
+            title: 'Demo Flow',
+          },
+        }],
+      },
+    },
+  ];
+
+  const outcome = analyzeRunOutcome(journal);
+
+  assert.equal(outcome.unresolvedFailedActions.length, 0);
+  assert.equal(outcome.successfulVerify?.workflowId, 'wf-1');
+  assert.equal(outcome.successfulVerify?.workflowUrl, 'http://localhost:5678/workflow/wf-1');
+});
+
+test('exploratory setup failures stop being blocking once push and verify succeed', () => {
+  const journal = [
+    {
+      timestamp: '2026-03-23T16:00:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'init auth failed',
+      phase: 'plan',
+      stepNumber: 1,
+      step: {
+        stepNumber: 1,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'plan',
+        text: '',
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'init_auth' } }],
+        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1 } }],
+      },
+    },
+    {
+      timestamp: '2026-03-23T16:01:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'workflow pushed',
+      phase: 'sync',
+      stepNumber: 2,
+      step: {
+        stepNumber: 2,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'sync',
+        text: '',
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'push', filename: 'workflows/demo.workflow.ts' } }],
+        toolResults: [{
+          toolName: 'n8nac',
+          result: {
+            exitCode: 0,
+            verified: true,
+            workflowId: 'wf-1',
+            workflowUrl: 'http://localhost:5678/workflow/wf-1',
+            title: 'Demo Flow',
+          },
+        }],
+      },
+    },
+  ];
+
+  const outcome = analyzeRunOutcome(journal);
+
+  assert.equal(outcome.unresolvedFailedActions.length, 1);
+  assert.equal(outcome.blockingUnresolvedFailedActions.length, 0);
 });
 
 test('assistant output sanitization removes leaked internal execution scaffolding', () => {
@@ -486,6 +618,50 @@ test('grounded summary includes workflow URL from presentWorkflowResult when ava
   assert.match(summary, /Demo Flow/);
   assert.match(summary, /Lien du workflow: http:\/\/localhost:5678\/workflow\/wf-1/);
   assert.match(summary, /carte du workflow ci-dessous/i);
+});
+
+test('grounded summary falls back to successful push metadata when no presentWorkflowResult was emitted', () => {
+  const journal = [
+    {
+      timestamp: '2026-03-23T16:01:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'workflow pushed',
+      phase: 'sync',
+      stepNumber: 1,
+      step: {
+        stepNumber: 1,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'sync',
+        text: '',
+        toolCalls: [
+          { toolName: 'writeWorkspaceFile', args: { path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'n8nac', args: { action: 'push', filename: 'workflows/demo.workflow.ts' } },
+        ],
+        toolResults: [
+          { toolName: 'writeWorkspaceFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
+          {
+            toolName: 'n8nac',
+            result: {
+              exitCode: 0,
+              verified: true,
+              workflowId: 'wf-3',
+              workflowUrl: 'http://localhost:5678/workflow/wf-3',
+              title: 'Demo Flow',
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  const summary = buildGroundedSummary('Create a workflow.', 'stop', journal, []);
+
+  assert.match(summary, /Demo Flow/);
+  assert.match(summary, /Lien du workflow: http:\/\/localhost:5678\/workflow\/wf-3/);
+  assert.match(summary, /carte du workflow ci-dessous/i);
+  assert.doesNotMatch(summary, /Actions n8nac en echec/);
 });
 
 test('grounded summary stays user-facing when a workflow was only presented', () => {

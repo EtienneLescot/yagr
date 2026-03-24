@@ -15,6 +15,12 @@ type RunResult = {
   timedOut: boolean;
 };
 
+type WorkflowSyncFacts = {
+  workflowId?: string;
+  workflowName?: string;
+  workflowUrl?: string;
+};
+
 const N8NAC_ACTIONS = [
   'setup_check',
   'init_auth',
@@ -194,6 +200,23 @@ export function getN8nacProcessEnv(env: NodeJS.ProcessEnv = {}, configService = 
 
 function sanitizeEnvValue(value: string | undefined): string {
   return String(value || '').trim().replace(/^['"]|['"]$/g, '');
+}
+
+function parseWorkflowSyncFacts(stdout: string, stderr: string, host: string | undefined): WorkflowSyncFacts {
+  const combined = `${stdout}\n${stderr}`;
+  const workflowId = combined.match(/Fetching workflow ([A-Za-z0-9_-]+) from n8n for verification/i)?.[1]
+    || combined.match(/workflow\/([A-Za-z0-9_-]+)/i)?.[1];
+  const workflowName = combined.match(/Fetched "([^"]+)"/i)?.[1];
+  const normalizedHost = sanitizeEnvValue(host);
+  const workflowUrl = workflowId && normalizedHost
+    ? `${normalizedHost.replace(/\/+$/g, '')}/workflow/${workflowId}`
+    : undefined;
+
+  return {
+    workflowId: workflowId || undefined,
+    workflowName: workflowName || undefined,
+    workflowUrl,
+  };
 }
 
 function findWorkspaceWorkflowCandidates(filename: string): string[] {
@@ -522,12 +545,19 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           }
         }
 
+        const host = new YagrN8nConfigService().getLocalConfig().host || process.env.N8N_HOST;
+        const syncFacts = parseWorkflowSyncFacts(result.stdout, result.stderr, host);
+
         return {
           exitCode: result.exitCode,
           timedOut: result.timedOut,
           stdout: truncateText(result.stdout),
           stderr: truncateText(result.stderr),
           pushTarget,
+          workflowId: syncFacts.workflowId ?? null,
+          workflowUrl: syncFacts.workflowUrl ?? null,
+          title: syncFacts.workflowName ?? null,
+          verified: result.exitCode === 0 && Boolean(syncFacts.workflowId),
         };
       }
 
@@ -536,11 +566,16 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           throw new Error('verify requires workflowId');
         }
         const result = await runObservedN8nac(observer, ['verify', workflowId], cwd);
+        const host = new YagrN8nConfigService().getLocalConfig().host || process.env.N8N_HOST;
+        const syncFacts = parseWorkflowSyncFacts(result.stdout, result.stderr, host);
         return {
           exitCode: result.exitCode,
           timedOut: result.timedOut,
           stdout: truncateText(result.stdout),
           stderr: truncateText(result.stderr),
+          workflowId: syncFacts.workflowId ?? workflowId,
+          workflowUrl: syncFacts.workflowUrl ?? null,
+          title: syncFacts.workflowName ?? null,
         };
       }
 

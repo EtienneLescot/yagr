@@ -2,6 +2,7 @@ import { tool } from 'ai';
 import type { YagrToolRuntimeStrategy } from './tool-runtime-strategy.js';
 import type { YagrAgentState, YagrRunPhase, YagrRuntimeContext, YagrRuntimeHook } from '../types.js';
 import { resolveLocalWorkflowDiagram } from '../tools/present-workflow-result.js';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 
 type ToolLike = {
   description?: string;
@@ -142,12 +143,66 @@ export function createWorkflowSyncCompletionGuardHook(strategy: YagrToolRuntimeS
   };
 }
 
+function isConfiguredWorkspaceAvailable(configService = new YagrN8nConfigService()): boolean {
+  const localConfig = configService.getLocalConfig();
+  return Boolean(localConfig.host && localConfig.projectName && localConfig.projectId);
+}
+
+export function createN8nSetupGuardHook(): YagrRuntimeHook {
+  let setupCheckKnown = false;
+  let workspaceInitialized = isConfiguredWorkspaceAvailable();
+
+  return {
+    beforeTool: async ({ toolName, args }) => {
+      if (toolName !== 'n8nac') {
+        return;
+      }
+
+      const normalizedArgs = asRecord(args);
+      const action = asString(normalizedArgs?.action);
+      if (action !== 'init_auth' && action !== 'init_project') {
+        return;
+      }
+
+      if (workspaceInitialized) {
+        return {
+          allowed: false,
+          message: 'The n8n workspace is already initialized. Do not rerun init_auth or init_project. Continue directly with workflow file creation, validate, push, and verify.',
+        };
+      }
+
+      if (!setupCheckKnown) {
+        return {
+          allowed: false,
+          message: 'Do not run init_auth or init_project speculatively. Call n8nac setup_check first, and only continue with setup if it reports that the workspace is not initialized.',
+        };
+      }
+    },
+    afterTool: async ({ toolName, args, result }) => {
+      if (toolName !== 'n8nac') {
+        return;
+      }
+
+      const normalizedArgs = asRecord(args);
+      const action = asString(normalizedArgs?.action);
+      if (action !== 'setup_check') {
+        return;
+      }
+
+      const normalizedResult = asRecord(result);
+      setupCheckKnown = true;
+      workspaceInitialized = normalizedResult?.initialized === true;
+    },
+  };
+}
+
 export function createDefaultRuntimeHooks(): YagrRuntimeHook[] {
   return createDefaultRuntimeHooksForStrategy(createFallbackRuntimeStrategy());
 }
 
 export function createDefaultRuntimeHooksForStrategy(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook[] {
   return [
+    createN8nSetupGuardHook(),
     createWorkflowPresentationGuardHook(),
     createWorkflowSyncCompletionGuardHook(strategy),
   ];
