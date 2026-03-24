@@ -83,6 +83,7 @@ type RunState = {
 };
 
 type SyntheticN8nacIntent = {
+  tool?: string;
   action: string;
   filename?: string;
   validateFile?: string;
@@ -98,6 +99,23 @@ type SyntheticN8nacIntent = {
   syncFolder?: string | null;
   resolveMode?: string | null;
 };
+
+type SyntheticWriteWorkspaceFileIntent = {
+  tool: 'writeWorkspaceFile';
+  path: string;
+  content: string;
+  mode?: 'create' | 'overwrite' | 'append';
+};
+
+type SyntheticToolIntent = SyntheticN8nacIntent | SyntheticWriteWorkspaceFileIntent;
+
+function isSyntheticWriteWorkspaceFileIntent(intent: SyntheticToolIntent): intent is SyntheticWriteWorkspaceFileIntent {
+  return intent.tool === 'writeWorkspaceFile';
+}
+
+function isSyntheticN8nacIntent(intent: SyntheticToolIntent): intent is SyntheticN8nacIntent {
+  return intent.tool !== 'writeWorkspaceFile';
+}
 
 function createAbortError(message = 'Yagr run stopped by user.'): Error {
   const error = new Error(message);
@@ -139,7 +157,7 @@ function looksLikeRawToolIntentText(text: string): boolean {
   return blocks.join('') === trimmed && blocks.every((block) => {
     try {
       const parsed = JSON.parse(block) as Record<string, unknown>;
-      return typeof parsed.action === 'string';
+      return typeof parsed.action === 'string' || parsed.tool === 'writeWorkspaceFile';
     } catch {
       return false;
     }
@@ -195,15 +213,29 @@ function extractJsonObjectBlocks(text: string): string[] {
   return blocks;
 }
 
-function parseSyntheticN8nacIntents(text: string): SyntheticN8nacIntent[] {
-  const intents: SyntheticN8nacIntent[] = [];
+function parseSyntheticToolIntents(text: string): SyntheticToolIntent[] {
+  const intents: SyntheticToolIntent[] = [];
   for (const block of extractJsonObjectBlocks(text)) {
     try {
       const parsed = JSON.parse(block) as Record<string, unknown>;
+      if (parsed.tool === 'writeWorkspaceFile') {
+        if (typeof parsed.path !== 'string' || typeof parsed.content !== 'string') {
+          continue;
+        }
+        intents.push({
+          tool: 'writeWorkspaceFile',
+          path: parsed.path,
+          content: parsed.content,
+          mode: parsed.mode === 'create' || parsed.mode === 'append' ? parsed.mode : 'overwrite',
+        });
+        continue;
+      }
+
       if (typeof parsed.action !== 'string') {
         continue;
       }
       intents.push({
+        tool: typeof parsed.tool === 'string' ? parsed.tool : 'n8nac',
         action: parsed.action,
         filename: typeof parsed.filename === 'string' ? parsed.filename : undefined,
         validateFile: typeof parsed.validateFile === 'string' ? parsed.validateFile : undefined,
@@ -227,7 +259,7 @@ function parseSyntheticN8nacIntents(text: string): SyntheticN8nacIntent[] {
   return intents;
 }
 
-async function maybeExecuteSyntheticWeakIntents(
+async function maybeExecuteSyntheticToolIntents(
   state: RunState,
   options: YagrRunOptions,
   strategy: YagrToolRuntimeStrategy,
@@ -237,7 +269,7 @@ async function maybeExecuteSyntheticWeakIntents(
     toolCalls: Array<{ toolName: string }>;
   },
 ): Promise<boolean> {
-  if (strategy.capabilityProfile.toolCalling !== 'weak') {
+  if (!['weak', 'none'].includes(strategy.capabilityProfile.toolCalling)) {
     return false;
   }
 
@@ -245,15 +277,42 @@ async function maybeExecuteSyntheticWeakIntents(
     return false;
   }
 
-  const intents = parseSyntheticN8nacIntents(phaseResult.text)
-    .filter((intent) => ['validate', 'push', 'verify'].includes(intent.action))
-    .slice(0, 3);
+  const intents = parseSyntheticToolIntents(phaseResult.text)
+    .filter((intent) => (
+      isSyntheticWriteWorkspaceFileIntent(intent)
+      || (isSyntheticN8nacIntent(intent) && ['validate', 'push', 'verify'].includes(intent.action))
+    ))
+    .slice(0, strategy.capabilityProfile.toolCalling === 'none' ? 4 : 3);
 
   if (intents.length === 0) {
     return false;
   }
 
   for (const intent of intents) {
+    if (isSyntheticWriteWorkspaceFileIntent(intent)) {
+      const writeTool = tools.writeWorkspaceFile as unknown as {
+        execute: (toolArgs: Record<string, unknown>, toolOptions?: unknown) => Promise<unknown>;
+      };
+      const args = {
+        path: intent.path,
+        content: intent.content,
+        mode: intent.mode ?? 'overwrite',
+      };
+      const result = await writeTool.execute(args, undefined);
+      await recordStep(state, options, {
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        toolCalls: [{ toolName: 'writeWorkspaceFile', args }],
+        toolResults: [{ toolName: 'writeWorkspaceFile', result }],
+        text: '',
+      });
+      continue;
+    }
+
+    if (!isSyntheticN8nacIntent(intent)) {
+      continue;
+    }
+
     const args = {
       ...intent,
       validateFile: intent.validateFile || (intent.action === 'validate' ? intent.filename : undefined),
@@ -279,11 +338,15 @@ function createPhasePrompt(
   userPrompt: string,
   strategy: YagrToolRuntimeStrategy,
 ): string {
+  const toolUseInstruction = strategy.tooling.toolCallMode === 'disabled'
+    ? 'Do not call tools in this phase. Reason from the current context only.'
+    : 'Use tools to inspect the workspace, existing workflow files, examples, and n8nac workspace status when needed.';
+
   if (phase === 'inspect') {
     return wrapInternal([
       'Yagr internal phase: inspect.',
       'Analyze the request and gather only the context needed to execute it correctly.',
-      'Use tools to inspect the workspace, existing workflow files, examples, and n8nac workspace status when needed.',
+      toolUseInstruction,
       'Do not reread the workspace AGENT.md or AGENTS.md file during inspect unless a specific later detail is missing from the current context.',
       'Favor correctness over speed in this phase. If an example or rule is likely to determine the right implementation, read it before acting.',
       'Do not claim completion in this phase.',
@@ -940,13 +1003,14 @@ async function executePhase(
   responseMessages: CoreMessage[];
 }> {
   throwIfAborted(options.abortSignal);
+  const modelInvocationTools = strategy.tooling.toolCallMode === 'disabled' ? undefined : tools;
 
   if (strategy.executionMode === 'generate') {
     const result = await generateText({
       abortSignal: options.abortSignal,
       model: createLanguageModel(options),
       system: systemPrompt,
-      tools,
+      ...(modelInvocationTools ? { tools: modelInvocationTools } : {}),
       messages,
       maxSteps,
       providerOptions: strategy.providerOptions,
@@ -989,7 +1053,7 @@ async function executePhase(
     abortSignal: options.abortSignal,
     model: createLanguageModel(options),
     system: systemPrompt,
-    tools,
+    ...(modelInvocationTools ? { tools: modelInvocationTools } : {}),
     messages,
     maxSteps,
     toolCallStreaming: strategy.toolCallStreaming,
@@ -1163,6 +1227,7 @@ export class YagrRunEngine {
       phase: state.currentPhase,
       state: state.currentAgentState,
     }), options.satisfiedRequiredActionIds) as typeof baseTools;
+    const modelInvocationTools = runtimeStrategy.tooling.toolCallMode === 'disabled' ? undefined : tools;
     const persistedMessages: CoreMessage[] = [currentUserMessage];
     let executionContext: CoreMessage[] = [...this.history, currentUserMessage];
 
@@ -1188,7 +1253,7 @@ export class YagrRunEngine {
         abortSignal: options.abortSignal,
         model: createLanguageModel(options),
         system: this.systemPrompt,
-        tools,
+        ...(modelInvocationTools ? { tools: modelInvocationTools } : {}),
         messages: [...executionContext, inspectInstruction],
         maxSteps: Math.min(options.maxSteps ?? 8, runtimeStrategy.inspectMaxSteps),
         providerOptions: runtimeStrategy.providerOptions,
@@ -1256,7 +1321,7 @@ export class YagrRunEngine {
         toolCalls = phaseResult.toolCalls;
         responseMessages = [...responseMessages, ...sanitizeAssistantResponseMessages(phaseResult.responseMessages)];
 
-        const executedSyntheticIntents = await maybeExecuteSyntheticWeakIntents(
+        const executedSyntheticIntents = await maybeExecuteSyntheticToolIntents(
           state,
           options,
           runtimeStrategy,

@@ -336,6 +336,20 @@ export async function primeProviderModelMetadata(
     return cached;
   }
 
-  const entries = await fetchAndCacheProviderMetadata(provider, apiKey, baseUrl, { model: trimmedModel });
-  return entries[0] ?? getCachedProviderModelMetadata(provider, trimmedModel);
+  let warmed = cached;
+  if (!warmed) {
+    try {
+      await fetchAndCacheProviderMetadata(provider, apiKey, baseUrl);
+      warmed = getCachedProviderModelMetadata(provider, trimmedModel);
+    } catch {
+      warmed = getCachedProviderModelMetadata(provider, trimmedModel);
+    }
+  }
+
+  try {
+    const entries = await fetchAndCacheProviderMetadata(provider, apiKey, baseUrl, { model: trimmedModel });
+    return entries[0] ?? getCachedProviderModelMetadata(provider, trimmedModel) ?? warmed;
+  } catch {
+    return getCachedProviderModelMetadata(provider, trimmedModel) ?? warmed;
+  }
 }

@@ -5,6 +5,7 @@ import {
   FULL_RUNTIME_TOOL_NAMES,
   MINIMAL_RUNTIME_TOOL_NAMES,
   POST_SYNC_RUNTIME_TOOL_NAMES,
+  SYNTHETIC_RUNTIME_TOOL_NAMES,
 } from '../tools/toolsets.js';
 
 export type YagrExecutionMode = 'stream' | 'generate';
@@ -56,7 +57,7 @@ function buildToolingPolicy(capabilityProfile: YagrModelCapabilityProfile): Yagr
       };
     case 'none':
       return {
-        availableToolNames: [...MINIMAL_RUNTIME_TOOL_NAMES],
+        availableToolNames: [...SYNTHETIC_RUNTIME_TOOL_NAMES],
         allowedToolNamesAfterWorkflowSync: [...POST_SYNC_RUNTIME_TOOL_NAMES],
         toolCallMode: 'disabled',
         executionCriticalToolNames: [],
@@ -135,18 +136,24 @@ export function resolveToolRuntimeStrategy(
         ...base,
         executionMode: 'generate',
         toolCallStreaming: false,
-        inspectMaxSteps: 2,
-        executeMaxSteps: 3,
-        recoveryMaxSteps: 2,
+        inspectMaxSteps: 1,
+        executeMaxSteps: 1,
+        recoveryMaxSteps: 1,
         inspectDirectives: [
-          'Do not attempt tool use for execution-critical work in this mode.',
+          'Do not attempt direct tool use in this mode.',
+          'Infer the smallest possible execution plan without tool calls.',
         ],
         executeDirectives: [
-          'Do not call implementation tools in this mode.',
-          'If the task requires workflow or filesystem execution, explain that the current model/provider path does not expose operational tool calling cleanly.',
+          'Tool calling is unavailable in this mode.',
+          'Respond with JSON objects only, no markdown and no prose.',
+          'Supported JSON intents are limited to:',
+          '{"tool":"writeWorkspaceFile","path":"<workspace-relative .workflow.ts path>","content":"<full file content>","mode":"overwrite"}',
+          '{"tool":"n8nac","action":"validate","validateFile":"<same .workflow.ts path>"}',
+          '{"tool":"n8nac","action":"push","filename":"<same .workflow.ts path>"}',
+          'Use the smallest sequence needed to complete the task. Prefer one workflow file write, then validate, then push.',
         ],
         recoveryDirectives: [
-          'Do not loop on tool attempts in this mode.',
+          'If the previous JSON intents were invalid, emit a corrected JSON-only sequence.',
         ],
       };
   }

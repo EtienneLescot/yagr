@@ -33,13 +33,12 @@ test('weak strategy keeps execution in generate mode for mistral', () => {
   assert.ok(strategy.executeDirectives.some((line) => /single decisive tool/i.test(line)));
 });
 
-test('none strategy exposes only presentation-safe tools', () => {
+test('none strategy keeps a synthetic runtime tool subset while disabling model tool calls', () => {
   const strategy = resolveToolRuntimeStrategy('openrouter', 'text-embedding-3-small');
 
   assert.equal(strategy.capabilityProfile.toolCalling, 'none');
-  assert.deepEqual(
-    strategy.tooling.availableToolNames.sort(),
-    ['presentWorkflowResult', 'reportProgress', 'requestRequiredAction'].sort(),
-  );
+  assert.ok(strategy.tooling.availableToolNames.includes('writeWorkspaceFile'));
+  assert.ok(strategy.tooling.availableToolNames.includes('n8nac'));
   assert.equal(strategy.tooling.toolCallMode, 'disabled');
+  assert.ok(strategy.executeDirectives.some((line) => /json objects only/i.test(line)));
 });

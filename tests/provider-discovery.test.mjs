@@ -102,3 +102,35 @@ test('primeProviderModelMetadata merges openrouter endpoint capabilities into ca
     assert.equal(metadata.endpointVariants?.[0]?.providerSlug, 'openai');
   });
 });
+
+test('primeProviderModelMetadata falls back to discovery metadata when endpoint metadata is unavailable', async () => {
+  await withMockedFetch(async (url) => {
+    const normalizedUrl = String(url);
+
+    if (normalizedUrl.endsWith('/models')) {
+      return new Response(JSON.stringify({
+        data: [
+          {
+            id: 'cohere/command-a',
+            supported_parameters: ['max_tokens', 'temperature'],
+            architecture: {
+              input_modalities: ['text'],
+              output_modalities: ['text'],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response('not found', { status: 404 });
+  }, async () => {
+    const metadata = await primeProviderModelMetadata('openrouter', 'cohere/command-a', 'or-key');
+
+    assert.ok(metadata);
+    assert.deepEqual(metadata.supportedParameters, ['max_tokens', 'temperature']);
+    assert.equal(metadata.endpointVariants, undefined);
+  });
+});
