@@ -20,11 +20,11 @@ test('compatible strategy keeps tools but pushes conservative directives', () =>
   assert.ok(strategy.executeDirectives.some((line) => /one tool at a time/i.test(line)));
 });
 
-test('none strategy exposes only minimal interaction tools', () => {
+test('weak strategy keeps execution in generate mode for google-proxy', () => {
   const strategy = resolveToolRuntimeStrategy('google-proxy', 'gemini-3-flash-preview');
 
-  assert.equal(strategy.capabilityProfile.toolCalling, 'none');
+  assert.equal(strategy.capabilityProfile.toolCalling, 'weak');
   assert.equal(strategy.executionMode, 'generate');
-  assert.deepEqual(strategy.allowedToolNames, ['reportProgress', 'requestRequiredAction']);
-  assert.ok(strategy.executeDirectives.some((line) => /does not expose operational tool calling cleanly/i.test(line)));
+  assert.equal(strategy.allowedToolNames, undefined);
+  assert.ok(strategy.executeDirectives.some((line) => /single decisive tool/i.test(line)));
 });

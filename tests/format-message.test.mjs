@@ -25,6 +25,7 @@ test('extractWorkflowEmbed returns embed from a workflow embed event', () => {
     workflowId: 'abc123',
     url: 'https://n8n.example.com/workflow/abc123',
     title: 'My Workflow',
+    diagram: '<workflow-map>\nStart --> Set\n</workflow-map>',
   };
   const embed = extractWorkflowEmbed(event);
   assert.deepEqual(embed, {
@@ -32,6 +33,7 @@ test('extractWorkflowEmbed returns embed from a workflow embed event', () => {
     url: 'https://n8n.example.com/workflow/abc123',
     targetUrl: undefined,
     title: 'My Workflow',
+    diagram: '<workflow-map>\nStart --> Set\n</workflow-map>',
   });
 });
 

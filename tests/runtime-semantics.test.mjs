@@ -14,6 +14,7 @@ import {
 } from '../dist/runtime/policy-hooks.js';
 import { collectRequiredActions } from '../dist/runtime/required-actions.js';
 import {
+  buildGroundedSummary,
   INTERNAL_TAG_CLOSE,
   INTERNAL_TAG_OPEN,
   sanitizeAssistantOutput,
@@ -393,6 +394,93 @@ test('successful push counts as validate and verify evidence for completion gati
 
   assert.equal(decision.accepted, true);
   assert.equal(decision.state, 'completed');
+});
+
+test('grounded summary prefers a user-facing workflow completion message when a workflow was pushed', () => {
+  const journal = [
+    {
+      timestamp: '2026-03-23T12:00:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'workflow pushed',
+      phase: 'sync',
+      stepNumber: 1,
+      step: {
+        stepNumber: 1,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'sync',
+        text: '',
+        toolCalls: [
+          { toolName: 'writeWorkspaceFile', args: { path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'n8nac', args: { action: 'push', filename: 'demo.workflow.ts' } },
+        ],
+        toolResults: [
+          { toolName: 'writeWorkspaceFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'n8nac', result: { exitCode: 0 } },
+        ],
+      },
+    },
+  ];
+
+  const summary = buildGroundedSummary('Create a workflow.', 'tool-calls', journal, []);
+
+  assert.match(summary, /workflow `demo` a ete cree/i);
+  assert.doesNotMatch(summary, /Le run s’est termine avec la raison/);
+});
+
+test('grounded summary includes workflow URL from presentWorkflowResult when available', () => {
+  const journal = [
+    {
+      timestamp: '2026-03-23T12:01:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'workflow presented',
+      phase: 'summarize',
+      stepNumber: 1,
+      step: {
+        stepNumber: 1,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'summarize',
+        text: '',
+        toolCalls: [
+          { toolName: 'presentWorkflowResult', args: { workflowId: 'wf-1', workflowUrl: 'http://localhost:5678/workflow/wf-1' } },
+        ],
+        toolResults: [
+          { toolName: 'presentWorkflowResult', result: { presented: true, workflowId: 'wf-1', workflowUrl: 'http://localhost:5678/workflow/wf-1', title: 'Demo Flow' } },
+        ],
+      },
+    },
+    {
+      timestamp: '2026-03-23T12:02:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'workflow pushed',
+      phase: 'sync',
+      stepNumber: 2,
+      step: {
+        stepNumber: 2,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'sync',
+        text: '',
+        toolCalls: [
+          { toolName: 'writeWorkspaceFile', args: { path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'n8nac', args: { action: 'push', filename: 'demo.workflow.ts' } },
+        ],
+        toolResults: [
+          { toolName: 'writeWorkspaceFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'n8nac', result: { exitCode: 0 } },
+        ],
+      },
+    },
+  ];
+
+  const summary = buildGroundedSummary('Create a workflow.', 'tool-calls', journal, []);
+
+  assert.match(summary, /Demo Flow/);
+  assert.match(summary, /http:\/\/localhost:5678\/workflow\/wf-1/);
 });
 
 test('completion gate stays blocked when a required action is still open', async () => {

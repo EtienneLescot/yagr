@@ -7,11 +7,17 @@ import type {
   LanguageModelV1,
   LanguageModelV1CallOptions,
   LanguageModelV1CallWarning,
+  LanguageModelV1FinishReason,
+  LanguageModelV1FunctionTool,
+  LanguageModelV1FunctionToolCall,
   LanguageModelV1Prompt,
   LanguageModelV1StreamPart,
+  LanguageModelV1ToolChoice,
 } from '@ai-sdk/provider';
+import { createGeminiProvider } from 'ai-sdk-provider-gemini-cli';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import type { YagrModelCapabilityProfile } from './model-capabilities.js';
+import { filterFunctionToolsForCapability, normalizeToolChoiceForCapability } from './model-capabilities.js';
 
 export const GEMINI_ACCOUNT_DEFAULT_MODEL = 'gemini-3-flash-preview';
 
@@ -107,6 +113,22 @@ interface CodeAssistGenerateResponse {
     };
   };
 }
+
+interface GeminiUnexpectedToolCandidate {
+  finishReason?: string;
+  finishMessage?: string;
+  content?: {
+    parts?: Array<{
+      text?: string;
+      functionCall?: {
+        name?: string;
+        args?: Record<string, unknown>;
+      };
+    }>;
+  };
+}
+
+type GeminiUnexpectedToolPart = NonNullable<NonNullable<GeminiUnexpectedToolCandidate['content']>['parts']>[number];
 
 export function getGeminiConfigDir(): string {
   return process.env.YAGR_GEMINI_CONFIG_DIR || path.join(os.homedir(), '.gemini');
@@ -254,11 +276,12 @@ export function createGeminiAccountLanguageModel(
     supportsImageUrls: false,
     supportsStructuredOutputs: Boolean(capabilityProfile?.supportsStructuredOutputs),
     async doGenerate(options) {
-      const execution = await runGeminiExec(modelId, options);
+      const execution = await runGeminiExec(modelId, options, capabilityProfile);
       return {
         text: execution.text,
         finishReason: execution.finishReason,
         usage: execution.usage,
+        ...(execution.toolCalls ? { toolCalls: execution.toolCalls } : {}),
         rawCall: {
           rawPrompt: options.prompt,
           rawSettings: { modelId },
@@ -271,118 +294,25 @@ export function createGeminiAccountLanguageModel(
       };
     },
     async doStream(options) {
-      const session = await ensureGeminiAccountSession();
-      if (!session) {
-        throw new Error('Gemini OAuth session not found. Run `yagr setup` again.');
-      }
-      const warnings = buildGeminiWarnings(options);
-      const project = await resolveCodeAssistProject(session);
-      const { systemInstruction, contents } = convertToGeminiFormat(options.prompt);
-
-      const abortController = new AbortController();
-      const timeoutTimer = setTimeout(() => abortController.abort(), 120_000);
-
-      let fetchResponse: Response;
-      try {
-        fetchResponse = await fetch(
-          `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:streamGenerateContent?alt=sse`,
-          {
-            method: 'POST',
-            signal: abortController.signal,
-            headers: {
-              Authorization: `Bearer ${session.accessToken}`,
-              'Content-Type': 'application/json',
-              Accept: 'text/event-stream',
-              'User-Agent': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
-              'X-Goog-Api-Client': `gl-node/${process.versions.node}`,
-              'Client-Metadata': CODE_ASSIST_CLIENT_METADATA,
-            },
-            body: JSON.stringify({
-              model: modelId,
-              project,
-              request: {
-                ...(systemInstruction ? { systemInstruction } : {}),
-                contents,
-              },
-              userAgent: 'yagr',
-            }),
-          },
-        );
-      } catch (error) {
-        clearTimeout(timeoutTimer);
-        throw error;
-      }
-
-      if (!fetchResponse.ok) {
-        clearTimeout(timeoutTimer);
-        const body = await fetchResponse.text().catch(() => '');
-        throw formatCodeAssistError(fetchResponse.status, body, modelId);
-      }
-
-      const responseBody = fetchResponse.body;
+      const execution = await runGeminiExec(modelId, options, capabilityProfile);
       const stream = new ReadableStream<LanguageModelV1StreamPart>({
-        async start(controller) {
-          if (!responseBody) {
-            clearTimeout(timeoutTimer);
-            controller.enqueue({ type: 'finish', finishReason: 'stop', usage: { promptTokens: 0, completionTokens: 0 } });
-            controller.close();
-            return;
+        start(controller) {
+          if (execution.text) {
+            controller.enqueue({ type: 'text-delta', textDelta: execution.text });
           }
-          try {
-            const reader = responseBody.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let promptTokens = 0;
-            let completionTokens = 0;
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-              buffer = lines.pop() ?? '';
-
-              for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const data = line.slice(6).trim();
-                if (!data || data === '[DONE]') continue;
-                try {
-                  const chunk = JSON.parse(data) as CodeAssistGenerateResponse;
-                  const parts = chunk.response?.candidates?.[0]?.content?.parts ?? [];
-                  for (const part of parts) {
-                    if (part.text) {
-                      controller.enqueue({ type: 'text-delta', textDelta: part.text });
-                    }
-                  }
-                  if (chunk.response?.usageMetadata) {
-                    promptTokens = chunk.response.usageMetadata.promptTokenCount ?? promptTokens;
-                    completionTokens = chunk.response.usageMetadata.candidatesTokenCount ?? completionTokens;
-                  }
-                } catch {
-                  // Malformed SSE chunk — skip
-                }
-              }
-            }
-
-            clearTimeout(timeoutTimer);
-            controller.enqueue({ type: 'finish', finishReason: 'stop', usage: { promptTokens, completionTokens } });
-            controller.close();
-          } catch (error) {
-            clearTimeout(timeoutTimer);
-            controller.error(error);
-          }
-        },
-        cancel() {
-          clearTimeout(timeoutTimer);
-          abortController.abort();
+          controller.enqueue({
+            type: 'finish',
+            finishReason: execution.finishReason,
+            usage: execution.usage,
+          });
+          controller.close();
         },
       });
 
       return {
         stream,
         rawCall: { rawPrompt: options.prompt, rawSettings: { modelId } },
-        warnings,
+        warnings: execution.warnings,
       };
     },
   };
@@ -455,13 +385,15 @@ function convertToGeminiFormat(prompt: LanguageModelV1Prompt): GeminiConvertedPr
 async function runGeminiExec(
   modelId: string,
   options: Pick<LanguageModelV1CallOptions, 'prompt' | 'mode' | 'inputFormat'>,
+  capabilityProfile?: YagrModelCapabilityProfile,
 ): Promise<{
   text: string;
-  finishReason: 'stop' | 'error';
+  finishReason: LanguageModelV1FinishReason;
   usage: {
     promptTokens: number;
     completionTokens: number;
   };
+  toolCalls?: LanguageModelV1FunctionToolCall[];
   warnings: LanguageModelV1CallWarning[];
 }> {
   const session = await ensureGeminiAccountSession();
@@ -469,44 +401,23 @@ async function runGeminiExec(
     throw new Error('Gemini OAuth session not found. Run `yagr setup` again.');
   }
 
-  const warnings = buildGeminiWarnings(options);
-  const { systemInstruction, contents } = convertToGeminiFormat(options.prompt);
-  const project = await resolveCodeAssistProject(session);
-  const response = await fetchWithTimeout(`${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:generateContent`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${session.accessToken}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'User-Agent': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
-      'X-Goog-Api-Client': `gl-node/${process.versions.node}`,
-      'Client-Metadata': CODE_ASSIST_CLIENT_METADATA,
-    },
-    body: JSON.stringify({
-      model: modelId,
-      project,
-      request: {
-        ...(systemInstruction ? { systemInstruction } : {}),
-        contents,
-      },
-      userAgent: 'yagr',
-    }),
-  }, 30_000);
+  syncGeminiCliFiles(session);
+  await resolveCodeAssistProject(session);
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw formatCodeAssistError(response.status, body, modelId);
-  }
-
-  const payload = await response.json() as CodeAssistGenerateResponse;
-  const text = payload.response?.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim() || '';
+  const gemini = createGeminiProvider({ authType: 'oauth-personal' });
+  const model = gemini(modelId);
+  const response = await model.doGenerate(options);
+  const synthesizedToolCalls = extractGeminiToolCallsFromRawResponse(response.rawResponse?.body, options.mode, capabilityProfile);
+  const warnings = mergeGeminiWarnings(response.warnings ?? [], buildGeminiWarnings(options, capabilityProfile));
+  const text = synthesizedToolCalls.length > 0 ? '' : (response.text || '').trim();
   return {
     text,
-    finishReason: 'stop',
+    finishReason: synthesizedToolCalls.length > 0 ? 'tool-calls' : response.finishReason,
     usage: {
-      promptTokens: payload.response?.usageMetadata?.promptTokenCount ?? 0,
-      completionTokens: payload.response?.usageMetadata?.candidatesTokenCount ?? 0,
+      promptTokens: response.usage.promptTokens,
+      completionTokens: response.usage.completionTokens,
     },
+    ...(synthesizedToolCalls.length > 0 ? { toolCalls: synthesizedToolCalls } : response.toolCalls ? { toolCalls: response.toolCalls } : {}),
     warnings,
   };
 }
@@ -993,16 +904,355 @@ async function resolveGoogleEmail(accessToken: string): Promise<string | undefin
   }
 }
 
-function buildGeminiWarnings(options: Pick<LanguageModelV1CallOptions, 'mode'>): LanguageModelV1CallWarning[] {
+function getGeminiFunctionTools(
+  mode: LanguageModelV1CallOptions['mode'],
+  capabilityProfile?: YagrModelCapabilityProfile,
+): LanguageModelV1FunctionTool[] {
+  if (mode.type !== 'regular' || !Array.isArray(mode.tools) || mode.tools.length === 0) {
+    return [];
+  }
+
+  const tools = mode.tools.filter((tool): tool is LanguageModelV1FunctionTool => tool.type === 'function');
+  return capabilityProfile ? filterFunctionToolsForCapability(tools, capabilityProfile) : tools;
+}
+
+function buildGeminiWarnings(
+  options: Pick<LanguageModelV1CallOptions, 'mode'>,
+  capabilityProfile?: YagrModelCapabilityProfile,
+): LanguageModelV1CallWarning[] {
   if (options.mode.type !== 'regular' || !options.mode.tools || options.mode.tools.length === 0) {
     return [];
   }
 
-  return options.mode.tools.map((tool) => ({
-    type: 'unsupported-tool',
-    tool,
-    details: 'Gemini OAuth currently executes through Code Assist runtime and does not expose Yagr tool-calls yet.',
-  }));
+  const supportedFunctionTools = new Set(getGeminiFunctionTools(options.mode, capabilityProfile));
+  return options.mode
+    .tools
+    .filter((tool) => tool.type !== 'function' || !supportedFunctionTools.has(tool))
+    .map((tool) => ({
+      type: 'unsupported-tool' as const,
+      tool,
+      details: 'google-proxy currently supports only function tools through the Gemini CLI/Code Assist backend.',
+    }));
+}
+
+function mergeGeminiWarnings(
+  primary: LanguageModelV1CallWarning[],
+  secondary: LanguageModelV1CallWarning[],
+): LanguageModelV1CallWarning[] {
+  const merged = [...primary];
+  const seen = new Set(primary.map((warning) => JSON.stringify(warning)));
+  for (const warning of secondary) {
+    const key = JSON.stringify(warning);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(warning);
+  }
+  return merged;
+}
+
+function extractGeminiToolCallsFromRawResponse(
+  rawBody: unknown,
+  mode: LanguageModelV1CallOptions['mode'],
+  capabilityProfile?: YagrModelCapabilityProfile,
+): LanguageModelV1FunctionToolCall[] {
+  if (mode.type !== 'regular') {
+    return [];
+  }
+
+  const supportedTools = getGeminiFunctionTools(mode, capabilityProfile);
+  if (supportedTools.length === 0) {
+    return [];
+  }
+
+  const candidate = extractGeminiUnexpectedToolCandidate(rawBody);
+  const explicitToolCalls = extractGeminiToolCallsFromParts(candidate?.content?.parts);
+  if (explicitToolCalls.length > 0) {
+    return explicitToolCalls;
+  }
+
+  const finishReason = String(candidate?.finishReason || '').trim().toUpperCase();
+  const finishMessage = String(candidate?.finishMessage || '').trim();
+  if (finishReason !== 'UNEXPECTED_TOOL_CALL' || !finishMessage) {
+    return [];
+  }
+
+  const parsed = parseGeminiUnexpectedToolCallFinishMessage(finishMessage);
+  if (!parsed || !supportedTools.some((tool) => tool.name === parsed.toolName)) {
+    return [];
+  }
+
+  return [{
+    toolCallType: 'function',
+    toolCallId: randomBytes(12).toString('hex'),
+    toolName: parsed.toolName,
+    args: JSON.stringify(parsed.args),
+  }];
+}
+
+function extractGeminiUnexpectedToolCandidate(rawBody: unknown): GeminiUnexpectedToolCandidate | undefined {
+  if (!rawBody || typeof rawBody !== 'object') {
+    return undefined;
+  }
+
+  const candidates = (rawBody as { candidates?: unknown[] }).candidates;
+  if (!Array.isArray(candidates) || candidates.length === 0 || !candidates[0] || typeof candidates[0] !== 'object') {
+    return undefined;
+  }
+
+  return candidates[0] as GeminiUnexpectedToolCandidate;
+}
+
+function extractGeminiToolCallsFromParts(parts: GeminiUnexpectedToolPart[] | undefined): LanguageModelV1FunctionToolCall[] {
+  if (!Array.isArray(parts)) {
+    return [];
+  }
+
+  const toolCalls: LanguageModelV1FunctionToolCall[] = [];
+  for (const part of parts) {
+    if (!part?.functionCall?.name) {
+      continue;
+    }
+
+    toolCalls.push({
+      toolCallType: 'function',
+      toolCallId: randomBytes(12).toString('hex'),
+      toolName: part.functionCall.name,
+      args: JSON.stringify(part.functionCall.args ?? {}),
+    });
+  }
+
+  return toolCalls;
+}
+
+export function parseGeminiUnexpectedToolCallFinishMessage(
+  message: string,
+): { toolName: string; args: Record<string, unknown> } | undefined {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const withoutPrefix = trimmed.replace(/^unexpected tool call:\s*/i, '').trim();
+  const expression = unwrapPrintCall(withoutPrefix);
+  const parsedCall = parseGeminiCallExpression(expression);
+  if (!parsedCall) {
+    return undefined;
+  }
+
+  return parsedCall;
+}
+
+function unwrapPrintCall(expression: string): string {
+  let current = expression.trim();
+  while (/^print\s*\(/i.test(current) && current.endsWith(')')) {
+    current = current.replace(/^print\s*\(/i, '').slice(0, -1).trim();
+  }
+  return current;
+}
+
+function parseGeminiCallExpression(expression: string): { toolName: string; args: Record<string, unknown> } | undefined {
+  const openIndex = expression.indexOf('(');
+  const closeIndex = expression.lastIndexOf(')');
+  if (openIndex <= 0 || closeIndex <= openIndex) {
+    return undefined;
+  }
+
+  const toolName = expression.slice(0, openIndex).trim();
+  if (!toolName) {
+    return undefined;
+  }
+
+  const argsSource = expression.slice(openIndex + 1, closeIndex).trim();
+  if (!argsSource) {
+    return { toolName, args: {} };
+  }
+
+  if (argsSource.startsWith('{') || argsSource.startsWith('[')) {
+    const parsedJson = parseRelaxedJsonLike(argsSource);
+    if (parsedJson && typeof parsedJson === 'object' && !Array.isArray(parsedJson)) {
+      return { toolName, args: parsedJson as Record<string, unknown> };
+    }
+  }
+
+  const args: Record<string, unknown> = {};
+  for (const argument of splitTopLevelArguments(argsSource)) {
+    const separatorIndex = findTopLevelAssignment(argument);
+    if (separatorIndex === -1) {
+      return undefined;
+    }
+
+    const key = argument.slice(0, separatorIndex).trim();
+    const rawValue = argument.slice(separatorIndex + 1).trim();
+    if (!key) {
+      return undefined;
+    }
+    args[key] = parseGeminiArgumentValue(rawValue);
+  }
+
+  return { toolName, args };
+}
+
+function splitTopLevelArguments(source: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let quote: '\'' | '"' | null = null;
+  let escape = false;
+  let depth = 0;
+
+  for (const character of source) {
+    if (escape) {
+      current += character;
+      escape = false;
+      continue;
+    }
+
+    if (character === '\\') {
+      current += character;
+      escape = true;
+      continue;
+    }
+
+    if (quote) {
+      current += character;
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === '\'' || character === '"') {
+      current += character;
+      quote = character;
+      continue;
+    }
+
+    if (character === '(' || character === '[' || character === '{') {
+      depth += 1;
+      current += character;
+      continue;
+    }
+
+    if (character === ')' || character === ']' || character === '}') {
+      depth = Math.max(0, depth - 1);
+      current += character;
+      continue;
+    }
+
+    if (character === ',' && depth === 0) {
+      if (current.trim()) {
+        parts.push(current.trim());
+      }
+      current = '';
+      continue;
+    }
+
+    current += character;
+  }
+
+  if (current.trim()) {
+    parts.push(current.trim());
+  }
+
+  return parts;
+}
+
+function findTopLevelAssignment(source: string): number {
+  let quote: '\'' | '"' | null = null;
+  let escape = false;
+  let depth = 0;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (character === '\\') {
+      escape = true;
+      continue;
+    }
+
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === '\'' || character === '"') {
+      quote = character;
+      continue;
+    }
+
+    if (character === '(' || character === '[' || character === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (character === ')' || character === ']' || character === '}') {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+
+    if (character === '=' && depth === 0) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function parseGeminiArgumentValue(rawValue: string): unknown {
+  const value = rawValue.trim();
+  if (!value) {
+    return '';
+  }
+
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith('\'') && value.endsWith('\''))) {
+    return value.slice(1, -1).replace(/\\'/g, '\'').replace(/\\"/g, '"');
+  }
+
+  if (/^(true|false)$/i.test(value)) {
+    return value.toLowerCase() === 'true';
+  }
+
+  if (/^(none|null)$/i.test(value)) {
+    return null;
+  }
+
+  if (/^-?\d+(?:\.\d+)?$/.test(value)) {
+    return Number(value);
+  }
+
+  if (value.startsWith('{') || value.startsWith('[')) {
+    const parsedJson = parseRelaxedJsonLike(value);
+    if (parsedJson !== undefined) {
+      return parsedJson;
+    }
+  }
+
+  return value;
+}
+
+function parseRelaxedJsonLike(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    try {
+      return JSON.parse(
+        value
+          .replace(/\bNone\b/g, 'null')
+          .replace(/\bTrue\b/g, 'true')
+          .replace(/\bFalse\b/g, 'false')
+          .replace(/'/g, '"'),
+      );
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
