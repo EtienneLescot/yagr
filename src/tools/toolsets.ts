@@ -26,6 +26,12 @@ export const WORKFLOW_EXECUTION_TOOL_NAMES = [
   'n8nac',
 ] as const;
 
+export const MATERIAL_RUNTIME_TOOL_NAMES = [
+  ...EDIT_TOOL_NAMES,
+  ...WORKFLOW_EXECUTION_TOOL_NAMES,
+  'presentWorkflowResult',
+] as const;
+
 export const FULL_RUNTIME_TOOL_NAMES = [
   ...CORE_TOOL_NAMES,
   ...DISCOVERY_TOOL_NAMES,

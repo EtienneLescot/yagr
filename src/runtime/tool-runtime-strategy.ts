@@ -3,6 +3,7 @@ import type { YagrModelProvider } from '../llm/provider-registry.js';
 import {
   CORE_TOOL_NAMES,
   FULL_RUNTIME_TOOL_NAMES,
+  MATERIAL_RUNTIME_TOOL_NAMES,
   MINIMAL_RUNTIME_TOOL_NAMES,
   POST_SYNC_RUNTIME_TOOL_NAMES,
   SYNTHETIC_RUNTIME_TOOL_NAMES,
@@ -39,21 +40,21 @@ function buildToolingPolicy(capabilityProfile: YagrModelCapabilityProfile): Yagr
         availableToolNames: [...FULL_RUNTIME_TOOL_NAMES],
         allowedToolNamesAfterWorkflowSync: [...POST_SYNC_RUNTIME_TOOL_NAMES],
         toolCallMode: capabilityProfile.supportsParallelToolCalls ? 'parallel' : 'sequential',
-        executionCriticalToolNames: [...FULL_RUNTIME_TOOL_NAMES].filter((toolName) => !CORE_TOOL_NAMES.includes(toolName as any)),
+        executionCriticalToolNames: [...MATERIAL_RUNTIME_TOOL_NAMES],
       };
     case 'compatible':
       return {
         availableToolNames: [...FULL_RUNTIME_TOOL_NAMES],
         allowedToolNamesAfterWorkflowSync: [...POST_SYNC_RUNTIME_TOOL_NAMES],
         toolCallMode: 'sequential',
-        executionCriticalToolNames: [...FULL_RUNTIME_TOOL_NAMES].filter((toolName) => !CORE_TOOL_NAMES.includes(toolName as any)),
+        executionCriticalToolNames: [...MATERIAL_RUNTIME_TOOL_NAMES],
       };
     case 'weak':
       return {
         availableToolNames: [...FULL_RUNTIME_TOOL_NAMES],
         allowedToolNamesAfterWorkflowSync: [...POST_SYNC_RUNTIME_TOOL_NAMES],
         toolCallMode: 'sequential',
-        executionCriticalToolNames: [...FULL_RUNTIME_TOOL_NAMES].filter((toolName) => !CORE_TOOL_NAMES.includes(toolName as any)),
+        executionCriticalToolNames: [...MATERIAL_RUNTIME_TOOL_NAMES],
       };
     case 'none':
       return {

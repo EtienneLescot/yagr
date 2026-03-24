@@ -6,6 +6,8 @@ export interface CompletionGateInput {
   finishReason: string;
   requiredActions: YagrRequiredAction[];
   satisfiedRequiredActionIds?: string[];
+  attemptedMaterialWork: boolean;
+  hasConcreteResult: boolean;
   hasWorkflowWrites: boolean;
   successfulValidate: boolean;
   successfulPush: boolean;
@@ -20,6 +22,7 @@ export interface CompletionGateDecision {
   reasons: string[];
   requiredActions: YagrRequiredAction[];
   state: YagrAgentState;
+  needsContinuation: boolean;
 }
 
 export async function evaluateCompletionGate(input: CompletionGateInput): Promise<CompletionGateDecision> {
@@ -27,9 +30,14 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
   const satisfiedRequiredActionIds = new Set(input.satisfiedRequiredActionIds ?? []);
   const requiredActions = input.requiredActions.filter((action) => !satisfiedRequiredActionIds.has(action.id));
   const hasBlockingWorkflowFailures = input.hasWorkflowWrites && input.unresolvedFailureCount > 0;
+  const needsContinuation = input.attemptedMaterialWork && !input.hasConcreteResult && requiredActions.length === 0;
 
   if (requiredActions.length > 0) {
     reasons.push('Required action is still open.');
+  }
+
+  if (needsContinuation) {
+    reasons.push('Run ended without a concrete result or a structured blocker.');
   }
 
   if (hasBlockingWorkflowFailures) {
@@ -76,6 +84,7 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
       reasons,
       requiredActions,
       state: blockingState,
+      needsContinuation,
     };
   }
 
@@ -85,6 +94,7 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
       reasons,
       requiredActions,
       state: hasBlockingWorkflowFailures ? 'failed_terminal' : 'resumable',
+      needsContinuation,
     };
   }
 
@@ -93,5 +103,6 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
     reasons: [],
     requiredActions,
     state: 'completed',
+    needsContinuation: false,
   };
 }
