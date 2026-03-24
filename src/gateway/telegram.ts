@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import { Telegraf } from 'telegraf';
 import { YagrSessionAgent } from '../agent.js';
-import { YagrConfigService, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
+import { YagrConfigService, type YagrConfigStoreLike, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import type { EngineRuntimePort } from '../engine/engine.js';
 import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
@@ -212,7 +212,7 @@ export function showTelegramOnboarding(configService = new YagrConfigService()):
   qrcode.generate(status.deepLink, { small: true });
 }
 
-export function getTelegramGatewayStatus(configService = new YagrConfigService()): TelegramGatewayStatus {
+export function getTelegramGatewayStatus(configService: YagrConfigStoreLike = new YagrConfigService()): TelegramGatewayStatus {
   return new YagrSetupApplicationService(configService, new YagrN8nConfigService()).getTelegramStatus();
 }
 

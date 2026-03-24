@@ -221,12 +221,23 @@ function findWorkspaceWorkflowCandidates(filename: string): string[] {
     return [];
   }
 
+  const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.nuxt', 'coverage', '.cache']);
+
   const matches: string[] = [];
   const visit = (dirPath: string) => {
-    for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
-      const entryPath = path.join(dirPath, entry.name);
+    let entries;
+    try {
+      entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
       if (entry.isDirectory()) {
-        visit(entryPath);
+        if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) {
+          continue;
+        }
+        visit(path.join(dirPath, entry.name));
         continue;
       }
 
@@ -234,6 +245,7 @@ function findWorkspaceWorkflowCandidates(filename: string): string[] {
         continue;
       }
 
+      const entryPath = path.join(dirPath, entry.name);
       if (entry.name === target || relativeWorkspacePath(entryPath) === target) {
         matches.push(entryPath);
       }

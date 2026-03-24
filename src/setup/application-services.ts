@@ -5,6 +5,7 @@ import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
 import {
   normalizeGatewaySurfaces,
   type YagrConfigService,
+  type YagrConfigStoreLike,
   type YagrLocalConfig,
   type YagrTelegramLinkedChat,
 } from '../config/yagr-config-service.js';
@@ -34,22 +35,7 @@ interface SetupApplicationServiceDependencies {
   fetchAvailableModels?: (provider: YagrModelProvider, apiKey?: string, baseUrl?: string) => Promise<string[]>;
 }
 
-interface YagrConfigStoreLike {
-  getLocalConfig(): YagrLocalConfig;
-  saveLocalConfig(config: YagrLocalConfig): void;
-  updateLocalConfig(updater: (config: YagrLocalConfig) => YagrLocalConfig): YagrLocalConfig;
-  getEnabledGatewaySurfaces(): GatewaySurface[];
-  setEnabledGatewaySurfaces(surfaces: GatewaySurface[]): YagrLocalConfig;
-  enableGatewaySurface(surface: GatewaySurface): YagrLocalConfig;
-  disableGatewaySurface(surface: GatewaySurface): YagrLocalConfig;
-  getApiKey(provider: YagrModelProvider): string | undefined;
-  saveApiKey(provider: YagrModelProvider, apiKey: string): void;
-  getTelegramBotToken(): string | undefined;
-  saveTelegramBotToken(botToken: string): void;
-  clearTelegramBotToken(): void;
-  clearLocalConfig?(): void;
-  clearAllApiKeys?(): void;
-}
+
 
 interface YagrN8nConfigStoreLike {
   getLocalConfig(): {
