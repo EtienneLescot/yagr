@@ -165,7 +165,7 @@ export async function setupTelegramGateway(configService = new YagrConfigService
 }
 
 export function showTelegramOnboarding(configService = new YagrConfigService()): void {
-  const status = getTelegramGatewayStatus(configService);
+  const status = new YagrSetupApplicationService(configService, new YagrN8nConfigService()).getTelegramStatus();
 
   if (!status.configured || !status.botUsername || !status.deepLink) {
     throw new Error('Telegram is not configured. Run `yagr telegram setup` first.');
@@ -186,20 +186,7 @@ export function showTelegramOnboarding(configService = new YagrConfigService()):
 }
 
 export function getTelegramGatewayStatus(configService = new YagrConfigService()): TelegramGatewayStatus {
-  const localConfig = configService.getLocalConfig();
-  const telegram = localConfig.telegram;
-  const botToken = configService.getTelegramBotToken();
-  const linkedChats = telegram?.linkedChats ?? [];
-  const deepLink = telegram?.botUsername && telegram.onboardingToken
-    ? buildTelegramDeepLink(telegram.botUsername, telegram.onboardingToken)
-    : undefined;
-
-  return {
-    configured: Boolean(botToken && telegram?.botUsername && telegram?.onboardingToken),
-    botUsername: telegram?.botUsername,
-    linkedChats,
-    deepLink,
-  };
+  return new YagrSetupApplicationService(configService, new YagrN8nConfigService()).getTelegramStatus();
 }
 
 export function resetTelegramGateway(configService = new YagrConfigService()): void {
@@ -211,9 +198,8 @@ export function createTelegramGatewayRuntime(
   options: TelegramGatewayRuntimeOptions = {},
   configService = new YagrConfigService(),
 ): GatewayRuntimeHandle {
-  const status = getTelegramGatewayStatus(configService);
-  const botToken = options.botToken ?? configService.getTelegramBotToken();
-  const onboardingToken = configService.getLocalConfig().telegram?.onboardingToken;
+  const setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
+  const { status, botToken, onboardingToken } = setupService.getTelegramRuntimeConfig(options.botToken);
 
   if (!botToken || !status.botUsername || !onboardingToken) {
     throw new Error('Telegram is not configured. Run `yagr telegram setup` first.');
@@ -254,7 +240,7 @@ class TelegramGateway implements Gateway {
   }
 
   private buildDeepLink(): string {
-    const botUsername = this.configService.getLocalConfig().telegram?.botUsername ?? '';
+    const botUsername = this.setupService.getTelegramStatus().botUsername ?? '';
     return buildTelegramDeepLink(botUsername, this.onboardingToken);
   }
 

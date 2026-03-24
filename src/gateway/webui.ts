@@ -11,10 +11,7 @@ import { YagrAgent } from '../agent.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import type { Engine } from '../engine/engine.js';
-import {
-  getTelegramGatewayStatus,
-  resolveTelegramBotIdentity,
-} from './telegram.js';
+import { resolveTelegramBotIdentity } from './telegram.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 import type {
@@ -26,7 +23,6 @@ import type {
   YagrToolEvent,
 } from '../types.js';
 import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
-import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import {
   providerRequiresApiKey,
   YAGR_SELECTABLE_MODEL_PROVIDERS,
@@ -211,10 +207,9 @@ class WebUiGateway implements Gateway {
     if (method === 'POST' && url.pathname === '/api/n8n/projects') {
       const body = await this.readJson(request);
       const projects = await this.setupService.fetchN8nProjects(String(body.host ?? ''), body.apiKey ? String(body.apiKey) : undefined);
-      const current = new YagrN8nConfigService().getLocalConfig();
       this.sendJson(response, 200, {
         projects: projects.map((project) => ({ id: project.id, name: getDisplayProjectName(project) })),
-        selectedProjectId: current.projectId,
+        selectedProjectId: this.setupService.getSelectedN8nProjectId(),
       });
       return;
     }
@@ -237,19 +232,13 @@ class WebUiGateway implements Gateway {
     if (method === 'POST' && url.pathname === '/api/llm/models') {
       const body = await this.readJson(request);
       const provider = this.assertProvider(String(body.provider ?? ''));
-      const apiKey = body.apiKey !== undefined ? String(body.apiKey) : this.configService.getApiKey(provider);
-      if (providerRequiresApiKey(provider) && !apiKey) {
-        throw new Error(`No API key available for ${provider}. Save one first.`);
-      }
-      const configuredLlm = this.configService.getLocalConfig();
-      const baseUrl = body.baseUrl
-        ? String(body.baseUrl)
-        : configuredLlm.provider === provider
-          ? configuredLlm.baseUrl
-          : undefined;
-
       this.sendJson(response, 200, {
-        models: await fetchAvailableModels(provider, apiKey, baseUrl),
+        models: await this.setupService.fetchModelsForSelection({
+          provider,
+          apiKey: body.apiKey !== undefined ? String(body.apiKey) : undefined,
+          baseUrl: body.baseUrl ? String(body.baseUrl) : undefined,
+          requiresApiKey: providerRequiresApiKey,
+        }),
       });
       return;
     }
@@ -368,11 +357,9 @@ class WebUiGateway implements Gateway {
   }
 
   private async buildSnapshot(): Promise<Record<string, unknown>> {
-    const telegramStatus = getTelegramGatewayStatus(this.configService);
     const webUiStatus = getWebUiGatewayStatus(this.configService);
     return this.setupService.buildWebUiSnapshot({
       activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
-      telegramStatus,
       webUiStatus,
       selectableProviders: VALID_PROVIDERS,
     });

@@ -199,12 +199,6 @@ test('buildWebUiSnapshot centralizes setup and config state for the Web UI', asy
 
   const snapshot = await service.buildWebUiSnapshot({
     activeSurfaces: ['webui'],
-    telegramStatus: {
-      configured: true,
-      botUsername: 'yagr_bot',
-      linkedChats: [],
-      deepLink: 'https://t.me/yagr_bot?start=token',
-    },
     webUiStatus: {
       configured: true,
       host: '127.0.0.1',

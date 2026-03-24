@@ -139,6 +139,10 @@ Dette structurelle:
 
 - certaines facades portent aussi des commandes applicatives et de configuration
 
+Observation actuelle:
+
+- la WebUI et Telegram deleguent maintenant l'essentiel des mutations setup/config au service applicatif partage
+
 ### `src/setup.ts` et `src/setup/`
 
 Role actuel:
