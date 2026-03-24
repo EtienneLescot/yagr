@@ -444,11 +444,12 @@ export function buildGroundedSummary(
   const outcome = analyzeRunOutcome(journal);
   const workflowLabel = extractWorkflowLabel(outcome, journal);
   const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
+  const presentedWorkflowUrl = presentedWorkflow?.workflowUrl;
 
   if (outcome.hasWorkflowWrites && outcome.successfulPush) {
     const workflowName = presentedWorkflow?.title || workflowLabel || 'le workflow';
     const completionBits = [
-      `Le workflow ${workflowName === 'le workflow' ? workflowName : `\`${workflowName}\``} a ete cree`,
+      `Le workflow ${workflowName === 'le workflow' ? workflowName : `\`${workflowName}\``} est pret`,
       outcome.successfulValidate ? 'valide' : undefined,
       outcome.successfulPush ? 'pousse vers n8n' : undefined,
       outcome.successfulVerify ? 'verifie' : undefined,
@@ -458,8 +459,32 @@ export function buildGroundedSummary(
       lines.push(`${completionBits.join(', ')}.`);
     }
 
-    if (presentedWorkflow?.workflowUrl) {
-      lines.push(`Workflow: ${presentedWorkflow.workflowUrl}`);
+    if (presentedWorkflowUrl) {
+      lines.push(`Lien du workflow: ${presentedWorkflowUrl}`);
+    }
+  }
+
+  if (lines.length === 0 && presentedWorkflowUrl) {
+    const workflowName = presentedWorkflow.title || workflowLabel || 'le workflow';
+    lines.push(
+      workflowName === 'le workflow'
+        ? 'Le workflow est pret.'
+        : `Le workflow \`${workflowName}\` est pret.`,
+    );
+    lines.push(`Lien du workflow: ${presentedWorkflowUrl}`);
+  } else if (lines.length === 0 && presentedWorkflow?.title) {
+    lines.push(`Le workflow \`${presentedWorkflow.title}\` est pret.`);
+  }
+
+  if (lines.length > 0 && presentedWorkflowUrl && !lines.some((line) => line.includes(presentedWorkflowUrl))) {
+    lines.push(`Lien du workflow: ${presentedWorkflowUrl}`);
+  }
+
+  if (lines.length > 0 && lines.every((line) => !/^La carte du workflow/i.test(line)) && presentedWorkflow) {
+    if (presentedWorkflow.workflowUrl) {
+      lines.push('La carte du workflow ci-dessous contient le lien direct et le schema.');
+    } else {
+      lines.push('La carte du workflow ci-dessous contient le schema associe.');
     }
   }
 

@@ -425,7 +425,8 @@ test('grounded summary prefers a user-facing workflow completion message when a 
 
   const summary = buildGroundedSummary('Create a workflow.', 'tool-calls', journal, []);
 
-  assert.match(summary, /workflow `demo` a ete cree/i);
+  assert.match(summary, /workflow `demo` est pret/i);
+  assert.doesNotMatch(summary, /carte du workflow ci-dessous/i);
   assert.doesNotMatch(summary, /Le run s’est termine avec la raison/);
 });
 
@@ -480,7 +481,42 @@ test('grounded summary includes workflow URL from presentWorkflowResult when ava
   const summary = buildGroundedSummary('Create a workflow.', 'tool-calls', journal, []);
 
   assert.match(summary, /Demo Flow/);
-  assert.match(summary, /http:\/\/localhost:5678\/workflow\/wf-1/);
+  assert.match(summary, /Lien du workflow: http:\/\/localhost:5678\/workflow\/wf-1/);
+  assert.match(summary, /carte du workflow ci-dessous/i);
+});
+
+test('grounded summary stays user-facing when a workflow was only presented', () => {
+  const journal = [
+    {
+      timestamp: '2026-03-23T12:03:00.000Z',
+      type: 'step',
+      status: 'completed',
+      message: 'workflow presented',
+      phase: 'summarize',
+      stepNumber: 1,
+      step: {
+        stepNumber: 1,
+        stepType: 'tool-result',
+        finishReason: 'tool-calls',
+        phase: 'summarize',
+        text: '',
+        toolCalls: [
+          { toolName: 'presentWorkflowResult', args: { workflowId: 'wf-2', workflowUrl: 'http://localhost:5678/workflow/wf-2', title: 'Existing Flow' } },
+        ],
+        toolResults: [
+          { toolName: 'presentWorkflowResult', result: { presented: true, workflowId: 'wf-2', workflowUrl: 'http://localhost:5678/workflow/wf-2', title: 'Existing Flow' } },
+        ],
+      },
+    },
+  ];
+
+  const summary = buildGroundedSummary('Show me the workflow.', 'stop', journal, []);
+
+  assert.match(summary, /workflow `Existing Flow` est pret/i);
+  assert.match(summary, /Lien du workflow: http:\/\/localhost:5678\/workflow\/wf-2/);
+  assert.match(summary, /carte du workflow ci-dessous/i);
+  assert.doesNotMatch(summary, /Fichiers /);
+  assert.doesNotMatch(summary, /Actions n8nac/);
 });
 
 test('completion gate stays blocked when a required action is still open', async () => {
