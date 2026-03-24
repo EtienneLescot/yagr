@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import './config/init-yagr-home.js';
 import os from 'node:os';
+import fs from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js';
@@ -48,7 +49,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
   startTarget?: 'webui' | 'tui';
   n8nLocalRuntime?: 'docker' | 'direct';
   prompt?: string;
@@ -153,6 +154,11 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   if (argv[0] === 'gateway' && argv[1] === 'start') {
     parsed.command = 'gateway-start';
+    startIndex = 2;
+  }
+
+  if (argv[0] === 'gateway' && argv[1] === 'worker') {
+    parsed.command = 'gateway-worker';
     startIndex = 2;
   }
 
@@ -398,22 +404,28 @@ async function runWithSpinner<T>(message: string, task: () => Promise<T>, detail
 
 async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
   const { spawn } = await import('node:child_process');
-  const { writeGatewayPid } = await import('./config/gateway-daemon.js');
+  const { getGatewayLogPath, writeGatewayPid } = await import('./config/gateway-daemon.js');
 
   const extraArgs: string[] = [];
   if (args.provider) extraArgs.push('--provider', args.provider);
   if (args.model) extraArgs.push('--model', args.model);
   if (args.maxSteps) extraArgs.push('--max-steps', String(args.maxSteps));
-
-  const child = spawn(
-    process.execPath,
-    [process.argv[1], 'gateway', 'start', ...extraArgs],
-    {
-      detached: true,
-      stdio: 'ignore',
-      env: { ...process.env },
-    },
-  );
+  const logPath = getGatewayLogPath();
+  const logFd = fs.openSync(logPath, 'a');
+  let child;
+  try {
+    child = spawn(
+      process.execPath,
+      [process.argv[1], 'gateway', 'start', ...extraArgs],
+      {
+        detached: true,
+        stdio: ['ignore', logFd, logFd],
+        env: { ...process.env },
+      },
+    );
+  } finally {
+    fs.closeSync(logFd);
+  }
 
   child.unref();
 
@@ -423,6 +435,99 @@ async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
 
   writeGatewayPid(child.pid);
   return child.pid;
+}
+
+function formatGatewayTimestamp(date = new Date()): string {
+  return date.toISOString();
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function getGatewayRestartDelayMs(failureCount: number): number {
+  const cappedFailures = Math.max(0, Math.min(failureCount, 6));
+  return Math.min(30_000, 1_000 * (2 ** cappedFailures));
+}
+
+async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  await ensureManagedN8nAtLaunch();
+  await refreshN8nWorkspaceInstructionsAtLaunch();
+  await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
+    provider: args.provider,
+    model: args.model,
+    maxSteps: args.maxSteps,
+  }, configService);
+}
+
+async function runGatewaySupervisorProcess(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  const { spawn } = await import('node:child_process');
+  const supervisorStatus = getGatewaySupervisorStatus(configService);
+
+  if (supervisorStatus.startableSurfaces.length === 0) {
+    const message = supervisorStatus.warnings[0] ?? 'No enabled and configured gateway surfaces are available.';
+    throw new Error(message);
+  }
+
+  let stopRequested = false;
+  let activeChild: import('node:child_process').ChildProcess | undefined;
+  let consecutiveFailures = 0;
+
+  const forwardStop = () => {
+    stopRequested = true;
+    if (activeChild?.pid) {
+      try {
+        activeChild.kill('SIGTERM');
+      } catch {
+        // Child already exited.
+      }
+    }
+  };
+
+  process.once('SIGINT', forwardStop);
+  process.once('SIGTERM', forwardStop);
+
+  while (!stopRequested) {
+    const childArgs = [process.argv[1], 'gateway', 'worker'];
+    if (args.provider) childArgs.push('--provider', args.provider);
+    if (args.model) childArgs.push('--model', args.model);
+    if (args.maxSteps) childArgs.push('--max-steps', String(args.maxSteps));
+
+    const child = spawn(process.execPath, childArgs, {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        YAGR_GATEWAY_SUPERVISOR_PID: String(process.pid),
+      },
+    });
+    activeChild = child;
+    const startedAt = Date.now();
+
+    const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code, signal) => resolve({ code, signal }));
+    });
+
+    activeChild = undefined;
+
+    if (stopRequested) {
+      break;
+    }
+
+    const uptimeMs = Date.now() - startedAt;
+    if (exit.code === 0) {
+      process.stdout.write(`[${formatGatewayTimestamp()}] Gateway worker stopped cleanly.\n`);
+      break;
+    }
+
+    consecutiveFailures = uptimeMs >= 60_000 ? 0 : consecutiveFailures + 1;
+    const delayMs = getGatewayRestartDelayMs(consecutiveFailures);
+    const reason = exit.signal ? `signal ${exit.signal}` : `exit code ${exit.code ?? 'unknown'}`;
+    process.stderr.write(
+      `[${formatGatewayTimestamp()}] Gateway worker exited with ${reason}. Restarting in ${Math.round(delayMs / 1000)}s.\n`,
+    );
+    await sleep(delayMs);
+  }
 }
 
 async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
@@ -847,13 +952,12 @@ async function main(): Promise<void> {
   }
 
   if (args.command === 'gateway-start') {
-    await ensureManagedN8nAtLaunch();
-    await refreshN8nWorkspaceInstructionsAtLaunch();
-    await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
-      provider: args.provider,
-      model: args.model,
-      maxSteps: args.maxSteps,
-    }, configService);
+    await runGatewaySupervisorProcess(args, configService);
+    return;
+  }
+
+  if (args.command === 'gateway-worker') {
+    await runGatewayWorker(args, configService);
     return;
   }
 

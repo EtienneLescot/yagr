@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+import { YagrN8nConfigService } from '../dist/config/n8n-config-service.js';
 import { evaluateCompletionGate } from '../dist/runtime/completion-gate.js';
 import { analyzeRunOutcome } from '../dist/runtime/outcome.js';
 import {
@@ -205,27 +206,51 @@ test('workflow sync guard still allows final presentation after a successful pus
 });
 
 test('n8n setup guard blocks speculative init_auth when the workspace is already configured', async () => {
-  const wrappedTools = wrapToolsWithRuntimeHooks(
-    {
-      n8nac: {
-        description: 'n8nac',
-        parameters: undefined,
-        execute: async () => ({ exitCode: 0 }),
+  const previousYagrHome = process.env.YAGR_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-setup-guard-configured-'));
+
+  try {
+    process.env.YAGR_HOME = tempRoot;
+
+    const configService = new YagrN8nConfigService();
+    configService.saveApiKey('http://localhost:5678', 'secret');
+    configService.saveLocalConfig({
+      host: 'http://localhost:5678',
+      syncFolder: 'workflows',
+      projectId: 'personal',
+      projectName: 'Personal',
+      instanceIdentifier: 'local_5678_test',
+    });
+
+    const wrappedTools = wrapToolsWithRuntimeHooks(
+      {
+        n8nac: {
+          description: 'n8nac',
+          parameters: undefined,
+          execute: async () => ({ exitCode: 0 }),
+        },
       },
-    },
-    [createN8nSetupGuardHook()],
-    () => ({ runId: 'run-setup-1', phase: 'plan', state: 'running' }),
-  );
+      [createN8nSetupGuardHook()],
+      () => ({ runId: 'run-setup-1', phase: 'plan', state: 'running' }),
+    );
 
-  const result = await wrappedTools.n8nac.execute({
-    action: 'init_auth',
-    n8nHost: 'http://localhost:5678',
-    n8nApiKey: 'secret',
-  });
+    const result = await wrappedTools.n8nac.execute({
+      action: 'init_auth',
+      n8nHost: 'http://localhost:5678',
+      n8nApiKey: 'secret',
+    });
 
-  assert.equal(result.ok, false);
-  assert.equal(result.blocked, true);
-  assert.match(result.error, /already initialized|credentials are already available/i);
+    assert.equal(result.ok, false);
+    assert.equal(result.blocked, true);
+    assert.match(result.error, /already initialized|credentials are already available/i);
+  } finally {
+    if (previousYagrHome === undefined) {
+      delete process.env.YAGR_HOME;
+    } else {
+      process.env.YAGR_HOME = previousYagrHome;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('n8n setup guard blocks init_auth when automated test env credentials are already available', async () => {
