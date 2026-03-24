@@ -4,24 +4,19 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  N8nApiClient,
-  WorkspaceSetupService,
   getDisplayProjectName,
   type IProject,
 } from 'n8nac';
-import { Command } from 'commander';
-import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
 import { YagrAgent } from '../agent.js';
-import { resolveWorkflowDir, YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
-import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import type { Engine } from '../engine/engine.js';
 import {
-  createOnboardingToken,
   getTelegramGatewayStatus,
-  resetTelegramGateway,
+  resolveTelegramBotIdentity,
 } from './telegram.js';
 import { getYagrSetupStatus } from '../setup.js';
+import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 import type {
   YagrContextCompactionEvent,
@@ -155,13 +150,18 @@ class WebUiGateway implements Gateway {
   private server?: Server;
   private enginePromise?: Promise<Engine>;
   private readonly agents = new Map<string, YagrAgent>();
+  private readonly setupService: YagrSetupApplicationService;
 
   constructor(
     private readonly engineResolver: () => Promise<Engine>,
     private readonly options: YagrRunOptions,
     private readonly configService: YagrConfigService,
     private readonly status: WebUiGatewayStatus,
-  ) {}
+  ) {
+    this.setupService = new YagrSetupApplicationService(this.configService, new YagrN8nConfigService(), {
+      resolveTelegramIdentity: resolveTelegramBotIdentity,
+    });
+  }
 
   async start(): Promise<void> {
     if (this.server) {
@@ -230,7 +230,7 @@ class WebUiGateway implements Gateway {
 
     if (method === 'POST' && url.pathname === '/api/n8n/projects') {
       const body = await this.readJson(request);
-      const projects = await this.fetchN8nProjects(String(body.host ?? ''), body.apiKey ? String(body.apiKey) : undefined);
+      const projects = await this.setupService.fetchN8nProjects(String(body.host ?? ''), body.apiKey ? String(body.apiKey) : undefined);
       const current = new YagrN8nConfigService().getLocalConfig();
       this.sendJson(response, 200, {
         projects: projects.map((project) => ({ id: project.id, name: getDisplayProjectName(project) })),
@@ -283,16 +283,12 @@ class WebUiGateway implements Gateway {
         throw new Error('Model is required.');
       }
 
-      if (apiKey) {
-        this.configService.saveApiKey(provider, apiKey);
-      }
-
-      this.configService.updateLocalConfig((localConfig) => ({
-        ...localConfig,
+      this.setupService.saveLlmConfig({
         provider,
+        apiKey,
         model,
         baseUrl: body.baseUrl ? String(body.baseUrl) : undefined,
-      }));
+      });
 
       this.sendJson(response, 200, { snapshot: await this.buildSnapshot() });
       return;
@@ -303,37 +299,20 @@ class WebUiGateway implements Gateway {
       const enabledSurfaces = Array.isArray(body.enabledSurfaces)
         ? body.enabledSurfaces.filter((surface) => surface === 'telegram' || surface === 'whatsapp')
         : [];
-      this.configService.setEnabledGatewaySurfaces(enabledSurfaces);
+      this.setupService.saveSurfaces({ surfaces: enabledSurfaces });
       this.sendJson(response, 200, { snapshot: await this.buildSnapshot() });
       return;
     }
 
     if (method === 'POST' && url.pathname === '/api/telegram/configure') {
       const body = await this.readJson(request);
-      const botToken = String(body.botToken ?? '').trim();
-      if (!botToken || !botToken.includes(':')) {
-        throw new Error('Enter a valid Telegram BotFather token.');
-      }
-
-      const identity = await resolveTelegramBotIdentity(botToken);
-      this.configService.saveTelegramBotToken(botToken);
-      this.configService.enableGatewaySurface('telegram');
-      this.configService.updateLocalConfig((localConfig) => ({
-        ...localConfig,
-        telegram: {
-          ...localConfig.telegram,
-          botUsername: identity.username,
-          onboardingToken: localConfig.telegram?.onboardingToken ?? createOnboardingToken(),
-          linkedChats: localConfig.telegram?.linkedChats ?? [],
-        },
-      }));
-
+      await this.setupService.configureTelegram(String(body.botToken ?? ''));
       this.sendJson(response, 200, { snapshot: await this.buildSnapshot() });
       return;
     }
 
     if (method === 'POST' && url.pathname === '/api/telegram/reset') {
-      resetTelegramGateway(this.configService);
+      this.setupService.resetTelegram();
       this.sendJson(response, 200, { snapshot: await this.buildSnapshot() });
       return;
     }
@@ -459,27 +438,6 @@ class WebUiGateway implements Gateway {
     };
   }
 
-  private async fetchN8nProjects(host: string, apiKeyOverride?: string): Promise<IProject[]> {
-    const normalizedHost = host.trim();
-    if (!normalizedHost) {
-      throw new Error('n8n host is required.');
-    }
-
-    const configService = new YagrN8nConfigService();
-    const apiKey = apiKeyOverride ?? configService.getApiKey(normalizedHost);
-    if (!apiKey) {
-      throw new Error('No n8n API key available for that host.');
-    }
-
-    const client = new N8nApiClient({ host: normalizedHost, apiKey });
-    const connected = await client.testConnection();
-    if (!connected) {
-      throw new Error('Unable to connect to n8n with the provided URL and API key.');
-    }
-
-    return client.getProjects();
-  }
-
   private async sendManagedN8nWorkflowSession(response: ServerResponse, target: string): Promise<void> {
     const session = resolveManagedN8nWorkflowOpen(target);
     if (!session.ok) {
@@ -507,55 +465,12 @@ class WebUiGateway implements Gateway {
   }
 
   private async saveN8nConfig(input: { host: string; apiKey?: string; projectId: string; syncFolder: string }): Promise<string | undefined> {
-    const host = input.host.trim();
-    const projectId = input.projectId.trim();
-    const syncFolder = input.syncFolder.trim() || 'workflows';
-    if (!host) {
-      throw new Error('n8n host is required.');
-    }
-    if (!projectId) {
-      throw new Error('Select an n8n project first.');
-    }
-
-    const configService = new YagrN8nConfigService();
-    const apiKey = input.apiKey?.trim() || configService.getApiKey(host);
-    if (!apiKey) {
-      throw new Error('An n8n API key is required.');
-    }
-
-    const projects = await this.fetchN8nProjects(host, apiKey);
-    const selectedProject = projects.find((project) => project.id === projectId);
-    if (!selectedProject) {
-      throw new Error('The selected n8n project could not be found. Reload projects and try again.');
-    }
-
-    configService.saveApiKey(host, apiKey);
-    configService.saveBootstrapState(host, syncFolder);
-    const instanceIdentifier = await configService.getOrCreateInstanceIdentifier(host);
-    const projectName = getDisplayProjectName(selectedProject);
-    configService.saveLocalConfig({
-      host,
-      syncFolder,
-      projectId: selectedProject.id,
-      projectName,
-      instanceIdentifier,
-    });
-    const workflowDir = resolveWorkflowDir({ syncFolder, instanceIdentifier, projectName });
-    if (workflowDir) {
-      WorkspaceSetupService.ensureWorkspaceFiles(workflowDir);
-    }
-
+    const warning = await this.setupService.saveN8nConfig(input);
     // Invalidate the cached engine and all agent sessions so the next request
     // picks up a fresh engine built from the new config (new host, new API key).
     this.enginePromise = undefined;
     this.agents.clear();
-
-    try {
-      await refreshAiContext({ host, apiKey });
-      return undefined;
-    } catch (error) {
-      return `Workspace saved, but the n8n workspace instructions refresh failed: ${error instanceof Error ? error.message : String(error)}`;
-    }
+    return warning;
   }
 
   private assertProvider(value: string): YagrModelProvider {
@@ -795,31 +710,5 @@ class WebUiGateway implements Gateway {
       response.off('close', handleConnectionClose);
       response.end();
     }
-  }
-}
-
-async function resolveTelegramBotIdentity(botToken: string): Promise<{ username: string; firstName: string }> {
-  const { Telegraf } = await import('telegraf');
-  const bot = new Telegraf(botToken);
-  const me = await bot.telegram.getMe();
-  if (!me.username) {
-    throw new Error('Telegram bot username is missing. Configure the bot with BotFather first.');
-  }
-
-  return {
-    username: me.username,
-    firstName: me.first_name,
-  };
-}
-
-async function refreshAiContext(credentials: { host: string; apiKey: string }): Promise<void> {
-  const updateAi = new UpdateAiCommand(new Command());
-  const previousCwd = process.cwd();
-
-  try {
-    process.chdir(getYagrN8nWorkspaceDir());
-    await updateAi.run({}, credentials);
-  } finally {
-    process.chdir(previousCwd);
   }
 }
