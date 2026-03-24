@@ -180,5 +180,5 @@ flowchart LR
 - La couche providers a maintenant un contrat plugin de base, mais tous les adapters ne sont pas encore amincis jusqu'au minimum souhaitable.
 - La frontiere tooling/providers est plus propre, mais reste encore implicite au lieu d'etre formalisee par un vrai contrat de negociation.
 - Le SSOT applicatif est partiellement duplique entre `setup.ts` et `gateway/webui.ts`.
-- Le contrat `Engine` agrege plusieurs responsabilites.
+- Le contrat `Engine` agrege encore plusieurs responsabilites, mais il est maintenant accompagne de ports plus fins (`NodeCatalogPort`, `TemplateCatalogPort`, `WorkflowCompilerPort`, `WorkflowValidatorPort`, `WorkflowLifecyclePort`) deja utilises a la frontiere des tools.
 - La capture de la reponse finale utilisateur dans le harness `advanced` remonte maintenant correctement le resultat final du run, et la presence d'une banniere workflow complete est verifiee. La formulation finale reste encore perfectible sur certains providers.

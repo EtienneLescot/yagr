@@ -13,7 +13,7 @@ Tout ce qui est deja implemente doit etre documente dans `../current/`, pas ici.
 | `in-progress` | Providers | Continuer d'amincir les adapters autour du contrat `ProviderPlugin` | Les providers ne gardent que auth, transport et conversion minimale |
 | `in-progress` | Tooling | Formaliser davantage l'interface tooling/providers et durcir le chemin `none` | La strategie `native / compatible / weak / none` devient pleinement systematique |
 | `todo` | Google Proxy | Requalifier `google-proxy` puis decider refonte propre ou suppression | Pas de provider ambigu qui degrade Gemini |
-| `todo` | Engine ports | Decouper l'interface `Engine` en ports plus fins | Backend plus composable et responsabilites mieux separees |
+| `in-progress` | Engine ports | Continuer la migration de `Engine` vers des ports plus fins au-dela de la frontiere des tools | Backend plus composable et responsabilites mieux separees |
 | `todo` | Facades | Amincir Telegram/WebUI/TUI/CLI | Facades reduites a I/O, session et orchestration legere |
 | `todo` | Current docs | Continuer a mettre `architecture/current/` a jour a chaque refactor structurel | La doc durable reste le reflet exact du repo |
 

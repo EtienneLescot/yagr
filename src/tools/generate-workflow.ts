@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { Engine } from '../engine/engine.js';
+import type { WorkflowCompilerPort } from '../engine/engine.js';
 
 const workflowNodeSchema = z.object({
   name: z.string().min(1),
@@ -47,7 +47,7 @@ const groupedEdgeConnectionsSchema = z.record(
   })),
 );
 
-export function createGenerateWorkflowTool(engine: Engine) {
+export function createGenerateWorkflowTool(engine: WorkflowCompilerPort) {
   return tool({
     description: 'Generate a workflow definition from a structured specification.',
     parameters: z.object({

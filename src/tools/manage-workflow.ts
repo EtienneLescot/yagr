@@ -1,8 +1,8 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { Engine } from '../engine/engine.js';
+import type { WorkflowLifecyclePort } from '../engine/engine.js';
 
-export function createManageWorkflowTool(engine: Engine) {
+export function createManageWorkflowTool(engine: WorkflowLifecyclePort) {
   return tool({
     description: 'Activate, deactivate, or delete an existing workflow.',
     parameters: z.object({

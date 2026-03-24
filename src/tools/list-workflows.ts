@@ -1,8 +1,8 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { Engine } from '../engine/engine.js';
+import type { WorkflowLifecyclePort } from '../engine/engine.js';
 
-export function createListWorkflowsTool(engine: Engine) {
+export function createListWorkflowsTool(engine: WorkflowLifecyclePort) {
   return tool({
     description: 'List workflows deployed in the active engine instance.',
     parameters: z.object({

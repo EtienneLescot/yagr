@@ -33,12 +33,14 @@ Fichiers clefs:
 Responsabilites actuelles:
 
 - contrat abstrait de backend automation
+- ports specialises pour catalogue, compilation, validation et lifecycle workflow
 - implementation n8n
 - stub du futur moteur natif
 
 Dette structurelle:
 
-- le contrat agrege connaissance, generation, validation et lifecycle distant
+- le contrat `Engine` complet reste encore present pour compatibilite
+- la migration vers les ports fins est entamee cote tools, mais pas encore terminee dans tout le repo
 
 ### `src/runtime/`
 
@@ -119,6 +121,10 @@ flowchart LR
     BT --> PRES
     WF --> ENG
 ```
+
+Observation actuelle:
+
+- les tools ne dependent plus du contrat `Engine` monolithique partout: ils consomment maintenant des ports cibles selon leur responsabilite
 
 ### `src/gateway/`
 

@@ -1,4 +1,8 @@
-import type { Engine } from '../engine/engine.js';
+import type {
+  NodeCatalogPort,
+  TemplateCatalogPort,
+  WorkflowLifecyclePort,
+} from '../engine/engine.js';
 import type { ToolExecutionObserver } from './observer.js';
 import { createDeleteWorkspaceFileTool } from './delete-workspace-file.js';
 import { createListDirectoryTool } from './list-directory.js';
@@ -18,7 +22,7 @@ import { createWriteWorkspaceFileTool } from './write-workspace-file.js';
 import { createPresentWorkflowResultTool } from './present-workflow-result.js';
 
 export function buildTools(
-  engine: Engine,
+  engine: NodeCatalogPort & TemplateCatalogPort & WorkflowLifecyclePort,
   observer?: ToolExecutionObserver,
   options: { allowedToolNames?: string[] } = {},
 ) {
