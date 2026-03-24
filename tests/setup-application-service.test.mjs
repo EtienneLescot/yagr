@@ -220,3 +220,31 @@ test('buildWebUiSnapshot centralizes setup and config state for the Web UI', asy
   assert.equal(snapshot.n8n.projectId, 'proj_1');
   assert.deepEqual(snapshot.availableModels, ['openai/gpt-5', 'openai/gpt-5-mini']);
 });
+
+test('telegram chat state mutations are centralized in the setup application service', () => {
+  const yagrConfigStore = createYagrConfigStore({
+    telegram: {
+      botUsername: 'yagr_bot',
+      onboardingToken: 'token',
+      linkedChats: [],
+    },
+  });
+  const n8nConfigStore = createN8nConfigStore();
+  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore);
+
+  service.linkTelegramChat({
+    chatId: '42',
+    username: 'alice',
+    linkedAt: '2026-03-23T10:00:00.000Z',
+  });
+  assert.equal(service.isTelegramChatLinked('42'), true);
+  assert.equal(service.getLinkedTelegramChats().length, 1);
+
+  service.touchTelegramChat('42', 99, 'alice2', 'Alice');
+  assert.equal(service.getLinkedTelegramChats()[0].username, 'alice2');
+  assert.equal(service.getLinkedTelegramChats()[0].userId, '99');
+
+  service.unlinkTelegramChat('42');
+  assert.equal(service.isTelegramChatLinked('42'), false);
+  assert.deepEqual(service.getLinkedTelegramChats(), []);
+});

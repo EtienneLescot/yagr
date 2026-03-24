@@ -2,7 +2,12 @@ import { randomBytes } from 'node:crypto';
 import { N8nApiClient, WorkspaceSetupService, getDisplayProjectName, type IProject } from 'n8nac';
 import { Command } from 'commander';
 import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
-import { normalizeGatewaySurfaces, type YagrConfigService, type YagrLocalConfig } from '../config/yagr-config-service.js';
+import {
+  normalizeGatewaySurfaces,
+  type YagrConfigService,
+  type YagrLocalConfig,
+  type YagrTelegramLinkedChat,
+} from '../config/yagr-config-service.js';
 import { resolveWorkflowDir, type YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import {
@@ -404,6 +409,64 @@ export class YagrSetupApplicationService {
       const nextConfig = { ...localConfig };
       delete nextConfig.telegram;
       return nextConfig;
+    });
+  }
+
+  getLinkedTelegramChats(): YagrTelegramLinkedChat[] {
+    return this.yagrConfigService.getLocalConfig().telegram?.linkedChats ?? [];
+  }
+
+  isTelegramChatLinked(chatId: string): boolean {
+    return this.getLinkedTelegramChats().some((entry) => String(entry.chatId) === String(chatId));
+  }
+
+  linkTelegramChat(chat: YagrTelegramLinkedChat): void {
+    const normalizedChatId = String(chat.chatId);
+    this.yagrConfigService.updateLocalConfig((localConfig) => {
+      const linkedChats = localConfig.telegram?.linkedChats ?? [];
+      const existing = linkedChats.find((entry) => String(entry.chatId) === normalizedChatId);
+      const nextLinkedChats = existing
+        ? linkedChats.map((entry) => (
+            String(entry.chatId) === normalizedChatId
+              ? { ...entry, ...chat, chatId: normalizedChatId }
+              : entry
+          ))
+        : [...linkedChats, { ...chat, chatId: normalizedChatId }];
+
+      return {
+        ...localConfig,
+        telegram: {
+          ...localConfig.telegram,
+          linkedChats: nextLinkedChats,
+        },
+      };
+    });
+  }
+
+  unlinkTelegramChat(chatId: string): void {
+    const normalizedChatId = String(chatId);
+    this.yagrConfigService.updateLocalConfig((localConfig) => ({
+      ...localConfig,
+      telegram: {
+        ...localConfig.telegram,
+        linkedChats: (localConfig.telegram?.linkedChats ?? []).filter((entry) => String(entry.chatId) !== normalizedChatId),
+      },
+    }));
+  }
+
+  touchTelegramChat(chatId: string, userId?: number, username?: string, firstName?: string): void {
+    const existing = this.getLinkedTelegramChats().find((entry) => String(entry.chatId) === String(chatId));
+    if (!existing) {
+      return;
+    }
+
+    this.linkTelegramChat({
+      ...existing,
+      chatId: String(chatId),
+      userId: userId ? String(userId) : existing.userId,
+      username: username ?? existing.username,
+      firstName: firstName ?? existing.firstName,
+      lastSeenAt: new Date().toISOString(),
     });
   }
 
