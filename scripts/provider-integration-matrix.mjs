@@ -329,7 +329,6 @@ function getProviderApiKey(provider) {
     openrouter: process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_LLM_API_KEY,
     'openai-proxy': process.env.YAGR_OPENAI_PROXY_TOKEN,
     'anthropic-proxy': process.env.YAGR_ANTHROPIC_SETUP_TOKEN,
-    'google-proxy': process.env.YAGR_GEMINI_ACCESS_TOKEN,
     'copilot-proxy': process.env.YAGR_COPILOT_TOKEN,
   };
   return byProvider[provider];
@@ -363,16 +362,10 @@ function configureWritableOAuthPaths() {
   const base = path.join(os.tmpdir(), 'yagr-provider-matrix');
   const sourcePaths = getYagrPaths();
 
-  process.env.YAGR_GEMINI_SESSION_PATH ||= path.join(base, 'gemini-session.json');
-  process.env.YAGR_GEMINI_AUTH_PATH ||= path.join(base, 'gemini-oauth-creds.json');
-  process.env.YAGR_GEMINI_SETTINGS_PATH ||= path.join(base, 'gemini-settings.json');
   process.env.YAGR_COPILOT_SESSION_PATH ||= path.join(base, 'copilot-session.json');
   process.env.YAGR_COPILOT_TOKEN_CACHE_PATH ||= path.join(base, 'copilot-token-cache.json');
   process.env.YAGR_GH_HOSTS_PATH ||= path.join(os.homedir(), '.config', 'gh', 'hosts.yml');
 
-  copyIfExists(path.join(sourcePaths.accountAuthDir, 'gemini-oauth.json'), process.env.YAGR_GEMINI_SESSION_PATH);
-  copyIfExists(path.join(os.homedir(), '.gemini', 'oauth_creds.json'), process.env.YAGR_GEMINI_AUTH_PATH);
-  copyIfExists(path.join(os.homedir(), '.gemini', 'settings.json'), process.env.YAGR_GEMINI_SETTINGS_PATH);
   copyIfExists(path.join(sourcePaths.accountAuthDir, 'copilot-oauth.json'), process.env.YAGR_COPILOT_SESSION_PATH);
   copyIfExists(path.join(sourcePaths.accountAuthDir, 'copilot-runtime-token.json'), process.env.YAGR_COPILOT_TOKEN_CACHE_PATH);
 }
@@ -576,7 +569,6 @@ function normalizeProviderSelector(value) {
     'claude-api': 'anthropic',
     'claude-token': 'anthropic-proxy',
     'openai-oauth': 'openai-proxy',
-    'gemini-oauth': 'google-proxy',
     'github-oauth': 'copilot-proxy',
     'copilot-oauth': 'copilot-proxy',
   };

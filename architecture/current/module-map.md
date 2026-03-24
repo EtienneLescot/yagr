@@ -103,7 +103,6 @@ Fichiers clefs:
 - `proxy-runtime.ts`
 - `openai-account.ts`
 - `anthropic-account.ts`
-- `google-account.ts`
 - `copilot-account.ts`
 
 Responsabilites actuelles:
@@ -120,7 +119,6 @@ Responsabilites actuelles:
 Dette structurelle:
 
 - les adapters providers sont maintenant recentres autour de `ProviderPlugin`
-- `google-proxy` a ete retire de la surface supportee; le code reste present en interne uniquement comme base de travail pour une future refonte
 
 ```mermaid
 flowchart LR

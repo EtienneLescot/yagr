@@ -108,7 +108,6 @@ Observation:
 
 - `ProviderPlugin` porte maintenant discovery, metadata hooks et factory de modele
 - le flux est maintenant structurellement `metadata -> normalisation -> runtime strategy`
-- `google-proxy` n'est plus un provider supporte en surface, meme si son code interne existe encore
 
 ## 3bis. Resolution provider/capability
 

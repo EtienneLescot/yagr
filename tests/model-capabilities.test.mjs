@@ -46,21 +46,21 @@ test('resolveModelCapabilityProfile marks openai-proxy as compatible with reduce
   assert.equal(profile.supportsStreamingToolCalls, false);
 });
 
-test('resolveModelCapabilityProfile marks anthropic-proxy as native and google-proxy as weak', () => {
+test('resolveModelCapabilityProfile marks anthropic-proxy as native and mistral as weak', () => {
   const anthropicProfile = resolveModelCapabilityProfile({
     provider: 'anthropic-proxy',
     model: 'claude-sonnet-4-5',
   });
-  const googleProxyProfile = resolveModelCapabilityProfile({
-    provider: 'google-proxy',
-    model: 'gemini-3-flash-preview',
+  const mistralProfile = resolveModelCapabilityProfile({
+    provider: 'mistral',
+    model: 'ministral-8b-latest',
   });
 
   assert.equal(anthropicProfile.toolCalling, 'native');
   assert.equal(anthropicProfile.supportsStructuredOutputs, true);
-  assert.equal(googleProxyProfile.toolCalling, 'weak');
-  assert.equal(googleProxyProfile.supportsStructuredOutputs, true);
-  assert.equal(googleProxyProfile.supportsForcedToolChoice, true);
+  assert.equal(mistralProfile.toolCalling, 'weak');
+  assert.equal(mistralProfile.supportsStructuredOutputs, false);
+  assert.equal(mistralProfile.supportsForcedToolChoice, false);
 });
 
 test('resolveModelCapabilityProfile can classify weak and none openrouter models', () => {

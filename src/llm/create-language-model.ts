@@ -60,7 +60,7 @@ function inferContextWindowTokens(provider: YagrModelProvider, modelName: string
     return 128_000;
   }
 
-  if (provider === 'google' || provider === 'google-proxy') {
+  if (provider === 'google') {
     return 1_000_000;
   }
 

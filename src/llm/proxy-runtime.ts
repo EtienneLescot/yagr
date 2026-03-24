@@ -9,10 +9,6 @@ import {
   resolveCopilotApiToken,
   validateGitHubCopilotRuntime,
 } from './copilot-account.js';
-import {
-  ensureGeminiAccountSession,
-  fetchGeminiOAuthModels,
-} from './google-account.js';
 import { writeCachedModelCatalog } from './model-catalog-cache.js';
 import {
   ANTHROPIC_ACCOUNT_DEFAULT_MODEL,
@@ -182,56 +178,6 @@ export async function prepareProviderRuntime(
         provider,
         baseUrl: '',
         apiKey: resolvedCredential,
-        models,
-        notes,
-        autoStarted: false,
-      },
-      notes,
-    };
-  }
-
-  if (provider === 'google-proxy') {
-    const session = await ensureGeminiAccountSession();
-    if (!session) {
-      return {
-        ready: false,
-        reason: 'Unable to sign in to Gemini. Complete the Google OAuth flow and retry.',
-        notes: ['Gemini OAuth is handled directly by Yagr without a localhost callback server.'],
-      };
-    }
-
-    let models: string[] = [];
-    let discoveryError: string | undefined;
-    try {
-      const discovered = await withTimeout(fetchGeminiOAuthModels(session.accessToken), 13_000);
-      if (discovered.length > 0) {
-        models = discovered;
-        writeCachedModelCatalog(provider, discovered);
-      }
-    } catch (error) {
-      discoveryError = error instanceof Error ? error.message : String(error);
-    }
-
-    const notes = ['Connected through Yagr-managed Gemini OAuth.'];
-    if (discoveryError) {
-      notes.push(`Model discovery failed: ${discoveryError}`);
-    } else if (models.length > 0) {
-      notes.push('Model discovery completed from Gemini OAuth.');
-    } else {
-      notes.push('Model discovery returned no models for this account/session.');
-    }
-    if (process.env.YAGR_DEBUG_MODEL_DISCOVERY === '1') {
-      notes.push(`Gemini models discovered: ${models.length}.`);
-      if (models.length > 0) {
-        notes.push(`Gemini model IDs: ${models.join(', ')}`);
-      }
-    }
-
-    return {
-      ready: true,
-      runtime: {
-        provider,
-        baseUrl: options.baseUrl || '',
         models,
         notes,
         autoStarted: false,

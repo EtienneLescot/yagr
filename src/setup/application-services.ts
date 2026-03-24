@@ -19,7 +19,6 @@ import { prepareProviderRuntime } from '../llm/proxy-runtime.js';
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import { resolveModelProvider } from '../llm/create-language-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth } from '../llm/copilot-account.js';
-import { beginGeminiAccountAuth, completeGeminiAccountAuth } from '../llm/google-account.js';
 import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';
 import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
@@ -196,29 +195,6 @@ export class YagrSetupApplicationService {
       };
     }
 
-    if (provider === 'google-proxy') {
-      const challenge = await beginGeminiAccountAuth();
-      const callbackHint = challenge.callbackServerStarted
-        ? 'After authorization, Yagr captures the callback automatically on http://127.0.0.1:8085.'
-        : 'If local callback is unavailable, paste the full redirect URL below.';
-      return {
-        kind: 'input' as const,
-        title: 'Complete Gemini OAuth',
-        instructions: [
-          'Open this URL in your browser and sign in with Google:',
-          challenge.authUrl,
-          callbackHint,
-        ],
-        placeholder: challenge.callbackServerStarted
-          ? 'Press Enter after browser authorization'
-          : 'http://localhost:8085/oauth2callback?code=...',
-        submitLabel: challenge.callbackServerStarted
-          ? 'Continue after authorization'
-          : 'Submit redirect URL',
-        state: challenge.verifier,
-      };
-    }
-
     if (provider === 'copilot-proxy') {
       const challenge = await beginGitHubCopilotAuth();
       return {
@@ -241,14 +217,6 @@ export class YagrSetupApplicationService {
   async completeAccountAuth(provider: YagrModelProvider, input: string, state?: string) {
     if (provider === 'openai-proxy') {
       await completeCodexAuth();
-      return { ok: true };
-    }
-
-    if (provider === 'google-proxy') {
-      if (!state) {
-        return { ok: false, error: 'Gemini OAuth state is missing.' };
-      }
-      await completeGeminiAccountAuth(input, state);
       return { ok: true };
     }
 
