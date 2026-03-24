@@ -623,7 +623,7 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
   );
 }
 
-function WorkflowHeader({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
+function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
   const openWorkflow = React.useCallback(async () => {
     const resolvedUrl = embed.targetUrl
       ? `/open/n8n-workflow?target=${encodeURIComponent(embed.targetUrl)}`
@@ -716,7 +716,7 @@ function MessageCard({ message, now }: { message: ChatMessage; now: number }): R
         </div>
       ) : null}
 
-      {message.embed ? <WorkflowHeader embed={message.embed} /> : null}
+      {message.embed ? <WorkflowBanner embed={message.embed} /> : null}
     </article>
   );
 }
