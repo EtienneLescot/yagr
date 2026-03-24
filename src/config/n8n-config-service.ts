@@ -53,7 +53,10 @@ export function resolveWorkflowDir(config: YagrN8nLocalConfig): string | undefin
     ? syncFolder
     : path.join(workspaceDir, syncFolder);
 
-  return path.join(resolvedSyncFolder, instanceIdentifier, createProjectSlug(projectName));
+  // Strip characters that are invalid in Windows path components (colon, etc.)
+  // Identifiers stored on Linux/macOS may contain ':' from IP:port slugs.
+  const safeInstanceId = instanceIdentifier.replace(/[:<>"|?*]/g, '_');
+  return path.join(resolvedSyncFolder, safeInstanceId, createProjectSlug(projectName));
 }
 
 function sanitizeRuntimeValue(value: string | undefined): string | undefined {
