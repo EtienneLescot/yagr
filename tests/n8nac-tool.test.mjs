@@ -54,6 +54,60 @@ test('n8nac tool preserves explicitly provided CLI environment values', () => {
   assert.equal(env.N8N_API_KEY, 'override-key');
 });
 
+test('n8nac tool does not read process env n8n credentials unless explicitly allowed', () => {
+  const previousHost = process.env.N8N_HOST;
+  const previousApiKey = process.env.N8N_API_KEY;
+  const previousAllow = process.env.YAGR_ALLOW_N8N_ENV;
+
+  try {
+    process.env.N8N_HOST = 'https://env-only.example.com';
+    process.env.N8N_API_KEY = 'env-only-key';
+    delete process.env.YAGR_ALLOW_N8N_ENV;
+
+    const env = getN8nacProcessEnv({}, {
+      getLocalConfig: () => ({}),
+      getApiKey: () => undefined,
+    });
+
+    assert.equal(env.N8N_HOST, undefined);
+    assert.equal(env.N8N_API_KEY, undefined);
+  } finally {
+    if (previousHost === undefined) delete process.env.N8N_HOST;
+    else process.env.N8N_HOST = previousHost;
+    if (previousApiKey === undefined) delete process.env.N8N_API_KEY;
+    else process.env.N8N_API_KEY = previousApiKey;
+    if (previousAllow === undefined) delete process.env.YAGR_ALLOW_N8N_ENV;
+    else process.env.YAGR_ALLOW_N8N_ENV = previousAllow;
+  }
+});
+
+test('n8nac tool can read process env n8n credentials when automated tests opt in', () => {
+  const previousHost = process.env.N8N_HOST;
+  const previousApiKey = process.env.N8N_API_KEY;
+  const previousAllow = process.env.YAGR_ALLOW_N8N_ENV;
+
+  try {
+    process.env.N8N_HOST = 'https://env-only.example.com';
+    process.env.N8N_API_KEY = 'env-only-key';
+    process.env.YAGR_ALLOW_N8N_ENV = '1';
+
+    const env = getN8nacProcessEnv({}, {
+      getLocalConfig: () => ({}),
+      getApiKey: () => undefined,
+    });
+
+    assert.equal(env.N8N_HOST, 'https://env-only.example.com');
+    assert.equal(env.N8N_API_KEY, 'env-only-key');
+  } finally {
+    if (previousHost === undefined) delete process.env.N8N_HOST;
+    else process.env.N8N_HOST = previousHost;
+    if (previousApiKey === undefined) delete process.env.N8N_API_KEY;
+    else process.env.N8N_API_KEY = previousApiKey;
+    if (previousAllow === undefined) delete process.env.YAGR_ALLOW_N8N_ENV;
+    else process.env.YAGR_ALLOW_N8N_ENV = previousAllow;
+  }
+});
+
 test('n8nac push candidate selection prefers the active workflow directory', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nac-'));
   const previousYagrHome = process.env.YAGR_HOME;

@@ -2,7 +2,7 @@ import { tool } from 'ai';
 import type { YagrToolRuntimeStrategy } from './tool-runtime-strategy.js';
 import type { YagrAgentState, YagrRunPhase, YagrRuntimeContext, YagrRuntimeHook } from '../types.js';
 import { resolveLocalWorkflowDiagram } from '../tools/present-workflow-result.js';
-import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { resolveN8nRuntimeState, YagrN8nConfigService } from '../config/n8n-config-service.js';
 
 type ToolLike = {
   description?: string;
@@ -144,13 +144,17 @@ export function createWorkflowSyncCompletionGuardHook(strategy: YagrToolRuntimeS
 }
 
 function isConfiguredWorkspaceAvailable(configService = new YagrN8nConfigService()): boolean {
-  const localConfig = configService.getLocalConfig();
-  return Boolean(localConfig.host && localConfig.projectName && localConfig.projectId);
+  return resolveN8nRuntimeState(configService, process.env, {
+    allowEnvironmentFallback: process.env.YAGR_ALLOW_N8N_ENV === '1',
+  }).initialized;
 }
 
 export function createN8nSetupGuardHook(): YagrRuntimeHook {
   let setupCheckKnown = false;
   let workspaceInitialized = isConfiguredWorkspaceAvailable();
+  let credentialsAvailable = resolveN8nRuntimeState(new YagrN8nConfigService(), process.env, {
+    allowEnvironmentFallback: process.env.YAGR_ALLOW_N8N_ENV === '1',
+  }).credentialsAvailable;
 
   return {
     beforeTool: async ({ toolName, args }) => {
@@ -162,6 +166,13 @@ export function createN8nSetupGuardHook(): YagrRuntimeHook {
       const action = asString(normalizedArgs?.action);
       if (action !== 'init_auth' && action !== 'init_project') {
         return;
+      }
+
+      if (action === 'init_auth' && credentialsAvailable) {
+        return {
+          allowed: false,
+          message: 'n8n credentials are already available. Do not rerun init_auth. Continue with setup_check or init_project.',
+        };
       }
 
       if (workspaceInitialized) {
@@ -192,6 +203,7 @@ export function createN8nSetupGuardHook(): YagrRuntimeHook {
       const normalizedResult = asRecord(result);
       setupCheckKnown = true;
       workspaceInitialized = normalizedResult?.initialized === true;
+      credentialsAvailable = normalizedResult?.credentialsAvailable === true || credentialsAvailable;
     },
   };
 }
