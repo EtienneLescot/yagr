@@ -96,7 +96,7 @@ Responsabilites actuelles:
 Dette structurelle:
 
 - les adapters providers sont maintenant recentres autour de `ProviderPlugin`
-- le reliquat principal est maintenant `google-proxy`, qui reste un cas a refondre proprement
+- `google-proxy` a ete retire de la surface supportee; le code reste present en interne uniquement comme base de travail pour une future refonte
 
 ### `src/tools/`
 

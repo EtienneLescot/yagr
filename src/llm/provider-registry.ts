@@ -23,6 +23,7 @@ export interface YagrProviderDefinition {
   defaultBaseUrl?: string;
   requiresApiKey: boolean;
   usesOpenAiCompatibleApi: boolean;
+  supported?: boolean;
   experimental?: boolean;
   setupHint?: string;
   managedProxy?: {
@@ -152,9 +153,11 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     id: 'google-proxy',
     displayName: 'Gemini',
     defaultModel: GEMINI_ACCOUNT_DEFAULT_MODEL,
+    supported: false,
+    experimental: true,
     requiresApiKey: false,
     usesOpenAiCompatibleApi: false,
-    setupHint: 'Gemini subscription, no API key required (unofficial, not recommended)',
+    setupHint: 'Unsupported for now: unofficial Gemini OAuth / Code Assist backend, hidden until a clean rewrite exists',
   },
   'copilot-proxy': {
     id: 'copilot-proxy',
@@ -168,8 +171,11 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
 };
 
 export const YAGR_MODEL_PROVIDERS = Object.freeze(Object.keys(YAGR_PROVIDER_DEFINITIONS) as YagrModelProvider[]);
+export const YAGR_SUPPORTED_MODEL_PROVIDERS = Object.freeze(
+  YAGR_MODEL_PROVIDERS.filter((provider) => YAGR_PROVIDER_DEFINITIONS[provider].supported !== false),
+);
 export const YAGR_SELECTABLE_MODEL_PROVIDERS = Object.freeze(
-  YAGR_MODEL_PROVIDERS.filter((provider) => provider !== 'groq'),
+  YAGR_SUPPORTED_MODEL_PROVIDERS.filter((provider) => provider !== 'groq'),
 );
 
 export function getProviderDefinition(provider: YagrModelProvider): YagrProviderDefinition {
@@ -198,6 +204,10 @@ export function providerRequiresApiKey(provider: YagrModelProvider): boolean {
 
 export function isExperimentalProvider(provider: YagrModelProvider): boolean {
   return getProviderDefinition(provider).experimental === true;
+}
+
+export function isSupportedProvider(provider: YagrModelProvider): boolean {
+  return getProviderDefinition(provider).supported !== false;
 }
 
 export function getProviderSetupHint(provider: YagrModelProvider): string | undefined {
