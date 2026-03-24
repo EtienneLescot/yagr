@@ -108,12 +108,14 @@ Observation actuelle:
 
 - `src/setup.ts`
 - `src/setup/application-services.ts`
+- `src/setup/status.ts`
 - `src/setup/setup-wizard.tsx`
 - `src/n8n-local/*`
 
 Responsabilite actuelle:
 
 - services applicatifs partages pour setup n8n, LLM et surfaces
+- calcul partage du statut setup
 - onboarding n8n
 - onboarding provider LLM
 - onboarding Telegram
@@ -122,6 +124,8 @@ Responsabilite actuelle:
 Observation actuelle:
 
 - `src/setup/application-services.ts` centralise maintenant une partie du SSOT applicatif de setup
+- `src/setup/status.ts` porte maintenant le calcul partage de `YagrSetupStatus`
+- la WebUI demande maintenant son snapshot de configuration au service applicatif au lieu de reconstituer localement toute la vue setup/config
 - `src/setup.ts` reste encore un point d'orchestration important, mais moins charge qu'avant
 
 ### Configuration et SSOT local
