@@ -6,6 +6,7 @@ import { getYagrLaunchDir, getYagrN8nWorkspaceDir } from '../config/yagr-home.js
 import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import type { ToolExecutionObserver } from './observer.js';
 import { emitToolEvent } from './observer.js';
+import { resolveWorkspacePath } from './workspace-utils.js';
 
 const WORKFLOW_FILE_SUFFIX = '.workflow.ts';
 const WORKFLOW_SCAN_SKIP_DIRS = new Set(['.git', 'dist', 'node_modules', 'docs', 'build']);
@@ -21,12 +22,20 @@ export function extractWorkflowMapHeader(source: string): string | undefined {
 }
 
 export function resolveWorkflowDiagramFromFilePath(filePath: string): string | undefined {
-  if (!filePath || !fs.existsSync(filePath)) {
+  if (!filePath) {
+    return undefined;
+  }
+
+  const candidatePath = path.isAbsolute(filePath)
+    ? filePath
+    : resolveWorkspacePath(filePath);
+
+  if (!fs.existsSync(candidatePath)) {
     return undefined;
   }
 
   try {
-    return extractWorkflowMapHeader(fs.readFileSync(filePath, 'utf-8'));
+    return extractWorkflowMapHeader(fs.readFileSync(candidatePath, 'utf-8'));
   } catch {
     return undefined;
   }
