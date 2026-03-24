@@ -59,11 +59,11 @@ Observation actuelle:
 Responsabilite actuelle:
 
 - registre des providers
-- contrat plugin/provider thin pour les faits de transport et l'hydratation metadata
+- contrat plugin/provider thin pour les faits de transport, discovery, creation de modele et l'hydratation metadata
 - resolution de config provider/model/baseUrl/apiKey
-- creation du modele AI SDK
+- creation du modele AI SDK via le plugin provider
 - auth et runtimes comptes/OAuth
-- model discovery
+- model discovery via le plugin provider
 - mise en cache de metadonnees provider/model
 - normalisation des capacites provider/model
 - quelques adaptations provider-specifiques
@@ -71,7 +71,8 @@ Responsabilite actuelle:
 Observation actuelle:
 
 - la separation commence a etre plus nette entre metadata provider, normalisation des capacites et strategie runtime
-- un contrat `ProviderPlugin` existe maintenant pour exposer les faits de transport et les hooks metadata sans empiler la politique runtime dans chaque adapter
+- `ProviderPlugin` porte maintenant aussi la factory de modele et la discovery, ce qui retire les `switch` provider-specific de `create-language-model.ts` et `provider-discovery.ts`
+- les adapters providers gardent maintenant principalement auth, transport, conversion minimale et hooks metadata/discovery
 - la migration n'est pas terminee, mais la direction `metadata -> normalisation -> runtime strategy` existe maintenant dans le code
 - les providers OpenAI-compatible faibles ne sont plus artificiellement limites au premier tool visible
 - la strategie runtime commune pilote maintenant le mode `stream` vs `generate`, les directives inspect/execute/recovery et la reduction de surface d'outils pour le niveau `none`

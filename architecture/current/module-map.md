@@ -87,16 +87,16 @@ Responsabilites actuelles:
 - metadonnees providers
 - resolution de configuration
 - auth
-- creation modele
-- discovery
+- creation modele via `ProviderPlugin`
+- discovery via `ProviderPlugin`
 - cache de metadonnees provider/model
 - normalisation des capacites provider/model
 - compat provider-specific
 
 Dette structurelle:
 
-- trop de concerns au meme endroit
-- logique de capacites et logique d'integration melees
+- les adapters providers sont maintenant recentres autour de `ProviderPlugin`
+- le reliquat principal est maintenant `google-proxy`, qui reste un cas a refondre proprement
 
 ### `src/tools/`
 

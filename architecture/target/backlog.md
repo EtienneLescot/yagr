@@ -9,7 +9,6 @@ Tout ce qui est deja implemente doit etre documente dans `../current/`, pas ici.
 
 | Status | Theme | Objective de sortie | Definition de done |
 | --- | --- | --- | --- |
-| `in-progress` | Providers | Ramener les adapters providers au strict minimum autour de `ProviderPlugin` | Chaque adapter provider ne garde que auth, transport, conversion minimale et hooks metadata |
 | `todo` | Google Proxy | A refondre proprement avec capacites explicites | `google-proxy` est refonddu proprement avec capacites explicites et les tests advanced passent |
 
 ## Regle de vie
