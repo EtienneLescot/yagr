@@ -335,11 +335,13 @@ class TelegramGateway implements Gateway {
       );
     });
 
+    const clearSession = async (chatId: string, reply: (message: string) => Promise<unknown>) => {
+      this.resetChatSession(chatId);
+      await reply('Conversation Yagr reinitialisee pour ce chat.');
+    };
+
     this.bot.command('reset', async (ctx) => {
-      const chatId = String(ctx.chat.id);
-      this.agents.delete(chatId);
-      this.pendingApprovals.delete(chatId);
-      await ctx.reply('Conversation Yagr reinitialisee pour ce chat.');
+      await clearSession(String(ctx.chat.id), ctx.reply.bind(ctx));
     });
 
     this.bot.command('unlink', async (ctx) => {
@@ -461,6 +463,11 @@ class TelegramGateway implements Gateway {
     const next = new YagrSessionAgent(await this.getEngine());
     this.agents.set(chatId, next);
     return next;
+  }
+
+  private resetChatSession(chatId: string): void {
+    this.agents.delete(chatId);
+    this.pendingApprovals.delete(chatId);
   }
 
   private async executeRun(

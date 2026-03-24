@@ -642,7 +642,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
       return;
     }
 
-    if (prompt === '/clear') {
+    if (prompt === '/reset') {
       agent.clearConversation();
       setFeed([]);
       setPendingRequiredActions([]);
