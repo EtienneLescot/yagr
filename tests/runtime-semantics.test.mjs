@@ -521,6 +521,8 @@ test('successful push counts as validate and verify evidence for completion gati
     text: 'Done.',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedMaterialWork: true,
+    hasConcreteResult: true,
     hasWorkflowWrites: outcome.hasWorkflowWrites,
     successfulValidate: Boolean(outcome.successfulValidate),
     successfulPush: Boolean(outcome.successfulPush),
@@ -619,7 +621,7 @@ test('grounded summary includes workflow URL from presentWorkflowResult when ava
 
   assert.match(summary, /Demo Flow/);
   assert.match(summary, /Workflow link: http:\/\/localhost:5678\/workflow\/wf-1/);
-  assert.match(summary, /workflow card below/i);
+  assert.doesNotMatch(summary, /workflow card below/i);
 });
 
 test('grounded summary falls back to successful push metadata when no presentWorkflowResult was emitted', () => {
@@ -662,7 +664,7 @@ test('grounded summary falls back to successful push metadata when no presentWor
 
   assert.match(summary, /Demo Flow/);
   assert.match(summary, /Workflow link: http:\/\/localhost:5678\/workflow\/wf-3/);
-  assert.match(summary, /workflow card below/i);
+  assert.doesNotMatch(summary, /workflow card below/i);
   assert.doesNotMatch(summary, /Failed n8nac actions/);
 });
 
@@ -742,7 +744,7 @@ test('grounded summary stays user-facing when a workflow was only presented', ()
 
   assert.match(summary, /workflow `Existing Flow` is ready/i);
   assert.match(summary, /Workflow link: http:\/\/localhost:5678\/workflow\/wf-2/);
-  assert.match(summary, /workflow card below/i);
+  assert.doesNotMatch(summary, /workflow card below/i);
   assert.doesNotMatch(summary, /Fichiers /);
   assert.doesNotMatch(summary, /Actions n8nac/);
 });
@@ -772,6 +774,8 @@ test('completion gate stays blocked when a required action is still open', async
     text: 'Done.',
     finishReason: 'stop',
     requiredActions,
+    attemptedMaterialWork: false,
+    hasConcreteResult: false,
     hasWorkflowWrites: false,
     successfulValidate: false,
     successfulPush: false,
@@ -790,6 +794,8 @@ test('beforeCompletion hook can inject a permission blocker', async () => {
     text: 'Done.',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedMaterialWork: false,
+    hasConcreteResult: true,
     hasWorkflowWrites: false,
     successfulValidate: true,
     successfulPush: true,
@@ -863,6 +869,8 @@ test('approved required action bypasses completion blocker', async () => {
     finishReason: 'stop',
     requiredActions: [],
     satisfiedRequiredActionIds: ['approval-4'],
+    attemptedMaterialWork: false,
+    hasConcreteResult: true,
     hasWorkflowWrites: false,
     successfulValidate: true,
     successfulPush: true,
@@ -896,6 +904,8 @@ test('completion gate does not fail terminally on exploratory n8nac failures wit
     text: 'Je peux quand meme repondre sans n8n pour cette question.',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedMaterialWork: false,
+    hasConcreteResult: false,
     hasWorkflowWrites: false,
     successfulValidate: false,
     successfulPush: false,
@@ -914,6 +924,8 @@ test('completion gate still fails terminally on unresolved n8nac failures after 
     text: 'Done.',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedMaterialWork: true,
+    hasConcreteResult: false,
     hasWorkflowWrites: true,
     successfulValidate: false,
     successfulPush: false,
@@ -924,4 +936,25 @@ test('completion gate still fails terminally on unresolved n8nac failures after 
 
   assert.equal(decision.accepted, false);
   assert.equal(decision.state, 'failed_terminal');
+});
+
+test('completion gate requests continuation when material work ended without result or blocker', async () => {
+  const decision = await evaluateCompletionGate({
+    text: 'I was not able to finish yet.',
+    finishReason: 'stop',
+    requiredActions: [],
+    attemptedMaterialWork: true,
+    hasConcreteResult: false,
+    hasWorkflowWrites: false,
+    successfulValidate: false,
+    successfulPush: false,
+    successfulVerify: false,
+    unresolvedFailureCount: 0,
+    context: { runId: 'run-8', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, false);
+  assert.equal(decision.state, 'resumable');
+  assert.equal(decision.needsContinuation, true);
+  assert.match(decision.reasons[0], /concrete result or a structured blocker/i);
 });

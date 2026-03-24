@@ -30,6 +30,7 @@ import { blockingStateForRequiredActions, collectRequiredActions } from './requi
 import { resolveToolRuntimeStrategy, type YagrToolRuntimeStrategy } from './tool-runtime-strategy.js';
 
 const MAX_EXECUTION_ATTEMPTS = 3;
+const MAX_COMPLETION_REPAIR_ATTEMPTS = 1;
 const PHASE_ORDER: YagrRunPhase[] = ['inspect', 'plan', 'edit', 'validate', 'sync', 'verify', 'summarize'];
 const STREAM_FILTER_HOLDBACK = 256;
 
@@ -611,6 +612,22 @@ function collectToolNames(journal: YagrRunJournalEntry[]): Array<{ toolName: str
   return [...names].map((toolName) => ({ toolName }));
 }
 
+function hasObservedToolCall(journal: YagrRunJournalEntry[], toolNames: readonly string[]): boolean {
+  const wanted = new Set(toolNames);
+
+  for (const entry of journal) {
+    if (entry.type !== 'step' || !entry.step) {
+      continue;
+    }
+
+    if (entry.step.toolCalls.some((toolCall) => wanted.has(toolCall.toolName))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function collectPresentedWorkflow(result: unknown): { workflowId?: string; workflowUrl?: string; title?: string } | undefined {
   if (!result || typeof result !== 'object') {
     return undefined;
@@ -764,32 +781,20 @@ export function buildGroundedSummary(
     lines.push(`Workflow link: ${presentedWorkflowUrl}`);
   }
 
-  if (lines.length > 0 && lines.every((line) => !/^The workflow card below/i.test(line)) && presentedWorkflow) {
-    if (presentedWorkflow.workflowUrl) {
-      lines.push('The workflow card below includes the direct link and the diagram.');
-    } else {
-      lines.push('The workflow card below includes the associated diagram.');
-    }
-  }
-
   if (lines.length === 0 && outcome.writtenFiles.length > 0) {
-    lines.push(`Files created or rewritten: ${outcome.writtenFiles.join(', ')}`);
+    lines.push('The task changed local files, but the final result is not fully confirmed yet.');
   }
 
   if (lines.length === 0 && outcome.updatedFiles.length > 0) {
-    lines.push(`Files modified: ${outcome.updatedFiles.join(', ')}`);
-  }
-
-  if (lines.length === 0 && outcome.successfulActions.length > 0) {
-    lines.push(`Successful n8nac actions: ${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
+    lines.push('The task updated local files, but the final result is not fully confirmed yet.');
   }
 
   if (outcome.blockingUnresolvedFailedActions.length > 0) {
-    lines.push(`Failed n8nac actions: ${outcome.blockingUnresolvedFailedActions.map(formatObservedAction).join(', ')}`);
+    lines.push('The run stopped because some execution steps still need correction.');
   }
 
   if (requiredActions.length > 0 && !(outcome.successfulPush && outcome.successfulVerify)) {
-    lines.push(`Pending required actions: ${requiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
+    lines.push(`Pending required actions: ${requiredActions.map((action) => action.title).join(', ')}`);
   }
 
   if (outcome.hasWorkflowWrites && !outcome.successfulValidate) {
@@ -810,6 +815,10 @@ export function buildGroundedSummary(
 
   if (lines.length === 0 && finishReason !== 'stop') {
     lines.push(`The run ended with reason: ${finishReason}.`);
+  }
+
+  if (lines.length === 0) {
+    lines.push('The task did not reach a grounded terminal result yet.');
   }
 
   return lines.join('\n');
@@ -893,6 +902,16 @@ function buildFinalAnswerFacts(
   }
 
   return lines.join('\n');
+}
+
+function buildCompletionRepairPrompt(): string {
+  return wrapInternal([
+    'Yagr internal completion repair pass.',
+    'The previous attempt ended without a concrete result or a structured blocker.',
+    'Do not apologize and do not summarize a failure yet.',
+    'Continue working until you either produce a real result or raise requestRequiredAction for the missing user input, permission, or external dependency that blocks progress.',
+    'A plain-text statement that the task could not be completed is not an acceptable stopping point.',
+  ].join(' '));
 }
 
 async function ensureFinalText(
@@ -1423,6 +1442,7 @@ export class YagrRunEngine {
       let steps = 0;
       let toolCalls: Array<{ toolName: string }> = [];
       let responseMessages: CoreMessage[] = [];
+      let lastExecutionResponseMessages: CoreMessage[] = [];
 
       for (let attemptNumber = 1; attemptNumber <= MAX_EXECUTION_ATTEMPTS; attemptNumber += 1) {
         throwIfAborted(options.abortSignal);
@@ -1446,7 +1466,8 @@ export class YagrRunEngine {
         finishReason = phaseResult.finishReason;
         steps += phaseResult.steps;
         toolCalls = phaseResult.toolCalls;
-        responseMessages = [...responseMessages, ...sanitizeAssistantResponseMessages(phaseResult.responseMessages)];
+        lastExecutionResponseMessages = sanitizeAssistantResponseMessages(phaseResult.responseMessages);
+        responseMessages = [...responseMessages, ...lastExecutionResponseMessages];
 
         const executedSyntheticIntents = await maybeExecuteSyntheticToolIntents(
           state,
@@ -1484,21 +1505,84 @@ export class YagrRunEngine {
       persistedMessages.push(...responseMessages);
       steps += inspectResult.steps.length;
       throwIfAborted(options.abortSignal);
-      const requiredActions = collectRequiredActions(state.journal);
-      const finalOutcome = analyzeRunOutcome(state.journal);
-      const completionDecision = await evaluateCompletionGate({
-        text,
-        finishReason,
-        requiredActions,
-        satisfiedRequiredActionIds: options.satisfiedRequiredActionIds,
-        hasWorkflowWrites: finalOutcome.hasWorkflowWrites,
-        successfulValidate: Boolean(finalOutcome.successfulValidate),
-        successfulPush: Boolean(finalOutcome.successfulPush),
-        successfulVerify: Boolean(finalOutcome.successfulVerify),
-        unresolvedFailureCount: finalOutcome.blockingUnresolvedFailedActions.length,
-        hooks: runtimeHooks,
-        context: buildRuntimeContext(state),
-      });
+      let completionRepairAttempts = 0;
+      let completionDecision;
+      let finalOutcome;
+      let requiredActions;
+
+      for (;;) {
+        requiredActions = collectRequiredActions(state.journal);
+        finalOutcome = analyzeRunOutcome(state.journal);
+        completionDecision = await evaluateCompletionGate({
+          text,
+          finishReason,
+          requiredActions,
+          satisfiedRequiredActionIds: options.satisfiedRequiredActionIds,
+          attemptedMaterialWork: hasObservedToolCall(state.journal, runtimeStrategy.tooling.executionCriticalToolNames),
+          hasConcreteResult: Boolean(
+            finalOutcome.hasWorkflowWrites
+            || finalOutcome.successfulValidate
+            || finalOutcome.successfulPush
+            || finalOutcome.successfulVerify
+            || extractPresentedWorkflowFromJournal(state.journal),
+          ),
+          hasWorkflowWrites: finalOutcome.hasWorkflowWrites,
+          successfulValidate: Boolean(finalOutcome.successfulValidate),
+          successfulPush: Boolean(finalOutcome.successfulPush),
+          successfulVerify: Boolean(finalOutcome.successfulVerify),
+          unresolvedFailureCount: finalOutcome.blockingUnresolvedFailedActions.length,
+          hooks: runtimeHooks,
+          context: buildRuntimeContext(state),
+        });
+
+        if (
+          !completionDecision.accepted
+          && completionDecision.needsContinuation
+          && completionRepairAttempts < MAX_COMPLETION_REPAIR_ATTEMPTS
+        ) {
+          completionRepairAttempts += 1;
+          throwIfAborted(options.abortSignal);
+          executeMessages = await maybeCompactMessages(state, options, this.systemPrompt, prompt, executeMessages);
+          executeMessages = [
+            ...executeMessages,
+            ...lastExecutionResponseMessages,
+            {
+              role: 'user',
+              content: buildCompletionRepairPrompt(),
+            },
+          ];
+
+          const phaseResult = await executePhase(
+            state,
+            options,
+            runtimeStrategy,
+            this.systemPrompt,
+            tools,
+            executeMessages,
+            Math.min(options.maxSteps ?? runtimeStrategy.executeMaxSteps, runtimeStrategy.recoveryMaxSteps),
+          );
+
+          if (phaseResult.text) {
+            text = phaseResult.text;
+          }
+          finishReason = phaseResult.finishReason;
+          steps += phaseResult.steps;
+          toolCalls = phaseResult.toolCalls;
+          lastExecutionResponseMessages = sanitizeAssistantResponseMessages(phaseResult.responseMessages);
+          responseMessages = [...responseMessages, ...lastExecutionResponseMessages];
+          persistedMessages.push(...lastExecutionResponseMessages);
+          await maybeExecuteSyntheticToolIntents(
+            state,
+            options,
+            runtimeStrategy,
+            tools,
+            phaseResult,
+          );
+          continue;
+        }
+
+        break;
+      }
 
       for (const requiredAction of completionDecision.requiredActions) {
         await emitJournal(state, options, {
