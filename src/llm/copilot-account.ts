@@ -17,6 +17,7 @@ import {
   type YagrModelCapabilityProfile,
 } from './model-capabilities.js';
 import { getCachedProviderModelMetadata, primeProviderModelMetadata } from './provider-metadata.js';
+import { normalizeFunctionToolParametersSchema } from './tool-schema.js';
 
 export const DEFAULT_COPILOT_API_BASE_URL = 'https://api.individual.githubcopilot.com';
 export const GITHUB_COPILOT_DEFAULT_MODEL = 'gpt-4.1';
@@ -720,7 +721,9 @@ function toOpenAiTools(tools: LanguageModelV1FunctionTool[]): Array<Record<strin
     function: {
       name: tool.name,
       ...(tool.description ? { description: tool.description } : {}),
-      parameters: tool.parameters,
+      parameters: normalizeFunctionToolParametersSchema(tool.parameters, {
+        forceRequiredObjectProperties: false,
+      }),
     },
   }));
 }
@@ -852,7 +855,9 @@ function toResponsesTools(tools: LanguageModelV1FunctionTool[]): Array<Record<st
     type: 'function',
     name: tool.name,
     ...(tool.description ? { description: tool.description } : {}),
-    parameters: tool.parameters,
+    parameters: normalizeFunctionToolParametersSchema(tool.parameters, {
+      forceRequiredObjectProperties: true,
+    }),
     strict: true,
   }));
 }
