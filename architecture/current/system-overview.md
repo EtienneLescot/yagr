@@ -77,6 +77,8 @@ Observation actuelle:
 - `build-system-prompt.ts` ne depend plus que du port identitaire de l'engine
 - `run-engine.ts` ne depend plus que du port runtime (`EngineRuntimePort`)
 - les facades conversationnelles passent maintenant par `YagrSessionAgent`, sans dependre du contrat `Engine` complet
+- la completion runtime n'accepte plus un run qui a fait du travail materiel sans produire ni resultat concret ni `requiredAction` structuree
+- en cas de pseudo-fin, le runtime tente d'abord une continuation, puis une capture explicite de blocker via `requestRequiredAction`
 
 ### LLM / providers
 
@@ -154,6 +156,9 @@ Observation actuelle:
 - la surface reste plate cote implementation, mais elle est maintenant filtree et contrainte de maniere coherente selon `native / compatible / weak / none`
 - le bridge `n8nac` privilegie desormais le repertoire de sync actif lors des retries `push`, ce qui evite une partie des divergences entre instances/scope locaux
 - le tool `presentWorkflowResult` et ses embeds workflow sont maintenant traites comme une sortie produit de premier plan: le harness `advanced` verifie explicitement la presence d'une banniere workflow complete avec URL et diagramme quand un workflow a ete cree/pousse
+- le diagramme workflow est maintenant valide via le parseur partage `src/gateway/workflow-diagram.ts` avant presentation; un diagramme non renduable n'est plus expose aux facades
+- la resolution du runtime n8n est maintenant partagee entre guard runtime et bridge `n8nac`
+- `N8N_HOST` / `N8N_API_KEY` ne sont pas une source de verite du runtime produit; ils ne sont pris en compte que lorsque le harness automatise active explicitement `YAGR_ALLOW_N8N_ENV=1`
 
 ### Gateway / facades
 
@@ -173,6 +178,7 @@ Observation actuelle:
 
 - les facades se limitent maintenant a l'I/O, aux sessions et a une orchestration legere
 - les mutations setup/config et l'etat metier associe sont delegues aux services applicatifs partages
+- les surfaces partagent maintenant une base unifiee pour les updates montrables; la prose assistant intermediaire ne doit plus etre le canal principal de progression
 
 ```mermaid
 flowchart LR
@@ -230,6 +236,11 @@ Responsabilite actuelle:
 - credentials n8n
 - chemins Yagr home
 - etat local et daemon/gateway config
+
+Observation actuelle:
+
+- la source de verite normale pour n8n reste la config locale Yagr/n8n persistee
+- le fallback environnement n8n est reserve aux tests automatises et doit etre active explicitement
 
 ## Frontieres actuelles
 

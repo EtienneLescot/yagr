@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWebUiStore, type ChatMessage, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot } from './store.js';
+import { parseWorkflowMap } from '../gateway/workflow-diagram.js';
 import yagrLogoUrl from '../../docs/static/img/yagr-logo.png';
 
 type ApiError = { error?: string };
@@ -369,126 +370,6 @@ function SetupPageHeader({
   );
 }
 
-interface GraphNode {
-  id: string;
-  label: string;
-  type: string;
-  col: number;
-  row: number;
-}
-
-interface GraphEdge {
-  from: string;
-  to: string;
-  isLoop?: boolean;
-}
-
-function normalizeWorkflowMapLine(line: string): string {
-  return line
-    .replace(/^\s*\/\*+\s?/, '')
-    .replace(/^\s*\*\/?\s?/, '')
-    .replace(/^\s*\/\/?\s?/, '')
-    .replace(/\s*\*\/\s*$/, '')
-    .trimEnd();
-}
-
-function parseWorkflowMap(diagram: string): { nodes: GraphNode[]; edges: GraphEdge[] } | null {
-  const lines = diagram.split('\n').map(normalizeWorkflowMapLine);
-
-  // Parse NODE INDEX: lines like "  PropertyName                  nodeType"
-  const nodeIndex = new Map<string, string>();
-  let inNodeIndex = false;
-  for (const line of lines) {
-    if (line.trim().startsWith('NODE INDEX')) { inNodeIndex = true; continue; }
-    if (line.trim().startsWith('ROUTING MAP')) { inNodeIndex = false; continue; }
-    if (/^[\s\-_=─]+$/.test(line.trim()) || line.trim().startsWith('Property name')) continue;
-    if (!inNodeIndex) continue;
-    const match = line.match(/^\s*(\S+)\s{2,}(\S+)/);
-    if (match) nodeIndex.set(match[1], match[2]);
-  }
-
-  // Parse ROUTING MAP: indented "→ NodeName" and ".out(N) → NodeName" lines
-  const edges: GraphEdge[] = [];
-  const parentStack: string[] = [];
-  let inRouting = false;
-  const orderedNames: string[] = [];
-  for (const line of lines) {
-    if (line.trim().startsWith('ROUTING MAP')) { inRouting = true; continue; }
-    if (line.trim().startsWith('<workflow-map>') || line.trim().startsWith('</workflow-map>')) continue;
-    if (line.trim().startsWith('AI CONNECTIONS')) break;
-    if (!inRouting) continue;
-    if (/^[\s\-_=─]+$/.test(line.trim()) || !line.trim()) continue;
-
-    const isLoop = line.includes('(↩ loop)');
-    // Match ".out(N) → NodeName" (alternate output branches) as well as plain "→ NodeName"
-    const arrowMatch = line.match(/^(\s*)\.out\(\d+\)\s+(?:→|->)\s*(\S+)/) ?? line.match(/^(\s*)(?:→|->)\s*(\S+)/);
-    if (arrowMatch) {
-      const depth = Math.floor(arrowMatch[1].length / 2);
-      const name = arrowMatch[2];
-      if (!isLoop) orderedNames.push(name);
-      if (depth <= parentStack.length && parentStack.length > 0) {
-        parentStack.length = depth;
-      }
-      if (parentStack.length > 0) {
-        edges.push({ from: parentStack[parentStack.length - 1], to: name, isLoop });
-      }
-      if (!isLoop) parentStack.push(name);
-    } else {
-      // Root node (no arrow)
-      const rootMatch = line.match(/^\s*(\S+)\s*$/);
-      if (rootMatch) {
-        parentStack.length = 0;
-        parentStack.push(rootMatch[1]);
-        orderedNames.push(rootMatch[1]);
-      }
-    }
-  }
-
-  if (orderedNames.length === 0) {
-    orderedNames.push(...nodeIndex.keys());
-  }
-
-  if (orderedNames.length === 0) return null;
-
-  // Build graph nodes — position by layer (column) from forward edges only (back-edges excluded to avoid infinite loop)
-  const layerMap = new Map<string, number>();
-  for (const name of orderedNames) {
-    if (!layerMap.has(name)) layerMap.set(name, 0);
-  }
-  const forwardEdges = edges.filter((e) => !e.isLoop);
-  // Forward pass: each target is at least source+1; bounded by O(V²) in the worst case for a DAG
-  let changed = true;
-  let iters = 0;
-  const maxIters = orderedNames.length * orderedNames.length + 1;
-  while (changed && iters++ < maxIters) {
-    changed = false;
-    for (const e of forwardEdges) {
-      const s = layerMap.get(e.from) ?? 0;
-      const t = layerMap.get(e.to) ?? 0;
-      if (t <= s) {
-        layerMap.set(e.to, s + 1);
-        changed = true;
-      }
-    }
-  }
-  // Group by column, assign rows
-  const columns = new Map<number, string[]>();
-  for (const name of orderedNames) {
-    const col = layerMap.get(name) ?? 0;
-    if (!columns.has(col)) columns.set(col, []);
-    if (!columns.get(col)!.includes(name)) columns.get(col)!.push(name);
-  }
-
-  const nodes: GraphNode[] = [];
-  for (const [col, names] of columns) {
-    names.forEach((name, row) => {
-      nodes.push({ id: name, label: name, type: nodeIndex.get(name) ?? '', col, row });
-    });
-  }
-
-  return { nodes, edges };
-}
-
 // Node type → color palette
 const NODE_COLORS: Record<string, string> = {
   manualTrigger: '#7c3aed', scheduleTrigger: '#7c3aed', webhook: '#7c3aed',
@@ -510,7 +391,7 @@ const PAD = 16;
 
 function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | null {
   const graph = React.useMemo(() => parseWorkflowMap(diagram), [diagram]);
-  if (!graph || graph.nodes.length === 0) return <pre className="workflowDiagram">{diagram}</pre>;
+  if (!graph || graph.nodes.length === 0) return null;
 
   const maxCol = Math.max(...graph.nodes.map((n) => n.col));
   const maxRowPerCol = new Map<number, number>();
@@ -524,7 +405,7 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
   // add vertical room for loop arcs that draw below the bottom-most node row
   const svgH = PAD * 2 + (maxRow + 1) * NODE_H + maxRow * ROW_GAP + (hasLoopEdges ? 80 : 0);
 
-  const pos = (n: GraphNode) => ({
+  const pos = (n: (typeof graph.nodes)[number]) => ({
     x: PAD + n.col * (NODE_W + COL_GAP),
     y: PAD + n.row * (NODE_H + ROW_GAP),
   });

@@ -1189,9 +1189,6 @@ async function executePhase(
     }
 
     const finalText = sanitizeAssistantOutput(result.text);
-    if (finalText) {
-      await options.onTextDelta?.(finalText);
-    }
 
     return {
       text: finalText,
@@ -1267,9 +1264,6 @@ async function executePhase(
   ]);
 
   const finalText = sanitizeAssistantOutput(resolved[0]);
-  if (finalText) {
-    await options.onTextDelta?.(finalText);
-  }
 
   return {
     text: finalText,
@@ -1675,6 +1669,9 @@ export class YagrRunEngine {
         options,
         runtimeStrategy,
       );
+      if (text) {
+        await options.onTextDelta?.(text);
+      }
 
       if (state.currentPhase && state.currentPhase !== 'summarize') {
         await transitionPhase(state, options, state.currentPhase, 'completed', `${state.currentPhase} phase completed.`);

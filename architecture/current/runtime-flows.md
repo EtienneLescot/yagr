@@ -39,6 +39,7 @@ Observation:
 - les facades conversationnelles passent maintenant par `YagrSessionAgent`
 - `YagrRunEngine` choisit lui-meme la strategie runtime, la surface d'outils et les hooks associes
 - le flux est maintenant explicitement pilote par `tool-runtime-strategy.ts`
+- les messages assistant libres ne doivent plus servir de canal d'avancement pendant l'execution: l'avancement montrable passe par les evenements runtime/user-visible updates, puis la prose assistant n'est emise qu'au moment de la vraie reponse finale
 
 Invariants runtime a conserver:
 
@@ -46,6 +47,7 @@ Invariants runtime a conserver:
 - un run ne doit pas etre "complete" uniquement parce que le modele s'arrete
 - les blocages et required actions doivent rester representes explicitement
 - les politiques produit doivent rester au-dessus du coeur runtime
+- si un run a deja engage du travail materiel, il doit finir par un resultat concret, une `requiredAction` structuree, ou une poursuite de la boucle; pas par un simple aveu d'echec en prose
 
 ## 2. Setup et onboarding
 
@@ -157,6 +159,8 @@ Observation:
 - `toolsets.ts` est maintenant le SSOT des groupes d'outils
 - `tool-runtime-strategy.ts` choisit la surface exposee, le mode de tool calling et la politique post-sync
 - `policy-hooks.ts` applique cette politique au lieu de porter ses propres regles implicites
+- le runtime n8n utilise maintenant une resolution partagee de disponibilite (`config locale` par defaut, `env` seulement pour le harness automatise)
+- la presentation workflow ne doit plus exposer de diagramme brut infere: le diagramme doit passer par le parseur partage de `src/gateway/workflow-diagram.ts` avant d'etre emis puis rendu
 
 ## 5. Flux facade WebUI actuel
 
@@ -183,3 +187,9 @@ Quand un flux transverse change, il faut:
 - mettre a jour le graphe Mermaid
 - verifier que les noms de modules correspondent encore au repo
 - signaler clairement tout nouveau couplage transverse
+
+## 7. Separation runtime produit / harness automatise
+
+- le runtime produit ne doit pas dependre de `N8N_HOST` / `N8N_API_KEY`
+- le harness de tests providers peut injecter ces valeurs, mais uniquement via l'opt-in `YAGR_ALLOW_N8N_ENV=1`
+- cette separation doit rester visible dans `src/config/n8n-config-service.ts`, `src/tools/n8nac.ts`, `src/runtime/policy-hooks.ts` et `scripts/provider-integration-matrix.mjs`

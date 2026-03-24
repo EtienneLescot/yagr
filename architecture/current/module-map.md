@@ -74,6 +74,7 @@ Observation actuelle:
 
 - le runtime consomme maintenant `EngineRuntimePort` plutot que le contrat `Engine` complet
 - le runtime choisit maintenant seul la surface d'outils, le mode de tool calling et la politique post-sync via `tool-runtime-strategy.ts` puis `policy-hooks.ts`
+- `completion-gate.ts` et `run-engine.ts` imposent maintenant une fin de run plus stricte: resultat concret, blocker structure, ou poursuite
 
 ```mermaid
 flowchart LR
@@ -221,6 +222,7 @@ Role actuel:
 Note:
 
 - cette zone est le meilleur candidat pour devenir le coeur du SSOT applicatif, a condition de remonter la logique de coordination dans des services d'application explicites
+- la resolution n8n partagee vit maintenant aussi ici: le runtime normal lit la config persistee, tandis que le fallback environnement n'est autorise que pour le harness automatise
 
 ## References utiles
 
