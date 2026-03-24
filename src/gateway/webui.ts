@@ -9,7 +9,7 @@ import {
 } from 'n8nac';
 import { YagrSessionAgent } from '../agent.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
-import { YagrConfigService } from '../config/yagr-config-service.js';
+import { YagrConfigService, type YagrConfigStoreLike } from '../config/yagr-config-service.js';
 import type { EngineRuntimePort } from '../engine/engine.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
@@ -150,7 +150,7 @@ function sanitizePort(value: number | undefined): number {
   return Number(value);
 }
 
-function getWebUiConfig(configService = new YagrConfigService()): Required<WebUiConfigPayload> {
+function getWebUiConfig(configService: YagrConfigStoreLike = new YagrConfigService()): Required<WebUiConfigPayload> {
   const config = configService.getLocalConfig();
   return {
     host: sanitizeHost(config.gateway?.webui?.host),
@@ -158,7 +158,7 @@ function getWebUiConfig(configService = new YagrConfigService()): Required<WebUi
   };
 }
 
-export function getWebUiGatewayStatus(configService = new YagrConfigService()): WebUiGatewayStatus {
+export function getWebUiGatewayStatus(configService: YagrConfigStoreLike = new YagrConfigService()): WebUiGatewayStatus {
   const config = getWebUiConfig(configService);
   return {
     configured: true,

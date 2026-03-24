@@ -1,4 +1,4 @@
-import { normalizeGatewaySurfaces, type YagrConfigService } from '../config/yagr-config-service.js';
+import { normalizeGatewaySurfaces, type YagrConfigStoreLike } from '../config/yagr-config-service.js';
 import type { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { getGatewaySupervisorStatus } from '../gateway/manager.js';
 import type { GatewaySurface } from '../gateway/types.js';
@@ -40,13 +40,13 @@ export function buildYagrSetupStatus(input: {
 }
 
 export function getYagrSetupStatus(
-  yagrConfigService: Pick<YagrConfigService, 'getLocalConfig' | 'getApiKey'>,
+  yagrConfigService: YagrConfigStoreLike,
   n8nConfigService: Pick<YagrN8nConfigService, 'getLocalConfig' | 'getApiKey'>,
   options: { activeSurfaces?: GatewaySurface[] } = {},
 ): YagrSetupStatus {
   const yagrConfig = yagrConfigService.getLocalConfig();
   const n8nConfig = n8nConfigService.getLocalConfig();
-  const gatewayStatus = getGatewaySupervisorStatus(yagrConfigService as YagrConfigService);
+  const gatewayStatus = getGatewaySupervisorStatus(yagrConfigService);
   const activeSurfaces = normalizeGatewaySurfaces(options.activeSurfaces);
 
   const n8nConfigured = Boolean(

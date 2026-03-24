@@ -19,7 +19,7 @@ import type {
   YagrStateEvent,
   YagrToolEvent,
 } from '../types.js';
-import { buildTools } from '../tools/index.js';
+import { buildTools, type AllBuiltTools } from '../tools/index.js';
 import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import { resolveWorkflowDiagramFromFilePath } from '../tools/present-workflow-result.js';
 import { evaluateCompletionGate, type CompletionGateDecision } from './completion-gate.js';
@@ -265,7 +265,7 @@ async function maybeExecuteSyntheticToolIntents(
   state: RunState,
   options: YagrRunOptions,
   strategy: YagrToolRuntimeStrategy,
-  tools: ReturnType<typeof buildTools>,
+  tools: Partial<AllBuiltTools>,
   phaseResult: {
     text: string;
     toolCalls: Array<{ toolName: string }>;
@@ -1166,7 +1166,7 @@ async function executePhase(
   options: YagrRunOptions,
   strategy: YagrToolRuntimeStrategy,
   systemPrompt: string,
-  tools: ReturnType<typeof buildTools>,
+  tools: Partial<AllBuiltTools>,
   messages: CoreMessage[],
   maxSteps: number,
 ): Promise<{
@@ -1184,7 +1184,7 @@ async function executePhase(
       abortSignal: options.abortSignal,
       model: createLanguageModel(options),
       system: systemPrompt,
-      ...(modelInvocationTools ? { tools: modelInvocationTools } : {}),
+      ...(modelInvocationTools ? { tools: modelInvocationTools as AllBuiltTools } : {}),
       messages,
       maxSteps,
       providerOptions: strategy.providerOptions,
@@ -1224,7 +1224,7 @@ async function executePhase(
     abortSignal: options.abortSignal,
     model: createLanguageModel(options),
     system: systemPrompt,
-    ...(modelInvocationTools ? { tools: modelInvocationTools } : {}),
+    ...(modelInvocationTools ? { tools: modelInvocationTools as AllBuiltTools } : {}),
     messages,
     maxSteps,
     toolCallStreaming: strategy.toolCallStreaming,
@@ -1394,7 +1394,7 @@ export class YagrRunEngine {
       runId: state.runId,
       phase: state.currentPhase,
       state: state.currentAgentState,
-    }), options.satisfiedRequiredActionIds) as typeof baseTools;
+    }), options.satisfiedRequiredActionIds) as Partial<AllBuiltTools>;
     const modelInvocationTools = runtimeStrategy.tooling.toolCallMode === 'disabled' ? undefined : tools;
     const persistedMessages: CoreMessage[] = [currentUserMessage];
     let executionContext: CoreMessage[] = [...this.history, currentUserMessage];
@@ -1421,7 +1421,7 @@ export class YagrRunEngine {
         abortSignal: options.abortSignal,
         model: createLanguageModel(options),
         system: this.systemPrompt,
-        ...(modelInvocationTools ? { tools: modelInvocationTools } : {}),
+        ...(modelInvocationTools ? { tools: modelInvocationTools as AllBuiltTools } : {}),
         messages: [...executionContext, inspectInstruction],
         maxSteps: Math.min(options.maxSteps ?? 8, runtimeStrategy.inspectMaxSteps),
         providerOptions: runtimeStrategy.providerOptions,
@@ -1622,9 +1622,9 @@ export class YagrRunEngine {
             },
           ];
 
-          const blockerTools = {
+          const blockerTools: Partial<AllBuiltTools> = {
             requestRequiredAction: tools.requestRequiredAction,
-          } as typeof tools;
+          };
 
           const phaseResult = await executePhase(
             state,

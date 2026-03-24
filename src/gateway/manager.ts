@@ -1,5 +1,5 @@
 import qrcode from 'qrcode-terminal';
-import { YagrConfigService, type YagrGatewayConfig } from '../config/yagr-config-service.js';
+import { YagrConfigService, type YagrConfigStoreLike, type YagrGatewayConfig } from '../config/yagr-config-service.js';
 import type { EngineRuntimePort } from '../engine/engine.js';
 import type { YagrRunOptions } from '../types.js';
 import type { GatewayRuntimeHandle, GatewaySurface } from './types.js';
@@ -27,7 +27,7 @@ export interface GatewaySupervisorStatus {
 interface GatewayDescriptor {
   id: GatewaySurface;
   label: string;
-  getStatus: (configService: YagrConfigService, enabled: boolean) => Omit<GatewaySurfaceStatus, 'startable'>;
+  getStatus: (configService: YagrConfigStoreLike, enabled: boolean) => Omit<GatewaySurfaceStatus, 'startable'>;
   createRuntime?: (
     engineResolver: () => Promise<EngineRuntimePort>,
     options: YagrRunOptions,
@@ -142,7 +142,7 @@ export function buildGatewaySupervisorStatus(
   };
 }
 
-export function getGatewaySupervisorStatus(configService = new YagrConfigService()): GatewaySupervisorStatus {
+export function getGatewaySupervisorStatus(configService: YagrConfigStoreLike = new YagrConfigService()): GatewaySupervisorStatus {
   const enabledSurfaces = configService.getEnabledGatewaySurfaces();
   return buildGatewaySupervisorStatus(
     GATEWAY_DESCRIPTORS.map((descriptor) => descriptor.getStatus(configService, enabledSurfaces.includes(descriptor.id))),

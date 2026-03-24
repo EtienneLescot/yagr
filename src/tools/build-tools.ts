@@ -22,12 +22,11 @@ import { createWriteWorkspaceFileTool } from './write-workspace-file.js';
 import { createPresentWorkflowResultTool } from './present-workflow-result.js';
 import { FULL_RUNTIME_TOOL_NAMES } from './toolsets.js';
 
-export function buildTools(
+function createAllTools(
   engine: NodeCatalogPort & TemplateCatalogPort & WorkflowLifecyclePort,
   observer?: ToolExecutionObserver,
-  options: { allowedToolNames?: string[] } = {},
 ) {
-  const allTools = {
+  return {
     reportProgress: createReportProgressTool(observer),
     requestRequiredAction: createRequestRequiredActionTool(observer),
     n8nac: createN8nAcTool(observer),
@@ -45,6 +44,17 @@ export function buildTools(
     deleteWorkspaceFile: createDeleteWorkspaceFileTool(observer),
     presentWorkflowResult: createPresentWorkflowResultTool(observer),
   };
+}
+
+/** The full shape of the tool set when no filtering is applied. */
+export type AllBuiltTools = ReturnType<typeof createAllTools>;
+
+export function buildTools(
+  engine: NodeCatalogPort & TemplateCatalogPort & WorkflowLifecyclePort,
+  observer?: ToolExecutionObserver,
+  options: { allowedToolNames?: string[] } = {},
+): Partial<AllBuiltTools> {
+  const allTools = createAllTools(engine, observer);
 
   const requestedToolNames = options.allowedToolNames && options.allowedToolNames.length > 0
     ? options.allowedToolNames
@@ -53,6 +63,6 @@ export function buildTools(
   return Object.fromEntries(
     requestedToolNames
       .filter((toolName) => toolName in allTools)
-      .map((toolName) => [toolName, allTools[toolName as keyof typeof allTools]]),
-  ) as typeof allTools;
+      .map((toolName) => [toolName, allTools[toolName as keyof AllBuiltTools]]),
+  ) as Partial<AllBuiltTools>;
 }
