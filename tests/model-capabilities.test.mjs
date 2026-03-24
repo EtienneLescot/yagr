@@ -9,6 +9,7 @@ import {
   resolveModelCapabilityProfile,
 } from '../dist/llm/model-capabilities.js';
 import {
+  classifyMetadataCapability,
   classifyOpenRouterMetadataCapability,
   resolveCapabilityProfileFromMetadata,
 } from '../dist/llm/capability-resolver.js';
@@ -111,6 +112,23 @@ test('openrouter metadata cache warms from discovery payload and resolves a capa
   assert.equal(profile.supportsForcedToolChoice, true);
 });
 
+test('metadata classification stays conservative when endpoint variants do not all support tools', () => {
+  const capability = classifyMetadataCapability({
+    provider: 'openrouter',
+    model: 'cohere/command-a',
+    supportedParameters: ['tools', 'tool_choice', 'parallel_tool_calls'],
+    inputModalities: ['text'],
+    outputModalities: ['text'],
+    endpointVariants: [
+      { providerName: 'good-route', supportedParameters: ['tools', 'tool_choice', 'parallel_tool_calls'] },
+      { providerName: 'plain-route', supportedParameters: ['max_tokens', 'temperature'] },
+    ],
+    fetchedAt: new Date().toISOString(),
+  });
+
+  assert.equal(capability, 'none');
+});
+
 test('resolveModelCapabilityProfile prefers cached metadata over openrouter name heuristics', () => {
   warmProviderMetadataCacheFromDiscovery('openrouter', {
     data: [
@@ -148,6 +166,17 @@ test('capability helpers derive runtime settings from the profile', () => {
   assert.deepEqual(getOpenAiCompatibleProviderSettingsForCapability(profile), {
     parallelToolCalls: false,
     structuredOutputs: false,
+    simulateStreaming: true,
+  });
+});
+
+test('none capability does not request tool-specific openai-compatible settings', () => {
+  const profile = resolveModelCapabilityProfile({
+    provider: 'openrouter',
+    model: 'openai/text-embedding-3-small',
+  });
+
+  assert.deepEqual(getOpenAiCompatibleProviderSettingsForCapability(profile), {
     simulateStreaming: true,
   });
 });

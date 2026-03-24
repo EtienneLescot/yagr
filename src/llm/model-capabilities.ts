@@ -158,6 +158,12 @@ export function getOpenAiCompatibleProviderSettingsForCapability(
   structuredOutputs?: boolean;
   simulateStreaming?: boolean;
 } | undefined {
+  if (profile.toolCalling === 'none') {
+    return {
+      simulateStreaming: true,
+    };
+  }
+
   if (profile.toolCalling === 'native') {
     return undefined;
   }

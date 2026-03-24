@@ -57,10 +57,45 @@ function hasAnyToken(value: string | undefined, patterns: string[]): boolean {
   return Boolean(value && patterns.some((pattern) => value.includes(pattern)));
 }
 
-export function classifyOpenRouterMetadataCapability(
+function normalizeSupportedParameters(values: string[] | undefined): string[] {
+  return (values ?? [])
+    .map((item) => item.toLowerCase().trim())
+    .filter(Boolean);
+}
+
+function resolveConservativeSupportedParameters(metadata: YagrProviderModelMetadata): Set<string> {
+  const topLevel = new Set(normalizeSupportedParameters(metadata.supportedParameters));
+
+  if (!metadata.endpointVariants?.length) {
+    return topLevel;
+  }
+
+  let intersection: Set<string> | undefined;
+  for (const variant of metadata.endpointVariants) {
+    const variantSet = new Set(normalizeSupportedParameters(variant.supportedParameters));
+    if (!intersection) {
+      intersection = variantSet;
+      continue;
+    }
+
+    intersection = new Set([...intersection].filter((item) => variantSet.has(item)));
+  }
+
+  if (!intersection) {
+    return topLevel;
+  }
+
+  if (topLevel.size === 0) {
+    return intersection;
+  }
+
+  return new Set([...intersection].filter((item) => topLevel.has(item)));
+}
+
+export function classifyMetadataCapability(
   metadata: YagrProviderModelMetadata,
 ): YagrToolCallingCapability {
-  const supportedParameters = new Set((metadata.supportedParameters ?? []).map((item) => item.toLowerCase()));
+  const supportedParameters = resolveConservativeSupportedParameters(metadata);
   const inputModalities = new Set((metadata.inputModalities ?? []).map((item) => item.toLowerCase()));
   const outputModalities = new Set((metadata.outputModalities ?? []).map((item) => item.toLowerCase()));
   const modelId = metadata.model.toLowerCase();
@@ -87,6 +122,12 @@ export function classifyOpenRouterMetadataCapability(
   return 'weak';
 }
 
+export function classifyOpenRouterMetadataCapability(
+  metadata: YagrProviderModelMetadata,
+): YagrToolCallingCapability {
+  return classifyMetadataCapability(metadata);
+}
+
 export function resolveCapabilityProfileFromMetadata(input: {
   provider: YagrModelProvider;
   model: string;
@@ -96,15 +137,12 @@ export function resolveCapabilityProfileFromMetadata(input: {
     return undefined;
   }
 
-  if (input.provider === 'openrouter') {
-    const toolCalling = classifyOpenRouterMetadataCapability(metadata);
-    return buildProfile(input.provider, input.model, toolCalling, {
-      supportsParallelToolCalls: toolCalling !== 'none' && (metadata.supportedParameters ?? []).includes('parallel_tool_calls'),
-      supportsStructuredOutputs: toolCalling !== 'none'
-        && ((metadata.supportedParameters ?? []).includes('response_format') || (metadata.supportedParameters ?? []).includes('structured_outputs')),
-      supportsForcedToolChoice: toolCalling !== 'none' && (metadata.supportedParameters ?? []).includes('tool_choice'),
-    });
-  }
-
-  return undefined;
+  const supportedParameters = resolveConservativeSupportedParameters(metadata);
+  const toolCalling = classifyMetadataCapability(metadata);
+  return buildProfile(input.provider, input.model, toolCalling, {
+    supportsParallelToolCalls: toolCalling !== 'none' && supportedParameters.has('parallel_tool_calls'),
+    supportsStructuredOutputs: toolCalling !== 'none'
+      && (supportedParameters.has('response_format') || supportedParameters.has('structured_outputs')),
+    supportsForcedToolChoice: toolCalling !== 'none' && supportedParameters.has('tool_choice'),
+  });
 }

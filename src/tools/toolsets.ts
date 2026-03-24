@@ -37,6 +37,12 @@ export const MINIMAL_RUNTIME_TOOL_NAMES = [
   ...CORE_TOOL_NAMES,
 ] as const;
 
+export const SYNTHETIC_RUNTIME_TOOL_NAMES = [
+  ...CORE_TOOL_NAMES,
+  'writeWorkspaceFile',
+  'n8nac',
+] as const;
+
 export const POST_SYNC_RUNTIME_TOOL_NAMES = [
   'reportProgress',
   'requestRequiredAction',
