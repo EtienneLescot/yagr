@@ -8,6 +8,7 @@ import { evaluateCompletionGate } from '../dist/runtime/completion-gate.js';
 import { analyzeRunOutcome } from '../dist/runtime/outcome.js';
 import {
   createDefaultRuntimeHooks,
+  createWorkflowSyncCompletionGuardHook,
   createWorkflowPresentationGuardHook,
   wrapToolsWithRuntimeHooks,
 } from '../dist/runtime/policy-hooks.js';
@@ -139,6 +140,61 @@ test('workflow presentation is allowed when the caller already provides a diagra
     }
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test('workflow sync guard blocks exploratory tools after a successful push', async () => {
+  const wrappedTools = wrapToolsWithRuntimeHooks(
+    {
+      n8nac: {
+        description: 'n8nac',
+        parameters: undefined,
+        execute: async () => ({ exitCode: 0 }),
+      },
+      listDirectory: {
+        description: 'list directory',
+        parameters: undefined,
+        execute: async () => ({ ok: true }),
+      },
+    },
+    [createWorkflowSyncCompletionGuardHook()],
+    () => ({ runId: 'run-sync-1', phase: 'sync', state: 'running' }),
+  );
+
+  const pushResult = await wrappedTools.n8nac.execute({ action: 'push', filename: 'demo.workflow.ts' });
+  const blockedResult = await wrappedTools.listDirectory.execute({ path: '.' });
+
+  assert.equal(pushResult.exitCode, 0);
+  assert.equal(blockedResult.ok, false);
+  assert.equal(blockedResult.blocked, true);
+  assert.match(blockedResult.error, /already pushed and verified/i);
+});
+
+test('workflow sync guard still allows final presentation after a successful push', async () => {
+  const wrappedTools = wrapToolsWithRuntimeHooks(
+    {
+      n8nac: {
+        description: 'n8nac',
+        parameters: undefined,
+        execute: async () => ({ exitCode: 0 }),
+      },
+      presentWorkflowResult: {
+        description: 'present workflow',
+        parameters: undefined,
+        execute: async () => ({ presented: true }),
+      },
+    },
+    [createWorkflowSyncCompletionGuardHook()],
+    () => ({ runId: 'run-sync-2', phase: 'sync', state: 'running' }),
+  );
+
+  await wrappedTools.n8nac.execute({ action: 'push', filename: 'demo.workflow.ts' });
+  const presentResult = await wrappedTools.presentWorkflowResult.execute({
+    workflowId: 'wf-1',
+    workflowUrl: 'http://localhost:5678/workflow/wf-1',
+    diagram: '<workflow-map>\nROUTING MAP\nStart\n</workflow-map>',
+  });
+
+  assert.equal(presentResult.presented, true);
 });
 
 test('later successful retry clears an earlier unresolved n8nac failure', () => {
@@ -330,6 +386,7 @@ test('successful push counts as validate and verify evidence for completion gati
     hasWorkflowWrites: outcome.hasWorkflowWrites,
     successfulValidate: Boolean(outcome.successfulValidate),
     successfulPush: Boolean(outcome.successfulPush),
+    successfulVerify: Boolean(outcome.successfulVerify),
     unresolvedFailureCount: outcome.unresolvedFailedActions.length,
     context: { runId: 'run-push', phase: 'summarize', state: 'running' },
   });
@@ -366,6 +423,7 @@ test('completion gate stays blocked when a required action is still open', async
     hasWorkflowWrites: false,
     successfulValidate: false,
     successfulPush: false,
+    successfulVerify: false,
     unresolvedFailureCount: 0,
     context: { runId: 'run-2', phase: 'summarize', state: 'running' },
   });
@@ -383,6 +441,7 @@ test('beforeCompletion hook can inject a permission blocker', async () => {
     hasWorkflowWrites: false,
     successfulValidate: true,
     successfulPush: true,
+    successfulVerify: true,
     unresolvedFailureCount: 0,
     hooks: [
       {
@@ -455,6 +514,7 @@ test('approved required action bypasses completion blocker', async () => {
     hasWorkflowWrites: false,
     successfulValidate: true,
     successfulPush: true,
+    successfulVerify: true,
     unresolvedFailureCount: 0,
     hooks: [
       {
@@ -487,6 +547,7 @@ test('completion gate does not fail terminally on exploratory n8nac failures wit
     hasWorkflowWrites: false,
     successfulValidate: false,
     successfulPush: false,
+    successfulVerify: false,
     unresolvedFailureCount: 1,
     context: { runId: 'run-6', phase: 'summarize', state: 'running' },
   });
@@ -504,6 +565,7 @@ test('completion gate still fails terminally on unresolved n8nac failures after 
     hasWorkflowWrites: true,
     successfulValidate: false,
     successfulPush: false,
+    successfulVerify: false,
     unresolvedFailureCount: 1,
     context: { runId: 'run-7', phase: 'summarize', state: 'running' },
   });

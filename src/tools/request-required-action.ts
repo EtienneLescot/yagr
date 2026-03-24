@@ -10,7 +10,7 @@ export function createRequestRequiredActionTool(observer?: ToolExecutionObserver
     parameters: z.object({
       kind: z.enum(['input', 'permission', 'external']).describe('Type of blocker that needs user or external action.'),
       title: z.string().min(1).max(120).describe('Short title for the blocker.'),
-      message: z.string().min(1).max(240).describe('Short actionable message shown to the user.'),
+      message: z.string().min(1).max(500).describe('Short actionable message shown to the user.'),
       detail: z.string().max(1000).nullable().optional().describe('Detailed explanation or next step. Use null when there is no extra detail.'),
       resumable: z.boolean().optional().default(true).describe('Whether the run should be considered resumable once the action is satisfied.'),
     }),

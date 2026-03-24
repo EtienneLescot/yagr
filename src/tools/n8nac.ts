@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
@@ -191,6 +192,99 @@ export function getN8nacProcessEnv(env: NodeJS.ProcessEnv = {}, configService = 
   return nextEnv;
 }
 
+function sanitizeEnvValue(value: string | undefined): string {
+  return String(value || '').trim().replace(/^['"]|['"]$/g, '');
+}
+
+function findWorkspaceWorkflowCandidates(filename: string): string[] {
+  const root = workspaceRoot();
+  const target = filename.trim();
+  if (!target) {
+    return [];
+  }
+
+  const matches: string[] = [];
+  const visit = (dirPath: string) => {
+    for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+      const entryPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        visit(entryPath);
+        continue;
+      }
+
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      if (entry.name === target || relativeWorkspacePath(entryPath) === target) {
+        matches.push(entryPath);
+      }
+    }
+  };
+
+  visit(root);
+  return matches;
+}
+
+function rankWorkspaceWorkflowCandidate(candidatePath: string, workflowDir: string | undefined): number {
+  if (!workflowDir) {
+    return 1;
+  }
+
+  const normalizedCandidate = path.resolve(candidatePath);
+  const normalizedWorkflowDir = path.resolve(workflowDir);
+  if (normalizedCandidate.startsWith(`${normalizedWorkflowDir}${path.sep}`)) {
+    return 0;
+  }
+
+  return 1;
+}
+
+export function pickPreferredWorkspaceWorkflowCandidate(
+  filename: string,
+  configService = new YagrN8nConfigService(),
+): string | undefined {
+  const localConfig = configService.getLocalConfig();
+  const workflowDir = resolveWorkflowDir(localConfig);
+  const candidates = findWorkspaceWorkflowCandidates(filename);
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  return [...candidates].sort((left, right) => {
+    const rankDelta = rankWorkspaceWorkflowCandidate(left, workflowDir) - rankWorkspaceWorkflowCandidate(right, workflowDir);
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+
+    return left.localeCompare(right);
+  })[0];
+}
+
+function summarizeN8nacRuntime(cwd: string, env: NodeJS.ProcessEnv = {}, configService = new YagrN8nConfigService()): string {
+  const localConfig = configService.getLocalConfig();
+  const envHost = sanitizeEnvValue(env.N8N_HOST ?? process.env.N8N_HOST);
+  const envApiKey = sanitizeEnvValue(env.N8N_API_KEY ?? process.env.N8N_API_KEY);
+  const configHost = sanitizeEnvValue(localConfig.host);
+  const resolvedHost = configHost || envHost;
+  const resolvedApiKey = resolvedHost
+    ? sanitizeEnvValue(configService.getApiKey(resolvedHost) || envApiKey)
+    : envApiKey;
+  const workflowDir = resolveWorkflowDir(localConfig);
+
+  return [
+    `cwd=${relativeWorkspacePath(cwd)}`,
+    `envHost=${envHost || '-'}`,
+    `envApiKey=${envApiKey ? 'present' : 'missing'}`,
+    `configHost=${configHost || '-'}`,
+    `configProject=${localConfig.projectName || localConfig.projectId || '-'}`,
+    `configInstance=${localConfig.instanceIdentifier || '-'}`,
+    `workflowDir=${workflowDir ? relativeWorkspacePath(workflowDir) : '-'}`,
+    `resolvedHost=${resolvedHost || '-'}`,
+    `resolvedApiKey=${resolvedApiKey ? 'present' : 'missing'}`,
+  ].join(' ');
+}
+
 async function runObservedN8nac(
   observer: ToolExecutionObserver | undefined,
   args: string[],
@@ -198,6 +292,13 @@ async function runObservedN8nac(
   env?: NodeJS.ProcessEnv,
 ): Promise<RunResult> {
   const command = [resolvePackageManagerCommand('npx'), '--yes', 'n8nac', ...args].map(quoteShellArg).join(' ');
+  const runtimeSummary = summarizeN8nacRuntime(cwd, env);
+
+  await emitToolEvent(observer, {
+    type: 'status',
+    toolName: 'n8nac',
+    message: `Runtime ${runtimeSummary}`,
+  });
 
   await emitToolEvent(observer, {
     type: 'command-start',
@@ -402,12 +503,31 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         if (!filename) {
           throw new Error('push requires filename including .workflow.ts');
         }
-        const result = await runObservedN8nac(observer, ['push', filename, '--verify'], cwd);
+        let pushTarget = filename;
+        let result = await runObservedN8nac(observer, ['push', pushTarget, '--verify'], cwd);
+
+        if (
+          result.exitCode !== 0
+          && /local file not found in the active sync scope/i.test(result.stderr || result.stdout)
+        ) {
+          const preferredCandidate = pickPreferredWorkspaceWorkflowCandidate(filename);
+          if (preferredCandidate) {
+            pushTarget = relativeWorkspacePath(preferredCandidate);
+            await emitToolEvent(observer, {
+              type: 'status',
+              toolName: 'n8nac',
+              message: `Retrying push with workspace path ${pushTarget}`,
+            });
+            result = await runObservedN8nac(observer, ['push', pushTarget, '--verify'], cwd);
+          }
+        }
+
         return {
           exitCode: result.exitCode,
           timedOut: result.timedOut,
           stdout: truncateText(result.stdout),
           stderr: truncateText(result.stderr),
+          pushTarget,
         };
       }
 
