@@ -40,7 +40,7 @@ Responsabilites actuelles:
 Dette structurelle:
 
 - le contrat `Engine` complet reste encore present pour compatibilite
-- la migration vers les ports fins est entamee cote tools, mais pas encore terminee dans tout le repo
+- la migration vers les ports fins est maintenant appliquee aux tools, au runtime, au prompt et aux gateways
 
 ### `src/runtime/`
 
@@ -61,6 +61,10 @@ Responsabilites actuelles:
 - enforcement runtime
 - compaction de contexte
 - selection d'une strategie runtime selon le niveau de capacite (`native`, `compatible`, `weak`, `none`)
+
+Observation actuelle:
+
+- le runtime consomme maintenant `EngineRuntimePort` plutot que le contrat `Engine` complet
 
 ### `src/llm/`
 
@@ -140,6 +144,7 @@ Observation actuelle:
 - la WebUI et Telegram deleguent maintenant l'essentiel des mutations setup/config au service applicatif partage
 - la CLI ne persiste plus directement la configuration metier du runtime et passe elle aussi par la couche applicative
 - les facades gardent maintenant l'I/O, les sessions et le branchement des runtimes
+- les facades conversationnelles passent maintenant par `YagrSessionAgent` plutot que par l'agent complet
 
 ### `src/setup.ts` et `src/setup/`
 

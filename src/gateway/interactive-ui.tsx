@@ -3,7 +3,7 @@ import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
-import type { YagrAgent } from '../agent.js';
+import type { YagrSessionAgent } from '../agent.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
@@ -44,7 +44,7 @@ type HistoryLine = {
 };
 
 type InteractiveAppProps = {
-  agent: YagrAgent;
+  agent: YagrSessionAgent;
   options: YagrRunOptions;
 };
 
@@ -846,7 +846,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   );
 }
 
-export async function runInteractiveGateway(agent: YagrAgent, options: YagrRunOptions): Promise<void> {
+export async function runInteractiveGateway(agent: YagrSessionAgent, options: YagrRunOptions): Promise<void> {
   await ensureLocalWorkflowOpenBridgeRunning();
   const ink = render(<YagrInteractiveApp agent={agent} options={options} />, {
     exitOnCtrlC: false,

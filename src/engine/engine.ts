@@ -36,6 +36,12 @@ export interface WorkflowLifecyclePort extends EngineIdentityPort {
   deleteWorkflow(id: string): Promise<void>;
 }
 
+export interface EngineRuntimePort extends
+  EngineIdentityPort,
+  NodeCatalogPort,
+  TemplateCatalogPort,
+  WorkflowLifecyclePort {}
+
 export interface Engine extends
   NodeCatalogPort,
   TemplateCatalogPort,

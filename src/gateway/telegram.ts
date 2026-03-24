@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import { Telegraf } from 'telegraf';
-import { YagrAgent } from '../agent.js';
+import { YagrSessionAgent } from '../agent.js';
 import { YagrConfigService, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
-import type { Engine } from '../engine/engine.js';
+import type { EngineRuntimePort } from '../engine/engine.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import {
@@ -194,7 +194,7 @@ export function resetTelegramGateway(configService = new YagrConfigService()): v
 }
 
 export function createTelegramGatewayRuntime(
-  engineResolver: () => Promise<Engine>,
+  engineResolver: () => Promise<EngineRuntimePort>,
   options: TelegramGatewayRuntimeOptions = {},
   configService = new YagrConfigService(),
 ): GatewayRuntimeHandle {
@@ -221,15 +221,15 @@ export function createTelegramGatewayRuntime(
 
 class TelegramGateway implements Gateway {
   private readonly bot: Telegraf;
-  private readonly agents = new Map<string, YagrAgent>();
+  private readonly agents = new Map<string, YagrSessionAgent>();
   private readonly runningChats = new Set<string>();
   private readonly pendingApprovals = new Map<string, YagrRequiredAction[]>();
-  private enginePromise?: Promise<Engine>;
+  private enginePromise?: Promise<EngineRuntimePort>;
   private stopped = false;
   private readonly setupService: YagrSetupApplicationService;
 
   constructor(
-    private readonly engineResolver: () => Promise<Engine>,
+    private readonly engineResolver: () => Promise<EngineRuntimePort>,
     private readonly options: TelegramGatewayRuntimeOptions,
     private readonly configService: YagrConfigService,
     botToken: string,
@@ -434,18 +434,18 @@ class TelegramGateway implements Gateway {
     return this.setupService.isTelegramChatLinked(chatId);
   }
 
-  private async getEngine(): Promise<Engine> {
+  private async getEngine(): Promise<EngineRuntimePort> {
     this.enginePromise ??= this.engineResolver();
     return await this.enginePromise;
   }
 
-  private async getAgent(chatId: string): Promise<YagrAgent> {
+  private async getAgent(chatId: string): Promise<YagrSessionAgent> {
     const existing = this.agents.get(chatId);
     if (existing) {
       return existing;
     }
 
-    const next = new YagrAgent(await this.getEngine());
+    const next = new YagrSessionAgent(await this.getEngine());
     this.agents.set(chatId, next);
     return next;
   }
@@ -510,7 +510,7 @@ class TelegramGateway implements Gateway {
 }
 
 export async function runTelegramGateway(
-  engineResolver: () => Promise<Engine>,
+  engineResolver: () => Promise<EngineRuntimePort>,
   options: TelegramGatewayRuntimeOptions = {},
   configService = new YagrConfigService(),
 ): Promise<void> {

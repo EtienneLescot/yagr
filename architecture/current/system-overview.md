@@ -7,7 +7,7 @@ Cette page decrit les grands blocs logiques actuellement presents dans le repo.
 ```mermaid
 flowchart TD
     User[User] --> Facades[Facades and Gateways]
-    Facades --> Agent[YagrAgent]
+    Facades --> Agent[YagrSessionAgent]
     Agent --> Runtime[YagrRunEngine]
     Runtime --> LLM[LLM and Provider Layer]
     Runtime --> RTS[Runtime Tool Strategy]
@@ -25,7 +25,7 @@ flowchart TD
 
 ### Boucle agentique
 
-- `src/agent.ts`: session agent, historique, system prompt, invalidation de session
+- `src/agent.ts`: session agent runtime (`YagrSessionAgent`), agent complet (`YagrAgent`), historique, system prompt, invalidation de session
 - `src/runtime/run-engine.ts`: boucle principale de run, streaming, phases, recovery, completion gate
 - `src/runtime/tool-runtime-strategy.ts`: strategie runtime derivee du profil de capacite
 - `src/runtime/*`: compaction, policy hooks, required actions, outcome
@@ -38,6 +38,12 @@ Responsabilite actuelle:
 - choisir une strategie runtime selon les capacites resolues
 - exposer les outils
 - maintenir l'etat de run et les evenements
+
+Observation actuelle:
+
+- `build-system-prompt.ts` ne depend plus que du port identitaire de l'engine
+- `run-engine.ts` ne depend plus que du port runtime (`EngineRuntimePort`)
+- les facades conversationnelles passent maintenant par `YagrSessionAgent`, sans dependre du contrat `Engine` complet
 
 ### LLM / providers
 
@@ -156,7 +162,7 @@ flowchart LR
     end
 
     subgraph Core
-      AG[YagrAgent]
+      AG[YagrSessionAgent]
       RE[YagrRunEngine]
       TOOLS[buildTools]
     end
@@ -186,5 +192,5 @@ flowchart LR
 - La couche providers a maintenant un contrat plugin de base, mais tous les adapters ne sont pas encore amincis jusqu'au minimum souhaitable.
 - La frontiere tooling/providers est plus propre, mais reste encore implicite au lieu d'etre formalisee par un vrai contrat de negociation.
 - Le SSOT applicatif est partiellement duplique entre `setup.ts` et `gateway/webui.ts`.
-- Le contrat `Engine` agrege encore plusieurs responsabilites, mais il est maintenant accompagne de ports plus fins (`NodeCatalogPort`, `TemplateCatalogPort`, `WorkflowCompilerPort`, `WorkflowValidatorPort`, `WorkflowLifecyclePort`) deja utilises a la frontiere des tools.
+- Le contrat `Engine` agrege encore plusieurs responsabilites pour compatibilite, mais le prompt, le runtime et les gateways consomment maintenant des ports plus fins (`EngineIdentityPort`, `EngineRuntimePort`, etc.) au lieu du contrat complet.
 - La capture de la reponse finale utilisateur dans le harness `advanced` remonte maintenant correctement le resultat final du run, et la presence d'une banniere workflow complete est verifiee. La formulation finale reste encore perfectible sur certains providers.

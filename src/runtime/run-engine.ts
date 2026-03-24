@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { generateText, streamText, type CoreMessage } from 'ai';
-import type { Engine } from '../engine/engine.js';
+import type { EngineRuntimePort } from '../engine/engine.js';
 import { createLanguageModel } from '../llm/create-language-model.js';
 import { resolveLanguageModelConfig, resolveModelContextProfile } from '../llm/create-language-model.js';
 import { getProviderOptionsForCapability, resolveModelCapabilityProfile } from '../llm/model-capabilities.js';
@@ -905,7 +905,7 @@ async function recordStep(
 
 export class YagrRunEngine {
   constructor(
-    private readonly engine: Engine,
+    private readonly engine: EngineRuntimePort,
     private readonly history: readonly CoreMessage[],
     private readonly systemPrompt: string,
   ) {}

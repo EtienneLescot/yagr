@@ -7,10 +7,10 @@ import {
   getDisplayProjectName,
   type IProject,
 } from 'n8nac';
-import { YagrAgent } from '../agent.js';
+import { YagrSessionAgent } from '../agent.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
-import type { Engine } from '../engine/engine.js';
+import type { EngineRuntimePort } from '../engine/engine.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
@@ -107,7 +107,7 @@ export function getWebUiGatewayStatus(configService = new YagrConfigService()): 
 }
 
 export function createWebUiGatewayRuntime(
-  engineResolver: () => Promise<Engine>,
+  engineResolver: () => Promise<EngineRuntimePort>,
   options: YagrRunOptions = {},
   configService = new YagrConfigService(),
 ): GatewayRuntimeHandle {
@@ -124,12 +124,12 @@ export function createWebUiGatewayRuntime(
 
 class WebUiGateway implements Gateway {
   private server?: Server;
-  private enginePromise?: Promise<Engine>;
-  private readonly agents = new Map<string, YagrAgent>();
+  private enginePromise?: Promise<EngineRuntimePort>;
+  private readonly agents = new Map<string, YagrSessionAgent>();
   private readonly setupService: YagrSetupApplicationService;
 
   constructor(
-    private readonly engineResolver: () => Promise<Engine>,
+    private readonly engineResolver: () => Promise<EngineRuntimePort>,
     private readonly options: YagrRunOptions,
     private readonly configService: YagrConfigService,
     private readonly status: WebUiGatewayStatus,
@@ -407,7 +407,7 @@ class WebUiGateway implements Gateway {
     return value as YagrModelProvider;
   }
 
-  private async resolveAgent(sessionId: string): Promise<YagrAgent> {
+  private async resolveAgent(sessionId: string): Promise<YagrSessionAgent> {
     const existing = this.agents.get(sessionId);
     if (existing) {
       return existing;
@@ -418,7 +418,7 @@ class WebUiGateway implements Gateway {
     }
 
     const engine = await this.enginePromise;
-    const agent = new YagrAgent(engine);
+    const agent = new YagrSessionAgent(engine);
     this.agents.set(sessionId, agent);
     return agent;
   }

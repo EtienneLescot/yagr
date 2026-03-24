@@ -1,6 +1,6 @@
 import qrcode from 'qrcode-terminal';
 import { YagrConfigService, type YagrGatewayConfig } from '../config/yagr-config-service.js';
-import type { Engine } from '../engine/engine.js';
+import type { EngineRuntimePort } from '../engine/engine.js';
 import type { YagrRunOptions } from '../types.js';
 import type { GatewayRuntimeHandle, GatewaySurface } from './types.js';
 import { createTelegramGatewayRuntime, getTelegramGatewayStatus, type TelegramGatewayStatus } from './telegram.js';
@@ -29,7 +29,7 @@ interface GatewayDescriptor {
   label: string;
   getStatus: (configService: YagrConfigService, enabled: boolean) => Omit<GatewaySurfaceStatus, 'startable'>;
   createRuntime?: (
-    engineResolver: () => Promise<Engine>,
+    engineResolver: () => Promise<EngineRuntimePort>,
     options: YagrRunOptions,
     configService: YagrConfigService,
   ) => Promise<GatewayRuntimeHandle> | GatewayRuntimeHandle;
@@ -162,7 +162,7 @@ async function stopRuntimeHandles(runtimes: GatewayRuntimeHandle[]): Promise<voi
  */
 export async function startGatewaySurfacesInBackground(
   surfaces: GatewaySurface[],
-  engineResolver: () => Promise<Engine>,
+  engineResolver: () => Promise<EngineRuntimePort>,
   options: YagrRunOptions = {},
   configService = new YagrConfigService(),
 ): Promise<() => Promise<void>> {
@@ -211,7 +211,7 @@ export async function startGatewaySurfacesInBackground(
 
 export async function runGatewaySurfaces(
   surfaces: GatewaySurface[],
-  engineResolver: () => Promise<Engine>,
+  engineResolver: () => Promise<EngineRuntimePort>,
   options: YagrRunOptions = {},
   configService = new YagrConfigService(),
 ): Promise<void> {
@@ -304,7 +304,7 @@ export function getGatewayRunningBanner(configService = new YagrConfigService(),
 }
 
 export async function runGatewaySupervisor(
-  engineResolver: () => Promise<Engine>,
+  engineResolver: () => Promise<EngineRuntimePort>,
   options: YagrRunOptions = {},
   configService = new YagrConfigService(),
 ): Promise<void> {
