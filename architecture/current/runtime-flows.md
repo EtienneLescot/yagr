@@ -8,7 +8,7 @@ Cette page documente les flux transverses principaux du repo tel qu'il fonctionn
 sequenceDiagram
     participant U as User
     participant F as Facade
-    participant A as YagrAgent
+    participant A as YagrSessionAgent
     participant R as YagrRunEngine
     participant S as Runtime Strategy
     participant M as LLM Layer
@@ -34,32 +34,47 @@ sequenceDiagram
     F-->>U: rendered output
 ```
 
+Observation:
+
+- les facades conversationnelles passent maintenant par `YagrSessionAgent`
+- `YagrRunEngine` choisit lui-meme la strategie runtime, la surface d'outils et les hooks associes
+- le flux est maintenant explicitement pilote par `tool-runtime-strategy.ts`
+
 ## 2. Setup et onboarding
 
 ```mermaid
 sequenceDiagram
     participant UI as Wizard or WebUI
-    participant S as setup.ts callbacks or WebUI handlers
+    participant H as setup.ts callbacks or gateway handlers
     participant AS as setup/application-services
+    participant ST as setup/status
     participant YC as YagrConfigService
     participant NC as YagrN8nConfigService
     participant PR as Provider Runtime
     participant NL as n8n-local
     participant N8N as n8n API
 
-    UI->>S: action de setup
-    S->>AS: shared setup operation
+    UI->>H: action de setup
+    H->>AS: shared setup operation
     AS->>N8N: testConnection/getProjects
     AS->>NC: save api key and local config
-    S->>NL: optional managed bootstrap
-    UI->>S: prepare provider
-    S->>AS: prepare provider
+    H->>NL: optional managed bootstrap
+    UI->>H: prepare provider
+    H->>AS: prepare provider
     AS->>PR: auth/runtime/models
     AS->>YC: save provider config
-    UI->>S: save surfaces
-    S->>AS: save surfaces
+    UI->>H: save surfaces
+    H->>AS: save surfaces
     AS->>YC: save gateway config
+    UI->>H: read status/snapshot
+    H->>ST: compute setup status
+    H->>AS: build shared setup snapshot
 ```
+
+Observation:
+
+- les facades ne portent plus directement les mutations de config metier
+- `application-services.ts` et `status.ts` sont maintenant le point commun de setup/lecture de statut
 
 ## 3. Flux provider actuel
 
@@ -68,14 +83,15 @@ flowchart TD
     CFG[Stored config] --> RES[resolveLanguageModelConfig]
     RES --> REG[provider-registry]
     RES --> CLM[create-language-model]
-    REG --> DISC[provider-discovery]
+    REG --> PLUG[ProviderPlugin]
+    PLUG --> DISC[provider-discovery]
     DISC --> META[provider-metadata cache]
     META --> CAP[capability-resolver]
-    REG --> CLM
+    PLUG --> CLM
     PR[proxy-runtime] --> DISC
     PR --> ACC[account auth files and sessions]
-    ACC --> CLM
-    CLM --> SDK[AI SDK model]
+    ACC --> PLUG
+    CLM --> SDK[AI SDK model via plugin factory]
     CAP --> RTS[tool-runtime-strategy]
     RTS --> RT[Runtime]
     SDK --> RT[Runtime]
@@ -83,25 +99,57 @@ flowchart TD
 
 Observation:
 
-- le flux comporte maintenant un debut de couche distincte entre metadata provider, normalisation des capacites et strategie runtime
-- la migration n'est pas encore complete pour tous les providers ni pour tous les cas dynamiques
+- `ProviderPlugin` porte maintenant discovery, metadata hooks et factory de modele
+- le flux est maintenant structurellement `metadata -> normalisation -> runtime strategy`
+- `google-proxy` n'est plus un provider supporte en surface, meme si son code interne existe encore
 
-## 4. Flux facade WebUI actuel
+## 4. Flux tooling/runtime actuel
+
+```mermaid
+flowchart LR
+    CAP[Resolved capability profile]
+    STRAT[tool-runtime-strategy]
+    SETS[tools/toolsets]
+    BUILD[build-tools]
+    HOOKS[policy-hooks]
+    RUN[YagrRunEngine]
+    TOOLS[Runtime tools]
+
+    CAP --> STRAT
+    STRAT --> SETS
+    STRAT --> BUILD
+    STRAT --> HOOKS
+    BUILD --> TOOLS
+    HOOKS --> TOOLS
+    TOOLS --> RUN
+    RUN --> STRAT
+```
+
+Observation:
+
+- `toolsets.ts` est maintenant le SSOT des groupes d'outils
+- `tool-runtime-strategy.ts` choisit la surface exposee, le mode de tool calling et la politique post-sync
+- `policy-hooks.ts` applique cette politique au lieu de porter ses propres regles implicites
+
+## 5. Flux facade WebUI actuel
 
 ```mermaid
 flowchart TD
     WEB[WebUiGateway]
     WEB --> API[HTTP handlers]
-    API --> CFG[Config Services]
-    API --> SETUP[getYagrSetupStatus]
+    API --> AS[setup/application-services]
+    API --> ST[setup/status]
     API --> N8N[N8nApiClient and workspace refresh]
     API --> LLM[fetchAvailableModels]
     API --> AG[Agent sessions]
-
-    note1[La WebUI agit a la fois comme facade et comme point d'orchestration applicative]
 ```
 
-## 5. Regle de maintenance
+Observation:
+
+- la WebUI reste une facade HTTP avec un peu d'orchestration technique
+- les lectures de statut et snapshots de setup passent maintenant par la couche applicative partagee
+
+## 6. Regle de maintenance
 
 Quand un flux transverse change, il faut:
 

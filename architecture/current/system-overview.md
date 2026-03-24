@@ -199,8 +199,7 @@ flowchart LR
 
 ## Points d'attention actuels
 
-- La couche providers a maintenant un contrat plugin de base, mais tous les adapters ne sont pas encore amincis jusqu'au minimum souhaitable.
-- La frontiere tooling/providers est maintenant centralisee autour d'une strategie runtime unique et de groupes d'outils normalises; il reste surtout a finir l'amincissement des adapters providers eux-memes.
-- Le SSOT applicatif est partiellement duplique entre `setup.ts` et `gateway/webui.ts`.
-- Le contrat `Engine` agrege encore plusieurs responsabilites pour compatibilite, mais le prompt, le runtime et les gateways consomment maintenant des ports plus fins (`EngineIdentityPort`, `EngineRuntimePort`, etc.) au lieu du contrat complet.
-- La capture de la reponse finale utilisateur dans le harness `advanced` remonte maintenant correctement le resultat final du run, et la presence d'une banniere workflow complete est verifiee. La formulation finale reste encore perfectible sur certains providers.
+- Le contrat `Engine` agrege encore plusieurs responsabilites pour compatibilite, meme si le prompt, le runtime et les gateways consomment deja des ports plus fins (`EngineIdentityPort`, `EngineRuntimePort`, etc.).
+- `setup.ts` reste un point d'orchestration historique, meme si les mutations et snapshots principaux sont remontes dans `setup/application-services.ts` et `setup/status.ts`.
+- `google-proxy` a ete retire de la surface supportee; une future reintroduction demanderait une vraie refonte, pas un simple rebranchement.
+- La capture de la reponse finale utilisateur et de la banniere workflow est maintenant bonne cote harness, mais la qualite redactionnelle varie encore selon les providers/modeles.
