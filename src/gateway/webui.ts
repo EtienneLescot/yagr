@@ -103,25 +103,8 @@ function getWebUiConfig(configService = new YagrConfigService()): Required<WebUi
   };
 }
 
-function persistWebUiConfig(configService = new YagrConfigService(), nextConfig: WebUiConfigPayload): Required<WebUiConfigPayload> {
-  const normalized = {
-    host: sanitizeHost(nextConfig.host),
-    port: sanitizePort(nextConfig.port),
-  };
-
-  configService.updateLocalConfig((localConfig) => ({
-    ...localConfig,
-    gateway: {
-      ...localConfig.gateway,
-      webui: normalized,
-    },
-  }));
-
-  return normalized;
-}
-
 export function getWebUiGatewayStatus(configService = new YagrConfigService()): WebUiGatewayStatus {
-  const config = persistWebUiConfig(configService, getWebUiConfig(configService));
+  const config = getWebUiConfig(configService);
   return {
     configured: true,
     host: config.host,

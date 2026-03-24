@@ -7,15 +7,14 @@ Tout ce qui est deja implemente doit etre documente dans `../current/`, pas ici.
 
 ## Restant a faire
 
-| Status | Theme | Remaining work | Expected outcome |
+| Status | Theme | Objective de sortie | Definition de done |
 | --- | --- | --- | --- |
-| `in-progress` | Setup SSOT | Finir d'extraire les duplications restantes entre `src/setup.ts`, `src/gateway/webui.ts` et les autres facades | Une couche applicative unique pilote setup/configuration |
-| `in-progress` | Providers | Continuer d'amincir les adapters autour du contrat `ProviderPlugin` | Les providers ne gardent que auth, transport et conversion minimale |
-| `in-progress` | Tooling | Formaliser davantage l'interface tooling/providers et durcir le chemin `none` | La strategie `native / compatible / weak / none` devient pleinement systematique |
-| `todo` | Google Proxy | Requalifier `google-proxy` puis decider refonte propre ou suppression | Pas de provider ambigu qui degrade Gemini |
-| `in-progress` | Engine ports | Continuer la migration de `Engine` vers des ports plus fins au-dela de la frontiere des tools | Backend plus composable et responsabilites mieux separees |
-| `todo` | Facades | Amincir Telegram/WebUI/TUI/CLI | Facades reduites a I/O, session et orchestration legere |
-| `todo` | Current docs | Continuer a mettre `architecture/current/` a jour a chaque refactor structurel | La doc durable reste le reflet exact du repo |
+| `in-progress` | Setup SSOT | Faire de `src/setup/application-services.ts` le point unique des mutations setup/configuration | `setup.ts` et `webui.ts` ne portent plus de logique metier dupliquee, et les lectures de statut/config ne persistent plus d'etat |
+| `in-progress` | Providers | Ramener les adapters providers au strict minimum autour de `ProviderPlugin` | Chaque adapter provider ne garde que auth, transport, conversion minimale et hooks metadata |
+| `in-progress` | Tooling | Stabiliser le contrat commun tooling/providers pour `native / compatible / weak / none` | La strategie runtime choisit seule surface d'outils, mode d'execution et contraintes de tool calling |
+| `todo` | Engine ports | Finir la migration hors du contrat `Engine` monolithique | Runtime, prompt et gateways ne dependent plus de `Engine` complet quand un port plus fin suffit |
+| `todo` | Facades | Limiter les facades a l'I/O et a la session | Telegram/WebUI/TUI/CLI ne mutent plus directement la config metier et deleguent aux services applicatifs |
+| `todo` | Google Proxy | Prendre une decision nette sur `google-proxy` | `google-proxy` est soit refondu proprement avec capacites explicites, soit retire |
 
 ## Regle de vie
 
