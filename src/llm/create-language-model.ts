@@ -17,6 +17,7 @@ import {
   YAGR_MODEL_PROVIDERS,
   type YagrModelProvider,
 } from './provider-registry.js';
+import { getProviderPlugin } from './provider-plugin.js';
 export type { YagrModelProvider } from './provider-registry.js';
 
 export interface YagrModelContextProfile {
@@ -155,7 +156,8 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
   const resolvedConfig = resolveLanguageModelConfig(config);
   const { provider, model: modelName, apiKey, baseUrl: baseURL } = resolvedConfig;
   const capabilityProfile = resolveModelCapabilityProfile({ provider, model: modelName });
-  const definition = getProviderDefinition(provider);
+  const plugin = getProviderPlugin(provider);
+  const definition = plugin.definition;
   const sessionApiKey = provider === 'openai-proxy' ? getOpenAiAccountSession()?.accessToken : undefined;
   const resolvedApiKey = apiKey || sessionApiKey;
   const headers = resolvedApiKey ? { Authorization: `Bearer ${resolvedApiKey}` } : undefined;
@@ -200,7 +202,7 @@ export function createLanguageModel(config: YagrLanguageModelConfig = {}) {
     return createGitHubCopilotLanguageModel(modelName, capabilityProfile);
   }
 
-  if (definition.usesOpenAiCompatibleApi) {
+  if (plugin.transport.usesOpenAiCompatibleApi) {
     const providerClient = createOpenAI({
       apiKey: resolvedApiKey,
       baseURL: baseURL || definition.defaultBaseUrl,

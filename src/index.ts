@@ -51,8 +51,10 @@ export {
   fetchAndCacheProviderMetadata,
   clearProviderMetadataCache,
   getCachedProviderModelMetadata,
+  primeProviderModelMetadata,
   warmProviderMetadataCacheFromDiscovery,
 } from './llm/provider-metadata.js';
+export { getProviderPlugin } from './llm/provider-plugin.js';
 export {
   filterFunctionToolsForCapability,
   getOpenAiCompatibleProviderSettingsForCapability,

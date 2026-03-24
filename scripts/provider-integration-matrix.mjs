@@ -807,7 +807,7 @@ async function runAdvancedAgentInProcess({
       });
 
       return {
-        stdout: stdoutChunks.join(''),
+        stdout: result.text || stdoutChunks.join(''),
         stderr: stderrChunks.join('\n'),
         journal: result.journal || journal,
         toolEvents,

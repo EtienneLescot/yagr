@@ -42,6 +42,7 @@ Responsabilite actuelle:
 ### LLM / providers
 
 - `src/llm/provider-registry.ts`
+- `src/llm/provider-plugin.ts`
 - `src/llm/create-language-model.ts`
 - `src/llm/provider-discovery.ts`
 - `src/llm/provider-metadata.ts`
@@ -52,6 +53,7 @@ Responsabilite actuelle:
 Responsabilite actuelle:
 
 - registre des providers
+- contrat plugin/provider thin pour les faits de transport et l'hydratation metadata
 - resolution de config provider/model/baseUrl/apiKey
 - creation du modele AI SDK
 - auth et runtimes comptes/OAuth
@@ -63,6 +65,7 @@ Responsabilite actuelle:
 Observation actuelle:
 
 - la separation commence a etre plus nette entre metadata provider, normalisation des capacites et strategie runtime
+- un contrat `ProviderPlugin` existe maintenant pour exposer les faits de transport et les hooks metadata sans empiler la politique runtime dans chaque adapter
 - la migration n'est pas terminee, mais la direction `metadata -> normalisation -> runtime strategy` existe maintenant dans le code
 - les providers OpenAI-compatible faibles ne sont plus artificiellement limites au premier tool visible
 - la strategie runtime commune pilote maintenant le mode `stream` vs `generate`, les directives inspect/execute/recovery et la reduction de surface d'outils pour le niveau `none`
@@ -173,8 +176,8 @@ flowchart LR
 
 ## Points d'attention actuels
 
-- La couche providers n'est pas encore une vraie couche plugin fine.
+- La couche providers a maintenant un contrat plugin de base, mais tous les adapters ne sont pas encore amincis jusqu'au minimum souhaitable.
 - La frontiere tooling/providers est plus propre, mais reste encore implicite au lieu d'etre formalisee par un vrai contrat de negociation.
 - Le SSOT applicatif est partiellement duplique entre `setup.ts` et `gateway/webui.ts`.
 - Le contrat `Engine` agrege plusieurs responsabilites.
-- La capture de la reponse finale utilisateur dans le harness `advanced` reste perfectible, meme quand les actions outils sont correctement executees.
+- La capture de la reponse finale utilisateur dans le harness `advanced` remonte maintenant correctement le resultat final du run, mais la formulation finale reste encore un resume technique plutot qu'une vraie reponse produit.
