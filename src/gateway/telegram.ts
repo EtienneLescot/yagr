@@ -115,11 +115,25 @@ function formatRequiredActions(actions: YagrRequiredAction[]): string {
     return '';
   }
 
-  return [
-    'Required actions:',
-    ...actions.map((action) => `- ${action.title}: ${action.message}`),
-    'Use /approve to resume if the request can be approved.',
-  ].join('\n');
+  const blocking = actions.filter((action) => action.blocking !== false);
+  const followUp = actions.filter((action) => action.blocking === false);
+  const lines: string[] = [];
+
+  if (blocking.length > 0) {
+    lines.push('Required actions:');
+    lines.push(...blocking.map((action) => `- ${action.title}: ${action.message}`));
+    lines.push('Use /approve to resume if the request can be approved.');
+  }
+
+  if (followUp.length > 0) {
+    if (lines.length > 0) {
+      lines.push('');
+    }
+    lines.push('Next steps:');
+    lines.push(...followUp.map((action) => `- ${action.title}: ${action.message}`));
+  }
+
+  return lines.join('\n');
 }
 
 export async function resolveTelegramBotIdentity(botToken: string): Promise<{ username: string; firstName: string }> {

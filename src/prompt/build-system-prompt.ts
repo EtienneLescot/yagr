@@ -50,6 +50,8 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
       'Pull before edit: before modifying an existing workflow, always fetch the latest remote version first. This prevents local edits from overwriting newer remote state.',
       'Search for real nodes and examples before writing node parameters, and treat n8nac schema output as authoritative.',
       'When progress is blocked on missing user input, permission, or an external dependency, use the requestRequiredAction tool so the blocker is represented explicitly in runtime state.',
+      'Use requestRequiredAction with blocking=true only when the current task cannot be delivered without that action. If you can still build, validate, save, or deploy the current artifact, deliver it first and record the remaining setup as a non-blocking follow-up action instead of stopping early.',
+      'Do not confuse missing runtime credentials, connected accounts, or later environment configuration with an immediate blocker when the current artifact can still be structurally implemented and delivered.',
       'Use the reportProgress tool for brief user-visible progress updates when you are about to inspect, edit, validate, or run substantial commands. Keep those updates short, concrete, and free of hidden reasoning.',
       'Do not stop after a failed tool call if the error can be inspected and corrected locally. Read the tool output, adjust the files or command arguments, and retry within the same run.',
       'If you create components that are meant to work together, perform a final file inspection to verify their explicit linkage is present. Names, proximity, or intent are not enough; the dependency, edge, or binding must exist in the code.',

@@ -1,5 +1,5 @@
 import type { YagrAgentState, YagrCompletionAttempt, YagrRequiredAction, YagrRuntimeContext, YagrRuntimeHook } from '../types.js';
-import { blockingStateForRequiredActions } from './required-actions.js';
+import { blockingStateForRequiredActions, splitRequiredActions } from './required-actions.js';
 
 export interface CompletionGateInput {
   text: string;
@@ -29,10 +29,11 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
   const reasons: string[] = [];
   const satisfiedRequiredActionIds = new Set(input.satisfiedRequiredActionIds ?? []);
   const requiredActions = input.requiredActions.filter((action) => !satisfiedRequiredActionIds.has(action.id));
+  const { blocking: blockingRequiredActions } = splitRequiredActions(requiredActions);
   const hasBlockingWorkflowFailures = input.hasWorkflowWrites && input.unresolvedFailureCount > 0;
-  const needsContinuation = input.attemptedMaterialWork && !input.hasConcreteResult && requiredActions.length === 0;
+  const needsContinuation = input.attemptedMaterialWork && !input.hasConcreteResult && blockingRequiredActions.length === 0;
 
-  if (requiredActions.length > 0) {
+  if (blockingRequiredActions.length > 0) {
     reasons.push('Required action is still open.');
   }
 

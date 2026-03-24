@@ -140,7 +140,8 @@ function normalizeCommandChunk(chunk: string): string {
 
 function formatRequiredAction(action: YagrRequiredAction): string {
   const detail = action.detail ? ` ${action.detail}` : '';
-  return `${action.title} [${action.kind}]${action.resumable ? ' resumable' : ''}: ${action.message}.${detail}`;
+  const blockingLabel = action.blocking === false ? ' follow-up' : '';
+  return `${action.title} [${action.kind}]${action.resumable ? ' resumable' : ''}${blockingLabel}: ${action.message}.${detail}`;
 }
 
 function formatTimestamp(date = new Date()): string {
