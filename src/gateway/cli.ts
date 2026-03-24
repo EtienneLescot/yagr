@@ -1,4 +1,4 @@
-import { YagrAgent } from '../agent.js';
+import { YagrSessionAgent } from '../agent.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { runInteractiveGateway } from './interactive-ui.js';
@@ -26,7 +26,7 @@ async function ensureProvider(options: CliGatewayOptions): Promise<YagrModelProv
   }
 }
 
-export async function runCliGateway(agent: YagrAgent, options: CliGatewayOptions = {}): Promise<void> {
+export async function runCliGateway(agent: YagrSessionAgent, options: CliGatewayOptions = {}): Promise<void> {
   const configService = new YagrConfigService();
   const setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
   const savedConfig = configService.getLocalConfig();

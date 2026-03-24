@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getYagrLaunchDir, getYagrPaths } from '../config/yagr-home.js';
 import { resolveWorkflowDir, YagrN8nConfigService } from '../config/n8n-config-service.js';
-import type { Engine } from '../engine/engine.js';
+import type { EngineIdentityPort } from '../engine/engine.js';
 
 export interface InstructionContentSnapshot {
   path: string;
@@ -17,11 +17,11 @@ export interface SystemPromptSnapshot {
   workspaceInstructions?: InstructionContentSnapshot;
 }
 
-export function buildSystemPrompt(engine: Engine): string {
+export function buildSystemPrompt(engine: EngineIdentityPort): string {
   return buildSystemPromptSnapshot(engine).systemPrompt;
 }
 
-export function buildSystemPromptSnapshot(engine: Engine): SystemPromptSnapshot {
+export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPromptSnapshot {
   const homeInstructions = loadHomeInstructions();
   const workspaceInstructions = loadWorkspaceInstructions();
   const workflowDir = resolveActiveWorkflowDir();
