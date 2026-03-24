@@ -1,56 +1,28 @@
 import {
   N8nApiClient,
 } from 'n8nac';
-import { normalizeGatewaySurfaces, YagrConfigService } from './config/yagr-config-service.js';
+import { YagrConfigService } from './config/yagr-config-service.js';
 import { YagrN8nConfigService } from './config/n8n-config-service.js';
-import { getGatewaySupervisorStatus } from './gateway/manager.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
 import type { GatewaySurface } from './gateway/types.js';
-import {
-  isProviderConfigured,
-} from './llm/provider-registry.js';
 import { bootstrapManagedLocalN8n } from './n8n-local/bootstrap.js';
 import { installManagedDirectN8n } from './n8n-local/direct-manager.js';
 import { installManagedDockerN8n } from './n8n-local/docker-manager.js';
 import { inspectLocalN8nBootstrap } from './n8n-local/detect.js';
 import { markManagedN8nBootstrapStage } from './n8n-local/state.js';
 import { YagrSetupApplicationService } from './setup/application-services.js';
+import {
+  buildYagrSetupStatus as buildYagrSetupStatusBase,
+  getYagrSetupStatus as getYagrSetupStatusBase,
+  type YagrSetupStatus,
+} from './setup/status.js';
 import { runSetupWizard, type SetupCallbacks } from './setup/setup-wizard.js';
 import { openExternalUrl } from './system/open-external.js';
 
-export interface YagrSetupStatus {
-  ready: boolean;
-  n8nConfigured: boolean;
-  llmConfigured: boolean;
-  enabledSurfaces: GatewaySurface[];
-  startableSurfaces: GatewaySurface[];
-  missingSteps: Array<'n8n' | 'llm'>;
-}
+export type { YagrSetupStatus };
 
-export function buildYagrSetupStatus(input: {
-  n8nConfigured: boolean;
-  llmConfigured: boolean;
-  enabledSurfaces: GatewaySurface[];
-  startableSurfaces: GatewaySurface[];
-}): YagrSetupStatus {
-  const missingSteps: Array<'n8n' | 'llm'> = [];
-
-  if (!input.n8nConfigured) {
-    missingSteps.push('n8n');
-  }
-
-  if (!input.llmConfigured) {
-    missingSteps.push('llm');
-  }
-
-  return {
-    ready: missingSteps.length === 0,
-    n8nConfigured: input.n8nConfigured,
-    llmConfigured: input.llmConfigured,
-    enabledSurfaces: input.enabledSurfaces,
-    startableSurfaces: input.startableSurfaces,
-    missingSteps,
-  };
+export function buildYagrSetupStatus(input: Parameters<typeof buildYagrSetupStatusBase>[0]): YagrSetupStatus {
+  return buildYagrSetupStatusBase(input);
 }
 
 export function getYagrSetupStatus(
@@ -58,35 +30,7 @@ export function getYagrSetupStatus(
   n8nConfigService = new YagrN8nConfigService(),
   options: { activeSurfaces?: GatewaySurface[] } = {},
 ): YagrSetupStatus {
-  const yagrConfig = yagrConfigService.getLocalConfig();
-  const n8nConfig = n8nConfigService.getLocalConfig();
-  const gatewayStatus = getGatewaySupervisorStatus(yagrConfigService);
-  const activeSurfaces = normalizeGatewaySurfaces(options.activeSurfaces);
-
-  const n8nConfigured = Boolean(
-    n8nConfig.host
-    && n8nConfig.syncFolder
-    && n8nConfig.projectId
-    && n8nConfig.projectName
-    && n8nConfigService.getApiKey(n8nConfig.host),
-  );
-
-  let llmConfigured = false;
-  try {
-    llmConfigured = isProviderConfigured(yagrConfig, (provider) => yagrConfigService.getApiKey(provider));
-  } catch {
-    llmConfigured = false;
-  }
-
-  const enabledSurfaces = Array.from(new Set([...gatewayStatus.enabledSurfaces, ...activeSurfaces]));
-  const startableSurfaces = Array.from(new Set([...gatewayStatus.startableSurfaces, ...activeSurfaces]));
-
-  return buildYagrSetupStatus({
-    n8nConfigured,
-    llmConfigured,
-    enabledSurfaces,
-    startableSurfaces,
-  });
+  return getYagrSetupStatusBase(yagrConfigService, n8nConfigService, options);
 }
 
 export async function runYagrSetup(

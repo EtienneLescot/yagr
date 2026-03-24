@@ -168,3 +168,55 @@ test('configureTelegram and resetTelegram share the same configuration path', as
   assert.deepEqual(yagrConfigStore.getEnabledGatewaySurfaces(), []);
   assert.equal(yagrConfigStore.getLocalConfig().telegram, undefined);
 });
+
+test('buildWebUiSnapshot centralizes setup and config state for the Web UI', async () => {
+  const yagrConfigStore = createYagrConfigStore({
+    provider: 'openrouter',
+    model: 'openai/gpt-5',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    gateway: { enabledSurfaces: ['telegram'] },
+    telegram: {
+      botUsername: 'yagr_bot',
+      onboardingToken: 'token',
+      linkedChats: [],
+    },
+  });
+  yagrConfigStore.saveApiKey('openrouter', 'or-key');
+
+  const n8nConfigStore = createN8nConfigStore({
+    host: 'http://localhost:5678',
+    syncFolder: 'workflows',
+    projectId: 'proj_1',
+    projectName: 'Primary Project',
+  });
+  n8nConfigStore.saveApiKey('http://localhost:5678', 'n8n-key');
+
+  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
+    async fetchAvailableModels() {
+      return ['openai/gpt-5', 'openai/gpt-5-mini'];
+    },
+  });
+
+  const snapshot = await service.buildWebUiSnapshot({
+    activeSurfaces: ['webui'],
+    telegramStatus: {
+      configured: true,
+      botUsername: 'yagr_bot',
+      linkedChats: [],
+      deepLink: 'https://t.me/yagr_bot?start=token',
+    },
+    webUiStatus: {
+      configured: true,
+      host: '127.0.0.1',
+      port: 3789,
+      url: 'http://127.0.0.1:3789',
+    },
+    selectableProviders: ['openrouter', 'openai'],
+  });
+
+  assert.equal(snapshot.setupStatus.ready, true);
+  assert.deepEqual(snapshot.gatewayStatus.enabledSurfaces, ['telegram', 'webui']);
+  assert.equal(snapshot.yagr.provider, 'openrouter');
+  assert.equal(snapshot.n8n.projectId, 'proj_1');
+  assert.deepEqual(snapshot.availableModels, ['openai/gpt-5', 'openai/gpt-5-mini']);
+});

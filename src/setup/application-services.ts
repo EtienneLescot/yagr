@@ -17,6 +17,7 @@ import { beginGitHubCopilotAuth, completeGitHubCopilotAuth } from '../llm/copilo
 import { beginGeminiAccountAuth, completeGeminiAccountAuth } from '../llm/google-account.js';
 import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';
+import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
 
 type N8nProjectClient = Pick<N8nApiClient, 'testConnection' | 'getProjects'>;
 
@@ -26,6 +27,7 @@ interface SetupApplicationServiceDependencies {
   refreshAiContext?: (credentials: { host: string; apiKey: string }) => Promise<void>;
   resolveTelegramIdentity?: (botToken: string) => Promise<{ username: string; firstName: string }>;
   createOnboardingToken?: () => string;
+  fetchAvailableModels?: (provider: YagrModelProvider, apiKey?: string, baseUrl?: string) => Promise<string[]>;
 }
 
 interface YagrConfigStoreLike {
@@ -94,6 +96,7 @@ export class YagrSetupApplicationService {
   private readonly refreshAiContextRunner: (credentials: { host: string; apiKey: string }) => Promise<void>;
   private readonly resolveTelegramIdentity: (botToken: string) => Promise<{ username: string; firstName: string }>;
   private readonly createOnboardingToken: () => string;
+  private readonly fetchAvailableModelsRunner: (provider: YagrModelProvider, apiKey?: string, baseUrl?: string) => Promise<string[]>;
 
   constructor(
     private readonly yagrConfigService: YagrConfigStoreLike,
@@ -107,6 +110,7 @@ export class YagrSetupApplicationService {
       throw new Error('Telegram identity resolver is not configured.');
     });
     this.createOnboardingToken = dependencies.createOnboardingToken ?? defaultCreateOnboardingToken;
+    this.fetchAvailableModelsRunner = dependencies.fetchAvailableModels ?? fetchAvailableModels;
   }
 
   getLlmDefaults() {
@@ -260,7 +264,76 @@ export class YagrSetupApplicationService {
   async fetchModels(provider: YagrModelProvider, apiKey?: string): Promise<string[]> {
     const cfg = this.yagrConfigService.getLocalConfig();
     const baseUrl = cfg.provider === provider ? cfg.baseUrl : getDefaultBaseUrlForProvider(provider);
-    return fetchAvailableModels(provider, apiKey, baseUrl);
+    return this.fetchAvailableModelsRunner(provider, apiKey, baseUrl);
+  }
+
+  getSetupStatus(options: { activeSurfaces?: GatewaySurface[] } = {}): YagrSetupStatus {
+    return getYagrSetupStatus(
+      this.yagrConfigService as YagrConfigService,
+      this.n8nConfigService as YagrN8nConfigService,
+      options,
+    );
+  }
+
+  async buildWebUiSnapshot(input: {
+    activeSurfaces: GatewaySurface[];
+    telegramStatus: {
+      configured: boolean;
+      botUsername?: string;
+      linkedChats: Array<unknown>;
+      deepLink?: string;
+    };
+    webUiStatus: {
+      configured: boolean;
+      host: string;
+      port: number;
+      url: string;
+    };
+    selectableProviders: YagrModelProvider[];
+  }): Promise<Record<string, unknown>> {
+    const n8nConfig = this.n8nConfigService.getLocalConfig();
+    const setupStatus = this.getSetupStatus({ activeSurfaces: input.activeSurfaces });
+    const yagrConfig = this.yagrConfigService.getLocalConfig();
+    const enabledSurfaces = Array.from(new Set([...this.yagrConfigService.getEnabledGatewaySurfaces(), ...input.activeSurfaces]));
+    const startableSurfaces = enabledSurfaces.filter((surface) => surface === 'webui' || (surface === 'telegram' && input.telegramStatus.configured));
+
+    let availableModels: string[] = [];
+    if (yagrConfig.provider) {
+      const apiKey = this.yagrConfigService.getApiKey(yagrConfig.provider);
+      try {
+        availableModels = await this.fetchModels(yagrConfig.provider, apiKey);
+      } catch {
+        availableModels = [];
+      }
+    }
+
+    return {
+      setupStatus,
+      gatewayStatus: {
+        enabledSurfaces,
+        startableSurfaces,
+      },
+      telegram: input.telegramStatus,
+      webui: input.webUiStatus,
+      yagr: {
+        provider: yagrConfig.provider,
+        model: yagrConfig.model,
+        baseUrl: yagrConfig.baseUrl,
+        providers: input.selectableProviders.map((provider) => ({
+          provider,
+          apiKeyStored: Boolean(this.yagrConfigService.getApiKey(provider)),
+        })),
+      },
+      n8n: {
+        host: n8nConfig.host,
+        syncFolder: n8nConfig.syncFolder,
+        projectId: n8nConfig.projectId,
+        projectName: n8nConfig.projectName,
+        apiKeyStored: Boolean(n8nConfig.host && this.n8nConfigService.getApiKey(n8nConfig.host)),
+        projects: n8nConfig.projectId && n8nConfig.projectName ? [{ id: n8nConfig.projectId, name: n8nConfig.projectName }] : [],
+      },
+      availableModels,
+    };
   }
 
   saveLlmConfig(input: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string }): void {

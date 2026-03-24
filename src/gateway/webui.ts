@@ -15,7 +15,6 @@ import {
   getTelegramGatewayStatus,
   resolveTelegramBotIdentity,
 } from './telegram.js';
-import { getYagrSetupStatus } from '../setup.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 import type {
@@ -29,8 +28,6 @@ import type {
 import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import {
-  getDefaultBaseUrlForProvider,
-  isProviderConfigured,
   providerRequiresApiKey,
   YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
@@ -308,7 +305,7 @@ class WebUiGateway implements Gateway {
         throw new Error('Message is required.');
       }
 
-      const setupStatus = getYagrSetupStatus(this.configService, new YagrN8nConfigService(), {
+      const setupStatus = this.setupService.getSetupStatus({
         activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
       });
       if (!setupStatus.ready) {
@@ -371,54 +368,14 @@ class WebUiGateway implements Gateway {
   }
 
   private async buildSnapshot(): Promise<Record<string, unknown>> {
-    const n8nService = new YagrN8nConfigService();
-    const n8nConfig = n8nService.getLocalConfig();
-    const setupStatus = getYagrSetupStatus(this.configService, n8nService, {
-      activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
-    });
     const telegramStatus = getTelegramGatewayStatus(this.configService);
     const webUiStatus = getWebUiGatewayStatus(this.configService);
-    const yagrConfig = this.configService.getLocalConfig();
-    const enabledSurfaces = Array.from(new Set([...this.configService.getEnabledGatewaySurfaces(), ...ACTIVE_WEBUI_SURFACES]));
-    const startableSurfaces = enabledSurfaces.filter((surface) => surface === 'webui' || (surface === 'telegram' && telegramStatus.configured));
-
-    let availableModels: string[] = [];
-    if (yagrConfig.provider) {
-      const apiKey = this.configService.getApiKey(yagrConfig.provider);
-      try {
-        availableModels = await fetchAvailableModels(yagrConfig.provider, apiKey, yagrConfig.baseUrl);
-      } catch {
-        availableModels = [];
-      }
-    }
-
-    return {
-      setupStatus,
-      gatewayStatus: {
-        enabledSurfaces,
-        startableSurfaces,
-      },
-      telegram: telegramStatus,
-      webui: webUiStatus,
-      yagr: {
-        provider: yagrConfig.provider,
-        model: yagrConfig.model,
-        baseUrl: yagrConfig.baseUrl,
-        providers: VALID_PROVIDERS.map((provider) => ({
-          provider,
-          apiKeyStored: this.configService.hasApiKey(provider),
-        })),
-      },
-      n8n: {
-        host: n8nConfig.host,
-        syncFolder: n8nConfig.syncFolder,
-        projectId: n8nConfig.projectId,
-        projectName: n8nConfig.projectName,
-        apiKeyStored: Boolean(n8nConfig.host && n8nService.getApiKey(n8nConfig.host)),
-        projects: n8nConfig.projectId && n8nConfig.projectName ? [{ id: n8nConfig.projectId, name: n8nConfig.projectName }] : [],
-      },
-      availableModels,
-    };
+    return this.setupService.buildWebUiSnapshot({
+      activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
+      telegramStatus,
+      webUiStatus,
+      selectableProviders: VALID_PROVIDERS,
+    });
   }
 
   private async sendManagedN8nWorkflowSession(response: ServerResponse, target: string): Promise<void> {
@@ -515,7 +472,7 @@ class WebUiGateway implements Gateway {
   }
 
   private async handleStreamingChat(response: ServerResponse, sessionId: string, message: string): Promise<void> {
-    const setupStatus = getYagrSetupStatus(this.configService, new YagrN8nConfigService(), {
+    const setupStatus = this.setupService.getSetupStatus({
       activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
     });
     if (!setupStatus.ready) {

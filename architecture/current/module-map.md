@@ -144,12 +144,14 @@ Dette structurelle:
 Role actuel:
 
 - `src/setup/application-services.ts`: service applicatif partage pour operations n8n, LLM et surfaces
+- `src/setup/status.ts`: calcul partage du statut setup
 - point de coordination du wizard et de l'onboarding
 - point de coordination entre config, providers, surfaces et n8n local
 
 Dette structurelle:
 
 - une premiere extraction existe via `application-services.ts`
+- la WebUI s'appuie desormais sur le service applicatif pour construire son snapshot de configuration
 - il reste encore de la logique d'orchestration a affiner dans `src/setup.ts` et certaines facades
 
 ### `src/config/`
