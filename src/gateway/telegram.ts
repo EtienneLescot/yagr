@@ -3,7 +3,9 @@ import qrcode from 'qrcode-terminal';
 import { Telegraf } from 'telegraf';
 import { YagrAgent } from '../agent.js';
 import { YagrConfigService, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import type { Engine } from '../engine/engine.js';
+import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import {
   type WorkflowEmbed,
@@ -122,6 +124,10 @@ export async function resolveTelegramBotIdentity(botToken: string): Promise<{ us
 
 export async function setupTelegramGateway(configService = new YagrConfigService()): Promise<void> {
   const currentToken = configService.getTelegramBotToken() ?? '';
+  const setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService(), {
+    resolveTelegramIdentity: resolveTelegramBotIdentity,
+    createOnboardingToken,
+  });
 
   if (!currentToken) {
     process.stdout.write(`\nTo create a Telegram bot token:\n${buildTelegramTokenInstructions()}\n`);
@@ -145,19 +151,8 @@ export async function setupTelegramGateway(configService = new YagrConfigService
   if (!botToken.includes(':')) throw new Error('Invalid Telegram bot token format.');
 
   process.stdout.write('Verifying token...\n');
-  const identity = await resolveTelegramBotIdentity(botToken);
-  configService.saveTelegramBotToken(botToken);
-
-  const nextConfig = configService.updateLocalConfig((localConfig) => ({
-    ...localConfig,
-    telegram: {
-      ...localConfig.telegram,
-      botUsername: identity.username,
-      onboardingToken: localConfig.telegram?.onboardingToken ?? createOnboardingToken(),
-      linkedChats: localConfig.telegram?.linkedChats ?? [],
-    },
-  }));
-  configService.enableGatewaySurface('telegram');
+  const identity = await setupService.configureTelegram(botToken);
+  const nextConfig = configService.getLocalConfig();
 
   const deepLink = buildTelegramDeepLink(
     nextConfig.telegram?.botUsername ?? identity.username,
@@ -208,13 +203,7 @@ export function getTelegramGatewayStatus(configService = new YagrConfigService()
 }
 
 export function resetTelegramGateway(configService = new YagrConfigService()): void {
-  configService.clearTelegramBotToken();
-  configService.disableGatewaySurface('telegram');
-  configService.updateLocalConfig((localConfig) => {
-    const nextConfig = { ...localConfig };
-    delete nextConfig.telegram;
-    return nextConfig;
-  });
+  new YagrSetupApplicationService(configService, new YagrN8nConfigService()).resetTelegram();
 }
 
 export function createTelegramGatewayRuntime(
@@ -251,6 +240,7 @@ class TelegramGateway implements Gateway {
   private readonly pendingApprovals = new Map<string, YagrRequiredAction[]>();
   private enginePromise?: Promise<Engine>;
   private stopped = false;
+  private readonly setupService: YagrSetupApplicationService;
 
   constructor(
     private readonly engineResolver: () => Promise<Engine>,
@@ -260,6 +250,7 @@ class TelegramGateway implements Gateway {
     private readonly onboardingToken: string,
   ) {
     this.bot = new Telegraf(botToken);
+    this.setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
   }
 
   private buildDeepLink(): string {
@@ -302,7 +293,7 @@ class TelegramGateway implements Gateway {
         return;
       }
 
-      const linkedChats = this.configService.getLocalConfig().telegram?.linkedChats ?? [];
+      const linkedChats = this.setupService.getLinkedTelegramChats();
       await ctx.reply(`Gateway Telegram actif. ${formatLinkedChatCount(linkedChats.length)}.`);
     });
 
@@ -442,45 +433,19 @@ class TelegramGateway implements Gateway {
   }
 
   private linkChat(chat: YagrTelegramLinkedChat): void {
-    this.configService.updateLocalConfig((localConfig) => ({
-      ...localConfig,
-      telegram: {
-        ...localConfig.telegram,
-        linkedChats: upsertLinkedChat(localConfig.telegram?.linkedChats ?? [], chat),
-      },
-    }));
+    this.setupService.linkTelegramChat(chat);
   }
 
   private unlinkChat(chatId: string): void {
-    this.configService.updateLocalConfig((localConfig) => ({
-      ...localConfig,
-      telegram: {
-        ...localConfig.telegram,
-        linkedChats: removeLinkedChat(localConfig.telegram?.linkedChats ?? [], chatId),
-      },
-    }));
+    this.setupService.unlinkTelegramChat(chatId);
   }
 
   private touchChat(chatId: string, userId?: number, username?: string, firstName?: string): void {
-    const current = this.configService.getLocalConfig().telegram?.linkedChats ?? [];
-    const existing = current.find((entry) => String(entry.chatId) === String(chatId));
-    if (!existing) {
-      return;
-    }
-
-    this.linkChat({
-      ...existing,
-      chatId: String(chatId),
-      userId: userId ? String(userId) : existing.userId,
-      username: username ?? existing.username,
-      firstName: firstName ?? existing.firstName,
-      lastSeenAt: new Date().toISOString(),
-    });
+    this.setupService.touchTelegramChat(chatId, userId, username, firstName);
   }
 
   private isLinkedChat(chatId: string): boolean {
-    const linkedChats = this.configService.getLocalConfig().telegram?.linkedChats ?? [];
-    return linkedChats.some((entry) => String(entry.chatId) === String(chatId));
+    return this.setupService.isTelegramChatLinked(chatId);
   }
 
   private async getEngine(): Promise<Engine> {
