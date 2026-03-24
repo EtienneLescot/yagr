@@ -810,6 +810,7 @@ async function runAdvancedAgentInProcess({
   const envOverrides = {
     YAGR_HOME: isolatedHome,
     YAGR_LAUNCH_CWD: process.cwd(),
+    YAGR_ALLOW_N8N_ENV: '1',
     ...(testN8nRuntime.host ? { N8N_HOST: testN8nRuntime.host } : {}),
     ...(testN8nRuntime.apiKey ? { N8N_API_KEY: testN8nRuntime.apiKey } : {}),
     ...(testN8nRuntime.projectId ? { N8N_PROJECT_ID: testN8nRuntime.projectId } : {}),

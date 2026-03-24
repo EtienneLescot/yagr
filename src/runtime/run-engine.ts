@@ -22,7 +22,7 @@ import type {
 import { buildTools } from '../tools/index.js';
 import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import { resolveWorkflowDiagramFromFilePath } from '../tools/present-workflow-result.js';
-import { evaluateCompletionGate } from './completion-gate.js';
+import { evaluateCompletionGate, type CompletionGateDecision } from './completion-gate.js';
 import { compactConversationContext } from './context-compaction.js';
 import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outcome.js';
 import { createDefaultRuntimeHooksForStrategy, wrapToolsWithRuntimeHooks } from './policy-hooks.js';
@@ -31,6 +31,7 @@ import { resolveToolRuntimeStrategy, type YagrToolRuntimeStrategy } from './tool
 
 const MAX_EXECUTION_ATTEMPTS = 3;
 const MAX_COMPLETION_REPAIR_ATTEMPTS = 1;
+const MAX_BLOCKER_CAPTURE_ATTEMPTS = 1;
 const PHASE_ORDER: YagrRunPhase[] = ['inspect', 'plan', 'edit', 'validate', 'sync', 'verify', 'summarize'];
 const STREAM_FILTER_HOLDBACK = 256;
 
@@ -914,6 +915,15 @@ function buildCompletionRepairPrompt(): string {
   ].join(' '));
 }
 
+function buildBlockerCapturePrompt(): string {
+  return wrapInternal([
+    'Yagr internal blocker capture pass.',
+    'The run still has no concrete result and no structured blocker.',
+    'If progress is blocked on missing user input, permission, or an external dependency, call requestRequiredAction now.',
+    'Do not answer with plain prose. Emit only the required action through the tool.',
+  ].join(' '));
+}
+
 async function ensureFinalText(
   prompt: string,
   finishReason: string,
@@ -1443,6 +1453,7 @@ export class YagrRunEngine {
       let toolCalls: Array<{ toolName: string }> = [];
       let responseMessages: CoreMessage[] = [];
       let lastExecutionResponseMessages: CoreMessage[] = [];
+      let blockerCaptureAttempts = 0;
 
       for (let attemptNumber = 1; attemptNumber <= MAX_EXECUTION_ATTEMPTS; attemptNumber += 1) {
         throwIfAborted(options.abortSignal);
@@ -1506,7 +1517,7 @@ export class YagrRunEngine {
       steps += inspectResult.steps.length;
       throwIfAborted(options.abortSignal);
       let completionRepairAttempts = 0;
-      let completionDecision;
+      let completionDecision: CompletionGateDecision;
       let finalOutcome;
       let requiredActions;
 
@@ -1581,7 +1592,64 @@ export class YagrRunEngine {
           continue;
         }
 
+        if (
+          !completionDecision.accepted
+          && completionDecision.needsContinuation
+          && completionDecision.requiredActions.length === 0
+          && blockerCaptureAttempts < MAX_BLOCKER_CAPTURE_ATTEMPTS
+        ) {
+          blockerCaptureAttempts += 1;
+          throwIfAborted(options.abortSignal);
+          executeMessages = await maybeCompactMessages(state, options, this.systemPrompt, prompt, executeMessages);
+          executeMessages = [
+            ...executeMessages,
+            ...lastExecutionResponseMessages,
+            {
+              role: 'user',
+              content: buildBlockerCapturePrompt(),
+            },
+          ];
+
+          const blockerTools = {
+            requestRequiredAction: tools.requestRequiredAction,
+          } as typeof tools;
+
+          const phaseResult = await executePhase(
+            state,
+            options,
+            runtimeStrategy,
+            this.systemPrompt,
+            blockerTools,
+            executeMessages,
+            1,
+          );
+
+          if (phaseResult.text) {
+            text = phaseResult.text;
+          }
+          finishReason = phaseResult.finishReason;
+          steps += phaseResult.steps;
+          toolCalls = phaseResult.toolCalls;
+          lastExecutionResponseMessages = sanitizeAssistantResponseMessages(phaseResult.responseMessages);
+          responseMessages = [...responseMessages, ...lastExecutionResponseMessages];
+          persistedMessages.push(...lastExecutionResponseMessages);
+          continue;
+        }
+
         break;
+      }
+
+      if (
+        !completionDecision.accepted
+        && completionDecision.needsContinuation
+        && completionDecision.requiredActions.length === 0
+      ) {
+        completionDecision = {
+          ...completionDecision,
+          state: 'failed_terminal',
+          reasons: ['Run ended without a concrete result and without a structured blocker.'],
+          needsContinuation: false,
+        };
       }
 
       for (const requiredAction of completionDecision.requiredActions) {

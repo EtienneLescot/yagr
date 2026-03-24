@@ -225,7 +225,54 @@ test('n8n setup guard blocks speculative init_auth when the workspace is already
 
   assert.equal(result.ok, false);
   assert.equal(result.blocked, true);
-  assert.match(result.error, /already initialized/i);
+  assert.match(result.error, /already initialized|credentials are already available/i);
+});
+
+test('n8n setup guard blocks init_auth when automated test env credentials are already available', async () => {
+  const previousHost = process.env.N8N_HOST;
+  const previousApiKey = process.env.N8N_API_KEY;
+  const previousAllow = process.env.YAGR_ALLOW_N8N_ENV;
+  const previousYagrHome = process.env.YAGR_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-setup-guard-'));
+
+  try {
+    process.env.YAGR_HOME = tempRoot;
+    process.env.N8N_HOST = 'http://localhost:5678';
+    process.env.N8N_API_KEY = 'secret';
+    process.env.YAGR_ALLOW_N8N_ENV = '1';
+
+    const wrappedTools = wrapToolsWithRuntimeHooks(
+      {
+        n8nac: {
+          description: 'n8nac',
+          parameters: undefined,
+          execute: async () => ({ exitCode: 0 }),
+        },
+      },
+      [createN8nSetupGuardHook()],
+      () => ({ runId: 'run-setup-2', phase: 'plan', state: 'running' }),
+    );
+
+    const result = await wrappedTools.n8nac.execute({
+      action: 'init_auth',
+      n8nHost: 'http://localhost:5678',
+      n8nApiKey: 'secret',
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.blocked, true);
+    assert.match(result.error, /credentials are already available/i);
+  } finally {
+    if (previousHost === undefined) delete process.env.N8N_HOST;
+    else process.env.N8N_HOST = previousHost;
+    if (previousApiKey === undefined) delete process.env.N8N_API_KEY;
+    else process.env.N8N_API_KEY = previousApiKey;
+    if (previousAllow === undefined) delete process.env.YAGR_ALLOW_N8N_ENV;
+    else process.env.YAGR_ALLOW_N8N_ENV = previousAllow;
+    if (previousYagrHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousYagrHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('later successful retry clears an earlier unresolved n8nac failure', () => {
