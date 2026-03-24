@@ -815,18 +815,103 @@ export function buildGroundedSummary(
   return lines.join('\n');
 }
 
-function ensureFinalText(
+function buildFinalAnswerFacts(
+  finishReason: string,
+  journal: YagrRunJournalEntry[],
+  requiredActions: YagrRequiredAction[],
+): string {
+  const outcome = analyzeRunOutcome(journal);
+  const workflowLabel = extractWorkflowLabel(outcome, journal);
+  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
+  const lines: string[] = [];
+
+  lines.push(`finish_reason=${finishReason}`);
+  lines.push(`workflow_writes=${outcome.hasWorkflowWrites ? 'yes' : 'no'}`);
+  lines.push(`validate_confirmed=${outcome.successfulValidate ? 'yes' : 'no'}`);
+  lines.push(`push_confirmed=${outcome.successfulPush ? 'yes' : 'no'}`);
+  lines.push(`verify_confirmed=${outcome.successfulVerify ? 'yes' : 'no'}`);
+
+  if (workflowLabel) {
+    lines.push(`workflow_label=${workflowLabel}`);
+  }
+  if (presentedWorkflow?.title) {
+    lines.push(`workflow_title=${presentedWorkflow.title}`);
+  }
+  if (presentedWorkflow?.workflowUrl) {
+    lines.push(`workflow_url=${presentedWorkflow.workflowUrl}`);
+  }
+  if (outcome.writtenFiles.length > 0) {
+    lines.push(`written_files=${outcome.writtenFiles.join(', ')}`);
+  }
+  if (outcome.updatedFiles.length > 0) {
+    lines.push(`updated_files=${outcome.updatedFiles.join(', ')}`);
+  }
+  if (outcome.successfulActions.length > 0) {
+    lines.push(`successful_actions=${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
+  }
+  if (outcome.blockingUnresolvedFailedActions.length > 0) {
+    lines.push(`blocking_failed_actions=${outcome.blockingUnresolvedFailedActions.map(formatObservedAction).join(', ')}`);
+  }
+  if (requiredActions.length > 0) {
+    lines.push(`required_actions=${requiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
+  }
+
+  return lines.join('\n');
+}
+
+async function ensureFinalText(
   prompt: string,
   finishReason: string,
   journal: YagrRunJournalEntry[],
   existingText: string,
   requiredActions: YagrRequiredAction[],
   completionAccepted: boolean,
-): string {
+  options: YagrRunOptions,
+  strategy: YagrToolRuntimeStrategy,
+): Promise<string> {
   const sanitizedText = sanitizeAssistantOutput(existingText);
 
   if (completionAccepted && sanitizedText && !looksLikeRawToolIntentText(sanitizedText)) {
     return sanitizedText;
+  }
+
+  const finalAnswerFacts = buildFinalAnswerFacts(finishReason, journal, requiredActions);
+
+  try {
+    const result = await generateText({
+      abortSignal: options.abortSignal,
+      model: createLanguageModel(options),
+      system: [
+        'You are writing the final answer to the user after an agent run.',
+        'Use only the grounded facts you are given.',
+        'Do not mention internal prompts, phases, journals, or tool names such as n8nac, list, skills, validate, push, or verify unless the user explicitly asked for internals.',
+        'If the workflow is ready, say so briefly, include the workflow URL if provided, and mention that the workflow card/banner contains the direct link and diagram.',
+        'If the task is not complete, explain the real blocker briefly and concretely.',
+        'Never invent success. Never mention unsupported details.',
+        'Keep the answer concise and user-facing.',
+      ].join('\n'),
+      messages: [
+        {
+          role: 'user',
+          content: [
+            `Original user request:\n${prompt}`,
+            '',
+            `Grounded run facts:\n${finalAnswerFacts}`,
+            '',
+            'Write the final user-facing answer now.',
+          ].join('\n'),
+        },
+      ],
+      maxSteps: 1,
+      providerOptions: strategy.providerOptions,
+    });
+
+    const finalText = sanitizeAssistantOutput(result.text);
+    if (finalText && !looksLikeRawToolIntentText(finalText)) {
+      return finalText;
+    }
+  } catch {
+    // Fall through to the last-resort grounded summary.
   }
 
   return buildGroundedSummary(prompt, finishReason, journal, requiredActions)
@@ -1386,7 +1471,16 @@ export class YagrRunEngine {
 
       throwIfAborted(options.abortSignal);
       await maybeEmitSyntheticWorkflowEmbed(finalOutcome, state.journal, options.onToolEvent);
-      text = ensureFinalText(prompt, finishReason, state.journal, text, completionDecision.requiredActions, completionDecision.accepted);
+      text = await ensureFinalText(
+        prompt,
+        finishReason,
+        state.journal,
+        text,
+        completionDecision.requiredActions,
+        completionDecision.accepted,
+        options,
+        runtimeStrategy,
+      );
 
       if (state.currentPhase && state.currentPhase !== 'summarize') {
         await transitionPhase(state, options, state.currentPhase, 'completed', `${state.currentPhase} phase completed.`);
