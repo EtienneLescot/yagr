@@ -731,12 +731,12 @@ export function buildGroundedSummary(
   const presentedWorkflowUrl = presentedWorkflow?.workflowUrl;
 
   if (outcome.hasWorkflowWrites && outcome.successfulPush) {
-    const workflowName = presentedWorkflow?.title || workflowLabel || 'le workflow';
+    const workflowName = presentedWorkflow?.title || workflowLabel || 'the workflow';
     const completionBits = [
-      `Le workflow ${workflowName === 'le workflow' ? workflowName : `\`${workflowName}\``} est pret`,
-      outcome.successfulValidate ? 'valide' : undefined,
-      outcome.successfulPush ? 'pousse vers n8n' : undefined,
-      outcome.successfulVerify ? 'verifie' : undefined,
+      `The workflow ${workflowName === 'the workflow' ? workflowName : `\`${workflowName}\``} is ready`,
+      outcome.successfulValidate ? 'validated' : undefined,
+      outcome.successfulPush ? 'pushed to n8n' : undefined,
+      outcome.successfulVerify ? 'verified' : undefined,
     ].filter(Boolean);
 
     if (completionBits.length > 0) {
@@ -744,72 +744,72 @@ export function buildGroundedSummary(
     }
 
     if (presentedWorkflowUrl) {
-      lines.push(`Lien du workflow: ${presentedWorkflowUrl}`);
+      lines.push(`Workflow link: ${presentedWorkflowUrl}`);
     }
   }
 
   if (lines.length === 0 && presentedWorkflowUrl) {
-    const workflowName = presentedWorkflow.title || workflowLabel || 'le workflow';
+    const workflowName = presentedWorkflow.title || workflowLabel || 'the workflow';
     lines.push(
-      workflowName === 'le workflow'
-        ? 'Le workflow est pret.'
-        : `Le workflow \`${workflowName}\` est pret.`,
+      workflowName === 'the workflow'
+        ? 'The workflow is ready.'
+        : `The workflow \`${workflowName}\` is ready.`,
     );
-    lines.push(`Lien du workflow: ${presentedWorkflowUrl}`);
+    lines.push(`Workflow link: ${presentedWorkflowUrl}`);
   } else if (lines.length === 0 && presentedWorkflow?.title) {
-    lines.push(`Le workflow \`${presentedWorkflow.title}\` est pret.`);
+    lines.push(`The workflow \`${presentedWorkflow.title}\` is ready.`);
   }
 
   if (lines.length > 0 && presentedWorkflowUrl && !lines.some((line) => line.includes(presentedWorkflowUrl))) {
-    lines.push(`Lien du workflow: ${presentedWorkflowUrl}`);
+    lines.push(`Workflow link: ${presentedWorkflowUrl}`);
   }
 
-  if (lines.length > 0 && lines.every((line) => !/^La carte du workflow/i.test(line)) && presentedWorkflow) {
+  if (lines.length > 0 && lines.every((line) => !/^The workflow card below/i.test(line)) && presentedWorkflow) {
     if (presentedWorkflow.workflowUrl) {
-      lines.push('La carte du workflow ci-dessous contient le lien direct et le schema.');
+      lines.push('The workflow card below includes the direct link and the diagram.');
     } else {
-      lines.push('La carte du workflow ci-dessous contient le schema associe.');
+      lines.push('The workflow card below includes the associated diagram.');
     }
   }
 
   if (lines.length === 0 && outcome.writtenFiles.length > 0) {
-    lines.push(`Fichiers crees ou reecrits: ${outcome.writtenFiles.join(', ')}`);
+    lines.push(`Files created or rewritten: ${outcome.writtenFiles.join(', ')}`);
   }
 
   if (lines.length === 0 && outcome.updatedFiles.length > 0) {
-    lines.push(`Fichiers modifies: ${outcome.updatedFiles.join(', ')}`);
+    lines.push(`Files modified: ${outcome.updatedFiles.join(', ')}`);
   }
 
   if (lines.length === 0 && outcome.successfulActions.length > 0) {
-    lines.push(`Actions n8nac reussies: ${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
+    lines.push(`Successful n8nac actions: ${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
   }
 
   if (outcome.blockingUnresolvedFailedActions.length > 0) {
-    lines.push(`Actions n8nac en echec: ${outcome.blockingUnresolvedFailedActions.map(formatObservedAction).join(', ')}`);
+    lines.push(`Failed n8nac actions: ${outcome.blockingUnresolvedFailedActions.map(formatObservedAction).join(', ')}`);
   }
 
   if (requiredActions.length > 0 && !(outcome.successfulPush && outcome.successfulVerify)) {
-    lines.push(`Actions requises en attente: ${requiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
+    lines.push(`Pending required actions: ${requiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
   }
 
   if (outcome.hasWorkflowWrites && !outcome.successfulValidate) {
-    lines.push('La validation du workflow n’a pas ete confirmee.');
+    lines.push('Workflow validation was not confirmed.');
   }
 
   if (outcome.hasWorkflowWrites && !outcome.successfulPush) {
-    lines.push('Le push vers n8n n’a pas ete confirme.');
+    lines.push('Push to n8n was not confirmed.');
   }
 
   if (outcome.hasWorkflowWrites && !outcome.successfulVerify) {
-    lines.push('La verification distante n’a pas ete confirmee.');
+    lines.push('Remote verification was not confirmed.');
   }
 
   if (outcome.hasWorkflowWrites && outcome.blockingUnresolvedFailedActions.length > 0) {
-    lines.push('Le run s’est arrete alors que certaines actions avaient encore echoue. Une correction supplementaire reste necessaire ou un bloqueur externe persiste.');
+    lines.push('The run stopped while some actions were still failing. More fixes are needed or an external blocker is still present.');
   }
 
   if (lines.length === 0 && finishReason !== 'stop') {
-    lines.push(`Le run s’est termine avec la raison: ${finishReason}.`);
+    lines.push(`The run ended with reason: ${finishReason}.`);
   }
 
   return lines.join('\n');
@@ -1097,12 +1097,12 @@ function buildRecoveryPrompt(outcome: RunOutcome, attemptNumber: number): string
   }
 
   if (outcome.hasWorkflowWrites && !outcome.successfulVerify) {
-    missingChecks.push('verification distante');
+    missingChecks.push('remote verification');
   }
 
   const issues = [
-    failedActions ? `Actions en echec: ${failedActions}.` : '',
-    missingChecks.length > 0 ? `Etapes non confirmees: ${missingChecks.join(', ')}.` : '',
+    failedActions ? `Failed actions: ${failedActions}.` : '',
+    missingChecks.length > 0 ? `Unconfirmed steps: ${missingChecks.join(', ')}.` : '',
   ].filter(Boolean).join(' ');
 
   return wrapInternal([
