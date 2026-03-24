@@ -8,6 +8,12 @@ import type { EngineRuntimePort } from '../engine/engine.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import {
+  mapPhaseEventToUserVisibleUpdate,
+  mapStateEventToUserVisibleUpdate,
+  mapToolEventToUserVisibleUpdate,
+  type YagrUserVisibleUpdate,
+} from '../runtime/user-visible-updates.js';
+import {
   type WorkflowEmbed,
   buildWorkflowBannerHtml,
   extractWorkflowEmbed,
@@ -17,6 +23,12 @@ import {
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
+
+function formatTelegramProgressHtml(update: YagrUserVisibleUpdate): string {
+  const title = escapeHtml(update.title);
+  const detail = update.detail ? escapeHtml(update.detail) : '';
+  return detail ? `<b>${title}</b>\n${detail}` : `<b>${title}</b>`;
+}
 
 export function createOnboardingToken(): string {
   return randomBytes(18).toString('base64url');
@@ -465,14 +477,33 @@ class TelegramGateway implements Gateway {
     try {
       await reply('Yagr travaille...');
 
+      let lastProgressKey = '';
+      const sendProgressUpdate = async (update: YagrUserVisibleUpdate | undefined): Promise<void> => {
+        if (!update || update.dedupeKey === lastProgressKey) {
+          return;
+        }
+
+        lastProgressKey = update.dedupeKey;
+        await this.sendHtml(chatId, formatTelegramProgressHtml(update));
+      };
+
       const embeds: WorkflowEmbed[] = [];
       const result = await (await this.getAgent(chatId)).run(prompt, {
         ...this.options,
         display: undefined,
         satisfiedRequiredActionIds: satisfiedRequiredActions.map((action) => action.id),
+        onPhaseChange: async (event) => {
+          await sendProgressUpdate(mapPhaseEventToUserVisibleUpdate(event));
+          await this.options.onPhaseChange?.(event);
+        },
+        onStateChange: async (event) => {
+          await sendProgressUpdate(mapStateEventToUserVisibleUpdate(event));
+          await this.options.onStateChange?.(event);
+        },
         onToolEvent: async (event) => {
           const embed = extractWorkflowEmbed(event);
           if (embed) embeds.push(embed);
+          await sendProgressUpdate(mapToolEventToUserVisibleUpdate(event));
           await this.options.onToolEvent?.(event);
         },
       });

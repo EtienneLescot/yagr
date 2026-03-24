@@ -28,6 +28,11 @@ import {
   YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
+import {
+  mapPhaseEventToUserVisibleUpdate,
+  mapStateEventToUserVisibleUpdate,
+  mapToolEventToUserVisibleUpdate,
+} from '../runtime/user-visible-updates.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -71,6 +76,63 @@ type WebUiChatStreamEvent =
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
   | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string };
+
+export function mapToolEventToWebUiStreamEvent(event: YagrToolEvent): WebUiChatStreamEvent | undefined {
+  const userFacingStatus = mapToolEventToUserVisibleUpdate(event);
+  if (userFacingStatus) {
+    return {
+      type: 'progress',
+      tone: userFacingStatus.tone,
+      title: userFacingStatus.title,
+      detail: userFacingStatus.detail,
+      ...(userFacingStatus.phase ? { phase: userFacingStatus.phase } : {}),
+    };
+  }
+
+  if (event.type === 'embed') {
+    return {
+      type: 'embed',
+      kind: event.kind,
+      workflowId: event.workflowId,
+      url: event.url,
+      targetUrl: event.targetUrl,
+      title: event.title,
+      diagram: event.diagram,
+    };
+  }
+
+  return undefined;
+}
+
+export function mapPhaseEventToWebUiStreamEvent(event: YagrPhaseEvent): WebUiChatStreamEvent | undefined {
+  const update = mapPhaseEventToUserVisibleUpdate(event);
+  if (!update) {
+    return undefined;
+  }
+
+  return {
+    type: 'progress',
+    tone: update.tone,
+    title: update.title,
+    detail: update.detail,
+    ...(update.phase ? { phase: update.phase } : {}),
+  };
+}
+
+export function mapStateEventToWebUiStreamEvent(event: YagrStateEvent): WebUiChatStreamEvent | undefined {
+  const update = mapStateEventToUserVisibleUpdate(event);
+  if (!update) {
+    return undefined;
+  }
+
+  return {
+    type: 'progress',
+    tone: update.tone,
+    title: update.title,
+    detail: update.detail,
+    ...(update.phase ? { phase: update.phase } : {}),
+  };
+}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -495,66 +557,42 @@ class WebUiGateway implements Gateway {
     };
 
     const pushPhaseEvent = (event: YagrPhaseEvent) => {
-      if (event.status !== 'started') {
+      const mappedEvent = mapPhaseEventToWebUiStreamEvent(event);
+      if (mappedEvent) {
+        writeEvent(mappedEvent);
         return;
       }
 
-      writeEvent({
-        type: 'phase',
-        phase: event.phase,
-        status: event.status,
-        message: event.message,
-      });
+      if (event.status === 'started') {
+        writeEvent({
+          type: 'phase',
+          phase: event.phase,
+          status: event.status,
+          message: event.message,
+        });
+      }
     };
 
     const pushStateEvent = (event: YagrStateEvent) => {
-      if (event.state === 'running' || event.state === 'streaming' || event.state === 'completed') {
+      const mappedEvent = mapStateEventToWebUiStreamEvent(event);
+      if (mappedEvent) {
+        writeEvent(mappedEvent);
         return;
       }
 
-      writeEvent({
-        type: 'state',
-        state: event.state,
-        message: event.message,
-      });
+      if (event.state !== 'running' && event.state !== 'streaming' && event.state !== 'completed') {
+        writeEvent({
+          type: 'state',
+          state: event.state,
+          message: event.message,
+        });
+      }
     };
 
     const pushToolEvent = (event: YagrToolEvent) => {
-      if (event.type === 'status') {
-        writeEvent({
-          type: 'progress',
-          tone: 'info',
-          title: event.toolName === 'reportProgress' ? 'Progress' : `Tool ${event.toolName}`,
-          detail: event.message,
-        });
-        return;
-      }
-
-      if (event.type === 'command-end') {
-        if (event.exitCode === 0) {
-          return;
-        }
-
-        writeEvent({
-          type: 'progress',
-          tone: 'info',
-          title: 'Correcting commands',
-          detail: event.message,
-        });
-        return;
-      }
-
-      if (event.type === 'embed') {
-        writeEvent({
-          type: 'embed',
-          kind: event.kind,
-          workflowId: event.workflowId,
-          url: event.url,
-          targetUrl: event.targetUrl,
-          title: event.title,
-          diagram: event.diagram,
-        });
-        return;
+      const mappedEvent = mapToolEventToWebUiStreamEvent(event);
+      if (mappedEvent) {
+        writeEvent(mappedEvent);
       }
     };
 

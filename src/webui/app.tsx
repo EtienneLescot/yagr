@@ -1283,12 +1283,6 @@ function App() {
               phase: streamEvent.phase,
               statusLabel: streamEvent.message,
             });
-            pushMessageProgress(pendingId, {
-              id: crypto.randomUUID(),
-              tone: 'info',
-              title: phaseLabel(streamEvent.phase),
-              detail: streamEvent.message,
-            });
             setBusyLabel(streamEvent.message);
           }
           return;
