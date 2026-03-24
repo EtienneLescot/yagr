@@ -83,6 +83,10 @@ function defaultCreateOnboardingToken(): string {
   return randomBytes(18).toString('base64url');
 }
 
+function buildTelegramDeepLink(botUsername: string, onboardingToken: string): string {
+  return `https://t.me/${botUsername}?start=${onboardingToken}`;
+}
+
 async function defaultRefreshAiContext(credentials: { host: string; apiKey: string }): Promise<void> {
   const updateAi = new UpdateAiCommand(new Command());
   const previousCwd = process.cwd();
@@ -272,6 +276,22 @@ export class YagrSetupApplicationService {
     return this.fetchAvailableModelsRunner(provider, apiKey, baseUrl);
   }
 
+  async fetchModelsForSelection(input: {
+    provider: YagrModelProvider;
+    apiKey?: string;
+    baseUrl?: string;
+    requiresApiKey: (provider: YagrModelProvider) => boolean;
+  }): Promise<string[]> {
+    const configuredLlm = this.yagrConfigService.getLocalConfig();
+    const apiKey = input.apiKey ?? this.yagrConfigService.getApiKey(input.provider);
+    if (input.requiresApiKey(input.provider) && !apiKey) {
+      throw new Error(`No API key available for ${input.provider}. Save one first.`);
+    }
+
+    const baseUrl = input.baseUrl ?? (configuredLlm.provider === input.provider ? configuredLlm.baseUrl : undefined);
+    return this.fetchAvailableModelsRunner(input.provider, apiKey, baseUrl);
+  }
+
   getSetupStatus(options: { activeSurfaces?: GatewaySurface[] } = {}): YagrSetupStatus {
     return getYagrSetupStatus(
       this.yagrConfigService as YagrConfigService,
@@ -280,14 +300,53 @@ export class YagrSetupApplicationService {
     );
   }
 
-  async buildWebUiSnapshot(input: {
-    activeSurfaces: GatewaySurface[];
-    telegramStatus: {
+  getSelectedN8nProjectId(): string | undefined {
+    return this.n8nConfigService.getLocalConfig().projectId;
+  }
+
+  getTelegramStatus(): {
+    configured: boolean;
+    botUsername?: string;
+    linkedChats: YagrTelegramLinkedChat[];
+    deepLink?: string;
+  } {
+    const localConfig = this.yagrConfigService.getLocalConfig();
+    const telegram = localConfig.telegram;
+    const botToken = this.yagrConfigService.getTelegramBotToken();
+    const linkedChats = telegram?.linkedChats ?? [];
+    const deepLink = telegram?.botUsername && telegram.onboardingToken
+      ? buildTelegramDeepLink(telegram.botUsername, telegram.onboardingToken)
+      : undefined;
+
+    return {
+      configured: Boolean(botToken && telegram?.botUsername && telegram?.onboardingToken),
+      botUsername: telegram?.botUsername,
+      linkedChats,
+      deepLink,
+    };
+  }
+
+  getTelegramRuntimeConfig(overrideBotToken?: string): {
+    status: {
       configured: boolean;
       botUsername?: string;
-      linkedChats: Array<unknown>;
+      linkedChats: YagrTelegramLinkedChat[];
       deepLink?: string;
     };
+    botToken?: string;
+    onboardingToken?: string;
+  } {
+    const status = this.getTelegramStatus();
+    const localConfig = this.yagrConfigService.getLocalConfig();
+    return {
+      status,
+      botToken: overrideBotToken ?? this.yagrConfigService.getTelegramBotToken(),
+      onboardingToken: localConfig.telegram?.onboardingToken,
+    };
+  }
+
+  async buildWebUiSnapshot(input: {
+    activeSurfaces: GatewaySurface[];
     webUiStatus: {
       configured: boolean;
       host: string;
@@ -299,8 +358,9 @@ export class YagrSetupApplicationService {
     const n8nConfig = this.n8nConfigService.getLocalConfig();
     const setupStatus = this.getSetupStatus({ activeSurfaces: input.activeSurfaces });
     const yagrConfig = this.yagrConfigService.getLocalConfig();
+    const telegramStatus = this.getTelegramStatus();
     const enabledSurfaces = Array.from(new Set([...this.yagrConfigService.getEnabledGatewaySurfaces(), ...input.activeSurfaces]));
-    const startableSurfaces = enabledSurfaces.filter((surface) => surface === 'webui' || (surface === 'telegram' && input.telegramStatus.configured));
+    const startableSurfaces = enabledSurfaces.filter((surface) => surface === 'webui' || (surface === 'telegram' && telegramStatus.configured));
 
     let availableModels: string[] = [];
     if (yagrConfig.provider) {
@@ -318,7 +378,7 @@ export class YagrSetupApplicationService {
         enabledSurfaces,
         startableSurfaces,
       },
-      telegram: input.telegramStatus,
+      telegram: telegramStatus,
       webui: input.webUiStatus,
       yagr: {
         provider: yagrConfig.provider,

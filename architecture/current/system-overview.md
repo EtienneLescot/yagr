@@ -123,10 +123,11 @@ Responsabilite actuelle:
 
 Observation actuelle:
 
-- `src/setup/application-services.ts` centralise maintenant une partie du SSOT applicatif de setup
+- `src/setup/application-services.ts` centralise maintenant les mutations principales de setup/configuration pour n8n, LLM, surfaces et Telegram
 - `src/setup/status.ts` porte maintenant le calcul partage de `YagrSetupStatus`
 - la WebUI demande maintenant son snapshot de configuration au service applicatif au lieu de reconstituer localement toute la vue setup/config
-- `src/setup.ts` reste encore un point d'orchestration important, mais moins charge qu'avant
+- la facade Telegram delegue maintenant au service applicatif le setup/reset et les mutations d'etat des chats lies
+- `src/setup.ts` reste un point d'orchestration/wizard, mais n'est plus le lieu principal des mutations setup/config
 
 ### Configuration et SSOT local
 
