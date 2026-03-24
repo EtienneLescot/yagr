@@ -9,8 +9,7 @@ Avant tout changement structurel, lire en priorite:
 1. [architecture/current/system-overview.md](./architecture/current/system-overview.md)
 2. [architecture/current/module-map.md](./architecture/current/module-map.md)
 3. [architecture/current/runtime-flows.md](./architecture/current/runtime-flows.md)
-4. [architecture/target/architecture-target.md](./architecture/target/architecture-target.md)
-5. [architecture/target/refactor-backlog.md](./architecture/target/refactor-backlog.md)
+4. [architecture/target/backlog.md](./architecture/target/backlog.md)
 
 ## Principes directeurs
 
@@ -129,8 +128,7 @@ Le dossier `architecture/target/` est ephemere.
 
 Il sert a:
 
-- decrire la cible
-- suivre le chemin pour y parvenir
+- suivre uniquement le travail restant
 
 Il doit etre nettoye au fur et a mesure:
 
