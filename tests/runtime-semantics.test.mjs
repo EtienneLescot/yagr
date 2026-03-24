@@ -562,9 +562,9 @@ test('grounded summary prefers a user-facing workflow completion message when a 
 
   const summary = buildGroundedSummary('Create a workflow.', 'tool-calls', journal, []);
 
-  assert.match(summary, /workflow `demo` est pret/i);
-  assert.doesNotMatch(summary, /carte du workflow ci-dessous/i);
-  assert.doesNotMatch(summary, /Le run s’est termine avec la raison/);
+  assert.match(summary, /workflow `demo` is ready/i);
+  assert.doesNotMatch(summary, /workflow card below/i);
+  assert.doesNotMatch(summary, /The run ended with reason/);
 });
 
 test('grounded summary includes workflow URL from presentWorkflowResult when available', () => {
@@ -618,8 +618,8 @@ test('grounded summary includes workflow URL from presentWorkflowResult when ava
   const summary = buildGroundedSummary('Create a workflow.', 'tool-calls', journal, []);
 
   assert.match(summary, /Demo Flow/);
-  assert.match(summary, /Lien du workflow: http:\/\/localhost:5678\/workflow\/wf-1/);
-  assert.match(summary, /carte du workflow ci-dessous/i);
+  assert.match(summary, /Workflow link: http:\/\/localhost:5678\/workflow\/wf-1/);
+  assert.match(summary, /workflow card below/i);
 });
 
 test('grounded summary falls back to successful push metadata when no presentWorkflowResult was emitted', () => {
@@ -661,9 +661,9 @@ test('grounded summary falls back to successful push metadata when no presentWor
   const summary = buildGroundedSummary('Create a workflow.', 'stop', journal, []);
 
   assert.match(summary, /Demo Flow/);
-  assert.match(summary, /Lien du workflow: http:\/\/localhost:5678\/workflow\/wf-3/);
-  assert.match(summary, /carte du workflow ci-dessous/i);
-  assert.doesNotMatch(summary, /Actions n8nac en echec/);
+  assert.match(summary, /Workflow link: http:\/\/localhost:5678\/workflow\/wf-3/);
+  assert.match(summary, /workflow card below/i);
+  assert.doesNotMatch(summary, /Failed n8nac actions/);
 });
 
 test('final answer policy forces a grounded summary when a workflow URL is known', () => {
@@ -704,11 +704,11 @@ test('final answer policy forces a grounded summary when a workflow URL is known
 
   assert.equal(shouldForceGroundedFinalAnswer(journal, []), true);
   assert.equal(
-    finalAnswerSatisfiesGroundedWorkflowFacts('Le workflow Demo Flow est pret.', journal),
+    finalAnswerSatisfiesGroundedWorkflowFacts('The workflow Demo Flow is ready.', journal),
     false,
   );
   assert.equal(
-    finalAnswerSatisfiesGroundedWorkflowFacts('Le workflow Demo Flow est pret. Lien du workflow: http://localhost:5678/workflow/wf-3', journal),
+    finalAnswerSatisfiesGroundedWorkflowFacts('The workflow Demo Flow is ready. Workflow link: http://localhost:5678/workflow/wf-3', journal),
     true,
   );
 });
@@ -740,9 +740,9 @@ test('grounded summary stays user-facing when a workflow was only presented', ()
 
   const summary = buildGroundedSummary('Show me the workflow.', 'stop', journal, []);
 
-  assert.match(summary, /workflow `Existing Flow` est pret/i);
-  assert.match(summary, /Lien du workflow: http:\/\/localhost:5678\/workflow\/wf-2/);
-  assert.match(summary, /carte du workflow ci-dessous/i);
+  assert.match(summary, /workflow `Existing Flow` is ready/i);
+  assert.match(summary, /Workflow link: http:\/\/localhost:5678\/workflow\/wf-2/);
+  assert.match(summary, /workflow card below/i);
   assert.doesNotMatch(summary, /Fichiers /);
   assert.doesNotMatch(summary, /Actions n8nac/);
 });

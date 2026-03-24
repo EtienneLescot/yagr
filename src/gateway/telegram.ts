@@ -107,7 +107,7 @@ function buildTelegramTokenInstructions(): string {
 }
 
 function formatLinkedChatCount(count: number): string {
-  return count === 1 ? '1 chat lie' : `${count} chats lies`;
+  return count === 1 ? '1 linked chat' : `${count} linked chats`;
 }
 
 function formatRequiredActions(actions: YagrRequiredAction[]): string {
@@ -116,9 +116,9 @@ function formatRequiredActions(actions: YagrRequiredAction[]): string {
   }
 
   return [
-    'Actions requises :',
+    'Required actions:',
     ...actions.map((action) => `- ${action.title}: ${action.message}`),
-    'Utilise /approve pour reprendre si la demande est approuvable.',
+    'Use /approve to resume if the request can be approved.',
   ].join('\n');
 }
 
@@ -225,7 +225,7 @@ export function createTelegramGatewayRuntime(
     startupMessages: [
       `Yagr Telegram gateway listening as @${status.botUsername}. ${formatLinkedChatCount(linkedCount)}.`,
       linkedCount === 0
-        ? `Aucun chat lié. Lien d'onboarding : ${status.deepLink}`
+        ? `No linked chats. Onboarding link: ${status.deepLink}`
         : 'Telegram transport is ready. The current orchestrator connection will be resolved on first message.',
     ],
     onboardingLink: status.deepLink && linkedCount === 0 ? status.deepLink : undefined,
@@ -265,7 +265,7 @@ class TelegramGateway implements Gateway {
       if (payload !== this.onboardingToken) {
         const deepLink = this.buildDeepLink();
         await ctx.reply(
-          `Ce lien est invalide ou expiré. Clique sur le lien ci-dessous pour lier ce chat, puis appuie sur Démarrer :\n${deepLink}`,
+          `This link is invalid or expired. Click the link below to link this chat, then press Start:\n${deepLink}`,
         );
         return;
       }
@@ -279,7 +279,7 @@ class TelegramGateway implements Gateway {
         lastSeenAt: new Date().toISOString(),
       });
 
-      await ctx.reply('Yagr est maintenant lie a ce chat. Tu peux me parler directement ici.');
+      await ctx.reply('Yagr is now linked to this chat. You can talk to me directly here.');
     });
 
     this.bot.command('status', async (ctx) => {
@@ -287,20 +287,20 @@ class TelegramGateway implements Gateway {
       if (!this.isLinkedChat(chatId)) {
         const deepLink = this.buildDeepLink();
         await ctx.reply(
-          `Chat non lié. Clique sur le lien ci-dessous puis appuie sur Démarrer :\n${deepLink}`,
+          `This chat is not linked. Click the link below, then press Start:\n${deepLink}`,
         );
         return;
       }
 
       const linkedChats = this.setupService.getLinkedTelegramChats();
-      await ctx.reply(`Gateway Telegram actif. ${formatLinkedChatCount(linkedChats.length)}.`);
+      await ctx.reply(`Telegram gateway is active. ${formatLinkedChatCount(linkedChats.length)}.`);
     });
 
     this.bot.command('pending', async (ctx) => {
       const chatId = String(ctx.chat.id);
       const actions = this.pendingApprovals.get(chatId) ?? [];
       if (actions.length === 0) {
-        await ctx.reply('Aucune action en attente.');
+        await ctx.reply('No actions pending.');
         return;
       }
 
@@ -310,13 +310,13 @@ class TelegramGateway implements Gateway {
     this.bot.command('approve', async (ctx) => {
       const chatId = String(ctx.chat.id);
       if (!this.isLinkedChat(chatId)) {
-        await ctx.reply('Chat non lie.');
+        await ctx.reply('This chat is not linked.');
         return;
       }
 
       const actions = this.pendingApprovals.get(chatId) ?? [];
       if (actions.length === 0) {
-        await ctx.reply('Aucune action approuvable en attente.');
+        await ctx.reply('No approvable actions pending.');
         return;
       }
 
@@ -325,19 +325,19 @@ class TelegramGateway implements Gateway {
 
     this.bot.command('link', async (ctx) => {
       if (this.isLinkedChat(String(ctx.chat.id))) {
-        await ctx.reply('Ce chat est déjà lié à Yagr. Tu peux me parler directement.');
+        await ctx.reply('This chat is already linked to Yagr. You can talk to me directly.');
         return;
       }
 
       const deepLink = this.buildDeepLink();
       await ctx.reply(
-        `Pour lier ce chat, clique sur le lien ci-dessous puis appuie sur Démarrer :\n${deepLink}`,
+        `To link this chat, click the link below, then press Start:\n${deepLink}`,
       );
     });
 
     const clearSession = async (chatId: string, reply: (message: string) => Promise<unknown>) => {
       this.resetChatSession(chatId);
-      await reply('Conversation Yagr reinitialisee pour ce chat.');
+      await reply('Yagr conversation reset for this chat.');
     };
 
     this.bot.command('reset', async (ctx) => {
@@ -349,7 +349,7 @@ class TelegramGateway implements Gateway {
       if (!this.isLinkedChat(chatId)) {
         const deepLink = this.buildDeepLink();
         await ctx.reply(
-          `Ce chat n'est pas lié. Clique sur le lien ci-dessous pour le lier :\n${deepLink}`,
+          `This chat is not linked. Click the link below to link it:\n${deepLink}`,
         );
         return;
       }
@@ -357,7 +357,7 @@ class TelegramGateway implements Gateway {
       this.unlinkChat(chatId);
       this.agents.delete(chatId);
       this.pendingApprovals.delete(chatId);
-      await ctx.reply('Chat delie. Relance le lien/QR d’onboarding pour te reconnecter.');
+      await ctx.reply('Chat unlinked. Use the onboarding link or QR code again to reconnect.');
     });
 
     this.bot.on('text', async (ctx) => {
@@ -368,14 +368,14 @@ class TelegramGateway implements Gateway {
       }
 
       if (ctx.chat.type !== 'private') {
-        await ctx.reply('Telegram supporte seulement les chats prives pour le moment.');
+        await ctx.reply('Telegram currently supports private chats only.');
         return;
       }
 
       if (!this.isLinkedChat(chatId)) {
         const deepLink = this.buildDeepLink();
         await ctx.reply(
-          `Ce chat n'est pas encore lié. Clique sur le lien ci-dessous puis appuie sur Démarrer :\n${deepLink}`,
+          `This chat is not linked yet. Click the link below, then press Start:\n${deepLink}`,
         );
         return;
       }
@@ -477,13 +477,13 @@ class TelegramGateway implements Gateway {
     reply: (text: string) => Promise<unknown>,
   ): Promise<void> {
     if (this.runningChats.has(chatId)) {
-      await reply('Un run est deja en cours pour ce chat. Attends sa fin avant d’envoyer une nouvelle demande.');
+      await reply('A run is already in progress for this chat. Wait for it to finish before sending another request.');
       return;
     }
 
     this.runningChats.add(chatId);
     try {
-      await reply('Yagr travaille...');
+      await reply('Yagr is working...');
 
       let lastProgressKey = '';
       const sendProgressUpdate = async (update: YagrUserVisibleUpdate | undefined): Promise<void> => {
@@ -539,14 +539,14 @@ class TelegramGateway implements Gateway {
 
       const htmlMessage = htmlSections.filter(Boolean).join('\n\n');
       if (!htmlMessage) {
-        await reply('Run termine, mais aucune reponse textuelle n’a ete produite.');
+        await reply('Run finished, but no text response was produced.');
         return;
       }
 
       await this.sendHtml(chatId, htmlMessage);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await reply(`Run echoue: ${message}`);
+      await reply(`Run failed: ${message}`);
     } finally {
       this.runningChats.delete(chatId);
     }

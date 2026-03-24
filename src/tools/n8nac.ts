@@ -344,7 +344,7 @@ async function runObservedN8nac(
     toolName: 'n8nac',
     exitCode: result.exitCode,
     timedOut: result.timedOut,
-    message: result.exitCode === 0 ? 'Commande terminee.' : 'Correcting commands...',
+    message: result.exitCode === 0 ? 'Command completed.' : 'Correcting commands...',
   });
 
   return result;
