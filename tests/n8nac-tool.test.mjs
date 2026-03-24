@@ -117,7 +117,7 @@ test('n8nac push candidate selection prefers the active workflow directory', () 
 
     const workspaceDir = path.join(tempDir, 'n8n-workspace');
     const activePath = path.join(workspaceDir, 'workflows', 'local_5678_etienne_l', 'personal');
-    const stalePath = path.join(workspaceDir, 'workflows', '127_0_0_1:5678_yagr_l', 'personal');
+    const stalePath = path.join(workspaceDir, 'workflows', '127_0_0_1_5678_yagr_l', 'personal');
     fs.mkdirSync(activePath, { recursive: true });
     fs.mkdirSync(stalePath, { recursive: true });
 
