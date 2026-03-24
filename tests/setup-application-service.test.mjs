@@ -7,6 +7,8 @@ function createYagrConfigStore(initialConfig = {}) {
   let localConfig = { ...initialConfig };
   const apiKeys = new Map();
   let telegramBotToken;
+  let clearedLocalConfig = 0;
+  let clearedApiKeys = 0;
 
   return {
     getLocalConfig() {
@@ -54,6 +56,20 @@ function createYagrConfigStore(initialConfig = {}) {
     },
     clearTelegramBotToken() {
       telegramBotToken = undefined;
+    },
+    clearLocalConfig() {
+      clearedLocalConfig += 1;
+      localConfig = {};
+    },
+    clearAllApiKeys() {
+      clearedApiKeys += 1;
+      apiKeys.clear();
+    },
+    getDebugCounters() {
+      return {
+        clearedLocalConfig,
+        clearedApiKeys,
+      };
     },
   };
 }
@@ -241,4 +257,22 @@ test('telegram chat state mutations are centralized in the setup application ser
   service.unlinkTelegramChat('42');
   assert.equal(service.isTelegramChatLinked('42'), false);
   assert.deepEqual(service.getLinkedTelegramChats(), []);
+});
+
+test('resetYagrConfig delegates config reset to the shared application service', () => {
+  const yagrConfigStore = createYagrConfigStore({
+    provider: 'openai',
+    model: 'gpt-4o',
+  });
+  yagrConfigStore.saveApiKey('openai', 'sk-test');
+  const n8nConfigStore = createN8nConfigStore();
+  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore);
+
+  service.resetYagrConfig();
+
+  const counters = yagrConfigStore.getDebugCounters();
+  assert.equal(counters.clearedLocalConfig, 1);
+  assert.equal(counters.clearedApiKeys, 1);
+  assert.deepEqual(yagrConfigStore.getLocalConfig(), {});
+  assert.equal(yagrConfigStore.getApiKey('openai'), undefined);
 });

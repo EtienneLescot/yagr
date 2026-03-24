@@ -48,6 +48,8 @@ interface YagrConfigStoreLike {
   getTelegramBotToken(): string | undefined;
   saveTelegramBotToken(botToken: string): void;
   clearTelegramBotToken(): void;
+  clearLocalConfig?(): void;
+  clearAllApiKeys?(): void;
 }
 
 interface YagrN8nConfigStoreLike {
@@ -412,6 +414,19 @@ export class YagrSetupApplicationService {
       model: input.model,
       baseUrl: input.baseUrl ?? getDefaultBaseUrlForProvider(input.provider),
     });
+  }
+
+  saveResolvedCliModelSelection(input: { provider: YagrModelProvider; model: string; baseUrl?: string; apiKey?: string }): void {
+    this.saveLlmConfig(input);
+  }
+
+  resetYagrConfig(): void {
+    if ('clearLocalConfig' in this.yagrConfigService && typeof this.yagrConfigService.clearLocalConfig === 'function') {
+      this.yagrConfigService.clearLocalConfig();
+    }
+    if ('clearAllApiKeys' in this.yagrConfigService && typeof this.yagrConfigService.clearAllApiKeys === 'function') {
+      this.yagrConfigService.clearAllApiKeys();
+    }
   }
 
   getSurfaceDefaults(): { surfaces: GatewaySurface[] } {

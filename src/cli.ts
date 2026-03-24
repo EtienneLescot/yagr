@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js';
 import { buildYagrCleanupPlan, resetYagrLocalState, type YagrResetScope } from './config/local-state.js';
+import { YagrN8nConfigService } from './config/n8n-config-service.js';
 import { YagrConfigService } from './config/yagr-config-service.js';
 import { getYagrPaths } from './config/yagr-home.js';
 import { getGatewaySupervisorStatus, getGatewayRunningBanner, runGatewaySupervisor, runGatewaySurfaces } from './gateway/manager.js';
@@ -38,6 +39,7 @@ import {
 import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { readManagedN8nState } from './n8n-local/state.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrLlmSetup, runYagrSetup } from './setup.js';
+import { YagrSetupApplicationService } from './setup/application-services.js';
 import { openExternalUrl } from './system/open-external.js';
 import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
@@ -594,6 +596,7 @@ async function main(): Promise<void> {
   }
 
   const configService = new YagrConfigService();
+  const setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
 
   if (args.command) {
     if (args.command === 'paths') {
@@ -658,8 +661,7 @@ async function main(): Promise<void> {
     }
 
     if (args.command === 'config-reset') {
-      configService.clearLocalConfig();
-      configService.clearAllApiKeys();
+      setupService.resetYagrConfig();
       process.stdout.write('Yagr config reset.\n');
       return;
     }

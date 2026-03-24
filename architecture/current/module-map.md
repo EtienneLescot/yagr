@@ -135,13 +135,11 @@ Sous-blocs actuels:
 - formatting de messages
 - liens vers les workflows
 
-Dette structurelle:
-
-- certaines facades portent aussi des commandes applicatives et de configuration
-
 Observation actuelle:
 
 - la WebUI et Telegram deleguent maintenant l'essentiel des mutations setup/config au service applicatif partage
+- la CLI ne persiste plus directement la configuration metier du runtime et passe elle aussi par la couche applicative
+- les facades gardent maintenant l'I/O, les sessions et le branchement des runtimes
 
 ### `src/setup.ts` et `src/setup/`
 
