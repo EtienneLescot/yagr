@@ -9,7 +9,7 @@ import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
 import {
   type WorkflowEmbed,
-  buildWorkflowFooterTerminal,
+  buildWorkflowBannerTerminal,
   extractWorkflowEmbed,
   resolveTerminalWorkflowOpenUrl,
   workflowEmbedKey,
@@ -384,12 +384,12 @@ function TerminalMarkdown({ text }: { text: string }): JSX.Element {
   );
 }
 
-function WorkflowEmbedFooter({ embeds }: { embeds: WorkflowEmbed[] }): JSX.Element | null {
+function WorkflowBanner({ embeds }: { embeds: WorkflowEmbed[] }): JSX.Element | null {
   if (embeds.length === 0) return null;
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text>{buildWorkflowFooterTerminal(embeds)}</Text>
+      <Text>{buildWorkflowBannerTerminal(embeds)}</Text>
     </Box>
   );
 }
@@ -803,7 +803,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
         ) : latestAssistantText ? (
           <Box flexDirection="column">
             <TerminalMarkdown text={latestAssistantText} />
-            <WorkflowEmbedFooter embeds={workflowEmbeds} />
+            <WorkflowBanner embeds={workflowEmbeds} />
           </Box>
         ) : isRunning ? (
           <IntermediateMessages entries={recentIntermediateEntries} />

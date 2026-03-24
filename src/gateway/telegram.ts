@@ -9,7 +9,7 @@ import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import {
   type WorkflowEmbed,
-  buildWorkflowFooterHtml,
+  buildWorkflowBannerHtml,
   extractWorkflowEmbed,
   markdownToTelegramHtml,
   escapeHtml,
@@ -484,9 +484,9 @@ class TelegramGateway implements Gateway {
       }
 
       const htmlSections = [markdownToTelegramHtml(result.text.trim())];
-      const workflowFooter = buildWorkflowFooterHtml(embeds);
-      if (workflowFooter) {
-        htmlSections.push(workflowFooter);
+      const workflowBanner = buildWorkflowBannerHtml(embeds);
+      if (workflowBanner) {
+        htmlSections.push(workflowBanner);
       }
       const requiredActionsText = formatRequiredActions(result.requiredActions);
       if (requiredActionsText) {
