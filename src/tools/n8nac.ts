@@ -398,21 +398,24 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
     }
 
     const obj = input as Record<string, unknown>;
+    // Some weaker models pass the string "null" instead of JSON null for
+    // optional fields. Normalise before Zod validates typed constraints.
+    const nullify = (v: unknown) => (v === 'null' || v === undefined ? null : v);
     return {
       ...obj,
-      n8nHost: obj.n8nHost ?? null,
-      n8nApiKey: obj.n8nApiKey ?? null,
-      projectId: obj.projectId ?? null,
-      projectName: obj.projectName ?? null,
-      projectIndex: obj.projectIndex ?? null,
-      listScope: obj.listScope ?? null,
-      workflowId: obj.workflowId ?? null,
-      filename: obj.filename ?? null,
-      skillsArgs: obj.skillsArgs ?? null,
-      skillsArgv: obj.skillsArgv ?? null,
-      validateFile: obj.validateFile ?? null,
-      syncFolder: obj.syncFolder ?? null,
-      resolveMode: obj.resolveMode ?? null,
+      n8nHost: nullify(obj.n8nHost),
+      n8nApiKey: nullify(obj.n8nApiKey),
+      projectId: nullify(obj.projectId),
+      projectName: nullify(obj.projectName),
+      projectIndex: nullify(obj.projectIndex),
+      listScope: nullify(obj.listScope),
+      workflowId: nullify(obj.workflowId),
+      filename: nullify(obj.filename),
+      skillsArgs: nullify(obj.skillsArgs),
+      skillsArgv: nullify(obj.skillsArgv),
+      validateFile: nullify(obj.validateFile),
+      syncFolder: nullify(obj.syncFolder),
+      resolveMode: nullify(obj.resolveMode),
     };
   }, z.object({
     action: z.enum(N8NAC_ACTIONS).describe('Primary n8nac action. Use skills for any n8nac skills subcommand; skillsArgs and skillsArgv are accepted as legacy aliases and normalize to skills.'),

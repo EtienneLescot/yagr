@@ -112,7 +112,13 @@ export function resolveModelCapabilityProfile(input: {
         supportsStreamingToolCalls: false,
       });
     case 'google':
-      return buildProfile(provider, model, 'native');
+      // Gemini models support native tool calling but their streaming API
+      // has a known behaviour where the model produces empty completions when
+      // invoked after a long multi-step inspect conversation.  Using
+      // non-streaming (generateText) for the execute phase avoids this.
+      return buildProfile(provider, model, 'native', {
+        supportsStreamingToolCalls: false,
+      });
     case 'mistral':
       // Mistral models support function calling natively (sequential, no
       // parallel calls, no structured outputs). The AI SDK Mistral provider
