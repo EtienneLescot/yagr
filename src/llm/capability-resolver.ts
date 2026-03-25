@@ -86,6 +86,13 @@ export function classifyMetadataCapability(
 
   const supportsParallel = supportedParameters.has('parallel_tool_calls');
   const supportsStructuredOutputs = supportedParameters.has('response_format') || supportedParameters.has('structured_outputs');
+  // reasoning_effort is present on frontier models (o-series, gpt-5+) that support
+  // full native tool calling with parallel calls, structured outputs, and deep reasoning.
+  const supportsReasoningEffort = supportedParameters.has('reasoning_effort');
+
+  if (supportsParallel && supportsStructuredOutputs && supportsReasoningEffort) {
+    return 'native';
+  }
 
   if (supportsParallel && supportsStructuredOutputs) {
     return 'compatible';
