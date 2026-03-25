@@ -13,6 +13,12 @@ import type {
   LanguageModelV1StreamPart,
   LanguageModelV1ToolChoice,
 } from '@ai-sdk/provider';
+import {
+  filterFunctionToolsForCapability,
+  normalizeToolChoiceForCapability,
+  type YagrModelCapabilityProfile,
+} from './model-capabilities.js';
+import { normalizeFunctionToolParametersSchema } from './tool-schema.js';
 
 export const OPENAI_ACCOUNT_BASE_URL = 'https://chatgpt.com/backend-api';
 export const OPENAI_ACCOUNT_DEFAULT_MODEL = 'gpt-5.1-codex-mini';
@@ -315,16 +321,20 @@ export async function validateOpenAiAccountRuntime(modelId = OPENAI_ACCOUNT_DEFA
 
 // ─── Language model ────────────────────────────────────────────────────────────
 
-export function createOpenAiAccountLanguageModel(modelId: string): LanguageModelV1 {
+export function createOpenAiAccountLanguageModel(
+  modelId: string,
+  capabilityProfile?: YagrModelCapabilityProfile,
+): LanguageModelV1 {
+  const profile = capabilityProfile;
   return {
     specificationVersion: 'v1',
     provider: 'openai-proxy.account',
     modelId,
     defaultObjectGenerationMode: undefined,
     supportsImageUrls: false,
-    supportsStructuredOutputs: false,
+    supportsStructuredOutputs: Boolean(profile?.supportsStructuredOutputs),
     async doGenerate(options) {
-      const execution = await runOpenAiAccountCompletion(modelId, options);
+      const execution = await runOpenAiAccountCompletion(modelId, options, profile);
       return {
         text: execution.text,
         finishReason: execution.finishReason,
@@ -342,7 +352,7 @@ export function createOpenAiAccountLanguageModel(modelId: string): LanguageModel
       };
     },
     async doStream(options) {
-      const execution = await runOpenAiAccountCompletion(modelId, options);
+      const execution = await runOpenAiAccountCompletion(modelId, options, profile);
       const stream = new ReadableStream<LanguageModelV1StreamPart>({
         start(controller) {
           if (execution.text) {
@@ -373,6 +383,7 @@ export function createOpenAiAccountLanguageModel(modelId: string): LanguageModel
 async function runOpenAiAccountCompletion(
   modelId: string,
   options: Pick<LanguageModelV1CallOptions, 'prompt' | 'mode' | 'inputFormat'>,
+  capabilityProfile?: YagrModelCapabilityProfile,
 ): Promise<{
   text: string;
   finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown';
@@ -386,7 +397,7 @@ async function runOpenAiAccountCompletion(
   }
 
   const regularMode = options.mode.type === 'regular' ? options.mode : undefined;
-  const tools = getFunctionTools(options.mode);
+  const tools = getFunctionTools(options.mode, capabilityProfile);
   const warnings = buildCodexWarnings(options, tools);
   const accountId = extractChatGptAccountId(session.accessToken);
   const { instructions, input } = convertPromptToCodexInput(options.prompt);
@@ -399,8 +410,8 @@ async function runOpenAiAccountCompletion(
     instructions: instructions || 'You are a helpful assistant.',
     input,
     text: { verbosity: 'medium' },
-    ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice) } : { tool_choice: 'auto' }),
-    parallel_tool_calls: true,
+    ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice, capabilityProfile) } : { tool_choice: 'auto' }),
+    parallel_tool_calls: capabilityProfile?.supportsParallelToolCalls ?? false,
   };
 
   const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
@@ -617,12 +628,16 @@ function buildCodexWarnings(
     }));
 }
 
-function getFunctionTools(mode: LanguageModelV1CallOptions['mode']): LanguageModelV1FunctionTool[] {
+function getFunctionTools(
+  mode: LanguageModelV1CallOptions['mode'],
+  capabilityProfile?: YagrModelCapabilityProfile,
+): LanguageModelV1FunctionTool[] {
   if (mode.type !== 'regular' || !Array.isArray(mode.tools) || mode.tools.length === 0) {
     return [];
   }
 
-  return mode.tools.filter((tool): tool is LanguageModelV1FunctionTool => tool.type === 'function');
+  const tools = mode.tools.filter((tool): tool is LanguageModelV1FunctionTool => tool.type === 'function');
+  return capabilityProfile ? filterFunctionToolsForCapability(tools, capabilityProfile) : tools;
 }
 
 function toCodexTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string, unknown>> {
@@ -630,21 +645,34 @@ function toCodexTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string
     type: 'function',
     name: tool.name,
     ...(tool.description ? { description: tool.description } : {}),
-    parameters: tool.parameters,
+    parameters: normalizeFunctionToolParametersSchema(tool.parameters, {
+      forceRequiredObjectProperties: true,
+    }),
   }));
 }
 
-function toCodexToolChoice(toolChoice: LanguageModelV1ToolChoice | undefined): unknown {
-  if (!toolChoice || toolChoice.type === 'auto') {
+function toCodexToolChoice(
+  toolChoice: LanguageModelV1ToolChoice | undefined,
+  capabilityProfile?: YagrModelCapabilityProfile,
+): unknown {
+  const normalizedToolChoice = capabilityProfile
+    ? normalizeToolChoiceForCapability(toolChoice, capabilityProfile)
+    : toolChoice;
+
+  if (capabilityProfile && !capabilityProfile.supportsForcedToolChoice) {
     return 'auto';
   }
-  if (toolChoice.type === 'none' || toolChoice.type === 'required') {
-    return toolChoice.type;
+
+  if (!normalizedToolChoice || normalizedToolChoice.type === 'auto') {
+    return 'auto';
   }
-  if (toolChoice.type === 'tool') {
+  if (normalizedToolChoice.type === 'none' || normalizedToolChoice.type === 'required') {
+    return normalizedToolChoice.type;
+  }
+  if (normalizedToolChoice.type === 'tool') {
     return {
       type: 'function',
-      name: toolChoice.toolName,
+      name: normalizedToolChoice.toolName,
     };
   }
   return 'auto';

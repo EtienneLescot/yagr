@@ -1,8 +1,8 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { Engine } from '../engine/engine.js';
+import type { TemplateCatalogPort } from '../engine/engine.js';
 
-export function createSearchTemplatesTool(engine: Engine) {
+export function createSearchTemplatesTool(engine: TemplateCatalogPort) {
   return tool({
     description: 'Search reference templates, examples, and documentation relevant to a workflow idea.',
     parameters: z.object({

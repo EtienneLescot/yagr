@@ -1,8 +1,8 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { Engine } from '../engine/engine.js';
+import type { NodeCatalogPort } from '../engine/engine.js';
 
-export function createNodeInfoTool(engine: Engine) {
+export function createNodeInfoTool(engine: NodeCatalogPort) {
   return tool({
     description: 'Fetch full schema details for a node type before generating a workflow.',
     parameters: z.object({

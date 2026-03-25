@@ -26,7 +26,6 @@ const PROVIDER_WIZARD_ORDER: YagrModelProvider[] = [
   'anthropic',
   'anthropic-proxy',
   'google',
-  'google-proxy',
   'copilot-proxy',
   'mistral',
   'openrouter',
@@ -63,6 +62,7 @@ export interface SetupCallbacks {
     notes?: string[];
     error?: string;
   }>;
+  hasAccountSession(provider: YagrModelProvider): Promise<boolean>;
   startAccountAuth(provider: YagrModelProvider): Promise<{
     kind: 'none' | 'input';
     title?: string;
@@ -170,17 +170,6 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
         'Paste the generated setup-token below.',
       ],
       continueLabel: 'Paste setup-token',
-    };
-  }
-
-  if (provider === 'google-proxy') {
-    return {
-      title: 'Connect Gemini account',
-      body: [
-        'Yagr runs a native Google OAuth flow for your Gemini account.',
-        'It will show a browser URL and ask you to paste the redirect URL back here.',
-      ],
-      continueLabel: 'Continue with Gemini sign-in',
     };
   }
 
@@ -917,8 +906,16 @@ function SetupWizard({ callbacks, options, onDone }: {
         const provider = VALID_PROVIDERS[phase.cursor];
         const existing = llmApiKeyDraftsRef.current[provider] ?? llmDef.getApiKey(provider);
         if (isOAuthAccountProvider(provider)) {
-          setTextValue('');
-          setPhase({ kind: 'llm-account-auth', provider, cursor: 0 });
+          void (async () => {
+            const hasSession = await callbacks.hasAccountSession(provider);
+            if (hasSession) {
+              const defModel = llmDef.getDefaultModel(provider);
+              transitionToLlmModelsLoading(provider, '', defModel);
+            } else {
+              setTextValue('');
+              setPhase({ kind: 'llm-account-auth', provider, cursor: 0 });
+            }
+          })();
         } else if (!providerRequiresApiKey(provider)) {
           const defModel = llmDef.getDefaultModel(provider);
           transitionToLlmModelsLoading(provider, existing ?? '', defModel);

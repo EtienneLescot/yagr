@@ -1,9 +1,9 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { Engine } from '../engine/engine.js';
+import type { WorkflowValidatorPort } from '../engine/engine.js';
 import type { GeneratedWorkflow } from '../types.js';
 
-export function createValidateWorkflowTool(engine: Engine) {
+export function createValidateWorkflowTool(engine: WorkflowValidatorPort) {
   return tool({
     description: 'Validate a generated workflow before deployment.',
     parameters: z.object({

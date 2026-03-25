@@ -114,6 +114,7 @@ export interface YagrRequiredAction {
   message: string;
   detail?: string;
   resumable: boolean;
+  blocking?: boolean;
 }
 
 export interface YagrToolCallTrace {

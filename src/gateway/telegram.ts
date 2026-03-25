@@ -1,13 +1,22 @@
 import { randomBytes } from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import { Telegraf } from 'telegraf';
-import { YagrAgent } from '../agent.js';
-import { YagrConfigService, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
-import type { Engine } from '../engine/engine.js';
+import { YagrSessionAgent } from '../agent.js';
+import { YagrConfigService, type YagrConfigStoreLike, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+import type { EngineRuntimePort } from '../engine/engine.js';
+import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
+import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import {
+  mapPhaseEventToUserVisibleUpdate,
+  mapStateEventToUserVisibleUpdate,
+  mapToolEventToUserVisibleUpdate,
+  type YagrUserVisibleUpdate,
+} from '../runtime/user-visible-updates.js';
+import {
   type WorkflowEmbed,
-  buildWorkflowFooterHtml,
+  buildWorkflowBannerHtml,
   extractWorkflowEmbed,
   markdownToTelegramHtml,
   escapeHtml,
@@ -15,6 +24,12 @@ import {
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
+
+function formatTelegramProgressHtml(update: YagrUserVisibleUpdate): string {
+  const title = escapeHtml(update.title);
+  const detail = update.detail ? escapeHtml(update.detail) : '';
+  return detail ? `<b>${title}</b>\n${detail}` : `<b>${title}</b>`;
+}
 
 export function createOnboardingToken(): string {
   return randomBytes(18).toString('base64url');
@@ -92,7 +107,7 @@ function buildTelegramTokenInstructions(): string {
 }
 
 function formatLinkedChatCount(count: number): string {
-  return count === 1 ? '1 chat lie' : `${count} chats lies`;
+  return count === 1 ? '1 linked chat' : `${count} linked chats`;
 }
 
 function formatRequiredActions(actions: YagrRequiredAction[]): string {
@@ -100,11 +115,25 @@ function formatRequiredActions(actions: YagrRequiredAction[]): string {
     return '';
   }
 
-  return [
-    'Actions requises :',
-    ...actions.map((action) => `- ${action.title}: ${action.message}`),
-    'Utilise /approve pour reprendre si la demande est approuvable.',
-  ].join('\n');
+  const blocking = actions.filter((action) => action.blocking !== false);
+  const followUp = actions.filter((action) => action.blocking === false);
+  const lines: string[] = [];
+
+  if (blocking.length > 0) {
+    lines.push('Required actions:');
+    lines.push(...blocking.map((action) => `- ${action.title}: ${action.message}`));
+    lines.push('Use /approve to resume if the request can be approved.');
+  }
+
+  if (followUp.length > 0) {
+    if (lines.length > 0) {
+      lines.push('');
+    }
+    lines.push('Next steps:');
+    lines.push(...followUp.map((action) => `- ${action.title}: ${action.message}`));
+  }
+
+  return lines.join('\n');
 }
 
 export async function resolveTelegramBotIdentity(botToken: string): Promise<{ username: string; firstName: string }> {
@@ -122,6 +151,10 @@ export async function resolveTelegramBotIdentity(botToken: string): Promise<{ us
 
 export async function setupTelegramGateway(configService = new YagrConfigService()): Promise<void> {
   const currentToken = configService.getTelegramBotToken() ?? '';
+  const setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService(), {
+    resolveTelegramIdentity: resolveTelegramBotIdentity,
+    createOnboardingToken,
+  });
 
   if (!currentToken) {
     process.stdout.write(`\nTo create a Telegram bot token:\n${buildTelegramTokenInstructions()}\n`);
@@ -145,19 +178,8 @@ export async function setupTelegramGateway(configService = new YagrConfigService
   if (!botToken.includes(':')) throw new Error('Invalid Telegram bot token format.');
 
   process.stdout.write('Verifying token...\n');
-  const identity = await resolveTelegramBotIdentity(botToken);
-  configService.saveTelegramBotToken(botToken);
-
-  const nextConfig = configService.updateLocalConfig((localConfig) => ({
-    ...localConfig,
-    telegram: {
-      ...localConfig.telegram,
-      botUsername: identity.username,
-      onboardingToken: localConfig.telegram?.onboardingToken ?? createOnboardingToken(),
-      linkedChats: localConfig.telegram?.linkedChats ?? [],
-    },
-  }));
-  configService.enableGatewaySurface('telegram');
+  const identity = await setupService.configureTelegram(botToken);
+  const nextConfig = configService.getLocalConfig();
 
   const deepLink = buildTelegramDeepLink(
     nextConfig.telegram?.botUsername ?? identity.username,
@@ -170,7 +192,7 @@ export async function setupTelegramGateway(configService = new YagrConfigService
 }
 
 export function showTelegramOnboarding(configService = new YagrConfigService()): void {
-  const status = getTelegramGatewayStatus(configService);
+  const status = new YagrSetupApplicationService(configService, new YagrN8nConfigService()).getTelegramStatus();
 
   if (!status.configured || !status.botUsername || !status.deepLink) {
     throw new Error('Telegram is not configured. Run `yagr telegram setup` first.');
@@ -190,41 +212,21 @@ export function showTelegramOnboarding(configService = new YagrConfigService()):
   qrcode.generate(status.deepLink, { small: true });
 }
 
-export function getTelegramGatewayStatus(configService = new YagrConfigService()): TelegramGatewayStatus {
-  const localConfig = configService.getLocalConfig();
-  const telegram = localConfig.telegram;
-  const botToken = configService.getTelegramBotToken();
-  const linkedChats = telegram?.linkedChats ?? [];
-  const deepLink = telegram?.botUsername && telegram.onboardingToken
-    ? buildTelegramDeepLink(telegram.botUsername, telegram.onboardingToken)
-    : undefined;
-
-  return {
-    configured: Boolean(botToken && telegram?.botUsername && telegram?.onboardingToken),
-    botUsername: telegram?.botUsername,
-    linkedChats,
-    deepLink,
-  };
+export function getTelegramGatewayStatus(configService: YagrConfigStoreLike = new YagrConfigService()): TelegramGatewayStatus {
+  return new YagrSetupApplicationService(configService, new YagrN8nConfigService()).getTelegramStatus();
 }
 
 export function resetTelegramGateway(configService = new YagrConfigService()): void {
-  configService.clearTelegramBotToken();
-  configService.disableGatewaySurface('telegram');
-  configService.updateLocalConfig((localConfig) => {
-    const nextConfig = { ...localConfig };
-    delete nextConfig.telegram;
-    return nextConfig;
-  });
+  new YagrSetupApplicationService(configService, new YagrN8nConfigService()).resetTelegram();
 }
 
 export function createTelegramGatewayRuntime(
-  engineResolver: () => Promise<Engine>,
+  engineResolver: () => Promise<EngineRuntimePort>,
   options: TelegramGatewayRuntimeOptions = {},
   configService = new YagrConfigService(),
 ): GatewayRuntimeHandle {
-  const status = getTelegramGatewayStatus(configService);
-  const botToken = options.botToken ?? configService.getTelegramBotToken();
-  const onboardingToken = configService.getLocalConfig().telegram?.onboardingToken;
+  const setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
+  const { status, botToken, onboardingToken } = setupService.getTelegramRuntimeConfig(options.botToken);
 
   if (!botToken || !status.botUsername || !onboardingToken) {
     throw new Error('Telegram is not configured. Run `yagr telegram setup` first.');
@@ -237,7 +239,7 @@ export function createTelegramGatewayRuntime(
     startupMessages: [
       `Yagr Telegram gateway listening as @${status.botUsername}. ${formatLinkedChatCount(linkedCount)}.`,
       linkedCount === 0
-        ? `Aucun chat lié. Lien d'onboarding : ${status.deepLink}`
+        ? `No linked chats. Onboarding link: ${status.deepLink}`
         : 'Telegram transport is ready. The current orchestrator connection will be resolved on first message.',
     ],
     onboardingLink: status.deepLink && linkedCount === 0 ? status.deepLink : undefined,
@@ -246,24 +248,26 @@ export function createTelegramGatewayRuntime(
 
 class TelegramGateway implements Gateway {
   private readonly bot: Telegraf;
-  private readonly agents = new Map<string, YagrAgent>();
+  private readonly agents = new Map<string, YagrSessionAgent>();
   private readonly runningChats = new Set<string>();
   private readonly pendingApprovals = new Map<string, YagrRequiredAction[]>();
-  private enginePromise?: Promise<Engine>;
+  private enginePromise?: Promise<EngineRuntimePort>;
   private stopped = false;
+  private readonly setupService: YagrSetupApplicationService;
 
   constructor(
-    private readonly engineResolver: () => Promise<Engine>,
+    private readonly engineResolver: () => Promise<EngineRuntimePort>,
     private readonly options: TelegramGatewayRuntimeOptions,
     private readonly configService: YagrConfigService,
     botToken: string,
     private readonly onboardingToken: string,
   ) {
     this.bot = new Telegraf(botToken);
+    this.setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
   }
 
   private buildDeepLink(): string {
-    const botUsername = this.configService.getLocalConfig().telegram?.botUsername ?? '';
+    const botUsername = this.setupService.getTelegramStatus().botUsername ?? '';
     return buildTelegramDeepLink(botUsername, this.onboardingToken);
   }
 
@@ -275,7 +279,7 @@ class TelegramGateway implements Gateway {
       if (payload !== this.onboardingToken) {
         const deepLink = this.buildDeepLink();
         await ctx.reply(
-          `Ce lien est invalide ou expiré. Clique sur le lien ci-dessous pour lier ce chat, puis appuie sur Démarrer :\n${deepLink}`,
+          `This link is invalid or expired. Click the link below to link this chat, then press Start:\n${deepLink}`,
         );
         return;
       }
@@ -289,7 +293,7 @@ class TelegramGateway implements Gateway {
         lastSeenAt: new Date().toISOString(),
       });
 
-      await ctx.reply('Yagr est maintenant lie a ce chat. Tu peux me parler directement ici.');
+      await ctx.reply('Yagr is now linked to this chat. You can talk to me directly here.');
     });
 
     this.bot.command('status', async (ctx) => {
@@ -297,20 +301,20 @@ class TelegramGateway implements Gateway {
       if (!this.isLinkedChat(chatId)) {
         const deepLink = this.buildDeepLink();
         await ctx.reply(
-          `Chat non lié. Clique sur le lien ci-dessous puis appuie sur Démarrer :\n${deepLink}`,
+          `This chat is not linked. Click the link below, then press Start:\n${deepLink}`,
         );
         return;
       }
 
-      const linkedChats = this.configService.getLocalConfig().telegram?.linkedChats ?? [];
-      await ctx.reply(`Gateway Telegram actif. ${formatLinkedChatCount(linkedChats.length)}.`);
+      const linkedChats = this.setupService.getLinkedTelegramChats();
+      await ctx.reply(`Telegram gateway is active. ${formatLinkedChatCount(linkedChats.length)}.`);
     });
 
     this.bot.command('pending', async (ctx) => {
       const chatId = String(ctx.chat.id);
       const actions = this.pendingApprovals.get(chatId) ?? [];
       if (actions.length === 0) {
-        await ctx.reply('Aucune action en attente.');
+        await ctx.reply('No actions pending.');
         return;
       }
 
@@ -320,13 +324,13 @@ class TelegramGateway implements Gateway {
     this.bot.command('approve', async (ctx) => {
       const chatId = String(ctx.chat.id);
       if (!this.isLinkedChat(chatId)) {
-        await ctx.reply('Chat non lie.');
+        await ctx.reply('This chat is not linked.');
         return;
       }
 
       const actions = this.pendingApprovals.get(chatId) ?? [];
       if (actions.length === 0) {
-        await ctx.reply('Aucune action approuvable en attente.');
+        await ctx.reply('No approvable actions pending.');
         return;
       }
 
@@ -335,21 +339,23 @@ class TelegramGateway implements Gateway {
 
     this.bot.command('link', async (ctx) => {
       if (this.isLinkedChat(String(ctx.chat.id))) {
-        await ctx.reply('Ce chat est déjà lié à Yagr. Tu peux me parler directement.');
+        await ctx.reply('This chat is already linked to Yagr. You can talk to me directly.');
         return;
       }
 
       const deepLink = this.buildDeepLink();
       await ctx.reply(
-        `Pour lier ce chat, clique sur le lien ci-dessous puis appuie sur Démarrer :\n${deepLink}`,
+        `To link this chat, click the link below, then press Start:\n${deepLink}`,
       );
     });
 
+    const clearSession = async (chatId: string, reply: (message: string) => Promise<unknown>) => {
+      this.resetChatSession(chatId);
+      await reply('Yagr conversation reset for this chat.');
+    };
+
     this.bot.command('reset', async (ctx) => {
-      const chatId = String(ctx.chat.id);
-      this.agents.delete(chatId);
-      this.pendingApprovals.delete(chatId);
-      await ctx.reply('Conversation Yagr reinitialisee pour ce chat.');
+      await clearSession(String(ctx.chat.id), ctx.reply.bind(ctx));
     });
 
     this.bot.command('unlink', async (ctx) => {
@@ -357,7 +363,7 @@ class TelegramGateway implements Gateway {
       if (!this.isLinkedChat(chatId)) {
         const deepLink = this.buildDeepLink();
         await ctx.reply(
-          `Ce chat n'est pas lié. Clique sur le lien ci-dessous pour le lier :\n${deepLink}`,
+          `This chat is not linked. Click the link below to link it:\n${deepLink}`,
         );
         return;
       }
@@ -365,7 +371,7 @@ class TelegramGateway implements Gateway {
       this.unlinkChat(chatId);
       this.agents.delete(chatId);
       this.pendingApprovals.delete(chatId);
-      await ctx.reply('Chat delie. Relance le lien/QR d’onboarding pour te reconnecter.');
+      await ctx.reply('Chat unlinked. Use the onboarding link or QR code again to reconnect.');
     });
 
     this.bot.on('text', async (ctx) => {
@@ -376,14 +382,14 @@ class TelegramGateway implements Gateway {
       }
 
       if (ctx.chat.type !== 'private') {
-        await ctx.reply('Telegram supporte seulement les chats prives pour le moment.');
+        await ctx.reply('Telegram currently supports private chats only.');
         return;
       }
 
       if (!this.isLinkedChat(chatId)) {
         const deepLink = this.buildDeepLink();
         await ctx.reply(
-          `Ce chat n'est pas encore lié. Clique sur le lien ci-dessous puis appuie sur Démarrer :\n${deepLink}`,
+          `This chat is not linked yet. Click the link below, then press Start:\n${deepLink}`,
         );
         return;
       }
@@ -442,61 +448,40 @@ class TelegramGateway implements Gateway {
   }
 
   private linkChat(chat: YagrTelegramLinkedChat): void {
-    this.configService.updateLocalConfig((localConfig) => ({
-      ...localConfig,
-      telegram: {
-        ...localConfig.telegram,
-        linkedChats: upsertLinkedChat(localConfig.telegram?.linkedChats ?? [], chat),
-      },
-    }));
+    this.setupService.linkTelegramChat(chat);
   }
 
   private unlinkChat(chatId: string): void {
-    this.configService.updateLocalConfig((localConfig) => ({
-      ...localConfig,
-      telegram: {
-        ...localConfig.telegram,
-        linkedChats: removeLinkedChat(localConfig.telegram?.linkedChats ?? [], chatId),
-      },
-    }));
+    this.setupService.unlinkTelegramChat(chatId);
   }
 
   private touchChat(chatId: string, userId?: number, username?: string, firstName?: string): void {
-    const current = this.configService.getLocalConfig().telegram?.linkedChats ?? [];
-    const existing = current.find((entry) => String(entry.chatId) === String(chatId));
-    if (!existing) {
-      return;
-    }
-
-    this.linkChat({
-      ...existing,
-      chatId: String(chatId),
-      userId: userId ? String(userId) : existing.userId,
-      username: username ?? existing.username,
-      firstName: firstName ?? existing.firstName,
-      lastSeenAt: new Date().toISOString(),
-    });
+    this.setupService.touchTelegramChat(chatId, userId, username, firstName);
   }
 
   private isLinkedChat(chatId: string): boolean {
-    const linkedChats = this.configService.getLocalConfig().telegram?.linkedChats ?? [];
-    return linkedChats.some((entry) => String(entry.chatId) === String(chatId));
+    return this.setupService.isTelegramChatLinked(chatId);
   }
 
-  private async getEngine(): Promise<Engine> {
+  private async getEngine(): Promise<EngineRuntimePort> {
     this.enginePromise ??= this.engineResolver();
     return await this.enginePromise;
   }
 
-  private async getAgent(chatId: string): Promise<YagrAgent> {
+  private async getAgent(chatId: string): Promise<YagrSessionAgent> {
     const existing = this.agents.get(chatId);
     if (existing) {
       return existing;
     }
 
-    const next = new YagrAgent(await this.getEngine());
+    const next = new YagrSessionAgent(await this.getEngine());
     this.agents.set(chatId, next);
     return next;
+  }
+
+  private resetChatSession(chatId: string): void {
+    this.agents.delete(chatId);
+    this.pendingApprovals.delete(chatId);
   }
 
   private async executeRun(
@@ -506,22 +491,46 @@ class TelegramGateway implements Gateway {
     reply: (text: string) => Promise<unknown>,
   ): Promise<void> {
     if (this.runningChats.has(chatId)) {
-      await reply('Un run est deja en cours pour ce chat. Attends sa fin avant d’envoyer une nouvelle demande.');
+      await reply('A run is already in progress for this chat. Wait for it to finish before sending another request.');
       return;
     }
 
     this.runningChats.add(chatId);
     try {
-      await reply('Yagr travaille...');
+      await reply('Yagr is working...');
+
+      let lastProgressKey = '';
+      const sendProgressUpdate = async (update: YagrUserVisibleUpdate | undefined): Promise<void> => {
+        if (!update || update.dedupeKey === lastProgressKey) {
+          return;
+        }
+
+        lastProgressKey = update.dedupeKey;
+        await this.sendHtml(chatId, formatTelegramProgressHtml(update));
+      };
 
       const embeds: WorkflowEmbed[] = [];
+      const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
       const result = await (await this.getAgent(chatId)).run(prompt, {
         ...this.options,
+        provider: resolvedConfig.provider,
+        model: resolvedConfig.model,
+        apiKey: resolvedConfig.apiKey,
+        baseUrl: resolvedConfig.baseUrl,
         display: undefined,
         satisfiedRequiredActionIds: satisfiedRequiredActions.map((action) => action.id),
+        onPhaseChange: async (event) => {
+          await sendProgressUpdate(mapPhaseEventToUserVisibleUpdate(event));
+          await this.options.onPhaseChange?.(event);
+        },
+        onStateChange: async (event) => {
+          await sendProgressUpdate(mapStateEventToUserVisibleUpdate(event));
+          await this.options.onStateChange?.(event);
+        },
         onToolEvent: async (event) => {
           const embed = extractWorkflowEmbed(event);
           if (embed) embeds.push(embed);
+          await sendProgressUpdate(mapToolEventToUserVisibleUpdate(event));
           await this.options.onToolEvent?.(event);
         },
       });
@@ -533,9 +542,9 @@ class TelegramGateway implements Gateway {
       }
 
       const htmlSections = [markdownToTelegramHtml(result.text.trim())];
-      const workflowFooter = buildWorkflowFooterHtml(embeds);
-      if (workflowFooter) {
-        htmlSections.push(workflowFooter);
+      const workflowBanner = buildWorkflowBannerHtml(embeds);
+      if (workflowBanner) {
+        htmlSections.push(workflowBanner);
       }
       const requiredActionsText = formatRequiredActions(result.requiredActions);
       if (requiredActionsText) {
@@ -544,14 +553,14 @@ class TelegramGateway implements Gateway {
 
       const htmlMessage = htmlSections.filter(Boolean).join('\n\n');
       if (!htmlMessage) {
-        await reply('Run termine, mais aucune reponse textuelle n’a ete produite.');
+        await reply('Run finished, but no text response was produced.');
         return;
       }
 
       await this.sendHtml(chatId, htmlMessage);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await reply(`Run echoue: ${message}`);
+      await reply(`Run failed: ${message}`);
     } finally {
       this.runningChats.delete(chatId);
     }
@@ -559,7 +568,7 @@ class TelegramGateway implements Gateway {
 }
 
 export async function runTelegramGateway(
-  engineResolver: () => Promise<Engine>,
+  engineResolver: () => Promise<EngineRuntimePort>,
   options: TelegramGatewayRuntimeOptions = {},
   configService = new YagrConfigService(),
 ): Promise<void> {

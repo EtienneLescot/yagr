@@ -1,5 +1,6 @@
-export { YagrAgent } from './agent.js';
+export { YagrAgent, YagrSessionAgent } from './agent.js';
 export { YagrRunEngine } from './runtime/run-engine.js';
+export { resolveToolRuntimeStrategy } from './runtime/tool-runtime-strategy.js';
 export {
   createN8nEngineFromWorkspace,
   loadN8nEngineConfig,
@@ -47,6 +48,25 @@ export {
   resolveModelProvider,
 } from './llm/create-language-model.js';
 export {
+  fetchAndCacheProviderMetadata,
+  clearProviderMetadataCache,
+  getCachedProviderModelMetadata,
+  primeProviderModelMetadata,
+  warmProviderMetadataCacheFromDiscovery,
+} from './llm/provider-metadata.js';
+export { getProviderPlugin } from './llm/provider-plugin.js';
+export {
+  filterFunctionToolsForCapability,
+  getOpenAiCompatibleProviderSettingsForCapability,
+  getProviderOptionsForCapability,
+  normalizeToolChoiceForCapability,
+  resolveModelCapabilityProfile,
+} from './llm/model-capabilities.js';
+export {
+  classifyOpenRouterMetadataCapability,
+  resolveCapabilityProfileFromMetadata,
+} from './llm/capability-resolver.js';
+export {
   buildYagrSetupStatus,
   getYagrSetupStatus,
   runYagrSetup,
@@ -73,7 +93,16 @@ export {
   createValidateWorkflowTool,
 } from './tools/index.js';
 
-export type { Engine } from './engine/engine.js';
+export type {
+  Engine,
+  EngineIdentityPort,
+  EngineRuntimePort,
+  NodeCatalogPort,
+  TemplateCatalogPort,
+  WorkflowCompilerPort,
+  WorkflowValidatorPort,
+  WorkflowLifecyclePort,
+} from './engine/engine.js';
 export type { Gateway, InboundMessage } from './gateway/types.js';
 export type { GatewayRuntimeHandle, GatewaySurface } from './gateway/types.js';
 export type { GatewaySupervisorStatus, GatewaySurfaceStatus } from './gateway/manager.js';
@@ -113,6 +142,14 @@ export type {
   WorkflowSpecNode,
   WorkflowValidationResult,
 } from './types.js';
+export type {
+  YagrModelCapabilityProfile,
+  YagrToolCallingCapability,
+} from './llm/model-capabilities.js';
+export type {
+  YagrExecutionMode,
+  YagrToolRuntimeStrategy,
+} from './runtime/tool-runtime-strategy.js';
 
 export type {
   YagrGatewayConfig,

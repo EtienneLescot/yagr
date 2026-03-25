@@ -33,6 +33,7 @@ function normalizeRequiredAction(value: unknown, fallbackId: string): YagrRequir
     message,
     detail: asString(record.detail),
     resumable: asBoolean(record.resumable) ?? true,
+    blocking: asBoolean(record.blocking) ?? true,
   };
 }
 
@@ -66,6 +67,28 @@ export function collectRequiredActions(journal: YagrRunJournalEntry[]): YagrRequ
   return [...actions.values()];
 }
 
+export function isBlockingRequiredAction(action: YagrRequiredAction): boolean {
+  return action.blocking !== false;
+}
+
+export function splitRequiredActions(actions: YagrRequiredAction[]): {
+  blocking: YagrRequiredAction[];
+  followUp: YagrRequiredAction[];
+} {
+  const blocking: YagrRequiredAction[] = [];
+  const followUp: YagrRequiredAction[] = [];
+
+  for (const action of actions) {
+    if (isBlockingRequiredAction(action)) {
+      blocking.push(action);
+    } else {
+      followUp.push(action);
+    }
+  }
+
+  return { blocking, followUp };
+}
+
 export function agentStateForRequiredAction(action: YagrRequiredAction): YagrAgentState {
   if (action.kind === 'permission') {
     return 'waiting_for_permission';
@@ -79,19 +102,21 @@ export function agentStateForRequiredAction(action: YagrRequiredAction): YagrAge
 }
 
 export function blockingStateForRequiredActions(actions: YagrRequiredAction[]): YagrAgentState | null {
-  if (actions.length === 0) {
+  const blockingActions = actions.filter(isBlockingRequiredAction);
+
+  if (blockingActions.length === 0) {
     return null;
   }
 
-  const permissionAction = actions.find((action) => action.kind === 'permission');
+  const permissionAction = blockingActions.find((action) => action.kind === 'permission');
   if (permissionAction) {
     return agentStateForRequiredAction(permissionAction);
   }
 
-  const inputAction = actions.find((action) => action.kind === 'input');
+  const inputAction = blockingActions.find((action) => action.kind === 'input');
   if (inputAction) {
     return agentStateForRequiredAction(inputAction);
   }
 
-  return agentStateForRequiredAction(actions[0]);
+  return agentStateForRequiredAction(blockingActions[0]);
 }
