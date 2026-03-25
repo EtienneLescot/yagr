@@ -1,47 +1,34 @@
-export type YagrToolEvent =
-  | {
-      type: 'status';
-      toolName: string;
-      message: string;
-    }
-  | {
-      type: 'command-start';
-      toolName: string;
-      command: string;
-      cwd?: string;
-      message?: string;
-    }
-  | {
-      type: 'command-output';
-      toolName: string;
-      stream: 'stdout' | 'stderr';
-      chunk: string;
-    }
-  | {
-      type: 'command-end';
-      toolName: string;
-      exitCode: number;
-      timedOut?: boolean;
-      message?: string;
-    }
-  | {
-      type: 'result';
-      toolName: string;
-      message: string;
-    }
-  | {
-      type: 'embed';
-      toolName: string;
-      kind: 'workflow';
-      workflowId: string;
-      url: string;
-      targetUrl?: string;
-      title?: string;
-      diagram?: string;
-    };
+import type { YagrToolEvent } from '../types.js';
+
+export interface UserFacingToolStatus {
+  title: string;
+  detail: string;
+}
 
 export interface ToolExecutionObserver {
   onToolEvent?: (event: YagrToolEvent) => void | Promise<void>;
+}
+
+export function getUserFacingToolStatus(event: YagrToolEvent): UserFacingToolStatus | undefined {
+  if (event.type !== 'status') {
+    return undefined;
+  }
+
+  if (event.toolName === 'reportProgress') {
+    return {
+      title: 'Progress',
+      detail: event.message,
+    };
+  }
+
+  if (event.toolName === 'requestRequiredAction') {
+    return {
+      title: 'Needs attention',
+      detail: event.message,
+    };
+  }
+
+  return undefined;
 }
 
 export function quoteShellArg(value: string): string {

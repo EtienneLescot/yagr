@@ -1,4 +1,4 @@
-export { buildTools } from './build-tools.js';
+export { buildTools, type AllBuiltTools } from './build-tools.js';
 export { createDeleteWorkspaceFileTool } from './delete-workspace-file.js';
 export { createListDirectoryTool } from './list-directory.js';
 export { createN8nAcTool } from './n8nac.js';

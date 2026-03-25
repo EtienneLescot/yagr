@@ -14,6 +14,23 @@ export interface YagrN8nLocalConfig {
   runtimeSource?: 'managed-local' | 'external';
 }
 
+export interface YagrResolvedN8nRuntimeState {
+  host?: string;
+  apiKey?: string;
+  syncFolder?: string;
+  projectId?: string;
+  projectName?: string;
+  instanceIdentifier?: string;
+  workflowDir?: string;
+  credentialsAvailable: boolean;
+  projectConfigured: boolean;
+  initialized: boolean;
+}
+
+export interface ResolveN8nRuntimeStateOptions {
+  allowEnvironmentFallback?: boolean;
+}
+
 interface N8nCredentialStore {
   hosts?: Record<string, string>;
 }
@@ -36,7 +53,47 @@ export function resolveWorkflowDir(config: YagrN8nLocalConfig): string | undefin
     ? syncFolder
     : path.join(workspaceDir, syncFolder);
 
-  return path.join(resolvedSyncFolder, instanceIdentifier, createProjectSlug(projectName));
+  // Strip characters that are invalid in Windows path components (colon, etc.)
+  // Identifiers stored on Linux/macOS may contain ':' from IP:port slugs.
+  const safeInstanceId = instanceIdentifier.replace(/[:<>"|?*]/g, '_');
+  return path.join(resolvedSyncFolder, safeInstanceId, createProjectSlug(projectName));
+}
+
+function sanitizeRuntimeValue(value: string | undefined): string | undefined {
+  const trimmed = String(value ?? '').trim().replace(/^['"]|['"]$/g, '');
+  return trimmed || undefined;
+}
+
+export function resolveN8nRuntimeState(
+  configService: Pick<YagrN8nConfigService, 'getLocalConfig' | 'getApiKey'>,
+  env: NodeJS.ProcessEnv = process.env,
+  options: ResolveN8nRuntimeStateOptions = {},
+): YagrResolvedN8nRuntimeState {
+  const localConfig = configService.getLocalConfig();
+  const envHost = options.allowEnvironmentFallback ? sanitizeRuntimeValue(env.N8N_HOST) : undefined;
+  const host = sanitizeRuntimeValue(localConfig.host) ?? envHost;
+  const storedApiKey = host ? sanitizeRuntimeValue(configService.getApiKey(host)) : undefined;
+  const envApiKey = options.allowEnvironmentFallback ? sanitizeRuntimeValue(env.N8N_API_KEY) : undefined;
+  const apiKey = storedApiKey ?? envApiKey;
+  const projectConfigured = Boolean(
+    host
+    && localConfig.syncFolder
+    && localConfig.projectId
+    && localConfig.projectName,
+  );
+
+  return {
+    host,
+    apiKey,
+    syncFolder: localConfig.syncFolder,
+    projectId: localConfig.projectId,
+    projectName: localConfig.projectName,
+    instanceIdentifier: localConfig.instanceIdentifier,
+    workflowDir: resolveWorkflowDir(localConfig),
+    credentialsAvailable: Boolean(host && apiKey),
+    projectConfigured,
+    initialized: Boolean(projectConfigured && apiKey),
+  };
 }
 
 export class YagrN8nConfigService {

@@ -4,24 +4,15 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  N8nApiClient,
-  WorkspaceSetupService,
   getDisplayProjectName,
   type IProject,
 } from 'n8nac';
-import { Command } from 'commander';
-import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
-import { YagrAgent } from '../agent.js';
-import { resolveWorkflowDir, YagrN8nConfigService } from '../config/n8n-config-service.js';
-import { YagrConfigService } from '../config/yagr-config-service.js';
-import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
-import type { Engine } from '../engine/engine.js';
-import {
-  createOnboardingToken,
-  getTelegramGatewayStatus,
-  resetTelegramGateway,
-} from './telegram.js';
-import { getYagrSetupStatus } from '../setup.js';
+import { YagrSessionAgent } from '../agent.js';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { YagrConfigService, type YagrConfigStoreLike } from '../config/yagr-config-service.js';
+import type { EngineRuntimePort } from '../engine/engine.js';
+import { resolveTelegramBotIdentity } from './telegram.js';
+import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 import type {
   YagrContextCompactionEvent,
@@ -32,14 +23,16 @@ import type {
   YagrToolEvent,
 } from '../types.js';
 import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
-import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import {
-  getDefaultBaseUrlForProvider,
-  isProviderConfigured,
   providerRequiresApiKey,
   YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
+import {
+  mapPhaseEventToUserVisibleUpdate,
+  mapStateEventToUserVisibleUpdate,
+  mapToolEventToUserVisibleUpdate,
+} from '../runtime/user-visible-updates.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -84,6 +77,63 @@ type WebUiChatStreamEvent =
   | { type: 'error'; error: string }
   | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string };
 
+export function mapToolEventToWebUiStreamEvent(event: YagrToolEvent): WebUiChatStreamEvent | undefined {
+  const userFacingStatus = mapToolEventToUserVisibleUpdate(event);
+  if (userFacingStatus) {
+    return {
+      type: 'progress',
+      tone: userFacingStatus.tone,
+      title: userFacingStatus.title,
+      detail: userFacingStatus.detail,
+      ...(userFacingStatus.phase ? { phase: userFacingStatus.phase } : {}),
+    };
+  }
+
+  if (event.type === 'embed') {
+    return {
+      type: 'embed',
+      kind: event.kind,
+      workflowId: event.workflowId,
+      url: event.url,
+      targetUrl: event.targetUrl,
+      title: event.title,
+      diagram: event.diagram,
+    };
+  }
+
+  return undefined;
+}
+
+export function mapPhaseEventToWebUiStreamEvent(event: YagrPhaseEvent): WebUiChatStreamEvent | undefined {
+  const update = mapPhaseEventToUserVisibleUpdate(event);
+  if (!update) {
+    return undefined;
+  }
+
+  return {
+    type: 'progress',
+    tone: update.tone,
+    title: update.title,
+    detail: update.detail,
+    ...(update.phase ? { phase: update.phase } : {}),
+  };
+}
+
+export function mapStateEventToWebUiStreamEvent(event: YagrStateEvent): WebUiChatStreamEvent | undefined {
+  const update = mapStateEventToUserVisibleUpdate(event);
+  if (!update) {
+    return undefined;
+  }
+
+  return {
+    type: 'progress',
+    tone: update.tone,
+    title: update.title,
+    detail: update.detail,
+    ...(update.phase ? { phase: update.phase } : {}),
+  };
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
@@ -100,7 +150,7 @@ function sanitizePort(value: number | undefined): number {
   return Number(value);
 }
 
-function getWebUiConfig(configService = new YagrConfigService()): Required<WebUiConfigPayload> {
+function getWebUiConfig(configService: YagrConfigStoreLike = new YagrConfigService()): Required<WebUiConfigPayload> {
   const config = configService.getLocalConfig();
   return {
     host: sanitizeHost(config.gateway?.webui?.host),
@@ -108,25 +158,8 @@ function getWebUiConfig(configService = new YagrConfigService()): Required<WebUi
   };
 }
 
-function persistWebUiConfig(configService = new YagrConfigService(), nextConfig: WebUiConfigPayload): Required<WebUiConfigPayload> {
-  const normalized = {
-    host: sanitizeHost(nextConfig.host),
-    port: sanitizePort(nextConfig.port),
-  };
-
-  configService.updateLocalConfig((localConfig) => ({
-    ...localConfig,
-    gateway: {
-      ...localConfig.gateway,
-      webui: normalized,
-    },
-  }));
-
-  return normalized;
-}
-
-export function getWebUiGatewayStatus(configService = new YagrConfigService()): WebUiGatewayStatus {
-  const config = persistWebUiConfig(configService, getWebUiConfig(configService));
+export function getWebUiGatewayStatus(configService: YagrConfigStoreLike = new YagrConfigService()): WebUiGatewayStatus {
+  const config = getWebUiConfig(configService);
   return {
     configured: true,
     host: config.host,
@@ -136,7 +169,7 @@ export function getWebUiGatewayStatus(configService = new YagrConfigService()): 
 }
 
 export function createWebUiGatewayRuntime(
-  engineResolver: () => Promise<Engine>,
+  engineResolver: () => Promise<EngineRuntimePort>,
   options: YagrRunOptions = {},
   configService = new YagrConfigService(),
 ): GatewayRuntimeHandle {
@@ -153,15 +186,20 @@ export function createWebUiGatewayRuntime(
 
 class WebUiGateway implements Gateway {
   private server?: Server;
-  private enginePromise?: Promise<Engine>;
-  private readonly agents = new Map<string, YagrAgent>();
+  private enginePromise?: Promise<EngineRuntimePort>;
+  private readonly agents = new Map<string, YagrSessionAgent>();
+  private readonly setupService: YagrSetupApplicationService;
 
   constructor(
-    private readonly engineResolver: () => Promise<Engine>,
+    private readonly engineResolver: () => Promise<EngineRuntimePort>,
     private readonly options: YagrRunOptions,
     private readonly configService: YagrConfigService,
     private readonly status: WebUiGatewayStatus,
-  ) {}
+  ) {
+    this.setupService = new YagrSetupApplicationService(this.configService, new YagrN8nConfigService(), {
+      resolveTelegramIdentity: resolveTelegramBotIdentity,
+    });
+  }
 
   async start(): Promise<void> {
     if (this.server) {
@@ -230,11 +268,10 @@ class WebUiGateway implements Gateway {
 
     if (method === 'POST' && url.pathname === '/api/n8n/projects') {
       const body = await this.readJson(request);
-      const projects = await this.fetchN8nProjects(String(body.host ?? ''), body.apiKey ? String(body.apiKey) : undefined);
-      const current = new YagrN8nConfigService().getLocalConfig();
+      const projects = await this.setupService.fetchN8nProjects(String(body.host ?? ''), body.apiKey ? String(body.apiKey) : undefined);
       this.sendJson(response, 200, {
         projects: projects.map((project) => ({ id: project.id, name: getDisplayProjectName(project) })),
-        selectedProjectId: current.projectId,
+        selectedProjectId: this.setupService.getSelectedN8nProjectId(),
       });
       return;
     }
@@ -257,19 +294,13 @@ class WebUiGateway implements Gateway {
     if (method === 'POST' && url.pathname === '/api/llm/models') {
       const body = await this.readJson(request);
       const provider = this.assertProvider(String(body.provider ?? ''));
-      const apiKey = body.apiKey !== undefined ? String(body.apiKey) : this.configService.getApiKey(provider);
-      if (providerRequiresApiKey(provider) && !apiKey) {
-        throw new Error(`No API key available for ${provider}. Save one first.`);
-      }
-      const configuredLlm = this.configService.getLocalConfig();
-      const baseUrl = body.baseUrl
-        ? String(body.baseUrl)
-        : configuredLlm.provider === provider
-          ? configuredLlm.baseUrl
-          : undefined;
-
       this.sendJson(response, 200, {
-        models: await fetchAvailableModels(provider, apiKey, baseUrl),
+        models: await this.setupService.fetchModelsForSelection({
+          provider,
+          apiKey: body.apiKey !== undefined ? String(body.apiKey) : undefined,
+          baseUrl: body.baseUrl ? String(body.baseUrl) : undefined,
+          requiresApiKey: providerRequiresApiKey,
+        }),
       });
       return;
     }
@@ -283,16 +314,12 @@ class WebUiGateway implements Gateway {
         throw new Error('Model is required.');
       }
 
-      if (apiKey) {
-        this.configService.saveApiKey(provider, apiKey);
-      }
-
-      this.configService.updateLocalConfig((localConfig) => ({
-        ...localConfig,
+      this.setupService.saveLlmConfig({
         provider,
+        apiKey,
         model,
         baseUrl: body.baseUrl ? String(body.baseUrl) : undefined,
-      }));
+      });
 
       this.sendJson(response, 200, { snapshot: await this.buildSnapshot() });
       return;
@@ -303,37 +330,20 @@ class WebUiGateway implements Gateway {
       const enabledSurfaces = Array.isArray(body.enabledSurfaces)
         ? body.enabledSurfaces.filter((surface) => surface === 'telegram' || surface === 'whatsapp')
         : [];
-      this.configService.setEnabledGatewaySurfaces(enabledSurfaces);
+      this.setupService.saveSurfaces({ surfaces: enabledSurfaces });
       this.sendJson(response, 200, { snapshot: await this.buildSnapshot() });
       return;
     }
 
     if (method === 'POST' && url.pathname === '/api/telegram/configure') {
       const body = await this.readJson(request);
-      const botToken = String(body.botToken ?? '').trim();
-      if (!botToken || !botToken.includes(':')) {
-        throw new Error('Enter a valid Telegram BotFather token.');
-      }
-
-      const identity = await resolveTelegramBotIdentity(botToken);
-      this.configService.saveTelegramBotToken(botToken);
-      this.configService.enableGatewaySurface('telegram');
-      this.configService.updateLocalConfig((localConfig) => ({
-        ...localConfig,
-        telegram: {
-          ...localConfig.telegram,
-          botUsername: identity.username,
-          onboardingToken: localConfig.telegram?.onboardingToken ?? createOnboardingToken(),
-          linkedChats: localConfig.telegram?.linkedChats ?? [],
-        },
-      }));
-
+      await this.setupService.configureTelegram(String(body.botToken ?? ''));
       this.sendJson(response, 200, { snapshot: await this.buildSnapshot() });
       return;
     }
 
     if (method === 'POST' && url.pathname === '/api/telegram/reset') {
-      resetTelegramGateway(this.configService);
+      this.setupService.resetTelegram();
       this.sendJson(response, 200, { snapshot: await this.buildSnapshot() });
       return;
     }
@@ -346,7 +356,7 @@ class WebUiGateway implements Gateway {
         throw new Error('Message is required.');
       }
 
-      const setupStatus = getYagrSetupStatus(this.configService, new YagrN8nConfigService(), {
+      const setupStatus = this.setupService.getSetupStatus({
         activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
       });
       if (!setupStatus.ready) {
@@ -409,75 +419,12 @@ class WebUiGateway implements Gateway {
   }
 
   private async buildSnapshot(): Promise<Record<string, unknown>> {
-    const n8nService = new YagrN8nConfigService();
-    const n8nConfig = n8nService.getLocalConfig();
-    const setupStatus = getYagrSetupStatus(this.configService, n8nService, {
-      activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
-    });
-    const telegramStatus = getTelegramGatewayStatus(this.configService);
     const webUiStatus = getWebUiGatewayStatus(this.configService);
-    const yagrConfig = this.configService.getLocalConfig();
-    const enabledSurfaces = Array.from(new Set([...this.configService.getEnabledGatewaySurfaces(), ...ACTIVE_WEBUI_SURFACES]));
-    const startableSurfaces = enabledSurfaces.filter((surface) => surface === 'webui' || (surface === 'telegram' && telegramStatus.configured));
-
-    let availableModels: string[] = [];
-    if (yagrConfig.provider) {
-      const apiKey = this.configService.getApiKey(yagrConfig.provider);
-      try {
-        availableModels = await fetchAvailableModels(yagrConfig.provider, apiKey, yagrConfig.baseUrl);
-      } catch {
-        availableModels = [];
-      }
-    }
-
-    return {
-      setupStatus,
-      gatewayStatus: {
-        enabledSurfaces,
-        startableSurfaces,
-      },
-      telegram: telegramStatus,
-      webui: webUiStatus,
-      yagr: {
-        provider: yagrConfig.provider,
-        model: yagrConfig.model,
-        baseUrl: yagrConfig.baseUrl,
-        providers: VALID_PROVIDERS.map((provider) => ({
-          provider,
-          apiKeyStored: this.configService.hasApiKey(provider),
-        })),
-      },
-      n8n: {
-        host: n8nConfig.host,
-        syncFolder: n8nConfig.syncFolder,
-        projectId: n8nConfig.projectId,
-        projectName: n8nConfig.projectName,
-        apiKeyStored: Boolean(n8nConfig.host && n8nService.getApiKey(n8nConfig.host)),
-        projects: n8nConfig.projectId && n8nConfig.projectName ? [{ id: n8nConfig.projectId, name: n8nConfig.projectName }] : [],
-      },
-      availableModels,
-    };
-  }
-
-  private async fetchN8nProjects(host: string, apiKeyOverride?: string): Promise<IProject[]> {
-    const normalizedHost = host.trim();
-    if (!normalizedHost) {
-      throw new Error('n8n host is required.');
-    }
-
-    const configService = new YagrN8nConfigService();
-    const apiKey = apiKeyOverride ?? configService.getApiKey(normalizedHost);
-    if (!apiKey) {
-      throw new Error('No n8n API key available for that host.');
-    }
-
-    const client = new N8nApiClient({ host: normalizedHost, apiKey });
-    const connected = await client.testConnection();
-    if (!connected) {
-      throw new Error('Unable to connect to n8n with the provided URL and API key.');
-    }
-
-    return client.getProjects();
+    return this.setupService.buildWebUiSnapshot({
+      activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
+      webUiStatus,
+      selectableProviders: VALID_PROVIDERS,
+    });
   }
 
   private async sendManagedN8nWorkflowSession(response: ServerResponse, target: string): Promise<void> {
@@ -507,55 +454,12 @@ class WebUiGateway implements Gateway {
   }
 
   private async saveN8nConfig(input: { host: string; apiKey?: string; projectId: string; syncFolder: string }): Promise<string | undefined> {
-    const host = input.host.trim();
-    const projectId = input.projectId.trim();
-    const syncFolder = input.syncFolder.trim() || 'workflows';
-    if (!host) {
-      throw new Error('n8n host is required.');
-    }
-    if (!projectId) {
-      throw new Error('Select an n8n project first.');
-    }
-
-    const configService = new YagrN8nConfigService();
-    const apiKey = input.apiKey?.trim() || configService.getApiKey(host);
-    if (!apiKey) {
-      throw new Error('An n8n API key is required.');
-    }
-
-    const projects = await this.fetchN8nProjects(host, apiKey);
-    const selectedProject = projects.find((project) => project.id === projectId);
-    if (!selectedProject) {
-      throw new Error('The selected n8n project could not be found. Reload projects and try again.');
-    }
-
-    configService.saveApiKey(host, apiKey);
-    configService.saveBootstrapState(host, syncFolder);
-    const instanceIdentifier = await configService.getOrCreateInstanceIdentifier(host);
-    const projectName = getDisplayProjectName(selectedProject);
-    configService.saveLocalConfig({
-      host,
-      syncFolder,
-      projectId: selectedProject.id,
-      projectName,
-      instanceIdentifier,
-    });
-    const workflowDir = resolveWorkflowDir({ syncFolder, instanceIdentifier, projectName });
-    if (workflowDir) {
-      WorkspaceSetupService.ensureWorkspaceFiles(workflowDir);
-    }
-
+    const warning = await this.setupService.saveN8nConfig(input);
     // Invalidate the cached engine and all agent sessions so the next request
     // picks up a fresh engine built from the new config (new host, new API key).
     this.enginePromise = undefined;
     this.agents.clear();
-
-    try {
-      await refreshAiContext({ host, apiKey });
-      return undefined;
-    } catch (error) {
-      return `Workspace saved, but the n8n workspace instructions refresh failed: ${error instanceof Error ? error.message : String(error)}`;
-    }
+    return warning;
   }
 
   private assertProvider(value: string): YagrModelProvider {
@@ -565,7 +469,7 @@ class WebUiGateway implements Gateway {
     return value as YagrModelProvider;
   }
 
-  private async resolveAgent(sessionId: string): Promise<YagrAgent> {
+  private async resolveAgent(sessionId: string): Promise<YagrSessionAgent> {
     const existing = this.agents.get(sessionId);
     if (existing) {
       return existing;
@@ -576,7 +480,7 @@ class WebUiGateway implements Gateway {
     }
 
     const engine = await this.enginePromise;
-    const agent = new YagrAgent(engine);
+    const agent = new YagrSessionAgent(engine);
     this.agents.set(sessionId, agent);
     return agent;
   }
@@ -617,7 +521,7 @@ class WebUiGateway implements Gateway {
   }
 
   private async handleStreamingChat(response: ServerResponse, sessionId: string, message: string): Promise<void> {
-    const setupStatus = getYagrSetupStatus(this.configService, new YagrN8nConfigService(), {
+    const setupStatus = this.setupService.getSetupStatus({
       activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
     });
     if (!setupStatus.ready) {
@@ -653,66 +557,42 @@ class WebUiGateway implements Gateway {
     };
 
     const pushPhaseEvent = (event: YagrPhaseEvent) => {
-      if (event.status !== 'started') {
+      const mappedEvent = mapPhaseEventToWebUiStreamEvent(event);
+      if (mappedEvent) {
+        writeEvent(mappedEvent);
         return;
       }
 
-      writeEvent({
-        type: 'phase',
-        phase: event.phase,
-        status: event.status,
-        message: event.message,
-      });
+      if (event.status === 'started') {
+        writeEvent({
+          type: 'phase',
+          phase: event.phase,
+          status: event.status,
+          message: event.message,
+        });
+      }
     };
 
     const pushStateEvent = (event: YagrStateEvent) => {
-      if (event.state === 'running' || event.state === 'streaming' || event.state === 'completed') {
+      const mappedEvent = mapStateEventToWebUiStreamEvent(event);
+      if (mappedEvent) {
+        writeEvent(mappedEvent);
         return;
       }
 
-      writeEvent({
-        type: 'state',
-        state: event.state,
-        message: event.message,
-      });
+      if (event.state !== 'running' && event.state !== 'streaming' && event.state !== 'completed') {
+        writeEvent({
+          type: 'state',
+          state: event.state,
+          message: event.message,
+        });
+      }
     };
 
     const pushToolEvent = (event: YagrToolEvent) => {
-      if (event.type === 'status') {
-        writeEvent({
-          type: 'progress',
-          tone: 'info',
-          title: event.toolName === 'reportProgress' ? 'Progress' : `Tool ${event.toolName}`,
-          detail: event.message,
-        });
-        return;
-      }
-
-      if (event.type === 'command-end') {
-        if (event.exitCode === 0) {
-          return;
-        }
-
-        writeEvent({
-          type: 'progress',
-          tone: 'info',
-          title: 'Correcting commands',
-          detail: event.message,
-        });
-        return;
-      }
-
-      if (event.type === 'embed') {
-        writeEvent({
-          type: 'embed',
-          kind: event.kind,
-          workflowId: event.workflowId,
-          url: event.url,
-          targetUrl: event.targetUrl,
-          title: event.title,
-          diagram: event.diagram,
-        });
-        return;
+      const mappedEvent = mapToolEventToWebUiStreamEvent(event);
+      if (mappedEvent) {
+        writeEvent(mappedEvent);
       }
     };
 
@@ -795,31 +675,5 @@ class WebUiGateway implements Gateway {
       response.off('close', handleConnectionClose);
       response.end();
     }
-  }
-}
-
-async function resolveTelegramBotIdentity(botToken: string): Promise<{ username: string; firstName: string }> {
-  const { Telegraf } = await import('telegraf');
-  const bot = new Telegraf(botToken);
-  const me = await bot.telegram.getMe();
-  if (!me.username) {
-    throw new Error('Telegram bot username is missing. Configure the bot with BotFather first.');
-  }
-
-  return {
-    username: me.username,
-    firstName: me.first_name,
-  };
-}
-
-async function refreshAiContext(credentials: { host: string; apiKey: string }): Promise<void> {
-  const updateAi = new UpdateAiCommand(new Command());
-  const previousCwd = process.cwd();
-
-  try {
-    process.chdir(getYagrN8nWorkspaceDir());
-    await updateAi.run({}, credentials);
-  } finally {
-    process.chdir(previousCwd);
   }
 }

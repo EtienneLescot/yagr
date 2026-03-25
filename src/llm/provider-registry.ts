@@ -1,19 +1,16 @@
 import type { YagrLocalConfig } from '../config/yagr-config-service.js';
 import { DEFAULT_COPILOT_API_BASE_URL, GITHUB_COPILOT_DEFAULT_MODEL } from './copilot-account.js';
 import { ANTHROPIC_ACCOUNT_DEFAULT_MODEL } from './anthropic-account.js';
-import { GEMINI_ACCOUNT_DEFAULT_MODEL } from './google-account.js';
 import { OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL } from './openai-account.js';
 
 export type YagrModelProvider =
   | 'anthropic'
   | 'openai'
   | 'google'
-  | 'groq'
   | 'mistral'
   | 'openrouter'
   | 'openai-proxy'
   | 'anthropic-proxy'
-  | 'google-proxy'
   | 'copilot-proxy';
 
 export interface YagrProviderDefinition {
@@ -23,6 +20,7 @@ export interface YagrProviderDefinition {
   defaultBaseUrl?: string;
   requiresApiKey: boolean;
   usesOpenAiCompatibleApi: boolean;
+  supported?: boolean;
   experimental?: boolean;
   setupHint?: string;
   managedProxy?: {
@@ -87,19 +85,6 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
       mapResponse: GOOGLE_OPENAI_MODEL_LIST_MAPPER,
     },
   },
-  groq: {
-    id: 'groq',
-    displayName: 'Groq',
-    defaultModel: 'llama-3.1-70b-versatile',
-    defaultBaseUrl: 'https://api.groq.com/openai/v1',
-    requiresApiKey: true,
-    usesOpenAiCompatibleApi: true,
-    modelDiscovery: {
-      buildUrl: () => 'https://api.groq.com/openai/v1/models',
-      authMode: 'bearer-required',
-      mapResponse: MODEL_LIST_MAPPER,
-    },
-  },
   mistral: {
     id: 'mistral',
     displayName: 'Mistral',
@@ -148,14 +133,6 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     usesOpenAiCompatibleApi: false,
     setupHint: 'Claude setup-token from `claude setup-token`',
   },
-  'google-proxy': {
-    id: 'google-proxy',
-    displayName: 'Gemini',
-    defaultModel: GEMINI_ACCOUNT_DEFAULT_MODEL,
-    requiresApiKey: false,
-    usesOpenAiCompatibleApi: false,
-    setupHint: 'Gemini subscription, no API key required (unofficial, not recommended)',
-  },
   'copilot-proxy': {
     id: 'copilot-proxy',
     displayName: 'GitHub',
@@ -168,8 +145,11 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
 };
 
 export const YAGR_MODEL_PROVIDERS = Object.freeze(Object.keys(YAGR_PROVIDER_DEFINITIONS) as YagrModelProvider[]);
+export const YAGR_SUPPORTED_MODEL_PROVIDERS = Object.freeze(
+  YAGR_MODEL_PROVIDERS.filter((provider) => YAGR_PROVIDER_DEFINITIONS[provider].supported !== false),
+);
 export const YAGR_SELECTABLE_MODEL_PROVIDERS = Object.freeze(
-  YAGR_MODEL_PROVIDERS.filter((provider) => provider !== 'groq'),
+  YAGR_SUPPORTED_MODEL_PROVIDERS.filter((provider) => !isOAuthAccountProvider(provider) || isSupportedProvider(provider)),
 );
 
 export function getProviderDefinition(provider: YagrModelProvider): YagrProviderDefinition {
@@ -189,7 +169,7 @@ export function providerNeedsBaseUrlInput(provider: YagrModelProvider): boolean 
     return false;
   }
 
-  return provider.endsWith('-proxy') || provider === 'groq' || provider === 'mistral' || provider === 'openrouter';
+  return provider.endsWith('-proxy') || provider === 'mistral' || provider === 'openrouter';
 }
 
 export function providerRequiresApiKey(provider: YagrModelProvider): boolean {
@@ -198,6 +178,10 @@ export function providerRequiresApiKey(provider: YagrModelProvider): boolean {
 
 export function isExperimentalProvider(provider: YagrModelProvider): boolean {
   return getProviderDefinition(provider).experimental === true;
+}
+
+export function isSupportedProvider(provider: YagrModelProvider): boolean {
+  return getProviderDefinition(provider).supported !== false;
 }
 
 export function getProviderSetupHint(provider: YagrModelProvider): string | undefined {
@@ -209,7 +193,7 @@ export function getProviderDisplayName(provider: YagrModelProvider): string {
 }
 
 export function isOAuthAccountProvider(provider: YagrModelProvider): boolean {
-  return provider === 'openai-proxy' || provider === 'anthropic-proxy' || provider === 'google-proxy' || provider === 'copilot-proxy';
+  return provider === 'openai-proxy' || provider === 'anthropic-proxy' || provider === 'copilot-proxy';
 }
 
 export function isProviderConfigured(localConfig: YagrLocalConfig, getApiKey: (provider: YagrModelProvider) => string | undefined): boolean {

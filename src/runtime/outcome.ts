@@ -5,6 +5,8 @@ export type ObservedN8nacAction = {
   success: boolean;
   filename?: string;
   workflowId?: string;
+  workflowUrl?: string;
+  title?: string;
   validateFile?: string;
   exitCode?: number;
 };
@@ -15,6 +17,7 @@ export type RunOutcome = {
   successfulActions: ObservedN8nacAction[];
   failedActions: ObservedN8nacAction[];
   unresolvedFailedActions: ObservedN8nacAction[];
+  blockingUnresolvedFailedActions: ObservedN8nacAction[];
   successfulValidate?: ObservedN8nacAction;
   successfulPush?: ObservedN8nacAction;
   successfulVerify?: ObservedN8nacAction;
@@ -73,14 +76,34 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
           continue;
         }
 
-        n8nacActions.push({
+        const observedAction: ObservedN8nacAction = {
           action,
           success: (asNumber(result?.exitCode) ?? 1) === 0,
           filename: asString(args?.filename),
-          workflowId: asString(args?.workflowId),
+          workflowId: asString(result?.workflowId) ?? asString(args?.workflowId),
+          workflowUrl: asString(result?.workflowUrl),
+          title: asString(result?.title),
           validateFile: asString(args?.validateFile),
           exitCode: asNumber(result?.exitCode),
-        });
+        };
+
+        n8nacActions.push(observedAction);
+
+        if (
+          action === 'push'
+          && observedAction.success
+          && observedAction.workflowId
+          && result?.verified === true
+        ) {
+          n8nacActions.push({
+            action: 'verify',
+            success: true,
+            workflowId: observedAction.workflowId,
+            workflowUrl: observedAction.workflowUrl,
+            title: observedAction.title,
+            exitCode: observedAction.exitCode,
+          });
+        }
       }
     }
   }
@@ -115,6 +138,29 @@ export function analyzeRunOutcome(journal: YagrRunJournalEntry[]): RunOutcome {
   const successfulPush = findSuccessfulAction(facts.n8nacActions, 'push');
   const successfulValidate = findSuccessfulAction(facts.n8nacActions, 'validate') ?? successfulPush;
   const successfulVerify = findSuccessfulAction(facts.n8nacActions, 'verify') ?? successfulPush;
+  const blockingUnresolvedFailedActions = unresolvedFailedActions.filter((action) => {
+    if (!(successfulPush && successfulVerify)) {
+      return true;
+    }
+
+    if (action.action === 'push') {
+      return false;
+    }
+
+    if ([
+      'init_auth',
+      'init_project',
+      'setup_check',
+      'list',
+      'pull',
+      'skills',
+      'update_ai',
+    ].includes(action.action)) {
+      return false;
+    }
+
+    return true;
+  });
 
   return {
     writtenFiles: facts.writtenFiles,
@@ -122,6 +168,7 @@ export function analyzeRunOutcome(journal: YagrRunJournalEntry[]): RunOutcome {
     successfulActions,
     failedActions,
     unresolvedFailedActions,
+    blockingUnresolvedFailedActions,
     successfulValidate,
     successfulPush,
     successfulVerify,

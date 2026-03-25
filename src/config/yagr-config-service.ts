@@ -47,6 +47,23 @@ export interface YagrLocalConfig {
   telegram?: YagrTelegramConfig;
 }
 
+export interface YagrConfigStoreLike {
+  getLocalConfig(): YagrLocalConfig;
+  saveLocalConfig(config: YagrLocalConfig): void;
+  updateLocalConfig(updater: (config: YagrLocalConfig) => YagrLocalConfig): YagrLocalConfig;
+  getEnabledGatewaySurfaces(): GatewaySurface[];
+  setEnabledGatewaySurfaces(surfaces: GatewaySurface[]): YagrLocalConfig;
+  enableGatewaySurface(surface: GatewaySurface): YagrLocalConfig;
+  disableGatewaySurface(surface: GatewaySurface): YagrLocalConfig;
+  getApiKey(provider: YagrModelProvider): string | undefined;
+  saveApiKey(provider: YagrModelProvider, apiKey: string): void;
+  getTelegramBotToken(): string | undefined;
+  saveTelegramBotToken(botToken: string): void;
+  clearTelegramBotToken(): void;
+  clearLocalConfig?(): void;
+  clearAllApiKeys?(): void;
+}
+
 interface YagrCredentialStore {
   providers?: Record<string, string>;
   telegram?: {

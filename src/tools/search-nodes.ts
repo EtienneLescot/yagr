@@ -1,8 +1,8 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { Engine } from '../engine/engine.js';
+import type { NodeCatalogPort } from '../engine/engine.js';
 
-export function createSearchNodesTool(engine: Engine) {
+export function createSearchNodesTool(engine: NodeCatalogPort) {
   return tool({
     description: 'Search nodes that match a capability or integration need.',
     parameters: z.object({

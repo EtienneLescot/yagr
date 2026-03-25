@@ -1,6 +1,6 @@
 /**
  * Shared message formatting utilities for TUI and Telegram gateways.
- * Single source of truth for workflow-link rendering and markdown-to-surface conversion.
+ * Single source of truth for workflow banner rendering and markdown-to-surface conversion.
  */
 
 import fs from 'node:fs';
@@ -19,6 +19,7 @@ export interface WorkflowEmbed {
   url: string;
   targetUrl?: string;
   title?: string;
+  diagram?: string;
 }
 
 export function workflowEmbedKey(embed: WorkflowEmbed): string {
@@ -32,13 +33,14 @@ export function extractWorkflowEmbed(event: YagrToolEvent): WorkflowEmbed | unde
       url: event.url,
       targetUrl: event.targetUrl,
       title: event.title,
+      diagram: event.diagram,
     };
   }
   return undefined;
 }
 
 // ---------------------------------------------------------------------------
-// Workflow link formatting — one per surface
+// Workflow banner rendering — one per surface
 // ---------------------------------------------------------------------------
 
 export function formatWorkflowLinkPlain(embed: WorkflowEmbed): string {
@@ -61,23 +63,28 @@ export function formatWorkflowLinkTerminal(embed: WorkflowEmbed): string {
 // Workflow footer builder (appended to response messages)
 // ---------------------------------------------------------------------------
 
-export function buildWorkflowFooterPlain(embeds: WorkflowEmbed[]): string {
+export function buildWorkflowBannerPlain(embeds: WorkflowEmbed[]): string {
   const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
   if (uniqueEmbeds.length === 0) return '';
   return uniqueEmbeds.map(formatWorkflowLinkPlain).join('\n');
 }
 
-export function buildWorkflowFooterHtml(embeds: WorkflowEmbed[]): string {
+export function buildWorkflowBannerHtml(embeds: WorkflowEmbed[]): string {
   const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
   if (uniqueEmbeds.length === 0) return '';
   return uniqueEmbeds.map(formatWorkflowLinkHtml).join('\n');
 }
 
-export function buildWorkflowFooterTerminal(embeds: WorkflowEmbed[]): string {
+export function buildWorkflowBannerTerminal(embeds: WorkflowEmbed[]): string {
   const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
   if (uniqueEmbeds.length === 0) return '';
   return uniqueEmbeds.map(formatWorkflowLinkTerminal).join('\n');
 }
+
+// Backward-compatible aliases while the repo converges on the "banner" wording.
+export const buildWorkflowFooterPlain = buildWorkflowBannerPlain;
+export const buildWorkflowFooterHtml = buildWorkflowBannerHtml;
+export const buildWorkflowFooterTerminal = buildWorkflowBannerTerminal;
 
 // ---------------------------------------------------------------------------
 // HTML escaping
