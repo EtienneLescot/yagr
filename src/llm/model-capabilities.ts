@@ -2,7 +2,7 @@ import type { LanguageModelV1FunctionTool, LanguageModelV1ToolChoice } from '@ai
 import { resolveCapabilityProfileFromMetadata } from './capability-resolver.js';
 import type { YagrModelProvider } from './provider-registry.js';
 
-export type YagrToolCallingCapability = 'native' | 'compatible' | 'weak' | 'none';
+export type YagrToolCallingCapability = 'native' | 'compatible' | 'none';
 
 export interface YagrModelCapabilityProfile {
   provider: YagrModelProvider;
@@ -30,13 +30,6 @@ export const CAPABILITY_FLAGS: Record<YagrToolCallingCapability, CapabilityFlags
     supportsStructuredOutputs: false,
     supportsStreamingToolCalls: true,
     supportsForcedToolChoice: true,
-    prefersStrictToolSchemas: false,
-  },
-  weak: {
-    supportsParallelToolCalls: false,
-    supportsStructuredOutputs: false,
-    supportsStreamingToolCalls: false,
-    supportsForcedToolChoice: false,
     prefersStrictToolSchemas: false,
   },
   none: {
@@ -162,6 +155,7 @@ export function getOpenAiCompatibleProviderSettingsForCapability(
     return undefined;
   }
 
+  // compatible
   return {
     parallelToolCalls: profile.supportsParallelToolCalls,
     structuredOutputs: profile.supportsStructuredOutputs,

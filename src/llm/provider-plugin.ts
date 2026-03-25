@@ -5,6 +5,7 @@ import { createAnthropicAccountLanguageModel } from './anthropic-account.js';
 import { createGitHubCopilotLanguageModel, fetchGitHubCopilotModels } from './copilot-account.js';
 import {
   getOpenAiCompatibleProviderSettingsForCapability,
+  resolveModelCapabilityProfile,
   type YagrModelCapabilityProfile,
 } from './model-capabilities.js';
 import { createOpenAiAccountLanguageModel, getOpenAiAccountSession } from './openai-account.js';
@@ -245,7 +246,12 @@ function buildProviderDiscovery(
 
         const payload = await response.json() as Record<string, unknown>;
         getProviderPlugin(provider).metadata?.warmDiscoveryPayload?.(payload);
-        return discovery.mapResponse(payload).sort((left, right) => left.localeCompare(right));
+        const models = discovery.mapResponse(payload).sort((left, right) => left.localeCompare(right));
+        if (provider === 'openrouter') {
+          return models.filter((model) => resolveModelCapabilityProfile({ provider, model }).toolCalling !== 'none');
+        }
+
+        return models;
       } catch {
         return [];
       }

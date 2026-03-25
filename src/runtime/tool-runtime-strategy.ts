@@ -49,13 +49,6 @@ function buildToolingPolicy(capabilityProfile: YagrModelCapabilityProfile): Yagr
         toolCallMode: 'sequential',
         executionCriticalToolNames: [...MATERIAL_RUNTIME_TOOL_NAMES],
       };
-    case 'weak':
-      return {
-        availableToolNames: [...FULL_RUNTIME_TOOL_NAMES],
-        allowedToolNamesAfterWorkflowSync: [...POST_SYNC_RUNTIME_TOOL_NAMES],
-        toolCallMode: 'sequential',
-        executionCriticalToolNames: [...MATERIAL_RUNTIME_TOOL_NAMES],
-      };
     case 'none':
       return {
         availableToolNames: [...SYNTHETIC_RUNTIME_TOOL_NAMES],
@@ -114,24 +107,6 @@ export function resolveToolRuntimeStrategy(
         ],
         recoveryDirectives: [
           'Retry only the failing step; do not restart the whole exploration sequence.',
-        ],
-      };
-    case 'weak':
-      return {
-        ...base,
-        inspectMaxSteps: 3,
-        executeMaxSteps: 6,
-        recoveryMaxSteps: 4,
-        inspectDirectives: [
-          'Keep inspection shallow and task-directed.',
-        ],
-        executeDirectives: [
-          'Use a single decisive tool at a time.',
-          'Avoid repeated search/list cycles.',
-          'Prefer n8nac validate/push/verify over extra commentary.',
-        ],
-        recoveryDirectives: [
-          'Do the smallest possible correction and retry exactly once per failing step.',
         ],
       };
     case 'none':

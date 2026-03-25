@@ -98,7 +98,8 @@ export function classifyMetadataCapability(
     return 'compatible';
   }
 
-  return 'weak';
+  // Tool calling is supported but without parallel calls or structured outputs.
+  return 'compatible';
 }
 
 export function classifyOpenRouterMetadataCapability(
