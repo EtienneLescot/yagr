@@ -118,6 +118,14 @@ export function resolveCapabilityProfileFromMetadata(input: {
   }
 
   const supportedParameters = resolveConservativeSupportedParameters(metadata);
+  // Only classify from metadata when supported_parameters is non-empty.
+  // An empty set means the metadata was fetched from a list endpoint without
+  // capability detail — it is incomplete, not a declaration of no tool support.
+  // Fall back to the provider-level switch in resolveModelCapabilityProfile.
+  if (supportedParameters.size === 0 && !metadata.outputModalities?.length) {
+    return undefined;
+  }
+
   const toolCalling = classifyMetadataCapability(metadata);
   return buildProfile(input.provider, input.model, toolCalling, {
     supportsParallelToolCalls: toolCalling !== 'none' && supportedParameters.has('parallel_tool_calls'),
