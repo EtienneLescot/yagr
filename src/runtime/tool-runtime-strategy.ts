@@ -92,7 +92,9 @@ export function resolveToolRuntimeStrategy(
         recoveryMaxSteps: 6,
         inspectDirectives: [],
         executeDirectives: [
-          'Tool calling is natively supported. Prefer direct, minimal tool use and stop after push and verify succeed.',
+          'Tool calling is natively supported.',
+          'Once you have gathered sufficient context (node schemas, existing files), proceed immediately to workflow creation — do not stop after discovery.',
+          'After authoring the workflow, use n8nac to validate, push, and verify. Stop only after verify succeeds.',
         ],
         recoveryDirectives: [],
       };
