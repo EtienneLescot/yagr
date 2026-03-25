@@ -152,6 +152,10 @@ function createSetupCallbacks(
       return setupService.prepareProvider(provider, apiKey);
     },
 
+    async hasAccountSession(provider) {
+      return setupService.hasAccountSession(provider);
+    },
+
     async startAccountAuth(provider) {
       return setupService.startAccountAuth(provider);
     },
