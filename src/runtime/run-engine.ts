@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { generateText, streamText, type CoreMessage } from 'ai';
+import { generateText, streamText, InvalidToolArgumentsError, type CoreMessage } from 'ai';
 import type { EngineRuntimePort } from '../engine/engine.js';
 import { createLanguageModel } from '../llm/create-language-model.js';
 import { resolveLanguageModelConfig, resolveModelContextProfile } from '../llm/create-language-model.js';
@@ -357,14 +357,14 @@ function createPhasePrompt(
     ].join('\n'));
   }
 
-  return wrapInternal([
-    'Yagr internal phase: execute.',
-    'Complete the task end-to-end using the gathered context.',
-    'When appropriate, author or edit workflow files, validate them, sync them, verify them, and then summarize what changed.',
+  return [
+    'Complete the following task end-to-end.',
+    'Author or edit workflow files, validate them, push them to n8n, and verify the deployment.',
+    'You must call at least one tool to make progress — do not respond with text alone.',
     'Ask the user only when a specific missing value blocks execution.',
     ...strategy.executeDirectives,
-    `Original request: ${userPrompt}`,
-  ].join('\n'));
+    `Task: ${userPrompt}`,
+  ].join('\n');
 }
 
 function trimAssistantVisibleText(text: string, maxChars = 12_000): string {
@@ -1147,6 +1147,21 @@ function buildRecoveryPrompt(outcome: RunOutcome, attemptNumber: number): string
     missingChecks.push('remote verification');
   }
 
+  // When the workflow file was already written but deployment steps are still
+  // missing and there are no failed actions, give a plain direct instruction
+  // instead of a confusing "inspect failing tool output" message.  Some models
+  // (e.g. Gemini) do not respond to internal-tagged prompts in recovery passes
+  // when no concrete error is present.
+  if (outcome.hasWorkflowWrites && missingChecks.length > 0 && !failedActions) {
+    const writtenFile = outcome.writtenFiles.find((f) => f.endsWith('.workflow.ts')) ?? outcome.writtenFiles[0];
+    const fileNote = writtenFile ? ` (${writtenFile})` : '';
+    return [
+      `The workflow file${fileNote} was written successfully.`,
+      `The following deployment steps are still needed: ${missingChecks.join(', ')}.`,
+      'Use the n8nac tool to complete them now. Do not stop until push succeeds.',
+    ].join(' ');
+  }
+
   const issues = [
     failedActions ? `Failed actions: ${failedActions}.` : '',
     missingChecks.length > 0 ? `Unconfirmed steps: ${missingChecks.join(', ')}.` : '',
@@ -1159,6 +1174,46 @@ function buildRecoveryPrompt(outcome: RunOutcome, attemptNumber: number): string
     'Inspect the failing tool output, correct the local files or command arguments, and retry the necessary steps now.',
     'Only stop if a genuine blocker remains that cannot be resolved locally in this run.',
   ].join(' '));
+}
+
+/**
+ * Attempt to repair a malformed tool call where the model emitted an unquoted string value.
+ * This primarily handles `writeWorkspaceFile` when a model writes raw TypeScript code as the
+ * `content` field without JSON-string-encoding it. The closing `}` of the JSON object is always
+ * the last character in the args string, so `lastIndexOf('}')` reliably isolates it.
+ *
+ * Returns a corrected JSON args string, or `null` if the pattern is not recognised.
+ */
+function tryRepairToolArgs(toolName: string, rawArgs: string): string | null {
+  if (toolName !== 'writeWorkspaceFile') return null;
+
+  const pathMatch = /"path"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(rawArgs);
+  if (!pathMatch) return null;
+  const path = pathMatch[1];
+
+  const modeMatch = /"mode"\s*:\s*"(create|overwrite|append)"/.exec(rawArgs);
+  const mode = modeMatch?.[1] ?? 'overwrite';
+
+  const contentKeyIdx = rawArgs.indexOf('"content"');
+  if (contentKeyIdx === -1) return null;
+  const colonIdx = rawArgs.indexOf(':', contentKeyIdx + 9);
+  if (colonIdx === -1) return null;
+
+  let valueStart = colonIdx + 1;
+  while (valueStart < rawArgs.length && /[ \t]/.test(rawArgs[valueStart])) valueStart++;
+
+  // If content is already a quoted JSON string the parse failure is a different issue
+  if (rawArgs[valueStart] === '"') return null;
+
+  // The very last '}' in the string is the JSON object closing brace
+  const lastBrace = rawArgs.lastIndexOf('}');
+  if (lastBrace <= valueStart) return null;
+
+  let rawContent = rawArgs.slice(valueStart, lastBrace);
+  // Strip a trailing mode field that the model may have appended after the raw content
+  rawContent = rawContent.replace(/,\s*"mode"\s*:\s*"(?:create|overwrite|append)"\s*$/, '').trim();
+
+  return JSON.stringify({ path, content: rawContent, mode });
 }
 
 async function executePhase(
@@ -1179,6 +1234,12 @@ async function executePhase(
   throwIfAborted(options.abortSignal);
   const modelInvocationTools = strategy.tooling.toolCallMode === 'disabled' ? undefined : tools;
 
+  const repairToolCall = async ({ toolCall, error }: { toolCall: { toolCallType: 'function'; toolCallId: string; toolName: string; args: string }; error: unknown }) => {
+    if (!InvalidToolArgumentsError.isInstance(error)) return null;
+    const repairedArgs = tryRepairToolArgs(toolCall.toolName, toolCall.args);
+    return repairedArgs !== null ? { ...toolCall, args: repairedArgs } : null;
+  };
+
   if (strategy.executionMode === 'generate') {
     const result = await generateText({
       abortSignal: options.abortSignal,
@@ -1188,6 +1249,7 @@ async function executePhase(
       messages,
       maxSteps,
       providerOptions: strategy.providerOptions,
+      experimental_repairToolCall: repairToolCall,
     });
 
     for (const step of result.steps) {
@@ -1229,6 +1291,7 @@ async function executePhase(
     maxSteps,
     toolCallStreaming: strategy.toolCallStreaming,
     providerOptions: strategy.providerOptions,
+    experimental_repairToolCall: repairToolCall,
     onStepFinish: async (stepResult) => {
       recordedSteps += 1;
       for (const toolCall of stepResult.toolCalls) {
@@ -1425,6 +1488,11 @@ export class YagrRunEngine {
         messages: [...executionContext, inspectInstruction],
         maxSteps: Math.min(options.maxSteps ?? 8, runtimeStrategy.inspectMaxSteps),
         providerOptions: runtimeStrategy.providerOptions,
+        experimental_repairToolCall: async ({ toolCall, error }) => {
+          if (!InvalidToolArgumentsError.isInstance(error)) return null;
+          const repairedArgs = tryRepairToolArgs(toolCall.toolName, toolCall.args);
+          return repairedArgs !== null ? { ...toolCall, args: repairedArgs } : null;
+        },
       });
 
       for (const step of inspectResult.steps) {
@@ -1447,17 +1515,25 @@ export class YagrRunEngine {
         await transitionPhase(state, options, 'inspect', 'completed', 'Inspection completed.');
       }
 
+      // Save base context before adding inspect history.  The execute phase
+      // starts from this clean base to avoid context-length issues that cause
+      // some models (notably Gemini) to return empty completions when faced
+      // with accumulated inspect tool-result messages.
+      const executeBaseContext = [...executionContext];
+
       executionContext.push(...sanitizeAssistantResponseMessages(inspectResult.response.messages));
       throwIfAborted(options.abortSignal);
 
-      await transitionPhase(state, options, 'plan', 'started', 'Preparing execution plan.');
-      await transitionPhase(state, options, 'plan', 'completed', 'Execution plan ready.');
+      if (getPhaseIndex(state.currentPhase) <= getPhaseIndex('plan')) {
+        await transitionPhase(state, options, 'plan', 'started', 'Preparing execution plan.');
+        await transitionPhase(state, options, 'plan', 'completed', 'Execution plan ready.');
+      }
 
       const executeInstruction: CoreMessage = {
         role: 'user',
         content: createPhasePrompt('execute', prompt, runtimeStrategy),
       };
-      let executeMessages = [...executionContext, executeInstruction];
+      let executeMessages = [...executeBaseContext, executeInstruction];
 
       let text = '';
       let finishReason = 'stop';
@@ -1515,14 +1591,31 @@ export class YagrRunEngine {
           message: `Recovery pass ${attemptNumber + 1} triggered after failed or incomplete execution steps.`,
         });
 
-        executeMessages = [
-          ...executeMessages,
-          ...sanitizeAssistantResponseMessages(phaseResult.responseMessages),
-          {
-            role: 'user',
-            content: buildRecoveryPrompt(outcome, attemptNumber + 1),
-          },
-        ];
+        // If the model's response was completely absent or stripped (e.g. empty
+        // stop), appending the recovery prompt to the existing execute history
+        // creates a long conversation that some models (e.g. Gemini) refuse to
+        // continue.  Instead, restart from the clean base context so the
+        // recovery prompt is the only new instruction the model sees.  This
+        // mirrors the short context that the inspect phase uses, which those
+        // models always respond to.
+        const sanitizedPriorResponse = sanitizeAssistantResponseMessages(phaseResult.responseMessages);
+
+        executeMessages = sanitizedPriorResponse.length === 0
+          ? [
+              ...executeBaseContext,
+              {
+                role: 'user',
+                content: buildRecoveryPrompt(outcome, attemptNumber + 1),
+              },
+            ]
+          : [
+              ...executeMessages,
+              ...sanitizedPriorResponse,
+              {
+                role: 'user',
+                content: buildRecoveryPrompt(outcome, attemptNumber + 1),
+              },
+            ];
       }
 
       persistedMessages.push(...responseMessages);

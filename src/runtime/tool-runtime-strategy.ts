@@ -86,8 +86,10 @@ export function resolveToolRuntimeStrategy(
         inspectDirectives: [],
         executeDirectives: [
           'Tool calling is natively supported.',
-          'Once you have gathered sufficient context (node schemas, existing files), proceed immediately to workflow creation — do not stop after discovery.',
-          'After authoring the workflow, use n8nac to validate, push, and verify. Stop only after verify succeeds.',
+          'Do not respond with only text or an empty response — you must call a tool to make progress.',
+          'If you already have sufficient context, call writeWorkspaceFile immediately to author the workflow file.',
+          'If you still need node schemas or examples, call searchNodes or n8nac skills first, then write the file.',
+          'After writing the workflow file, use n8nac to validate, push, and verify. Stop only after verify succeeds.',
         ],
         recoveryDirectives: [],
       };
