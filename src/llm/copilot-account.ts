@@ -244,6 +244,15 @@ export function createGitHubCopilotLanguageModel(
           if (execution.text) {
             controller.enqueue({ type: 'text-delta', textDelta: execution.text });
           }
+          for (const toolCall of execution.toolCalls ?? []) {
+            controller.enqueue({
+              type: 'tool-call',
+              toolCallType: 'function',
+              toolCallId: toolCall.toolCallId,
+              toolName: toolCall.toolName,
+              args: toolCall.args,
+            });
+          }
           controller.enqueue({
             type: 'finish',
             finishReason: execution.finishReason,

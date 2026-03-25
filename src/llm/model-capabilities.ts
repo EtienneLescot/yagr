@@ -101,7 +101,9 @@ function classifyOpenRouterModel(model: string): YagrToolCallingCapability {
     return 'compatible';
   }
 
-  return 'weak';
+  // Default to compatible for unknown non-tiny models: OpenRouter rejects
+  // requests for models that truly lack tool support, so this is safe.
+  return 'compatible';
 }
 
 export function resolveModelCapabilityProfile(input: {
@@ -112,6 +114,12 @@ export function resolveModelCapabilityProfile(input: {
   const model = String(input.model || '').trim();
   const resolvedFromMetadata = resolveCapabilityProfileFromMetadata({ provider, model });
   if (resolvedFromMetadata) {
+    // Apply provider-level constraints that metadata cannot determine.
+    // copilot-proxy uses a simulated (non-streaming) completion wrapper, so
+    // streaming tool calls are never truly supported regardless of model tier.
+    if (provider === 'copilot-proxy') {
+      return { ...resolvedFromMetadata, supportsStreamingToolCalls: false };
+    }
     return resolvedFromMetadata;
   }
 
