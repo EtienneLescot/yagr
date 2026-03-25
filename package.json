@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
+    "@ai-sdk/google": "^1.2.22",
     "@ai-sdk/openai": "^1.3.24",
     "@inkjs/ui": "^2.0.0",
     "@n8n-as-code/skills": "1.1.2",

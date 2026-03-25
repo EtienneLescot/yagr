@@ -148,6 +148,11 @@ function buildModelFactory(
   }
 
   if (definition.usesOpenAiCompatibleApi) {
+    // Hoist once at factory registration time so the thought-signature map
+    // survives across all createLanguageModel() calls within a session.
+    const persistentFetch = provider === 'google'
+      ? createGoogleThoughtSignatureFetch()
+      : getOpenAiFetchOverride(provider);
     return ({ model, apiKey, baseUrl, capabilityProfile }) => {
       const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
       const providerClient = createOpenAI({
@@ -156,7 +161,7 @@ function buildModelFactory(
         headers,
         name: provider,
         compatibility: 'compatible',
-        fetch: getOpenAiFetchOverride(provider),
+        fetch: persistentFetch,
       });
       const providerSettings = getOpenAiCompatibleProviderSettings(provider, capabilityProfile);
       return providerSettings ? providerClient(model, providerSettings) : providerClient(model);
@@ -264,6 +269,172 @@ function getOpenAiCompatibleProviderSettings(
   }
 
   return baseSettings;
+}
+
+/**
+ * Creates a per-model-instance fetch override for Google that preserves thought_signature
+ * values across multi-turn tool use. Newer Gemini models attach a thought_signature to each
+ * function call in streaming responses; the OpenAI-compatible SDK strips it when building
+ * conversation history, causing subsequent requests to fail with INVALID_ARGUMENT.
+ * This interceptor tees the response stream to capture signatures, then re-injects them
+ * into the corresponding assistant messages of subsequent requests.
+ */
+function createGoogleThoughtSignatureFetch(): typeof fetch {
+  const thoughtSigs = new Map<string, string>();
+  // Track extraction from the previous turn — must finish before the next request runs
+  let extractionPromise: Promise<void> = Promise.resolve();
+
+  return async (input, init) => {
+    // Wait for any in-progress extraction from the previous response before
+    // checking / injecting thought signatures into this request.
+    await extractionPromise.catch(() => undefined);
+
+    // Optionally rewrite the request body to inject thought signatures
+    const requestInit = (thoughtSigs.size > 0 && init?.body && typeof init.body === 'string')
+      ? (() => {
+          const injected = injectGoogleThoughtSignatures(init.body as string, thoughtSigs);
+          return injected !== init.body ? { ...init, body: injected } : init;
+        })()
+      : init;
+
+    const response = await fetch(input, requestInit);
+    if (!response.ok || !response.body) {
+      return response;
+    }
+
+    // Tee the response stream so we can extract thought_signatures for the next turn
+    const [sdkStream, captureStream] = response.body.tee();
+    extractionPromise = extractGoogleThoughtSignatures(captureStream, thoughtSigs);
+
+    return new Response(sdkStream, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
+}
+
+function injectGoogleThoughtSignatures(
+  body: string,
+  sigs: Map<string, string>,
+): string {
+  try {
+    const parsed = JSON.parse(body) as {
+      messages?: Array<{
+        role: string;
+        tool_calls?: Array<{ id?: string; extra_content?: unknown }>;
+      }>;
+    };
+    if (!Array.isArray(parsed.messages)) {
+      return body;
+    }
+
+    let modified = false;
+    for (const message of parsed.messages) {
+      if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) {
+        continue;
+      }
+      for (const toolCall of message.tool_calls) {
+        if (toolCall.id && sigs.has(toolCall.id) && !toolCall.extra_content) {
+          toolCall.extra_content = { google: { thought_signature: sigs.get(toolCall.id) } };
+          modified = true;
+        }
+      }
+    }
+
+    return modified ? JSON.stringify(parsed) : body;
+  } catch {
+    return body;
+  }
+}
+
+async function extractGoogleThoughtSignatures(
+  stream: ReadableStream<Uint8Array>,
+  sigs: Map<string, string>,
+): Promise<void> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+    }
+    buffer += decoder.decode(); // flush
+  } catch {
+    // best effort — stream read failure is non-fatal
+    return;
+  }
+
+  // Check if the body is a plain JSON response (non-streaming doGenerate)
+  // or an SSE stream (streaming doStream with "data: {...}" lines)
+  const trimmed = buffer.trimStart();
+  if (trimmed.startsWith('{')) {
+    // Non-streaming JSON response: choices[i].message.tool_calls[j].extra_content
+    try {
+      const data = JSON.parse(trimmed) as {
+        choices?: Array<{
+          message?: {
+            tool_calls?: Array<{
+              id?: string;
+              extra_content?: { google?: { thought_signature?: string } };
+            }>;
+          };
+        }>;
+      };
+      for (const choice of data.choices ?? []) {
+        for (const toolCall of choice.message?.tool_calls ?? []) {
+          const sig = toolCall.extra_content?.google?.thought_signature;
+          if (sig && toolCall.id) {
+            sigs.set(toolCall.id, sig);
+          }
+        }
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return;
+  }
+
+  // SSE streaming response: scan "data: {...}" lines
+  // Track tool call id by index in case id and extra_content arrive in different chunks
+  const indexToId = new Map<number, string>();
+  for (const line of buffer.split('\n')) {
+    if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+    try {
+      const data = JSON.parse(line.slice(6)) as {
+        choices?: Array<{
+          delta?: {
+            tool_calls?: Array<{
+              index?: number;
+              id?: string;
+              extra_content?: { google?: { thought_signature?: string } };
+            }>;
+          };
+        }>;
+      };
+      for (const choice of data.choices ?? []) {
+        for (const toolCall of choice.delta?.tool_calls ?? []) {
+          // Accumulate index→id mapping whenever an id arrives
+          if (toolCall.id !== undefined && toolCall.index !== undefined) {
+            indexToId.set(toolCall.index, toolCall.id);
+          }
+          const sig = toolCall.extra_content?.google?.thought_signature;
+          if (sig) {
+            // Resolve id from this chunk or from the accumulated index map
+            const id = toolCall.id ?? (toolCall.index !== undefined ? indexToId.get(toolCall.index) : undefined);
+            if (id) {
+              sigs.set(id, sig);
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore malformed SSE lines
+    }
+  }
 }
 
 function getOpenAiFetchOverride(provider: YagrModelProvider): typeof fetch | undefined {
