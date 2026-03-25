@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.2.13](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.12...yagr@v0.2.13) (2026-03-25)
+
+
+### Features
+
+* add ensureGitHubCopilotSession to manage Copilot authentication state ([295a4c4](https://github.com/EtienneLescot/yagr/commit/295a4c4bb4a740c89aec0ec01655ddf18b537e56))
+* enhance completion gate logic and introduce material work tracking ([853c0f1](https://github.com/EtienneLescot/yagr/commit/853c0f166e482fe2415f25ec3196bed9ced92d13))
+* enhance GitHub Copilot integration with support for model metadata and endpoint resolution ([57f5f28](https://github.com/EtienneLescot/yagr/commit/57f5f28aa9a66330507bd0fe36e58f103ca729f5))
+* enhance n8n integration with runtime state resolution and environment handling ([4754c5f](https://github.com/EtienneLescot/yagr/commit/4754c5fff8a123891a92ed6be02529d9da678641))
+* enhance provider integration with advanced checklist actions and serialization ([d98dff7](https://github.com/EtienneLescot/yagr/commit/d98dff7a553550963de42ebdab699975355dba2d))
+* enhance required action handling with blocking and follow-up distinctions ([97575f6](https://github.com/EtienneLescot/yagr/commit/97575f6eff1f61324f46698b9e59e2d0fda1595f))
+* enhance runtime flow documentation and introduce workflow diagram parsing ([f3ec267](https://github.com/EtienneLescot/yagr/commit/f3ec267490730911a66366deb148f843adcd80fe))
+* enhance user-facing updates for tool events and phases ([59da455](https://github.com/EtienneLescot/yagr/commit/59da45527d48606dac8a922f7db336fb3ff5e166))
+* enhance writeWorkspaceFile tool with error handling for missing content and add corresponding test ([ac3453f](https://github.com/EtienneLescot/yagr/commit/ac3453f983f791658e4590d6be7671671f27483d))
+* implement gateway worker command and enhance gateway supervisor process with logging ([54563fd](https://github.com/EtienneLescot/yagr/commit/54563fd7f2674b4538596b8e8320e9b4a315aa4f))
+* implement normalization for function tool parameters schema and add tests ([c1806ea](https://github.com/EtienneLescot/yagr/commit/c1806ea4678fcdad8be7d5352c72f6f9f9c6fc57))
+* integrate language model configuration into TelegramGateway for enhanced provider capabilities ([7491032](https://github.com/EtienneLescot/yagr/commit/7491032f9a9b18b50886697fb1a39537db817f33))
+* integrate user-visible updates for tool, phase, and state events in interactive app ([50157bd](https://github.com/EtienneLescot/yagr/commit/50157bdb6d40f27aa97b768dfece94021a72eec4))
+* **tests:** add Google streaming response capture and thought_signature logging ([a344ae4](https://github.com/EtienneLescot/yagr/commit/a344ae4d2b4eb39dcb70842914f237f0841c60d4))
+* update French to English translations for user-facing messages across multiple components ([cd65186](https://github.com/EtienneLescot/yagr/commit/cd651868c1e2448a77165d44fb0e4c7c064c0d59))
+* update reset command to clear chat session and improve conversation reinitialization ([6c3b9cc](https://github.com/EtienneLescot/yagr/commit/6c3b9cc61aaba9f97795103536a292e2ba45cdff))
+
+
+### Bug Fixes
+
+* address PR review findings from architecture refactor ([f5398d6](https://github.com/EtienneLescot/yagr/commit/f5398d6f798ff2ecb56ffe6418dcca10179163a8))
+* address second-pass PR review comments ([168664d](https://github.com/EtienneLescot/yagr/commit/168664d60dbf97485c6110d13def8b9b651199fb))
+* **capabilities:** eliminate heuristic fallbacks, fix Mistral weak classification ([07a54f1](https://github.com/EtienneLescot/yagr/commit/07a54f1aee6aa1b204e0533643c253caa387c509))
+* **copilot-proxy:** emit tool calls in doStream and fix capability classification ([c058c84](https://github.com/EtienneLescot/yagr/commit/c058c84f81492411dedc6be2d7caaef6b1e60d04))
+* **google:** preserve thought_signature across multi-turn tool use ([5207c0d](https://github.com/EtienneLescot/yagr/commit/5207c0dc89cad546b391593bd9039bd12acf7773))
+* **runtime:** strengthen native-tooling execute directives to prevent post-discovery stall ([668170e](https://github.com/EtienneLescot/yagr/commit/668170e91a62268f9008433e4fb656f938cdc75f))
+* sanitize instanceIdentifier for Windows path safety ([5d923d9](https://github.com/EtienneLescot/yagr/commit/5d923d931e06663a59b412f51616c149563d5647))
+* **setup:** skip Copilot auth screen when session already exists ([f802fa4](https://github.com/EtienneLescot/yagr/commit/f802fa416687688549f208347227beb88718471b))
+* update test model preferences for Google and Copilot providers ([14fc4fb](https://github.com/EtienneLescot/yagr/commit/14fc4fb69df588e97ab6416551fb9a73098d0c08))
+
 ## [0.2.12](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.11...yagr@v0.2.12) (2026-03-22)
 
 
