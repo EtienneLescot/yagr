@@ -47,7 +47,7 @@ test('resolveModelCapabilityProfile marks openai-proxy as compatible with reduce
   assert.equal(profile.supportsStreamingToolCalls, false);
 });
 
-test('resolveModelCapabilityProfile marks anthropic-proxy as native and mistral as weak', () => {
+test('resolveModelCapabilityProfile marks anthropic-proxy as native and mistral as compatible', () => {
   const anthropicProfile = resolveModelCapabilityProfile({
     provider: 'anthropic-proxy',
     model: 'claude-sonnet-4-5',
@@ -59,13 +59,13 @@ test('resolveModelCapabilityProfile marks anthropic-proxy as native and mistral 
 
   assert.equal(anthropicProfile.toolCalling, 'native');
   assert.equal(anthropicProfile.supportsStructuredOutputs, true);
-  assert.equal(mistralProfile.toolCalling, 'weak');
+  assert.equal(mistralProfile.toolCalling, 'compatible');
   assert.equal(mistralProfile.supportsStructuredOutputs, false);
-  assert.equal(mistralProfile.supportsForcedToolChoice, false);
+  assert.equal(mistralProfile.supportsForcedToolChoice, true);
 });
 
-test('resolveModelCapabilityProfile can classify weak and none openrouter models', () => {
-  const weakProfile = resolveModelCapabilityProfile({
+test('resolveModelCapabilityProfile classifies free-tier openrouter models as compatible and embedding models as none', () => {
+  const compatibleProfile = resolveModelCapabilityProfile({
     provider: 'openrouter',
     model: 'meta-llama/llama-3.1-8b-instruct:free',
   });
@@ -74,8 +74,8 @@ test('resolveModelCapabilityProfile can classify weak and none openrouter models
     model: 'openai/text-embedding-3-small',
   });
 
-  assert.equal(weakProfile.toolCalling, 'weak');
-  assert.equal(weakProfile.supportsForcedToolChoice, false);
+  assert.equal(compatibleProfile.toolCalling, 'compatible');
+  assert.equal(compatibleProfile.supportsForcedToolChoice, true);
   assert.equal(noneProfile.toolCalling, 'none');
   assert.equal(noneProfile.supportsParallelToolCalls, false);
 });
