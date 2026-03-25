@@ -66,43 +66,25 @@ function buildProfile(
 function classifyOpenRouterModel(model: string): YagrToolCallingCapability {
   const normalized = model.toLowerCase();
 
+  // Semantic-purpose exclusions: these identifiers describe non-LLM endpoint
+  // types (embeddings, rerankers, speech, moderation) that definitionally do
+  // not support tool calling. This is not a heuristic — the endpoint type is
+  // encoded in the model ID by OpenRouter convention.
   if (
     normalized.includes('embed')
     || normalized.includes('embedding')
     || normalized.includes('rerank')
     || normalized.includes('whisper')
     || normalized.includes('tts')
-    || normalized.includes('image')
-    || normalized.includes('vision')
     || normalized.includes('moderation')
   ) {
     return 'none';
   }
 
-  if (
-    normalized.includes(':free')
-    || normalized.includes('/free')
-    || /\b(7b|8b|11b|12b)\b/.test(normalized)
-    || normalized.includes('small')
-    || normalized.includes('mini')
-  ) {
-    return 'weak';
-  }
-
-  if (
-    normalized.startsWith('openai/')
-    || normalized.startsWith('anthropic/')
-    || normalized.startsWith('google/')
-    || normalized.includes('/claude')
-    || normalized.includes('/gpt-4')
-    || normalized.includes('/gpt-5')
-    || normalized.includes('/gemini')
-  ) {
-    return 'compatible';
-  }
-
-  // Default to compatible for unknown non-tiny models: OpenRouter rejects
-  // requests for models that truly lack tool support, so this is safe.
+  // When metadata is unavailable, default to compatible: tool calling is sent
+  // sequentially without parallel calls or structured outputs. The metadata
+  // path (classifyMetadataCapability) provides precise per-model classification
+  // whenever primeModelMetadata has been called successfully.
   return 'compatible';
 }
 
@@ -139,13 +121,19 @@ export function resolveModelCapabilityProfile(input: {
     case 'google':
       return buildProfile(provider, model, 'native');
     case 'mistral':
-      return buildProfile(provider, model, 'weak');
+      // Mistral models support function calling natively (sequential, no
+      // parallel calls, no structured outputs). The AI SDK Mistral provider
+      // requires simulateStreaming which is forced in provider-plugin.ts,
+      // so we keep supportsStreamingToolCalls false here.
+      return buildProfile(provider, model, 'compatible', {
+        supportsStreamingToolCalls: false,
+      });
     case 'openrouter':
       return buildProfile(provider, model, classifyOpenRouterModel(model));
     case 'anthropic-proxy':
       return buildProfile(provider, model, 'native');
     default:
-      return buildProfile(provider, model, 'weak');
+      return buildProfile(provider, model, 'compatible');
   }
 }
 

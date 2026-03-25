@@ -23,14 +23,14 @@ test('compatible strategy keeps tools but pushes conservative directives', () =>
   assert.ok(strategy.executeDirectives.some((line) => /one tool at a time/i.test(line)));
 });
 
-test('weak strategy keeps execution in generate mode for mistral', () => {
+test('mistral uses compatible strategy with generate mode due to simulated streaming', () => {
   const strategy = resolveToolRuntimeStrategy('mistral', 'ministral-8b-latest');
 
-  assert.equal(strategy.capabilityProfile.toolCalling, 'weak');
+  assert.equal(strategy.capabilityProfile.toolCalling, 'compatible');
   assert.equal(strategy.executionMode, 'generate');
   assert.equal(strategy.tooling.toolCallMode, 'sequential');
   assert.ok(strategy.tooling.availableToolNames.includes('searchWorkspace'));
-  assert.ok(strategy.executeDirectives.some((line) => /single decisive tool/i.test(line)));
+  assert.ok(strategy.executeDirectives.some((line) => /one tool at a time/i.test(line)));
 });
 
 test('none strategy keeps a synthetic runtime tool subset while disabling model tool calls', () => {
