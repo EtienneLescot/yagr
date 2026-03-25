@@ -141,6 +141,16 @@ export class YagrSetupApplicationService {
     };
   }
 
+  async hasAccountSession(provider: YagrModelProvider): Promise<boolean> {
+    if (provider === 'copilot-proxy') {
+      return (await ensureGitHubCopilotSession()) !== undefined;
+    }
+    if (provider === 'openai-proxy') {
+      return (await ensureOpenAiAccountSession()) !== undefined;
+    }
+    return false;
+  }
+
   async startAccountAuth(provider: YagrModelProvider) {
     if (provider === 'openai-proxy') {
       const session = await ensureOpenAiAccountSession();
