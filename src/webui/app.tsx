@@ -303,11 +303,18 @@ function SessionSidebar({
 
       <section className="panel sessionPanel">
         <div className="sectionHeader">
-          <div>
-            <p className="eyebrow">Session</p>
-            <h2>Runtime at a glance</h2>
-          </div>
-          <button className="primaryButton" type="button" onClick={onOpenSetup}>Open setup</button>
+          <p className="eyebrow">Session</p>
+          <button
+            className="gearButton"
+            type="button"
+            title="Open setup"
+            aria-label="Open setup"
+            onClick={onOpenSetup}
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clipRule="evenodd" />
+            </svg>
+          </button>
         </div>
 
         <div className="sessionFacts">
@@ -338,35 +345,29 @@ function SessionSidebar({
 }
 
 function SetupPageHeader({
-  snapshot,
   onBack,
-  onRefresh,
   themeMode,
   onThemeModeChange,
 }: {
-  snapshot?: ConfigSnapshot;
   onBack: () => void;
-  onRefresh: () => void;
   themeMode: ThemeMode;
   onThemeModeChange: (mode: ThemeMode) => void;
 }): React.JSX.Element {
   return (
-    <section className="panel setupHero">
-      <div>
-        <p className="eyebrow">Setup</p>
-        <h1>Runtime configuration</h1>
-        <p className="lede">A dedicated page for orchestrator, model selection, and optional messaging surfaces.</p>
+    <div className="setupHero">
+      <div className="setupHeroTopbar">
+        <button className="backButton" type="button" onClick={onBack}>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M10 3 L5 8 L10 13" />
+          </svg>
+          Back
+        </button>
+        <div className="setupHeroTopbarRight">
+          <ThemeSelector value={themeMode} onChange={onThemeModeChange} />
+        </div>
       </div>
-      <div className="chatHeroActions">
-        <ThemeSelector value={themeMode} onChange={onThemeModeChange} />
-        <button className="ghostButton" type="button" onClick={onBack}>Back to chat</button>
-        <button className="ghostButton" type="button" onClick={onRefresh}>Refresh state</button>
-      </div>
-      <div className="setupHeroMeta">
-        <span className="messageBadge phaseBadge">{snapshot?.setupStatus.ready ? 'Runtime ready' : 'Needs onboarding'}</span>
-        <span className="messageBadge quietBadge">{snapshot?.webui.url ?? '-'}</span>
-      </div>
-    </section>
+
+    </div>
   );
 }
 
@@ -505,18 +506,9 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
 }
 
 function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
-  const openWorkflow = React.useCallback(async () => {
-    const resolvedUrl = embed.targetUrl
-      ? `/open/n8n-workflow?target=${encodeURIComponent(embed.targetUrl)}`
-      : embed.url;
-    const popup = window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
-    if (popup) {
-      popup.opener = null;
-    }
-    if (!popup) {
-      window.location.href = resolvedUrl;
-    }
-  }, [embed.targetUrl, embed.url]);
+  const resolvedUrl = embed.targetUrl
+    ? `/open/n8n-workflow?target=${encodeURIComponent(embed.targetUrl)}`
+    : embed.url;
 
   return (
     <div className="workflowCard">
@@ -525,9 +517,14 @@ function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
           <span className="workflowBadge">Workflow</span>
           <span className="workflowTitle">{embed.title ?? `Workflow ${embed.workflowId}`}</span>
         </div>
-        <button className="primaryButton" type="button" onClick={() => { void openWorkflow(); }}>
+        <a
+          className="primaryButton"
+          href={resolvedUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           Open in n8n
-        </button>
+        </a>
       </div>
       {embed.diagram ? (
         <div className="workflowGraphWrap">
@@ -537,6 +534,19 @@ function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
     </div>
   );
 }
+
+// Pixel-art Y — grid 7×7, pitch 4 (3px pixel + 1px gap).
+// Diagonal arms: each row out from junction spreads 1 col further.
+// Build order: stem bottom → junction → inner arms → tips.
+const Y_PIXELS: Array<[col: number, row: number, delayMs: number]> = [
+  [3, 6,   0],                      // stem bottom
+  [3, 5,  90],                      // stem
+  [3, 4, 180],                      // stem
+  [3, 3, 270],                      // junction
+  [2, 2, 360], [4, 2, 360],         // inner arms
+  [1, 1, 450], [5, 1, 450],         // arms
+  [0, 0, 540], [6, 0, 540],         // tips
+];
 
 function MessageCard({ message, now }: { message: ChatMessage; now: number }): React.JSX.Element {
   const elapsed = message.streaming && message.startedAt ? formatElapsed(now - message.startedAt) : undefined;
@@ -561,9 +571,20 @@ function MessageCard({ message, now }: { message: ChatMessage; now: number }): R
       {message.role === 'assistant' && message.streaming ? (
         <div className="workbench compactWorkbench">
           <div className="workGlyph" aria-hidden="true">
-            <span className="workGlyphCore" />
-            <span className="workGlyphRing workGlyphRingA" />
-            <span className="workGlyphRing workGlyphRingB" />
+            {/* Pixel-art Y: 5-wide × 7-tall grid, builds bottom-to-top */}
+            <svg className="workGlyphSvg" viewBox="0 0 27 27" shapeRendering="crispEdges">
+              {Y_PIXELS.map(([col, row, delayMs], i) => (
+                <rect
+                  key={i}
+                  className="workGlyphPixel"
+                  x={col * 4}
+                  y={row * 4}
+                  width={3}
+                  height={3}
+                  style={{ animationDelay: `${delayMs}ms` }}
+                />
+              ))}
+            </svg>
           </div>
           <div className="workMeta">
             <strong>{message.statusLabel ?? 'Yagr is working…'}</strong>
@@ -750,13 +771,16 @@ function SetupPage({
 }): React.JSX.Element {
   const telegramLink = snapshot?.telegram.deepLink;
 
+  const modelRef = React.useRef(model);
+  React.useEffect(() => { modelRef.current = model; }, [model]);
+  const [modelDisplay, setModelDisplay] = React.useState(model);
+  React.useEffect(() => { setModelDisplay(model); }, [model]);
+
   return (
     <div className="shell shellSetup">
       <main className="setupStage">
         <SetupPageHeader
-          snapshot={snapshot}
           onBack={onBack}
-          onRefresh={onRefresh}
           themeMode={themeMode}
           onThemeModeChange={onThemeModeChange}
         />
@@ -812,7 +836,19 @@ function SetupPage({
               </label>
               <label>
                 <span>Model</span>
-                <input value={model} onChange={(event) => onModelChange(event.target.value)} type="text" list="llm-model-list" placeholder="gpt-5.1 / claude / gemini..." />
+                <input
+                  value={modelDisplay}
+                  type="text"
+                  list="llm-model-list"
+                  placeholder={model ? model : 'Load models or type an ID…'}
+                  onFocus={() => setModelDisplay('')}
+                  onChange={(e) => { setModelDisplay(e.target.value); onModelChange(e.target.value); }}
+                  onBlur={() => {
+                    window.setTimeout(() => {
+                      setModelDisplay((current) => current || modelRef.current);
+                    }, 100);
+                  }}
+                />
                 <datalist id="llm-model-list">
                   {availableModels.map((entry) => <option key={entry} value={entry} />)}
                 </datalist>
