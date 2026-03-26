@@ -16,6 +16,16 @@ yagr stop           # stop the background gateway
 yagr gateway status # check whether a daemon is currently running
 ```
 
+## TUI session commands
+
+These commands are available inside an active `yagr tui` session:
+
+```
+/sessions           # list past TUI sessions (title, message count, date)
+/resume <id>        # restore a past session by its ID prefix
+/reset              # clear the current conversation
+```
+
 ## Telegram
 
 ```bash

@@ -13,7 +13,8 @@ The goal is not to expose every primitive of the underlying stack. The goal is t
 
 Yagr can be reached through several surfaces:
 
-- **TUI / local interactive mode** for direct operator control
+- **Web UI** for browser-based local interaction with session history
+- **TUI / local interactive mode** for direct operator control in the terminal
 - **Telegram** for remote chat-based interaction
 - **CLI and backend integration** so Yagr can operate on the actual automation workspace
 
@@ -42,8 +43,17 @@ The workflows it creates already are memory:
 - user configuration should not depend on shell-local environment variables
 - execution is delegated to the orchestrator boundary, not embedded into the agent brain
 
+## Session persistence
+
+All surfaces share the same session storage. Conversations are saved automatically to `~/.yagr/sessions/` and survive process restarts. Each surface manages session history in its own way:
+
+- **Web UI**: sidebar panel with click-to-restore
+- **TUI**: `/sessions` and `/resume <id>` commands
+- **Telegram**: per-chat automatic restore on bot restart
+
 ## Related guides
 
+- [Web UI](/docs/usage/webui)
 - [Telegram](/docs/usage/telegram)
 - [TUI](/docs/usage/tui)
 - [Execution orchestrators](/docs/usage/n8n-backend)

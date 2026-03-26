@@ -43,3 +43,11 @@ yagr telegram onboarding
 ```
 
 Linked chats are persisted in the Yagr runtime configuration. That linked chat is then just another place where intent can enter the agent loop and be turned into workflows.
+
+## Session persistence
+
+Yagr automatically saves each conversation to disk. When the bot restarts, every linked chat picks up right where it stopped — no action needed from the user.
+
+Each chat has its own session stored under `~/.yagr/sessions/`. Conversation history is reloaded on the first message after a restart, before the agent processes any new request.
+
+To clear a chat's history and start fresh, use `yagr telegram reset`. This removes the session from disk along with the Telegram configuration.
