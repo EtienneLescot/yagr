@@ -3,7 +3,7 @@ import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
-import type { YagrSessionAgent } from '../agent.js';
+import { YagrSessionAgent } from '../agent.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
@@ -29,6 +29,9 @@ import type {
   YagrStateEvent,
   YagrToolEvent,
 } from '../types.js';
+import type { SessionStore } from '../session/session-store.js';
+import { createSession, deriveSessionTitle } from '../session/session-store.js';
+import type { EngineRuntimePort } from '../engine/engine.js';
 
 type FeedLane = 'user' | 'narrative' | 'action' | 'result' | 'interrupt';
 
@@ -51,6 +54,15 @@ type HistoryLine = {
 type InteractiveAppProps = {
   agent: YagrSessionAgent;
   options: YagrRunOptions;
+  /** Optional session persistence. When provided, sessions are saved after each run. */
+  sessionStore?: SessionStore;
+  sessionId?: string;
+  /**
+   * Factory to create a new agent with restored history.
+   * Required to support `/resume <sessionId>` in the TUI.
+   */
+  createAgentWithHistory?: (engine: EngineRuntimePort, messages: readonly import('ai').CoreMessage[]) => YagrSessionAgent;
+  enginePort?: EngineRuntimePort;
 };
 
 const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
@@ -400,7 +412,7 @@ function WorkflowBanner({ embeds }: { embeds: WorkflowEmbed[] }): JSX.Element | 
   );
 }
 
-function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
+function YagrInteractiveApp({ agent, options, sessionStore, sessionId: initialSessionId, enginePort }: InteractiveAppProps) {
   const app = useApp();
   const { stdout } = useStdout();
   const [inputVersion, setInputVersion] = useState(0);
@@ -421,6 +433,9 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   const [workflowEmbeds, setWorkflowEmbeds] = useState<WorkflowEmbed[]>([]);
   const nextEntryIdRef = useRef(1);
   const commandBuffersRef = useRef({ stdout: '', stderr: '', command: '', toolName: '' });
+  // Mutable refs for agent and session ID so /resume can swap them without re-rendering the whole app.
+  const agentRef = useRef<YagrSessionAgent>(agent);
+  const sessionIdRef = useRef<string | undefined>(initialSessionId);
   const workspaceLabel = useMemo(() => basename(getYagrN8nWorkspaceDir()), []);
 
   useEffect(() => {
@@ -551,7 +566,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     setWorkflowEmbeds([]);
 
     try {
-      const result = await agent.run(prompt, {
+      const result = await agentRef.current.run(prompt, {
         ...options,
         satisfiedRequiredActionIds: approvedRequiredActionIds,
         onCompaction: handleCompaction,
@@ -606,6 +621,20 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
       setCurrentPhase(null);
       setPendingRequiredActions(result.requiredActions);
 
+      // Persist session
+      if (sessionStore) {
+        const messages = agentRef.current.messages;
+        const sid = sessionIdRef.current;
+        if (sid && messages.length > 0) {
+          const existing = sessionStore.get(sid);
+          if (existing) {
+            sessionStore.save({ ...existing, updatedAt: new Date().toISOString(), title: deriveSessionTitle(messages), messages: [...messages] });
+          } else {
+            sessionStore.save({ ...createSession('tui', 'default', messages), id: sid });
+          }
+        }
+      }
+
       if (result.requiredActions.length > 0) {
         for (const action of result.requiredActions) {
           pushEntry('interrupt', 'Action required', formatRequiredAction(action));
@@ -628,7 +657,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     } finally {
       setIsRunning(false);
     }
-  }, [agent, approvedRequiredActionIds, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, handleCompaction, handleToolEvent, options, pushEntry]);
+  }, [approvedRequiredActionIds, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, handleCompaction, handleToolEvent, options, pushEntry, sessionStore]);
 
   const submitPrompt = useCallback(async (rawPrompt: string) => {
     const prompt = rawPrompt.trim();
@@ -644,7 +673,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
 
     if (prompt === '/reset') {
-      agent.clearConversation();
+      agentRef.current.clearConversation();
       setFeed([]);
       setPendingRequiredActions([]);
       setApprovedRequiredActionIds([]);
@@ -657,6 +686,68 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
       setActiveOperationText('Ready for a request.');
       setWorkflowEmbeds([]);
       commandBuffersRef.current = { stdout: '', stderr: '', command: '', toolName: '' };
+      return;
+    }
+
+    if (prompt === '/sessions') {
+      if (!sessionStore) {
+        pushEntry('narrative', 'Sessions', 'Session persistence is not enabled in this TUI session.');
+        return;
+      }
+
+      const sessions = sessionStore.list('tui');
+      if (sessions.length === 0) {
+        pushEntry('narrative', 'Sessions', 'No saved TUI sessions found.');
+        return;
+      }
+
+      const lines = sessions.map((s, i) => {
+        const date = new Date(s.updatedAt).toLocaleString();
+        return `  [${i + 1}] ${s.id.slice(0, 8)}  ${s.title}  (${s.messageCount} messages, ${date})`;
+      });
+      pushEntry('narrative', 'Saved sessions', lines.join('\n'));
+      pushEntry('narrative', 'Resume a session', 'Type /resume <sessionId> to restore a session.');
+      return;
+    }
+
+    if (prompt.startsWith('/resume ')) {
+      const resumeId = prompt.slice('/resume '.length).trim();
+      if (!resumeId) {
+        pushEntry('interrupt', 'Resume', 'Usage: /resume <sessionId>');
+        return;
+      }
+
+      if (!sessionStore) {
+        pushEntry('interrupt', 'Resume', 'Session persistence is not enabled in this TUI session.');
+        return;
+      }
+
+      if (!enginePort) {
+        pushEntry('interrupt', 'Resume', 'Cannot resume: engine is not available for session restoration.');
+        return;
+      }
+
+      const persisted = sessionStore.get(resumeId);
+      if (!persisted) {
+        pushEntry('interrupt', 'Resume', `Session not found: ${resumeId}`);
+        return;
+      }
+
+      agentRef.current = new YagrSessionAgent(enginePort, { initialHistory: persisted.messages });
+      sessionIdRef.current = persisted.id;
+      setFeed([]);
+      setPendingRequiredActions([]);
+      setApprovedRequiredActionIds([]);
+      setCurrentState('idle');
+      setCurrentPhase(null);
+      setLiveAssistantText('');
+      setLatestAssistantText('');
+      setLastUserPrompt('');
+      setWorkflowEmbeds([]);
+      commandBuffersRef.current = { stdout: '', stderr: '', command: '', toolName: '' };
+      pushEntry('result', 'Session restored', `Resumed "${persisted.title}" (${persisted.messages.length} messages in context).`);
+      setPhaseStatusText('Session restored.');
+      setActiveOperationText(`Resumed: ${persisted.title}`);
       return;
     }
 
@@ -721,7 +812,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
 
     await runPrompt(prompt);
-  }, [agent, app, isRunning, pendingRequiredActions, pushEntry, runPrompt, workflowEmbeds]);
+  }, [app, isRunning, pendingRequiredActions, pushEntry, runPrompt, sessionStore, workflowEmbeds, enginePort]);
 
   useInput((inputKey, key) => {
     if (key.ctrl && inputKey === 'c') {
@@ -860,11 +951,28 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   );
 }
 
-export async function runInteractiveGateway(agent: YagrSessionAgent, options: YagrRunOptions): Promise<void> {
+export interface InteractiveGatewaySession {
+  sessionId: string;
+  sessionStore: SessionStore;
+  enginePort: EngineRuntimePort;
+}
+
+export async function runInteractiveGateway(
+  agent: YagrSessionAgent,
+  options: YagrRunOptions,
+  session?: InteractiveGatewaySession,
+): Promise<void> {
   await ensureLocalWorkflowOpenBridgeRunning();
-  const ink = render(<YagrInteractiveApp agent={agent} options={options} />, {
-    exitOnCtrlC: false,
-  });
+  const ink = render(
+    <YagrInteractiveApp
+      agent={agent}
+      options={options}
+      sessionStore={session?.sessionStore}
+      sessionId={session?.sessionId}
+      enginePort={session?.enginePort}
+    />,
+    { exitOnCtrlC: false },
+  );
 
   await ink.waitUntilExit();
 }

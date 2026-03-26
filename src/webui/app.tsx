@@ -278,12 +278,20 @@ function SessionSidebar({
   onOpenSetup,
   themeMode,
   onThemeModeChange,
+  sessionHistory,
+  activeSessionId,
+  onSwitchSession,
+  onNewSession,
 }: {
   snapshot?: ConfigSnapshot;
   busyLabel?: string;
   onOpenSetup: () => void;
   themeMode: ThemeMode;
   onThemeModeChange: (mode: ThemeMode) => void;
+  sessionHistory: import('./store.js').SessionHistoryEntry[];
+  activeSessionId: string;
+  onSwitchSession: (sessionId: string) => void;
+  onNewSession: () => void;
 }): React.JSX.Element {
   return (
     <aside className="sidebar sidebarHome">
@@ -338,6 +346,39 @@ function SessionSidebar({
             <strong>{snapshot?.gatewayStatus.enabledSurfaces.length ?? 0} enabled</strong>
             <span className="muted">Telegram chats: {snapshot?.telegram.linkedChats.length ?? 0}</span>
           </article>
+        </div>
+      </section>
+
+      <section className="panel historyPanel">
+        <div className="sectionHeader">
+          <p className="eyebrow">History</p>
+          <button
+            className="ghostButton newChatButton"
+            type="button"
+            title="Start new conversation"
+            onClick={onNewSession}
+          >
+            +
+          </button>
+        </div>
+        <div className="historyList">
+          {sessionHistory.length === 0 && (
+            <p className="muted historyEmpty">No past conversations yet.</p>
+          )}
+          {sessionHistory.map((session) => (
+            <button
+              key={session.id}
+              type="button"
+              className={`historyItem${session.id === activeSessionId ? ' historyItemActive' : ''}`}
+              onClick={() => onSwitchSession(session.id)}
+            >
+              <span className="historyItemTitle">{session.title}</span>
+              <span className="historyItemMeta">
+                {new Date(session.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                {' · '}{session.messageCount} msg
+              </span>
+            </button>
+          ))}
         </div>
       </section>
     </aside>
@@ -638,6 +679,10 @@ function HomePage({
   chatLogRef,
   themeMode,
   onThemeModeChange,
+  sessionHistory,
+  activeSessionId,
+  onSwitchSession,
+  onNewSession,
 }: {
   snapshot?: ConfigSnapshot;
   messages: ChatMessage[];
@@ -653,6 +698,10 @@ function HomePage({
   chatLogRef: React.RefObject<HTMLDivElement | null>;
   themeMode: ThemeMode;
   onThemeModeChange: (mode: ThemeMode) => void;
+  sessionHistory: import('./store.js').SessionHistoryEntry[];
+  activeSessionId: string;
+  onSwitchSession: (sessionId: string) => void;
+  onNewSession: () => void;
 }): React.JSX.Element {
   return (
     <div className="shell shellHome">
@@ -662,6 +711,10 @@ function HomePage({
         onOpenSetup={onOpenSetup}
         themeMode={themeMode}
         onThemeModeChange={onThemeModeChange}
+        sessionHistory={sessionHistory}
+        activeSessionId={activeSessionId}
+        onSwitchSession={onSwitchSession}
+        onNewSession={onNewSession}
       />
 
       <main className="chatStage">
@@ -920,6 +973,10 @@ function App() {
     appendMessageText,
     pushMessageProgress,
     resetMessages,
+    setMessages,
+    sessionHistory,
+    setSessionHistory,
+    switchSession,
   } = useWebUiStore();
 
   const notify = useNotice();
@@ -1020,6 +1077,66 @@ function App() {
   React.useEffect(() => {
     void refreshConfig();
   }, [refreshConfig]);
+
+  const refreshSessions = React.useCallback(async () => {
+    try {
+      const result = await request<{ sessions: import('./store.js').SessionHistoryEntry[] }>('/api/sessions');
+      setSessionHistory(result.sessions);
+    } catch {
+      // Non-critical — session history is best-effort.
+    }
+  }, [setSessionHistory]);
+
+  React.useEffect(() => {
+    void refreshSessions();
+  }, [refreshSessions, sessionId]);
+
+  const onSwitchSession = React.useCallback((targetSessionId: string) => {
+    if (activeStreamRef.current) {
+      return; // Don't switch while a run is active.
+    }
+
+    switchSession(targetSessionId); // resets messages to "Loading session…" + updates localStorage
+
+    // Load and display past messages from the persisted session
+    void (async () => {
+      try {
+        const session = await request<{ messages: Array<{ role: string; content: unknown }> }>(`/api/sessions/${targetSessionId}`);
+        const chatMessages = session.messages.flatMap((m) => {
+          if (m.role !== 'user' && m.role !== 'assistant') return [];
+          const text = typeof m.content === 'string'
+            ? m.content
+            : Array.isArray(m.content)
+              ? (m.content as Array<{ type: string; text?: string }>)
+                  .filter((p) => p.type === 'text')
+                  .map((p) => p.text ?? '')
+                  .join('')
+              : '';
+          if (!text) return [];
+          return [{ id: crypto.randomUUID(), role: m.role as 'user' | 'assistant', text }];
+        });
+        if (chatMessages.length > 0) {
+          setMessages(chatMessages);
+        } else {
+          setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Session restored. Continue the conversation.' }]);
+        }
+      } catch {
+        // Non-critical — fall back to blank slate if the session data can't be fetched.
+        setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Session restored.' }]);
+      } finally {
+        void refreshSessions();
+      }
+    })();
+  }, [switchSession, refreshSessions, setMessages]);
+
+  const onNewSession = React.useCallback(() => {
+    if (activeStreamRef.current) {
+      return;
+    }
+
+    const newId = crypto.randomUUID();
+    switchSession(newId);
+  }, [switchSession]);
 
   const onLoadProjects = async () => {
     setBusyLabel('Loading n8n projects...');
@@ -1145,6 +1262,7 @@ function App() {
         body: JSON.stringify({ sessionId }),
       });
       resetMessages();
+      void refreshSessions();
       notify('Conversation reset.');
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error), 'error');
@@ -1380,6 +1498,10 @@ function App() {
       chatLogRef={chatLogRef}
       themeMode={themeMode}
       onThemeModeChange={setThemeMode}
+      sessionHistory={sessionHistory}
+      activeSessionId={sessionId}
+      onSwitchSession={onSwitchSession}
+      onNewSession={onNewSession}
     />
   );
 }

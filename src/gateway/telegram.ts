@@ -4,6 +4,7 @@ import { Telegraf } from 'telegraf';
 import { YagrSessionAgent } from '../agent.js';
 import { YagrConfigService, type YagrConfigStoreLike, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { getYagrPaths } from '../config/yagr-home.js';
 import type { EngineRuntimePort } from '../engine/engine.js';
 import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
@@ -22,6 +23,7 @@ import {
   escapeHtml,
 } from './format-message.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
+import { SessionStore, createSession, deriveSessionTitle } from '../session/session-store.js';
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 
@@ -251,6 +253,7 @@ class TelegramGateway implements Gateway {
   private readonly agents = new Map<string, YagrSessionAgent>();
   private readonly runningChats = new Set<string>();
   private readonly pendingApprovals = new Map<string, YagrRequiredAction[]>();
+  private readonly sessionStore: SessionStore;
   private enginePromise?: Promise<EngineRuntimePort>;
   private stopped = false;
   private readonly setupService: YagrSetupApplicationService;
@@ -264,6 +267,7 @@ class TelegramGateway implements Gateway {
   ) {
     this.bot = new Telegraf(botToken);
     this.setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
+    this.sessionStore = new SessionStore(getYagrPaths().sessionsDir);
   }
 
   private buildDeepLink(): string {
@@ -474,12 +478,18 @@ class TelegramGateway implements Gateway {
       return existing;
     }
 
-    const next = new YagrSessionAgent(await this.getEngine());
+    const engine = await this.getEngine();
+    const persisted = this.sessionStore.findLatestByGatewayKey('telegram', chatId);
+    const next = new YagrSessionAgent(engine, { initialHistory: persisted?.messages });
     this.agents.set(chatId, next);
     return next;
   }
 
   private resetChatSession(chatId: string): void {
+    const persisted = this.sessionStore.findLatestByGatewayKey('telegram', chatId);
+    if (persisted) {
+      this.sessionStore.delete(persisted.id);
+    }
     this.agents.delete(chatId);
     this.pendingApprovals.delete(chatId);
   }
@@ -511,7 +521,8 @@ class TelegramGateway implements Gateway {
 
       const embeds: WorkflowEmbed[] = [];
       const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
-      const result = await (await this.getAgent(chatId)).run(prompt, {
+      const agent = await this.getAgent(chatId);
+      const result = await agent.run(prompt, {
         ...this.options,
         provider: resolvedConfig.provider,
         model: resolvedConfig.model,
@@ -534,6 +545,8 @@ class TelegramGateway implements Gateway {
           await this.options.onToolEvent?.(event);
         },
       });
+
+      this.persistSession(chatId, agent);
 
       if (result.requiredActions.length > 0) {
         this.pendingApprovals.set(chatId, result.requiredActions);
@@ -563,6 +576,25 @@ class TelegramGateway implements Gateway {
       await reply(`Run failed: ${message}`);
     } finally {
       this.runningChats.delete(chatId);
+    }
+  }
+
+  private persistSession(chatId: string, agent: YagrSessionAgent): void {
+    const messages = agent.messages;
+    if (messages.length === 0) {
+      return;
+    }
+
+    const existing = this.sessionStore.findLatestByGatewayKey('telegram', chatId);
+    if (existing) {
+      this.sessionStore.save({
+        ...existing,
+        updatedAt: new Date().toISOString(),
+        title: deriveSessionTitle(messages),
+        messages: [...messages],
+      });
+    } else {
+      this.sessionStore.save(createSession('telegram', chatId, messages));
     }
   }
 }

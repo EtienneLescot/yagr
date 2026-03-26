@@ -575,9 +575,13 @@ async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigS
 }
 
 async function runTui(args: ParsedArgs): Promise<void> {
+  const { randomUUID } = await import('node:crypto');
+  const { SessionStore } = await import('./session/session-store.js');
   const engine = await createN8nEngineFromWorkspace();
   const agent = new YagrAgent(engine);
   const { runCliGateway } = await import('./gateway/cli.js');
+  const sessionStore = new SessionStore(getYagrPaths().sessionsDir);
+  const sessionId = randomUUID();
 
   await runCliGateway(agent, {
     prompt: args.prompt,
@@ -588,6 +592,11 @@ async function runTui(args: ParsedArgs): Promise<void> {
     display: {
       showThinking: args.showThinking,
       showExecution: args.showExecution,
+    },
+    session: {
+      sessionId,
+      sessionStore,
+      enginePort: engine,
     },
   });
 }
