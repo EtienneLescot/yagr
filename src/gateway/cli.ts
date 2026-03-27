@@ -1,7 +1,7 @@
 import { YagrSessionAgent } from '../agent.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
-import { runInteractiveGateway } from './interactive-ui.js';
+import { runInteractiveGateway, type InteractiveGatewaySession } from './interactive-ui.js';
 import { resolveLanguageModelConfig, resolveModelProvider, type YagrModelProvider } from '../llm/create-language-model.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRunOptions } from '../types.js';
@@ -9,6 +9,8 @@ import type { YagrRunOptions } from '../types.js';
 export interface CliGatewayOptions extends YagrRunOptions {
   prompt?: string;
   interactive?: boolean;
+  /** Optional session persistence for the TUI. */
+  session?: InteractiveGatewaySession;
 }
 
 async function ensureProvider(options: CliGatewayOptions): Promise<YagrModelProvider> {
@@ -63,5 +65,5 @@ export async function runCliGateway(agent: YagrSessionAgent, options: CliGateway
     return;
   }
 
-  await runInteractiveGateway(agent, effectiveOptions);
+  await runInteractiveGateway(agent, effectiveOptions, options.session);
 }

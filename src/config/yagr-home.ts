@@ -11,6 +11,7 @@ export interface YagrPaths {
   managedN8nDir: string;
   proxyRuntimeDir: string;
   accountAuthDir: string;
+  sessionsDir: string;
   homeInstructionsPath: string;
   workspaceInstructionsPath: string;
   yagrConfigPath: string;
@@ -115,6 +116,7 @@ export function getYagrPaths(): YagrPaths {
     managedN8nDir,
     proxyRuntimeDir,
     accountAuthDir,
+    sessionsDir: path.join(homeDir, 'sessions'),
     homeInstructionsPath: path.join(homeDir, 'AGENTS.md'),
     workspaceInstructionsPath: path.join(n8nWorkspaceDir, 'AGENTS.md'),
     yagrConfigPath: path.join(homeDir, 'yagr-config.json'),

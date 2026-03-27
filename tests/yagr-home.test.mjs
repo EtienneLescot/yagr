@@ -72,6 +72,7 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
     assert.equal(paths.yagrCredentialsPath, path.join(paths.homeDir, 'credentials.json'));
     assert.equal(paths.n8nConfigPath, path.join(paths.n8nWorkspaceDir, 'n8nac-config.json'));
     assert.equal(paths.n8nCredentialsPath, path.join(paths.homeDir, 'n8n-credentials.json'));
+    assert.equal(paths.sessionsDir, path.join(paths.homeDir, 'sessions'));
   } finally {
     if (previousYagrHome !== undefined) {
       process.env.YAGR_HOME = previousYagrHome;

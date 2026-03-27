@@ -167,7 +167,7 @@ button, input, select, textarea { font: inherit; }
 
 .shellHome {
   display: grid;
-  grid-template-columns: minmax(14rem, 16rem) minmax(0, 1fr);
+  grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr);
   gap: 1.25rem;
   height: calc(100vh - 2.5rem);
   overflow: hidden;
@@ -190,6 +190,11 @@ button, input, select, textarea { font: inherit; }
   align-content: stretch;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Home layout: brandCard (auto) → sessionPanel (auto, compact facts) → historyPanel (fills remaining) */
+.sidebarHome {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .panel {
@@ -379,9 +384,10 @@ label span,
 
 .sessionPanel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   gap: 1rem;
   min-height: 0;
+  padding-bottom: 0.25rem;
 }
 
 .sessionFacts {
@@ -1120,4 +1126,113 @@ button {
 .workflowDiagram {
   margin: 0;
   color: var(--workflow-title-ink);
+}
+
+
+/* ── Session history panel ──────────────────────────────────────── */
+
+.historyPanel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.historyPanel .sectionHeader {
+  padding: 0.75rem 1rem 0.5rem;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.historyPanel .sectionHeader .eyebrow {
+  margin: 0;
+}
+
+.newChatButton {
+  padding: 0.25rem 0.55rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  border-radius: 0.35rem;
+  font-weight: 700;
+  color: var(--violet);
+  border-color: var(--panel-border);
+}
+
+.newChatButton:hover {
+  background: var(--panel-strong);
+  color: var(--ink);
+}
+
+.historyList {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0.35rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-border-strong) transparent;
+}
+
+.historyList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.historyList::-webkit-scrollbar-thumb {
+  background: var(--panel-border-strong);
+  border-radius: 999px;
+}
+
+.historyEmpty {
+  padding: 0.75rem 1rem;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.historyItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 1rem;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  width: 100%;
+}
+
+.historyItem:hover {
+  background: var(--panel-strong);
+}
+
+.historyItemActive {
+  background: var(--panel-soft);
+  border-left: 2px solid var(--violet);
+  padding-left: calc(1rem - 2px);
+}
+
+.historyItemActive:hover {
+  background: var(--panel-soft);
+}
+
+.historyItemTitle {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.historyItemMeta {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

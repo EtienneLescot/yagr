@@ -20,6 +20,7 @@ const sidebars: SidebarsConfig = {
         id: 'usage/index',
       },
       items: [
+        'usage/webui',
         'usage/telegram',
         'usage/tui',
         'usage/n8n-backend',

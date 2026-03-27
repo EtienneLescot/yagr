@@ -10,6 +10,7 @@ import {
 import { YagrSessionAgent } from '../agent.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService, type YagrConfigStoreLike } from '../config/yagr-config-service.js';
+import { getYagrPaths } from '../config/yagr-home.js';
 import type { EngineRuntimePort } from '../engine/engine.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
@@ -33,6 +34,8 @@ import {
   mapStateEventToUserVisibleUpdate,
   mapToolEventToUserVisibleUpdate,
 } from '../runtime/user-visible-updates.js';
+import { SessionStore, createSession, deriveSessionTitle } from '../session/session-store.js';
+import type { SerializedChatMessage, SessionSummary } from '../session/session-types.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -188,6 +191,7 @@ class WebUiGateway implements Gateway {
   private server?: Server;
   private enginePromise?: Promise<EngineRuntimePort>;
   private readonly agents = new Map<string, YagrSessionAgent>();
+  private readonly sessionStore: SessionStore;
   private readonly setupService: YagrSetupApplicationService;
 
   constructor(
@@ -199,6 +203,7 @@ class WebUiGateway implements Gateway {
     this.setupService = new YagrSetupApplicationService(this.configService, new YagrN8nConfigService(), {
       resolveTelegramIdentity: resolveTelegramBotIdentity,
     });
+    this.sessionStore = new SessionStore(getYagrPaths().sessionsDir);
   }
 
   async start(): Promise<void> {
@@ -372,6 +377,7 @@ class WebUiGateway implements Gateway {
         apiKey: resolvedConfig.apiKey,
         baseUrl: resolvedConfig.baseUrl,
       });
+      this.persistSession(sessionId, agent);
       this.sendJson(response, 200, {
         sessionId,
         response: result.text,
@@ -398,7 +404,47 @@ class WebUiGateway implements Gateway {
       const sessionId = String(body.sessionId ?? '');
       if (sessionId) {
         this.agents.delete(sessionId);
+        this.sessionStore.delete(sessionId);
       }
+      this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/sessions') {
+      const sessions: SessionSummary[] = this.sessionStore.list('webui');
+      this.sendJson(response, 200, { sessions });
+      return;
+    }
+
+    if (method === 'GET' && url.pathname.startsWith('/api/sessions/')) {
+      const sessionId = url.pathname.slice('/api/sessions/'.length);
+      const session = this.sessionStore.get(sessionId);
+      if (!session) {
+        this.sendJson(response, 404, { error: 'Session not found.' });
+        return;
+      }
+      this.sendJson(response, 200, session);
+      return;
+    }
+
+    if (method === 'DELETE' && url.pathname.startsWith('/api/sessions/')) {
+      const sessionId = url.pathname.slice('/api/sessions/'.length);
+      this.agents.delete(sessionId);
+      this.sessionStore.delete(sessionId);
+      this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (method === 'PATCH' && url.pathname.startsWith('/api/sessions/')) {
+      const sessionId = url.pathname.slice('/api/sessions/'.length);
+      const body = await this.readJson(request);
+      const displayMessages = body.displayMessages as SerializedChatMessage[] | undefined;
+      if (!Array.isArray(displayMessages)) {
+        this.sendJson(response, 400, { error: 'displayMessages must be an array.' });
+        return;
+      }
+
+      this.sessionStore.setDisplayMessages(sessionId, displayMessages);
       this.sendJson(response, 200, { ok: true });
       return;
     }
@@ -480,9 +526,34 @@ class WebUiGateway implements Gateway {
     }
 
     const engine = await this.enginePromise;
-    const agent = new YagrSessionAgent(engine);
+    const persisted = this.sessionStore.get(sessionId);
+    const agent = new YagrSessionAgent(engine, {
+      initialHistory: persisted?.messages,
+    });
     this.agents.set(sessionId, agent);
     return agent;
+  }
+
+  private persistSession(sessionId: string, agent: YagrSessionAgent): void {
+    const messages = agent.messages;
+    if (messages.length === 0) {
+      return;
+    }
+
+    const existing = this.sessionStore.get(sessionId);
+    if (existing) {
+      this.sessionStore.save({
+        ...existing,
+        updatedAt: new Date().toISOString(),
+        title: deriveSessionTitle(messages),
+        messages: [...messages],
+      });
+    } else {
+      this.sessionStore.save({
+        ...createSession('webui', sessionId, messages),
+        id: sessionId,
+      });
+    }
   }
 
   private async readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -605,6 +676,8 @@ class WebUiGateway implements Gateway {
       });
     };
 
+    let agent: YagrSessionAgent | undefined;
+
     try {
       writeEvent({
         type: 'start',
@@ -612,7 +685,7 @@ class WebUiGateway implements Gateway {
         message: 'Run started. Inspecting workspace and request.',
       });
 
-      const agent = await this.resolveAgent(sessionId);
+      agent = await this.resolveAgent(sessionId);
       const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
       const result = await agent.run(message, {
         ...this.options,
@@ -655,9 +728,13 @@ class WebUiGateway implements Gateway {
           message: action.message,
         })),
       });
+      this.persistSession(sessionId, agent);
     } catch (error) {
       if (isAbortError(error)) {
         runFinished = true;
+        if (agent) {
+          this.persistSession(sessionId, agent);
+        }
         writeEvent({
           type: 'final',
           sessionId,

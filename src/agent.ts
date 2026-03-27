@@ -16,17 +16,25 @@ type YagrRunEngineLike = Pick<YagrRunEngine, 'execute'>;
 interface YagrSessionAgentDependencies {
   buildPromptSnapshot?: (engine: EngineIdentityPort) => SystemPromptSnapshot;
   createRunner?: (engine: EngineRuntimePort, history: readonly CoreMessage[], systemPrompt: string) => YagrRunEngineLike;
+  /** Seed the session with existing messages when restoring a persisted session. */
+  initialHistory?: readonly CoreMessage[];
 }
 
 export class YagrSessionAgent {
-  private readonly history: CoreMessage[] = [];
+  private readonly history: CoreMessage[];
   private promptSnapshot: SystemPromptSnapshot;
 
   constructor(
     protected readonly runtimeEngine: EngineRuntimePort,
     private readonly dependencies: YagrSessionAgentDependencies = {},
   ) {
+    this.history = dependencies.initialHistory ? [...dependencies.initialHistory] : [];
     this.promptSnapshot = this.createPromptSnapshot();
+  }
+
+  /** Read-only view of the current conversation messages. */
+  get messages(): readonly CoreMessage[] {
+    return this.history;
   }
 
   async run(prompt: string, options: YagrRunOptions = {}): Promise<YagrRunResult> {
