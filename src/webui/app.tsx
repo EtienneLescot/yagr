@@ -1082,19 +1082,18 @@ function App() {
     try {
       const result = await request<{ sessions: import('./store.js').SessionHistoryEntry[] }>('/api/sessions');
       const sessions = result.sessions;
-      // If the active session hasn't been persisted yet (no messages sent, no file on disk),
-      // keep it visible in the list as a placeholder so the user always sees their current session.
+      // Invariant: the active session must always appear in the list, even if it hasn't
+      // been persisted yet (no messages sent → no file on disk).
       const currentId = useWebUiStore.getState().sessionId;
-      const alreadyListed = sessions.some((s) => s.id === currentId);
-      if (!alreadyListed) {
-        const existing = useWebUiStore.getState().sessionHistory.find((s) => s.id === currentId);
-        setSessionHistory([
-          existing ?? { id: currentId, title: 'New conversation', updatedAt: new Date().toISOString(), messageCount: 0 },
-          ...sessions,
-        ]);
-      } else {
-        setSessionHistory(sessions);
+      if (!sessions.some((s) => s.id === currentId)) {
+        sessions.unshift({
+          id: currentId,
+          title: 'New conversation',
+          updatedAt: new Date().toISOString(),
+          messageCount: 0,
+        });
       }
+      setSessionHistory(sessions);
     } catch {
       // Non-critical — session history is best-effort.
     }
@@ -1166,13 +1165,12 @@ function App() {
 
     const newId = crypto.randomUUID();
     switchSession(newId);
-    // Prepend the new session immediately so it shows as active before the first message.
-    // The entry will be replaced with real data by refreshSessions() after the first run.
-    setSessionHistory([
-      { id: newId, title: 'New conversation', updatedAt: new Date().toISOString(), messageCount: 0 },
-      ...useWebUiStore.getState().sessionHistory,
-    ]);
-  }, [switchSession, setSessionHistory]);
+    // Override the generic "Loading session…" text that switchSession sets —
+    // for a brand-new session there is nothing to load.
+    setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'New conversation. How can Yagr help?', progress: [] }]);
+    // refreshSessions fires via the useEffect below when sessionId changes;
+    // it will add a placeholder for this session since it doesn't exist on disk yet.
+  }, [switchSession, setMessages]);
 
   const onLoadProjects = async () => {
     setBusyLabel('Loading n8n projects...');
