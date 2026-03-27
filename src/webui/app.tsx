@@ -1101,28 +1101,45 @@ function App() {
     // Load and display past messages from the persisted session
     void (async () => {
       try {
-        const session = await request<{ messages: Array<{ role: string; content: unknown }> }>(`/api/sessions/${targetSessionId}`);
-        const chatMessages = session.messages.flatMap((m) => {
-          if (m.role !== 'user' && m.role !== 'assistant') return [];
-          const text = typeof m.content === 'string'
-            ? m.content
-            : Array.isArray(m.content)
-              ? (m.content as Array<{ type: string; text?: string }>)
-                  .filter((p) => p.type === 'text')
-                  .map((p) => p.text ?? '')
-                  .join('')
-              : '';
-          if (!text) return [];
-          return [{ id: crypto.randomUUID(), role: m.role as 'user' | 'assistant', text }];
-        });
-        if (chatMessages.length > 0) {
-          setMessages(chatMessages);
+        const session = await request<{
+          messages: Array<{ role: string; content: unknown }>;
+          displayMessages?: import('../session/session-types.js').SerializedChatMessage[];
+        }>(`/api/sessions/${targetSessionId}`);
+
+        if (session.displayMessages && session.displayMessages.length > 0) {
+          // Preferred path: restore the rich display log saved after each run.
+          setMessages(
+            session.displayMessages.map((m) => ({
+              ...m,
+              id: crypto.randomUUID(),
+              streaming: false,
+              progress: m.progress ?? [],
+            }))
+          );
         } else {
-          setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Session restored. Continue the conversation.' }]);
+          // Fallback: reconstruct from CoreMessage[] (plain text only).
+          const chatMessages = session.messages.flatMap((m) => {
+            if (m.role !== 'user' && m.role !== 'assistant') return [];
+            const text = typeof m.content === 'string'
+              ? m.content
+              : Array.isArray(m.content)
+                ? (m.content as Array<{ type: string; text?: string }>)
+                    .filter((p) => p.type === 'text')
+                    .map((p) => p.text ?? '')
+                    .join('')
+                : '';
+            if (!text) return [];
+            return [{ id: crypto.randomUUID(), role: m.role as 'user' | 'assistant', text, progress: [] as import('./store.js').ChatProgressEntry[] }];
+          });
+          setMessages(
+            chatMessages.length > 0
+              ? chatMessages
+              : [{ id: crypto.randomUUID(), role: 'system', text: 'Session restored. Continue the conversation.', progress: [] }]
+          );
         }
       } catch {
-        // Non-critical — fall back to blank slate if the session data can't be fetched.
-        setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Session restored.' }]);
+        // Non-critical — fall back to blank slate.
+        setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Session restored.', progress: [] }]);
       } finally {
         void refreshSessions();
       }
@@ -1429,6 +1446,32 @@ function App() {
     } finally {
       activeStreamRef.current = null;
       setBusyLabel(undefined);
+      // Persist the rich display messages then refresh the sidebar history.
+      // persistSession() is synchronous server-side and runs before the final event
+      // is flushed to the network, so the session file already exists at this point.
+      void (async () => {
+        try {
+          const displayMessages = useWebUiStore.getState().messages
+            .filter((m) => !m.streaming)
+            .map(({ role, text, finalState, phase, statusLabel, progress, embed }) => ({
+              role,
+              text,
+              ...(finalState !== undefined && { finalState }),
+              ...(phase !== undefined && { phase }),
+              ...(statusLabel !== undefined && { statusLabel }),
+              ...(progress?.length && { progress }),
+              ...(embed !== undefined && { embed }),
+            }));
+          await request(`/api/sessions/${sessionId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ displayMessages }),
+          });
+        } catch {
+          // Non-critical — display message save is best-effort.
+        } finally {
+          void refreshSessions();
+        }
+      })();
     }
   };
 

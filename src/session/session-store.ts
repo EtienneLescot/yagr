@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { CoreMessage } from 'ai';
-import type { PersistedSession, SessionGateway, SessionSummary } from './session-types.js';
+import type { PersistedSession, SerializedChatMessage, SessionGateway, SessionSummary } from './session-types.js';
 
 /**
  * Derive a human-readable title from the first user message in the history.
@@ -96,6 +96,20 @@ export class SessionStore {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
+  }
+
+  /**
+   * Persist the rich display messages for a session.
+   * Called by the WebUI facade after each run so UI restoration shows the full history.
+   * No-ops silently if the session file doesn't exist.
+   */
+  setDisplayMessages(sessionId: string, displayMessages: SerializedChatMessage[]): void {
+    const session = this.get(sessionId);
+    if (!session) {
+      return;
+    }
+
+    this.save({ ...session, displayMessages });
   }
 
   /**

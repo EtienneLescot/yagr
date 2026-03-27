@@ -35,7 +35,7 @@ import {
   mapToolEventToUserVisibleUpdate,
 } from '../runtime/user-visible-updates.js';
 import { SessionStore, createSession, deriveSessionTitle } from '../session/session-store.js';
-import type { SessionSummary } from '../session/session-types.js';
+import type { SerializedChatMessage, SessionSummary } from '../session/session-types.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -431,6 +431,20 @@ class WebUiGateway implements Gateway {
       const sessionId = url.pathname.slice('/api/sessions/'.length);
       this.agents.delete(sessionId);
       this.sessionStore.delete(sessionId);
+      this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (method === 'PATCH' && url.pathname.startsWith('/api/sessions/')) {
+      const sessionId = url.pathname.slice('/api/sessions/'.length);
+      const body = await this.readJson(request);
+      const displayMessages = body.displayMessages as SerializedChatMessage[] | undefined;
+      if (!Array.isArray(displayMessages)) {
+        this.sendJson(response, 400, { error: 'displayMessages must be an array.' });
+        return;
+      }
+
+      this.sessionStore.setDisplayMessages(sessionId, displayMessages);
       this.sendJson(response, 200, { ok: true });
       return;
     }

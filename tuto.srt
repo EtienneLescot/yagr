@@ -1,0 +1,1231 @@
+1
+00:00:01,103 --> 00:00:03,088
+va faire un petit tutorial sur
+
+2
+00:00:03,088 --> 00:00:05,405
+l'utilisation de N8N as code. Je vais
+
+3
+00:00:05,405 --> 00:00:07,722
+vous montrer depuis le départ comment ça
+
+4
+00:00:07,722 --> 00:00:10,038
+s'installe. On va aller dans le rythme
+
+5
+00:00:10,038 --> 00:00:11,693
+pour voir les différentes options
+
+6
+00:00:11,693 --> 00:00:14,009
+possibles. Donc en utena code vous pouvez
+
+7
+00:00:14,009 --> 00:00:16,881
+l'utiliser. Avec vs code ou Cursor c'est
+
+8
+00:00:16,881 --> 00:00:18,762
+la première manière de faire probablement
+
+9
+00:00:18,762 --> 00:00:20,956
+la plus accessible pour tout le monde.
+
+10
+00:00:20,956 --> 00:00:22,523
+Vous pouvez l'utiliser également avec
+
+11
+00:00:22,523 --> 00:00:24,404
+l'autre code avec openflow aujourd'hui on
+
+12
+00:00:24,404 --> 00:00:26,598
+va plutôt se concentrer sur cursor parce
+
+13
+00:00:26,598 --> 00:00:29,105
+que c'est vraiment le plus facile et voir
+
+14
+00:00:29,105 --> 00:00:31,299
+que c'est vraiment hyper simple. On ouvre
+
+15
+00:00:31,299 --> 00:00:33,494
+curseur, on va dans le Store d'extension
+
+16
+00:00:33,494 --> 00:00:36,420
+OPEN VSX et puis vous allez bien ?Et
+
+17
+00:00:36,420 --> 00:00:39,211
+donc N8N. Et là vous allez tomber sur
+
+18
+00:00:39,211 --> 00:00:40,956
+l'extension dans le Marketplace, donc
+
+19
+00:00:40,956 --> 00:00:43,675
+voilà, et sur install. Ah
+
+20
+00:00:43,675 --> 00:00:46,290
+c'est très rapide. Alors ce qui est
+
+21
+00:00:46,290 --> 00:00:48,532
+important hein, juste avant c'est d'avoir
+
+22
+00:00:48,532 --> 00:00:51,148
+de cette mise dans un workspace hein.
+
+23
+00:00:51,148 --> 00:00:54,137
+Donc on crée un dossier vide, c'est le
+
+24
+00:00:54,137 --> 00:00:56,379
+meilleur moyen de de commencer. J'appuie
+
+25
+00:00:56,379 --> 00:00:58,994
+sur mon icône de N8NS code, donc
+
+26
+00:00:58,994 --> 00:01:01,610
+l'extension que je viens installer, et je
+
+27
+00:01:01,610 --> 00:01:04,223
+vais appuyer sur configure. Et puis. Et
+
+28
+00:01:04,223 --> 00:01:06,632
+là, sur la partie gauche, je vais avoir
+
+29
+00:01:06,632 --> 00:01:08,439
+les paramètres à entrer pour pouvoir
+
+30
+00:01:08,439 --> 00:01:11,366
+commencer à travailler. Donc j'ai une
+
+31
+00:01:11,366 --> 00:01:14,269
+instance de N8N qui tourne en local
+
+32
+00:01:14,269 --> 00:01:16,342
+sur l'u RL suivant localhost.
+
+33
+00:01:17,772 --> 00:01:20,661
+Et j'ai créé donc une une clé
+
+34
+00:01:20,661 --> 00:01:23,516
+d'API qui est ici. Et
+
+35
+00:01:23,516 --> 00:01:26,424
+copier et mettre voilà. À partir de ce
+
+36
+00:01:26,424 --> 00:01:28,604
+moment-là donc, le projet se remplit
+
+37
+00:01:28,604 --> 00:01:30,422
+automatiquement pour une instance locale.
+
+38
+00:01:30,422 --> 00:01:32,966
+À moins d'avoir une licence étendue, vous
+
+39
+00:01:32,966 --> 00:01:35,147
+aurez accès au dossier personnel. Et
+
+40
+00:01:35,147 --> 00:01:37,691
+après ? Bah vous sélectionnez un dossier
+
+41
+00:01:37,691 --> 00:01:39,872
+dans lequel vous allez synchroniser ou
+
+42
+00:01:39,872 --> 00:01:42,053
+workflow. On va rester avec la
+
+43
+00:01:42,053 --> 00:01:44,792
+configuration de base. Je vais faire save
+
+44
+00:01:44,792 --> 00:01:47,549
+setting et là sur la droite j'ai tous
+
+45
+00:01:47,549 --> 00:01:49,273
+mes workflow distants qui vont
+
+46
+00:01:49,273 --> 00:01:51,341
+s'afficher. Donc ça c'est des workflow
+
+47
+00:01:51,341 --> 00:01:54,098
+qui sont pas encore en local hein puisque
+
+48
+00:01:54,098 --> 00:01:56,167
+j'ai une initialisation qui s'est faite
+
+49
+00:01:56,167 --> 00:01:58,924
+avec le dossier. Mais pour l'instant on a
+
+50
+00:01:58,924 --> 00:02:00,992
+juste des indications pour que l'agent
+
+51
+00:02:00,992 --> 00:02:03,405
+puisse utiliser et ne pas halluciner et
+
+52
+00:02:03,405 --> 00:02:05,412
+faire des workflow corrects. Pour
+
+53
+00:02:05,412 --> 00:02:08,268
+l'instant, on n'a pas de workflow, on
+
+54
+00:02:08,268 --> 00:02:11,124
+va demander de créer un workflow, donc
+
+55
+00:02:11,124 --> 00:02:13,572
+on va inventer quelque chose rapidement.
+
+56
+00:02:13,572 --> 00:02:16,428
+Donc je vais lui dicter ce que
+
+57
+00:02:16,428 --> 00:02:19,284
+tu pourrais me créer un workflow dont
+
+58
+00:02:19,284 --> 00:02:22,140
+le but est d'analyser des réunions afin
+
+59
+00:02:22,140 --> 00:02:24,996
+de créer des résumés textes de ces
+
+60
+00:02:24,996 --> 00:02:27,479
+réunions. De déduire des tâches, d'être
+
+61
+00:02:27,479 --> 00:02:29,885
+des tâches aux différents intervenants de
+
+62
+00:02:29,885 --> 00:02:32,692
+la réunion et d'envoyer le tout par
+
+63
+00:02:32,692 --> 00:02:35,499
+Email. Alors ce qu'on va recevoir en
+
+64
+00:02:35,499 --> 00:02:37,905
+input, c'est un Jason de transcription,
+
+65
+00:02:37,905 --> 00:02:40,310
+donc avec les différents intervenants de
+
+66
+00:02:40,310 --> 00:02:43,117
+la réunion qui auront été détectés par
+
+67
+00:02:43,117 --> 00:02:45,924
+le système de transcription, donc dans le
+
+68
+00:02:45,924 --> 00:02:48,532
+json. On va avoir intervenant à Etienne,
+
+69
+00:02:48,532 --> 00:02:51,026
+intervenant, B Nicolas et cetera. Et puis
+
+70
+00:02:51,026 --> 00:02:53,876
+des dialogues et tu le prends en entrée
+
+71
+00:02:53,876 --> 00:02:56,725
+et tu le donnes à un agent qui
+
+72
+00:02:56,725 --> 00:02:59,575
+va faire tout le gros du travail. Pour
+
+73
+00:02:59,575 --> 00:03:01,712
+résumer, pour séparer les les différents
+
+74
+00:03:01,712 --> 00:03:04,206
+intervenants, essayer de voir s'il y a
+
+75
+00:03:04,206 --> 00:03:06,699
+des tâches pour chacun, et cetera, le
+
+76
+00:03:06,699 --> 00:03:09,162
+workflow. Va devoir envoyer le résumé à
+
+77
+00:03:09,162 --> 00:03:10,858
+différentes adresses Email donc tu
+
+78
+00:03:10,858 --> 00:03:13,573
+utiliseras un e Gmail par exemple. Je te
+
+79
+00:03:13,573 --> 00:03:15,949
+laisse faire au mieux pour ce workflow.
+
+80
+00:03:15,949 --> 00:03:18,664
+Ok donc là on a vraiment réfléchi en
+
+81
+00:03:18,664 --> 00:03:21,378
+temps réel. On a donc envoyé un prompt
+
+82
+00:03:21,378 --> 00:03:24,093
+très littéral hein, y a pas du tout
+
+83
+00:03:24,093 --> 00:03:26,129
+de prompt Engineering là j'utilise Gemini
+
+84
+00:03:26,129 --> 00:03:28,842
+3 Flash c'est vraiment pas. Le plus gros
+
+85
+00:03:28,842 --> 00:03:30,733
+modèle aujourd'hui, hein ? C'est un
+
+86
+00:03:30,733 --> 00:03:33,255
+modèle qui marche très bien mais qui est
+
+87
+00:03:33,255 --> 00:03:35,462
+très peu coûteux, très rapide. Et vous
+
+88
+00:03:35,462 --> 00:03:38,299
+allez voir que couplé à N8N as code via
+
+89
+00:03:38,299 --> 00:03:40,190
+les commandes N8NC, il marche vraiment
+
+90
+00:03:40,190 --> 00:03:43,027
+pas mal. Donc on va envoyer. Et là vous
+
+91
+00:03:43,027 --> 00:03:44,919
+voyez qu'il commence à lister les
+
+92
+00:03:44,919 --> 00:03:46,810
+workflow. Il prend la décision de
+
+93
+00:03:46,810 --> 00:03:49,460
+regarder ce que j'ai sur mon instance. Et
+
+94
+00:03:49,460 --> 00:03:52,073
+puis il va chercher des exemples, donc
+
+95
+00:03:52,073 --> 00:03:55,059
+vous voyez, là il lance une commande, ça
+
+96
+00:03:55,059 --> 00:03:58,046
+vous montre un petit peu ce que fait
+
+97
+00:03:58,046 --> 00:03:59,912
+une huitaine. Assez en background,
+
+98
+00:03:59,912 --> 00:04:02,152
+l'agent décide de lister les workflow
+
+99
+00:04:02,152 --> 00:04:04,391
+existants, de chercher des exemples de
+
+100
+00:04:04,391 --> 00:04:06,258
+Meeting Summary transcription de workflow
+
+101
+00:04:06,258 --> 00:04:08,498
+existant parmi plus de 7000 Workflow
+
+102
+00:04:08,498 --> 00:04:10,242
+existants des Workflow. Communautaire au
+
+103
+00:04:10,242 --> 00:04:11,904
+au lieu d'essayer d'inventer un workflow,
+
+104
+00:04:11,904 --> 00:04:14,121
+il va essayer d'abord de s'inspirer de ce
+
+105
+00:04:14,121 --> 00:04:16,061
+qui se fait pour simplement, voilà, aller
+
+106
+00:04:16,061 --> 00:04:18,278
+plus vite et pas inventer des nœuds et
+
+107
+00:04:18,278 --> 00:04:20,218
+pas chercher chaque nœud. Donc voilà, si
+
+108
+00:04:20,218 --> 00:04:21,326
+ils trouvent des inspirations
+
+109
+00:04:21,326 --> 00:04:23,266
+pertinentes, il va les utiliser, sinon il
+
+110
+00:04:23,266 --> 00:04:25,483
+va aller lister les noms existants. Là on
+
+111
+00:04:25,483 --> 00:04:27,700
+voit hein, ce qui fait, il cherche encore
+
+112
+00:04:27,700 --> 00:04:29,640
+des exemples, là il a téléchargé un
+
+113
+00:04:29,640 --> 00:04:31,580
+exemple, Meeting se Marie, donc ça veut
+
+114
+00:04:31,580 --> 00:04:34,074
+dire qu'il a trouvé un exemple et il le
+
+115
+00:04:34,074 --> 00:04:36,471
+télécharge ensuite. Ah, il est en train
+
+116
+00:04:36,471 --> 00:04:38,953
+de récupérer un autre schéma pour agent
+
+117
+00:04:38,953 --> 00:04:41,789
+openid, Gmail, et cetera. Donc il a su
+
+118
+00:04:41,789 --> 00:04:44,270
+lister tous les nœuds dont il aurait
+
+119
+00:04:44,270 --> 00:04:47,107
+besoin, donc YA1 nœud de code, et cetera.
+
+120
+00:04:47,107 --> 00:04:49,943
+Et ce qui fait c'est que il récupère
+
+121
+00:04:49,943 --> 00:04:52,425
+le schéma précis de ces nœuds pour
+
+122
+00:04:52,425 --> 00:04:54,906
+vraiment ne pas faire d'erreur. Parce que
+
+123
+00:04:54,906 --> 00:04:57,850
+si vous lancez cursor ou. Code ou quelle
+
+124
+00:04:57,850 --> 00:05:00,435
+que soit l'avant et quel que soit même le
+
+125
+00:05:00,435 --> 00:05:02,158
+modèle derrière. Si vous lui dites
+
+126
+00:05:02,158 --> 00:05:03,881
+simplement Bah fais-moi un workflow N8D
+
+127
+00:05:03,881 --> 00:05:05,891
+et va complètement halluciner quoi ? Il
+
+128
+00:05:05,891 --> 00:05:08,475
+va sortir un json qui va ressembler à un
+
+129
+00:05:08,475 --> 00:05:10,485
+workflow mais qui va pas fonctionner. Les
+
+130
+00:05:10,485 --> 00:05:12,495
+nœuds seront pas dans la bonne version,
+
+131
+00:05:12,495 --> 00:05:13,644
+pas correctement configurés, pas
+
+132
+00:05:13,644 --> 00:05:15,367
+correctement reliés, et cetera. Alors que
+
+133
+00:05:15,367 --> 00:05:17,706
+là on a vraiment une ontologie. Dans le
+
+134
+00:05:17,706 --> 00:05:19,890
+sens où il prenait vraiment le monde est
+
+135
+00:05:19,890 --> 00:05:21,529
+huitaine, il connaît les nœuds, il
+
+136
+00:05:21,529 --> 00:05:23,168
+connaît leur version, il lissait comment
+
+137
+00:05:23,168 --> 00:05:25,352
+on les lit les uns avec les autres,
+
+138
+00:05:25,352 --> 00:05:27,264
+quelles sont les triggers, et cetera. Et
+
+139
+00:05:27,264 --> 00:05:29,995
+donc ça y est-il a fini, donc là il a
+
+140
+00:05:29,995 --> 00:05:32,180
+fait pas mal de choses hein vous un
+
+141
+00:05:32,180 --> 00:05:34,364
+verify donc ça veut dire qu'il a validé
+
+142
+00:05:34,364 --> 00:05:36,822
+derrière le workflow et puis là Ben il il
+
+143
+00:05:36,822 --> 00:05:38,734
+me donne une réponse, il m'explique le
+
+144
+00:05:38,734 --> 00:05:40,755
+workflow donc. Ce workflow suit les
+
+145
+00:05:40,755 --> 00:05:42,863
+étapes suivantes, on va ouvrir, voilà,
+
+146
+00:05:42,863 --> 00:05:44,971
+c'est formidable, il marche des premiers
+
+147
+00:05:44,971 --> 00:05:47,430
+coups alors donc ce qui est intéressant,
+
+148
+00:05:47,430 --> 00:05:50,240
+c'est que, en plus de créer le workflow,
+
+149
+00:05:50,240 --> 00:05:51,996
+de créer correctement sans hallucination,
+
+150
+00:05:51,996 --> 00:05:54,455
+il va aussi lui avoir la connaissance,
+
+151
+00:05:54,455 --> 00:05:57,265
+donc il va nous expliquer ce qui fait
+
+152
+00:05:57,265 --> 00:05:59,724
+ce workflow. Il reçoit le json contenant
+
+153
+00:05:59,724 --> 00:06:01,481
+les intervenants speakers et les
+
+154
+00:06:01,481 --> 00:06:03,237
+dialogues. Ensuite, l'agent analyse la
+
+155
+00:06:03,237 --> 00:06:04,676
+transcription en utilisant. La
+
+156
+00:06:04,676 --> 00:06:06,569
+correspondance des noms et générer un
+
+157
+00:06:06,569 --> 00:06:08,778
+résumé et extrait les tâches assignées à
+
+158
+00:06:08,778 --> 00:06:10,987
+chaque personne. Pas mal imap les prénoms
+
+159
+00:06:10,987 --> 00:06:12,880
+Etienne, Nicolas, Alice, Bob a des
+
+160
+00:06:12,880 --> 00:06:14,773
+adresses Email fictives et puis ensuite
+
+161
+00:06:14,773 --> 00:06:16,666
+Ben il envoie les emails individualisés,
+
+162
+00:06:16,666 --> 00:06:19,190
+après il nous donne le donc le chemin
+
+163
+00:06:19,190 --> 00:06:21,398
+local du workflow. Donc c'est un fichier
+
+164
+00:06:21,398 --> 00:06:23,291
+Typescript hein qu'on peut aller voir.
+
+165
+00:06:24,361 --> 00:06:27,320
+Donc en fait nuit as code il fait
+
+166
+00:06:27,320 --> 00:06:29,169
+un transfilage systématique en typescript
+
+167
+00:06:29,169 --> 00:06:31,388
+histoire que on puisse avoir une
+
+168
+00:06:31,388 --> 00:06:33,238
+visualisation propre d'un workflow. Et
+
+169
+00:06:33,238 --> 00:06:36,196
+aussi surtout parce que les agents y a
+
+170
+00:06:36,196 --> 00:06:39,155
+par exemple de Jimini 3 à Flash se
+
+171
+00:06:39,155 --> 00:06:41,004
+débrouillent vachement mieux avec du
+
+172
+00:06:41,004 --> 00:06:42,853
+typescript qu'avec du Jason. Tout
+
+173
+00:06:42,853 --> 00:06:45,442
+simplement si on décide de faire du
+
+174
+00:06:45,442 --> 00:06:47,852
+github. Et de comités no workflow donc de
+
+175
+00:06:47,852 --> 00:06:50,384
+faire du hast code d'où N8N as code. Les
+
+176
+00:06:50,384 --> 00:06:52,354
+diff vont être vachement plus propres, on
+
+177
+00:06:52,354 --> 00:06:54,043
+va pouvoir vraiment faire des reviews
+
+178
+00:06:54,043 --> 00:06:55,731
+même si maintenant c'est vraiment la
+
+179
+00:06:55,731 --> 00:06:57,701
+gentille hein qui va faire des reviews.
+
+180
+00:06:57,701 --> 00:06:59,952
+Mais voilà ce sera plus propre. Et puis
+
+181
+00:06:59,952 --> 00:07:01,922
+ce qui fait également une huitaine assez
+
+182
+00:07:01,922 --> 00:07:04,173
+c'est qu'il crée ici à Workflow Map comme
+
+183
+00:07:04,173 --> 00:07:06,505
+ça un agent lorsqu'il lit le workflow. Ça
+
+184
+00:07:06,505 --> 00:07:08,840
+peut faire 3000 lignes quoi. Donc là il
+
+185
+00:07:08,840 --> 00:07:11,467
+aura déjà une vue globale de ce que fait
+
+186
+00:07:11,467 --> 00:07:13,510
+le workflow. C'est vraiment pas mal pour
+
+187
+00:07:13,510 --> 00:07:15,554
+après faire des modifs il va beaucoup
+
+188
+00:07:15,554 --> 00:07:18,181
+plus vite donc il me donne un exemple de
+
+189
+00:07:18,181 --> 00:07:20,516
+judo à envoyer au web book donc c'est
+
+190
+00:07:20,516 --> 00:07:21,975
+super. Speaker intervenant a les
+
+191
+00:07:21,975 --> 00:07:24,019
+dialogues ça me va parfait donc prochaine
+
+192
+00:07:24,019 --> 00:07:26,354
+étape il faut que je configure les craies
+
+193
+00:07:26,354 --> 00:07:28,865
+d'anciens ils ont n 8. Assurez-vous de
+
+194
+00:07:28,865 --> 00:07:30,343
+configurer vos identifiants pour les
+
+195
+00:07:30,343 --> 00:07:33,004
+nœuds open ya et et Gmail. On va aller
+
+196
+00:07:33,004 --> 00:07:35,074
+regarder quel modèle on utilise. Bon on
+
+197
+00:07:35,074 --> 00:07:38,031
+va faire un peu mieux que j'ai pété 4 0
+
+198
+00:07:38,031 --> 00:07:40,101
+mini quand même, on va prendre celui-ci
+
+199
+00:07:40,101 --> 00:07:42,466
+donc on prend le dernier modèle on va
+
+200
+00:07:42,466 --> 00:07:44,832
+juste aller regarder on a pas encore été
+
+201
+00:07:44,832 --> 00:07:47,493
+voir le prompt qui nous a créé. OK donc
+
+202
+00:07:47,493 --> 00:07:48,971
+il récupère directement l'ensemble du
+
+203
+00:07:48,971 --> 00:07:51,719
+json en fait hein. Et à partir de
+
+204
+00:07:51,719 --> 00:07:54,288
+ça retourne le lit valide json object et
+
+205
+00:07:54,288 --> 00:07:57,179
+puis là donc il m'a, il m'a généré le
+
+206
+00:07:57,179 --> 00:07:59,427
+code pour faire les mappings et cetera.
+
+207
+00:07:59,427 --> 00:08:02,318
+Je vais rentrer un input de Mock dans le
+
+208
+00:08:02,318 --> 00:08:03,924
+neutre hyper de transcription pour
+
+209
+00:08:03,924 --> 00:08:05,530
+simuler la réception d'une transcription.
+
+210
+00:08:05,530 --> 00:08:07,778
+Donc on va pouvoir essayer de lancer
+
+211
+00:08:07,778 --> 00:08:10,348
+l'agent tout de suite. On va donner mon
+
+212
+00:08:10,348 --> 00:08:12,921
+email à moi, on va médecin. On essaye
+
+213
+00:08:12,921 --> 00:08:15,424
+donc là en fait, si on résume hein, j'ai
+
+214
+00:08:15,424 --> 00:08:17,093
+pas fait beaucoup de modifications, vous
+
+215
+00:08:17,093 --> 00:08:19,596
+voyez le prompt, il est mis en fixe le
+
+216
+00:08:19,596 --> 00:08:20,986
+passé évidemment en expression alors
+
+217
+00:08:20,986 --> 00:08:23,211
+voyons si ça fonctionne. Voilà donc là ça
+
+218
+00:08:23,211 --> 00:08:25,436
+va marcher. Ce mari Étienne a animé un
+
+219
+00:08:25,436 --> 00:08:27,383
+point rapide pour valider papa papa plat,
+
+220
+00:08:27,383 --> 00:08:29,886
+Alice a fait ça, TAC OK donc là j'avais
+
+221
+00:08:29,886 --> 00:08:32,110
+lancé que lui lui et ce qui fait
+
+222
+00:08:32,110 --> 00:08:34,057
+correctement TAC il a l'air il fait
+
+223
+00:08:34,057 --> 00:08:36,775
+1HTML. Et sage, et cetera. Eh Ben on va,
+
+224
+00:08:36,775 --> 00:08:39,144
+on va s'envoyer un mail donc meeting se
+
+225
+00:08:39,144 --> 00:08:41,218
+Marie Etienne animé un point rapide pour
+
+226
+00:08:41,218 --> 00:08:42,995
+valider les premières étapes du séminaire
+
+227
+00:08:42,995 --> 00:08:45,068
+annuel 2026 prévues en juin. Alice a
+
+228
+00:08:45,068 --> 00:08:46,549
+indiqué avoir présélectionné 3 domaines
+
+229
+00:08:46,549 --> 00:08:48,326
+en Provence, tous disponibles le 2e
+
+230
+00:08:48,326 --> 00:08:50,399
+week-end de juin et doit envoyer plein,
+
+231
+00:08:50,399 --> 00:08:52,176
+plein, plein, plein, plein, plein. Donc
+
+232
+00:08:52,176 --> 00:08:54,902
+il me fait un résumé de la réunion. Ma
+
+233
+00:08:54,902 --> 00:08:57,195
+tâche à moi, je dois créer le formulaire
+
+234
+00:08:57,195 --> 00:08:59,200
+de sondage pour les dates et les
+
+235
+00:08:59,200 --> 00:09:00,919
+préférences alimentaires. Alors ce qui va
+
+236
+00:09:00,919 --> 00:09:02,638
+être intéressant de voir, c'est d'aller
+
+237
+00:09:02,638 --> 00:09:04,644
+voir les mails envoyés aux autres. Est-ce
+
+238
+00:09:04,644 --> 00:09:06,936
+que ils ont bien une tâche spécifique ?
+
+239
+00:09:06,936 --> 00:09:08,942
+Alors la tâche de Nicolas. Contactez 2
+
+240
+00:09:08,942 --> 00:09:10,661
+prestataires pour obtenir des devis pour
+
+241
+00:09:10,661 --> 00:09:12,380
+un atelier cuisine pour 50 personnes.
+
+242
+00:09:12,380 --> 00:09:14,385
+Vérifier les options. Bon voilà donc on
+
+243
+00:09:14,385 --> 00:09:16,678
+voit que ça marche, ça c'est une huitaine
+
+244
+00:09:16,678 --> 00:09:19,184
+hein qui fait du super boulot. Avec ces
+
+245
+00:09:19,184 --> 00:09:22,052
+nœuds gentils que ces nœuds de code, et
+
+246
+00:09:22,052 --> 00:09:24,563
+cetera. Mais toute la logique, tous les
+
+247
+00:09:24,563 --> 00:09:27,431
+prompts, le code, et cetera, tout ça, ça
+
+248
+00:09:27,431 --> 00:09:30,300
+a été créé en un seul prompt, via
+
+249
+00:09:30,300 --> 00:09:32,451
+nuit tenas code sans hallucination. Donc
+
+250
+00:09:32,451 --> 00:09:35,320
+le seul truc qu'on a dû faire, nous,
+
+251
+00:09:35,320 --> 00:09:37,113
+de manière manuelle après dans
+
+252
+00:09:37,113 --> 00:09:39,214
+l'interface, c'est les gentianes. Donc ça
+
+253
+00:09:39,214 --> 00:09:41,005
+c'est c'est voulu hein. Les crédirentiers
+
+254
+00:09:41,005 --> 00:09:43,691
+on les laisse côté n huitaine, on a tout
+
+255
+00:09:43,691 --> 00:09:45,482
+le système de gestion avec le
+
+256
+00:09:45,482 --> 00:09:46,974
+coffre-fort, et cetera. C'est vraiment
+
+257
+00:09:46,974 --> 00:09:49,063
+hyper pratique de les gérer dans les
+
+258
+00:09:49,063 --> 00:09:51,451
+nuits, ce qu'on a fait. On a simplement
+
+259
+00:09:51,451 --> 00:09:52,943
+moqué le receive transcription, donc
+
+260
+00:09:52,943 --> 00:09:55,032
+simplement parce qu'on est pas connecté à
+
+261
+00:09:55,032 --> 00:09:57,420
+une API réelle encore. Et puis on a
+
+262
+00:09:57,420 --> 00:09:59,509
+cliqué sur expression et puis on a
+
+263
+00:09:59,509 --> 00:10:01,300
+modifié la liste d'Emails pour simplement
+
+264
+00:10:01,300 --> 00:10:03,921
+mettre. Un mail réel donc ça reste des
+
+265
+00:10:03,921 --> 00:10:05,203
+modifications manuelles hyper restreintes
+
+266
+00:10:05,203 --> 00:10:07,767
+en fait hein aussi imaginer que le plus
+
+267
+00:10:07,767 --> 00:10:09,689
+long quand on travaille dans une
+
+268
+00:10:09,689 --> 00:10:11,933
+huitaine, bon d'abord c'est de trouver la
+
+269
+00:10:11,933 --> 00:10:13,855
+bonne structure, les bons nœuds, et
+
+270
+00:10:13,855 --> 00:10:16,099
+cetera. De coder des logiques en Python
+
+271
+00:10:16,099 --> 00:10:18,342
+ou en javascript, c'est pas forcément non
+
+272
+00:10:18,342 --> 00:10:20,585
+plus évident. Alors on peut aller faire
+
+273
+00:10:20,585 --> 00:10:23,149
+faire le code dans un agent de codage.
+
+274
+00:10:23,349 --> 00:10:26,286
+Et puis le copier coller, et cetera. Mais
+
+275
+00:10:26,286 --> 00:10:28,490
+là c'est vraiment beaucoup plus rapide,
+
+276
+00:10:28,490 --> 00:10:31,428
+donc le code les prompt, donc là on
+
+277
+00:10:31,428 --> 00:10:33,631
+a un prompt, il fonctionne correctement,
+
+278
+00:10:33,631 --> 00:10:36,569
+on a un système prompt you un experte
+
+279
+00:10:36,569 --> 00:10:38,405
+meeting analyste, you extract summaries
+
+280
+00:10:38,405 --> 00:10:40,976
+and tasks en a transcript, wish I
+
+281
+00:10:40,976 --> 00:10:43,761
+précision you always use Real names. From
+
+282
+00:10:43,761 --> 00:10:46,649
+the speaker là donc tout ça.
+
+283
+00:10:47,369 --> 00:10:49,722
+On n'a pas eu à le faire en fait hein.
+
+284
+00:10:49,722 --> 00:10:50,898
+Donc les interventions manuelles sont
+
+285
+00:10:50,898 --> 00:10:53,015
+hyper minimes. Là on a pris le temps de
+
+286
+00:10:53,015 --> 00:10:54,661
+décortiquer. La vidéo est un peu longue
+
+287
+00:10:54,661 --> 00:10:56,778
+mais en réalité du coup EN 3 Min vous
+
+288
+00:10:56,778 --> 00:10:59,583
+faites un bon flow comme ça. Et puis
+
+289
+00:10:59,583 --> 00:11:01,541
+après, vous pouvez le le modifier
+
+290
+00:11:01,541 --> 00:11:03,500
+également. Je voudrais envoyer ça par
+
+291
+00:11:03,500 --> 00:11:05,785
+slack. Est-ce que tu pourrais me corriger
+
+292
+00:11:05,785 --> 00:11:08,070
+ça ? On va juste remplacer. Euh.
+
+293
+00:11:09,110 --> 00:11:11,148
+Voilà donc là il a été relativement vite
+
+294
+00:11:11,148 --> 00:11:13,949
+il me fait 1 1 dit on voit que c'est 1£
+
+295
+00:11:13,949 --> 00:11:15,732
+de code hein puisque c'est une huitaine
+
+296
+00:11:15,732 --> 00:11:17,769
+as code hein. Donc tout ça c'est des
+
+297
+00:11:17,769 --> 00:11:20,062
+workflow en type script et il m'a, il m'a
+
+298
+00:11:20,062 --> 00:11:21,590
+modifié le nœud. Voilà plupart slake
+
+299
+00:11:21,590 --> 00:11:23,882
+Messi et voilà. Donc là j'ai mon slack à
+
+300
+00:11:23,882 --> 00:11:26,174
+la place de mon Gmail, donc on voit que
+
+301
+00:11:26,174 --> 00:11:27,957
+la seule chose qui manque c'est vraiment
+
+302
+00:11:27,957 --> 00:11:30,687
+l'écrit dans le ciel vs. Et une fois
+
+303
+00:11:30,687 --> 00:11:32,339
+que j'aurais fait ça, Ben ça
+
+304
+00:11:32,339 --> 00:11:34,267
+fonctionnera. Voilà donc je pense que Ben
+
+305
+00:11:34,267 --> 00:11:37,022
+c'était un bon tuto de A à Z il me
+
+306
+00:11:37,022 --> 00:11:38,950
+semble qu'on a rien oublié. Ben j'espère
+
+307
+00:11:38,950 --> 00:11:41,428
+que ça vous aura aidé et intéressé à très
+
+308
+00:11:41,428 --> 00:11:42,254
+bientôt et prenez

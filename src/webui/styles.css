@@ -167,7 +167,7 @@ button, input, select, textarea { font: inherit; }
 
 .shellHome {
   display: grid;
-  grid-template-columns: minmax(14rem, 16rem) minmax(0, 1fr);
+  grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr);
   gap: 1.25rem;
   height: calc(100vh - 2.5rem);
   overflow: hidden;
@@ -190,6 +190,11 @@ button, input, select, textarea { font: inherit; }
   align-content: stretch;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Home layout: brandCard (auto) → sessionPanel (auto, compact facts) → historyPanel (fills remaining) */
+.sidebarHome {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .panel {
@@ -379,9 +384,10 @@ label span,
 
 .sessionPanel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   gap: 1rem;
   min-height: 0;
+  padding-bottom: 0.25rem;
 }
 
 .sessionFacts {
