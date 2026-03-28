@@ -1135,36 +1135,34 @@ function App() {
     }
   }, [setSessionHistory]); // setSessionHistory is stable — this callback is created once.
 
-  // On mount: reconcile localStorage session with the server-side active session.
-  // Runs exactly once; intentionally omits deps to use initial values only.
+  // On mount: use sessionStorage (tab-scoped) to decide whether to start fresh or restore.
+  // sessionStorage survives F5 but is cleared on tab close / new browser open.
+  // This prevents silently continuing a previous session without any visual indication.
   React.useEffect(() => {
     void (async () => {
       try {
-        const [stateResult, sessionsResult] = await Promise.all([
-          request<{ activeSessionId: string | null }>('/api/state'),
-          request<{ sessions: SessionHistoryEntry[] }>('/api/sessions'),
-        ]);
+        const isNewTab = !window.sessionStorage.getItem('yagr:tab-initialized');
+        window.sessionStorage.setItem('yagr:tab-initialized', '1');
 
-        setSessionHistory(sessionsResult.sessions);
-
-        const serverSessionId = stateResult.activeSessionId;
-        if (serverSessionId && serverSessionId !== sessionId) {
-          // Server remembers a different active session — restore it.
-          switchSession(serverSessionId);
+        if (isNewTab) {
+          // Fresh browser/tab open: always create a brand-new session.
+          // The previous session stays in sidebar history and can be resumed there.
+          const { id } = await request<{ id: string }>('/api/sessions', { method: 'POST' });
+          switchSession(id);
+          setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'New conversation. How can Yagr help?', progress: [] }]);
+          void refreshSessions();
+        } else {
+          // Page refresh (F5): restore the current session so the user can see their history.
           try {
             const session = await request<{
               messages: Array<{ role: string; content: unknown }>;
               displayMessages?: SerializedChatMessage[];
-            }>(`/api/sessions/${serverSessionId}`);
+            }>(`/api/sessions/${sessionId}`);
             setMessages(restoreSessionMessages(session));
           } catch {
-            setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Session restored.', progress: [] }]);
+            // Session file missing (edge case: deleted externally) — create it anew.
+            void request('/api/sessions', { method: 'POST', body: JSON.stringify({ id: sessionId }) });
           }
-        } else if (!serverSessionId) {
-          // Server has no record — register our local session on disk so it
-          // appears in the history list immediately (identical to onNewSession).
-          await request('/api/sessions', { method: 'POST', body: JSON.stringify({ id: sessionId }) });
-          void refreshSessions();
         }
       } catch {
         // Ignore — local state is already correct.
