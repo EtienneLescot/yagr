@@ -420,9 +420,15 @@ class WebUiGateway implements Gateway {
 
     // Create a brand-new empty session on disk so it appears in the list
     // immediately, before any message is sent.
+    // Accepts an optional { id } in the body so the frontend can register
+    // an existing localStorage session without requiring an ID change.
     if (method === 'POST' && url.pathname === '/api/sessions') {
-      const newId = randomUUID();
-      this.sessionStore.createEmpty('webui', newId);
+      const body = await this.readJson(request);
+      const providedId = typeof body.id === 'string' ? body.id : undefined;
+      const newId = providedId ?? randomUUID();
+      if (!this.sessionStore.get(newId)) {
+        this.sessionStore.createEmpty('webui', newId);
+      }
       this.sessionStore.setActiveSessionId('webui', newId);
       this.sendJson(response, 201, { id: newId });
       return;
