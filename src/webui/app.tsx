@@ -1161,8 +1161,10 @@ function App() {
             setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Session restored.', progress: [] }]);
           }
         } else if (!serverSessionId) {
-          // Server has no record — register our local session.
-          void request('/api/state', { method: 'PUT', body: JSON.stringify({ activeSessionId: sessionId }) });
+          // Server has no record — register our local session on disk so it
+          // appears in the history list immediately (identical to onNewSession).
+          await request('/api/sessions', { method: 'POST', body: JSON.stringify({ id: sessionId }) });
+          void refreshSessions();
         }
       } catch {
         // Ignore — local state is already correct.
