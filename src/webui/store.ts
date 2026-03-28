@@ -71,6 +71,7 @@ interface WebUiState {
   n8nProjects: Array<{ id: string; name: string }>;
   availableModels: string[];
   messages: ChatMessage[];
+  sessionHistory: SessionHistoryEntry[];
   busyLabel?: string;
   error?: string;
   setBusyLabel: (value?: string) => void;
@@ -84,6 +85,17 @@ interface WebUiState {
   pushMessageProgress: (id: string, entry: ChatProgressEntry) => void;
   replaceMessage: (id: string, text: string, role?: ChatMessage['role']) => void;
   resetMessages: () => void;
+  setMessages: (messages: ChatMessage[]) => void;
+  setSessionHistory: (sessions: SessionHistoryEntry[]) => void;
+  /** Switch the active session: updates localStorage and shows a loading placeholder. */
+  switchSession: (sessionId: string) => void;
+}
+
+export interface SessionHistoryEntry {
+  id: string;
+  title: string;
+  updatedAt: string;
+  messageCount: number;
 }
 
 const initialSessionId = window.localStorage.getItem('yagr-web-session') ?? crypto.randomUUID();
@@ -93,6 +105,7 @@ export const useWebUiStore = create<WebUiState>((set) => ({
   sessionId: initialSessionId,
   n8nProjects: [],
   availableModels: [],
+  sessionHistory: [],
   messages: [
     {
       id: crypto.randomUUID(),
@@ -151,4 +164,19 @@ export const useWebUiStore = create<WebUiState>((set) => ({
       },
     ],
   }),
+  setMessages: (messages) => set({ messages }),
+  setSessionHistory: (sessionHistory) => set({ sessionHistory }),
+  switchSession: (sessionId) => {
+    window.localStorage.setItem('yagr-web-session', sessionId);
+    set({
+      sessionId,
+      messages: [
+        {
+          id: crypto.randomUUID(),
+          role: 'system',
+          text: 'Loading session…',
+        },
+      ],
+    });
+  },
 }));

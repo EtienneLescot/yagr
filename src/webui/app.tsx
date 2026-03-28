@@ -2,7 +2,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useWebUiStore, type ChatMessage, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot } from './store.js';
+import { useWebUiStore, type ChatMessage, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot, type SessionHistoryEntry } from './store.js';
+import type { SerializedChatMessage } from '../session/session-types.js';
 import { parseWorkflowMap } from '../gateway/workflow-diagram.js';
 import yagrLogoUrl from '../../docs/static/img/yagr-logo.png';
 
@@ -278,12 +279,20 @@ function SessionSidebar({
   onOpenSetup,
   themeMode,
   onThemeModeChange,
+  sessionHistory,
+  activeSessionId,
+  onNewSession,
+  onSwitchSession,
 }: {
   snapshot?: ConfigSnapshot;
   busyLabel?: string;
   onOpenSetup: () => void;
   themeMode: ThemeMode;
   onThemeModeChange: (mode: ThemeMode) => void;
+  sessionHistory: SessionHistoryEntry[];
+  activeSessionId: string;
+  onNewSession: () => void;
+  onSwitchSession: (id: string) => void;
 }): React.JSX.Element {
   return (
     <aside className="sidebar sidebarHome">
@@ -338,6 +347,40 @@ function SessionSidebar({
             <strong>{snapshot?.gatewayStatus.enabledSurfaces.length ?? 0} enabled</strong>
             <span className="muted">Telegram chats: {snapshot?.telegram.linkedChats.length ?? 0}</span>
           </article>
+        </div>
+      </section>
+
+      <section className="panel historyPanel">
+        <div className="sectionHeader">
+          <p className="eyebrow">History</p>
+          <button
+            className="ghostButton newChatButton"
+            type="button"
+            title="Start new conversation"
+            aria-label="New conversation"
+            onClick={onNewSession}
+          >
+            +
+          </button>
+        </div>
+        <div className="historyList">
+          {sessionHistory.length === 0 && (
+            <p className="muted historyEmpty">No past conversations yet.</p>
+          )}
+          {sessionHistory.map((session) => (
+            <button
+              key={session.id}
+              type="button"
+              className={`historyItem${session.id === activeSessionId ? ' historyItemActive' : ''}`}
+              onClick={() => onSwitchSession(session.id)}
+            >
+              <span className="historyItemTitle">{session.title}</span>
+              <span className="historyItemMeta">
+                {new Date(session.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                {' · '}{session.messageCount} msg
+              </span>
+            </button>
+          ))}
         </div>
       </section>
     </aside>
@@ -638,6 +681,10 @@ function HomePage({
   chatLogRef,
   themeMode,
   onThemeModeChange,
+  sessionHistory,
+  activeSessionId,
+  onNewSession,
+  onSwitchSession,
 }: {
   snapshot?: ConfigSnapshot;
   messages: ChatMessage[];
@@ -653,6 +700,10 @@ function HomePage({
   chatLogRef: React.RefObject<HTMLDivElement | null>;
   themeMode: ThemeMode;
   onThemeModeChange: (mode: ThemeMode) => void;
+  sessionHistory: SessionHistoryEntry[];
+  activeSessionId: string;
+  onNewSession: () => void;
+  onSwitchSession: (id: string) => void;
 }): React.JSX.Element {
   return (
     <div className="shell shellHome">
@@ -662,6 +713,10 @@ function HomePage({
         onOpenSetup={onOpenSetup}
         themeMode={themeMode}
         onThemeModeChange={onThemeModeChange}
+        sessionHistory={sessionHistory}
+        activeSessionId={activeSessionId}
+        onNewSession={onNewSession}
+        onSwitchSession={onSwitchSession}
       />
 
       <main className="chatStage">
@@ -902,6 +957,47 @@ function SetupPage({
   );
 }
 
+function restoreSessionMessages(session: {
+  messages: Array<{ role: string; content: unknown }>;
+  displayMessages?: SerializedChatMessage[];
+}): ChatMessage[] {
+  if (session.displayMessages && session.displayMessages.length > 0) {
+    return session.displayMessages.map((m) => ({
+      ...m,
+      id: crypto.randomUUID(),
+      streaming: false,
+      progress: (m.progress ?? []) as ChatProgressEntry[],
+    }));
+  }
+
+  // Fallback: reconstruct from CoreMessages (plain text only).
+  const result = session.messages.flatMap((m) => {
+    if (m.role !== 'user' && m.role !== 'assistant') {
+      return [];
+    }
+
+    const text =
+      typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content)
+          ? (m.content as Array<{ type: string; text?: string }>)
+              .filter((p) => p.type === 'text')
+              .map((p) => p.text ?? '')
+              .join('')
+          : '';
+
+    if (!text) {
+      return [];
+    }
+
+    return [{ id: crypto.randomUUID(), role: m.role as 'user' | 'assistant', text, progress: [] as ChatProgressEntry[] }];
+  });
+
+  return result.length > 0
+    ? result
+    : [{ id: crypto.randomUUID(), role: 'system' as const, text: 'Session loaded. Continue the conversation.', progress: [] }];
+}
+
 function App() {
   const {
     sessionId,
@@ -920,6 +1016,10 @@ function App() {
     appendMessageText,
     pushMessageProgress,
     resetMessages,
+    sessionHistory,
+    setSessionHistory,
+    setMessages,
+    switchSession,
   } = useWebUiStore();
 
   const notify = useNotice();
@@ -1021,8 +1121,105 @@ function App() {
     void refreshConfig();
   }, [refreshConfig]);
 
+  // --------------------------------------------------------------------------
+  // Session management
+  // --------------------------------------------------------------------------
+
+  // Pure server fetch — no client-side invariants. The server is always right.
+  const refreshSessions = React.useCallback(async () => {
+    try {
+      const result = await request<{ sessions: SessionHistoryEntry[] }>('/api/sessions');
+      setSessionHistory(result.sessions);
+    } catch {
+      // Non-critical.
+    }
+  }, [setSessionHistory]); // setSessionHistory is stable — this callback is created once.
+
+  // On mount: reconcile localStorage session with the server-side active session.
+  // Runs exactly once; intentionally omits deps to use initial values only.
+  React.useEffect(() => {
+    void (async () => {
+      try {
+        const [stateResult, sessionsResult] = await Promise.all([
+          request<{ activeSessionId: string | null }>('/api/state'),
+          request<{ sessions: SessionHistoryEntry[] }>('/api/sessions'),
+        ]);
+
+        setSessionHistory(sessionsResult.sessions);
+
+        const serverSessionId = stateResult.activeSessionId;
+        if (serverSessionId && serverSessionId !== sessionId) {
+          // Server remembers a different active session — restore it.
+          switchSession(serverSessionId);
+          try {
+            const session = await request<{
+              messages: Array<{ role: string; content: unknown }>;
+              displayMessages?: SerializedChatMessage[];
+            }>(`/api/sessions/${serverSessionId}`);
+            setMessages(restoreSessionMessages(session));
+          } catch {
+            setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Session restored.', progress: [] }]);
+          }
+        } else if (!serverSessionId) {
+          // Server has no record — register our local session.
+          void request('/api/state', { method: 'PUT', body: JSON.stringify({ activeSessionId: sessionId }) });
+        }
+      } catch {
+        // Ignore — local state is already correct.
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount only
+
+  // useEffect for initial session list load (also fires when refreshSessions changes,
+  // which is never since it has stable deps).
+  React.useEffect(() => {
+    void refreshSessions();
+  }, [refreshSessions]);
+
+  const onNewSession = React.useCallback(() => {
+    if (activeStreamRef.current) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        // Server creates the session file immediately → it appears in the list right away.
+        const { id } = await request<{ id: string }>('/api/sessions', { method: 'POST' });
+        void request('/api/state', { method: 'PUT', body: JSON.stringify({ activeSessionId: id }) });
+        switchSession(id);
+        setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'New conversation. How can Yagr help?', progress: [] }]);
+        void refreshSessions();
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), 'error');
+      }
+    })();
+  }, [switchSession, setMessages, refreshSessions, notify]);
+
+  const onSwitchSession = React.useCallback((targetId: string) => {
+    if (activeStreamRef.current) {
+      return;
+    }
+
+    switchSession(targetId); // resets messages to "Loading session…" + updates localStorage
+    void request('/api/state', { method: 'PUT', body: JSON.stringify({ activeSessionId: targetId }) });
+
+    void (async () => {
+      try {
+        const session = await request<{
+          messages: Array<{ role: string; content: unknown }>;
+          displayMessages?: SerializedChatMessage[];
+        }>(`/api/sessions/${targetId}`);
+        setMessages(restoreSessionMessages(session));
+      } catch {
+        setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Could not restore session.', progress: [] }]);
+      } finally {
+        void refreshSessions();
+      }
+    })();
+  }, [switchSession, setMessages, refreshSessions]);
+
   const onLoadProjects = async () => {
-    setBusyLabel('Loading n8n projects...');
     try {
       const result = await request<{ projects: Array<{ id: string; name: string }>; selectedProjectId?: string }>('/api/n8n/projects', {
         method: 'POST',
@@ -1311,6 +1508,31 @@ function App() {
     } finally {
       activeStreamRef.current = null;
       setBusyLabel(undefined);
+      // Persist rich display messages then refresh the session list.
+      // sessionId and refreshSessions are both stable in this closure.
+      void (async () => {
+        try {
+          const currentMessages = useWebUiStore.getState().messages
+            .filter((m) => !m.streaming)
+            .map(({ role, text, finalState, phase, statusLabel, progress, embed }) => ({
+              role,
+              text,
+              ...(finalState !== undefined && { finalState }),
+              ...(phase !== undefined && { phase }),
+              ...(statusLabel !== undefined && { statusLabel }),
+              ...(progress?.length && { progress }),
+              ...(embed !== undefined && { embed }),
+            }));
+          await request(`/api/sessions/${sessionId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ displayMessages: currentMessages }),
+          });
+        } catch {
+          // Non-critical.
+        } finally {
+          void refreshSessions();
+        }
+      })();
     }
   };
 
@@ -1380,6 +1602,10 @@ function App() {
       chatLogRef={chatLogRef}
       themeMode={themeMode}
       onThemeModeChange={setThemeMode}
+      sessionHistory={sessionHistory}
+      activeSessionId={sessionId}
+      onNewSession={onNewSession}
+      onSwitchSession={onSwitchSession}
     />
   );
 }
