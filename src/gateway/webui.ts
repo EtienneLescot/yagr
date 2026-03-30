@@ -143,6 +143,13 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Reject IDs that could escape the sessions/memories directories. */
+function isValidSessionId(id: string): boolean {
+  return UUID_RE.test(id);
+}
+
 function sanitizeHost(value: string | undefined): string {
   const trimmed = value?.trim();
   return trimmed || DEFAULT_HOST;
@@ -403,9 +410,10 @@ class WebUiGateway implements Gateway {
     if (method === 'POST' && url.pathname === '/api/chat/reset') {
       const body = await this.readJson(request);
       const sessionId = String(body.sessionId ?? '');
-      if (sessionId) {
+      if (sessionId && isValidSessionId(sessionId)) {
         this.agents.delete(sessionId);
         this.sessionStore.delete(sessionId);
+        this.memoryStore.delete(sessionId);
       }
       this.sendJson(response, 200, { ok: true });
       return;
@@ -428,6 +436,10 @@ class WebUiGateway implements Gateway {
     if (method === 'POST' && url.pathname === '/api/sessions') {
       const body = await this.readJson(request);
       const providedId = typeof body.id === 'string' ? body.id : undefined;
+      if (providedId !== undefined && !isValidSessionId(providedId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
       const newId = providedId ?? randomUUID();
       if (!this.sessionStore.get(newId)) {
         this.sessionStore.createEmpty('webui', newId);
@@ -439,6 +451,10 @@ class WebUiGateway implements Gateway {
 
     if (method === 'GET' && url.pathname.startsWith('/api/sessions/')) {
       const sessionId = url.pathname.slice('/api/sessions/'.length);
+      if (!isValidSessionId(sessionId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
       const session = this.sessionStore.get(sessionId);
       if (!session) {
         this.sendJson(response, 404, { error: 'Session not found.' });
@@ -450,8 +466,13 @@ class WebUiGateway implements Gateway {
 
     if (method === 'DELETE' && url.pathname.startsWith('/api/sessions/')) {
       const sessionId = url.pathname.slice('/api/sessions/'.length);
+      if (!isValidSessionId(sessionId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
       this.agents.delete(sessionId);
       this.sessionStore.delete(sessionId);
+      this.memoryStore.delete(sessionId);
       this.sendJson(response, 200, { ok: true });
       return;
     }
@@ -459,6 +480,10 @@ class WebUiGateway implements Gateway {
     // PATCH /api/sessions/:id — save rich UI display messages after each run.
     if (method === 'PATCH' && url.pathname.startsWith('/api/sessions/')) {
       const sessionId = url.pathname.slice('/api/sessions/'.length);
+      if (!isValidSessionId(sessionId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
       const body = await this.readJson(request);
       const displayMessages = body.displayMessages as SerializedChatMessage[] | undefined;
       if (!Array.isArray(displayMessages)) {

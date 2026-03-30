@@ -466,7 +466,7 @@ label span,
   border: none;
   border-top: 1px solid var(--panel-border);
   cursor: pointer;
-  color: var(--text);
+  color: var(--ink);
   transition: background 0.1s;
   width: 100%;
 }
@@ -476,15 +476,15 @@ label span,
 }
 
 .historyItem:hover {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: color-mix(in srgb, var(--blue-deep) 8%, transparent);
 }
 
 .historyItemActive {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--blue-deep) 12%, transparent);
 }
 
 .historyItemRunning .historyItemTitle {
-  color: var(--accent);
+  color: var(--blue-deep);
 }
 
 .runningDot {
@@ -492,7 +492,7 @@ label span,
   width: 0.45rem;
   height: 0.45rem;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--blue-deep);
   margin-right: 0.35rem;
   vertical-align: middle;
   animation: pulse-dot 1.4s ease-in-out infinite;
