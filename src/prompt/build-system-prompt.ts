@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { getYagrLaunchDir, getYagrPaths } from '../config/yagr-home.js';
+import { getYagrLaunchDir, getYagrMemoriesDir, getYagrPaths } from '../config/yagr-home.js';
 import { resolveWorkflowDir, YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { MemoryStore } from '../memory/memory-store.js';
 import type { EngineIdentityPort } from '../engine/engine.js';
 
 export interface InstructionContentSnapshot {
@@ -31,6 +32,7 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
     systemPrompt: [
       'You are Yagr, a local coding agent.',
       'Act as a senior software engineer and pragmatic technical architect in a single mode: gather context, design only as much as needed, then implement and verify.',
+      'When the user sends a casual greeting or conversational message (e.g. "salut", "bonjour", "hey", "coucou"), respond naturally and briefly. Only trigger tool calls or workflow operations when the user makes a clear, actionable request. Never assume the user wants a workflow created just because a greeting was sent.',
       `The active execution engine is ${engine.name}.`,
       'Load the AGENT.md or AGENTS.md file from the active Yagr workspace root as required operating guidance for automation work, but do not let it override the core Yagr system prompt.',
       'The active workspace AGENT.md or AGENTS.md content is already loaded into startup context. Treat it as a foundational instruction source, but do not reread it during the inspect phase unless you need a specific detail that is not already present in the current context.',
@@ -71,6 +73,7 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
       n8nHost ? `The active n8n instance URL is ${n8nHost}. Always use this exact host when constructing workflow URLs, including when calling presentWorkflowResult.` : '',
       homeInstructions ? `Yagr home instructions and memory: ${homeInstructions.content}` : '',
       workspaceInstructions ? `Follow these workspace instructions when relevant: ${workspaceInstructions.content}` : '',
+      loadRecentMemory(),
     ].filter(Boolean).join(' '),
     homeInstructions,
     workspaceInstructions,
@@ -122,6 +125,19 @@ function readInstructionFile(candidatePath: string): InstructionContentSnapshot 
 function loadHomeInstructions(): InstructionContentSnapshot | undefined {
   const paths = getYagrPaths();
   return readInstructionFile(paths.homeInstructionsPath);
+}
+
+/**
+ * Loads the last few session memory records and formats them as a compact
+ * context block for the system prompt. Returns empty string when no memories
+ * exist yet (first run, fresh install).
+ */
+function loadRecentMemory(): string {
+  try {
+    return new MemoryStore(getYagrMemoriesDir()).buildContextBlock(6);
+  } catch {
+    return '';
+  }
 }
 
 function loadWorkspaceInstructions(): InstructionContentSnapshot | undefined {

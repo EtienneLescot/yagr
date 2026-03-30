@@ -16,6 +16,7 @@ type YagrRunEngineLike = Pick<YagrRunEngine, 'execute'>;
 interface YagrSessionAgentDependencies {
   buildPromptSnapshot?: (engine: EngineIdentityPort) => SystemPromptSnapshot;
   createRunner?: (engine: EngineRuntimePort, history: readonly CoreMessage[], systemPrompt: string) => YagrRunEngineLike;
+  initialHistory?: readonly CoreMessage[];
 }
 
 export class YagrSessionAgent {
@@ -26,6 +27,10 @@ export class YagrSessionAgent {
     protected readonly runtimeEngine: EngineRuntimePort,
     private readonly dependencies: YagrSessionAgentDependencies = {},
   ) {
+    if (dependencies.initialHistory?.length) {
+      this.history.push(...dependencies.initialHistory);
+    }
+
     this.promptSnapshot = this.createPromptSnapshot();
   }
 
@@ -58,6 +63,10 @@ export class YagrSessionAgent {
   clearConversation(): void {
     this.history.length = 0;
     this.promptSnapshot = this.createPromptSnapshot();
+  }
+
+  get messages(): readonly CoreMessage[] {
+    return this.history;
   }
 
   private createPromptSnapshot(): SystemPromptSnapshot {
