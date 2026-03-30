@@ -17,6 +17,13 @@ export class MemoryStore {
     fs.writeFileSync(this.recordPath(record.sessionId), JSON.stringify(record, null, 2), 'utf-8');
   }
 
+  delete(sessionId: string): void {
+    const filePath = this.recordPath(sessionId);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  }
+
   get(sessionId: string): SessionMemoryRecord | undefined {
     const filePath = this.recordPath(sessionId);
     if (!fs.existsSync(filePath)) {

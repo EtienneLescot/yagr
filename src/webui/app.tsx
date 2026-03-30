@@ -280,7 +280,6 @@ function SessionSidebar({
   themeMode,
   onThemeModeChange,
   sessionHistory,
-  activeSessionId,
   viewSessionId,
   runningSessionId,
   onNewSession,
@@ -292,7 +291,6 @@ function SessionSidebar({
   themeMode: ThemeMode;
   onThemeModeChange: (mode: ThemeMode) => void;
   sessionHistory: SessionHistoryEntry[];
-  activeSessionId: string;
   viewSessionId: string;
   runningSessionId: string | null;
   onNewSession: () => void;
@@ -383,7 +381,7 @@ function SessionSidebar({
               onClick={() => onSwitchSession(session.id)}
             >
               <span className="historyItemTitle">
-                {session.id === runningSessionId && <span className="runningDot" aria-label="Running" />}
+                {session.id === runningSessionId && <span className="runningDot" role="img" aria-label="Running" />}
                 {session.title}
               </span>
               <span className="historyItemMeta">
@@ -695,7 +693,6 @@ function HomePage({
   themeMode,
   onThemeModeChange,
   sessionHistory,
-  activeSessionId,
   viewSessionId,
   runningSessionId,
   onNewSession,
@@ -718,7 +715,6 @@ function HomePage({
   themeMode: ThemeMode;
   onThemeModeChange: (mode: ThemeMode) => void;
   sessionHistory: SessionHistoryEntry[];
-  activeSessionId: string;
   viewSessionId: string;
   runningSessionId: string | null;
   onNewSession: () => void;
@@ -733,7 +729,6 @@ function HomePage({
         themeMode={themeMode}
         onThemeModeChange={onThemeModeChange}
         sessionHistory={sessionHistory}
-        activeSessionId={activeSessionId}
         viewSessionId={viewSessionId}
         runningSessionId={runningSessionId}
         onNewSession={onNewSession}
@@ -1203,13 +1198,12 @@ function App() {
         // create the file after the first run completes.
       }
 
-      void refreshSessions();
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount only
 
-  // useEffect for initial session list load (also fires when refreshSessions changes,
-  // which is never since it has stable deps).
+  // Load the session list once on mount (and whenever refreshSessions identity
+  // changes, which never happens since its deps are stable).
   React.useEffect(() => {
     void refreshSessions();
   }, [refreshSessions]);
@@ -1664,7 +1658,6 @@ function App() {
       themeMode={themeMode}
       onThemeModeChange={setThemeMode}
       sessionHistory={sessionHistory}
-      activeSessionId={sessionId}
       viewSessionId={viewSessionId}
       runningSessionId={runActive ? sessionId : null}
       onNewSession={onNewSession}
