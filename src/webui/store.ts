@@ -66,11 +66,18 @@ export interface ChatProgressEntry {
 }
 
 interface WebUiState {
+  /** The session ID that owns the agent backend — messages stream here. */
   sessionId: string;
+  /** When browsing a different session, viewSessionId differs from sessionId. */
+  viewSessionId: string;
   snapshot?: ConfigSnapshot;
   n8nProjects: Array<{ id: string; name: string }>;
   availableModels: string[];
+  /** Messages for the active/running session (always kept in sync with stream events). */
   messages: ChatMessage[];
+  /** Messages for the browsed session (non-null only when viewing a different session). */
+  viewMessages: ChatMessage[] | null;
+  sessionHistory: SessionHistoryEntry[];
   busyLabel?: string;
   error?: string;
   setBusyLabel: (value?: string) => void;
@@ -84,15 +91,55 @@ interface WebUiState {
   pushMessageProgress: (id: string, entry: ChatProgressEntry) => void;
   replaceMessage: (id: string, text: string, role?: ChatMessage['role']) => void;
   resetMessages: () => void;
+  setMessages: (messages: ChatMessage[]) => void;
+  setSessionHistory: (sessions: SessionHistoryEntry[]) => void;
+  /** Switch the active session: updates localStorage and shows a loading placeholder. */
+  switchSession: (sessionId: string) => void;
+  /** Browse a different session without changing the active (running) session. */
+  browseSession: (sessionId: string) => void;
+  /** Set the messages for the browsed session. */
+  setViewMessages: (messages: ChatMessage[] | null) => void;
+  /** Return to the active session from a browsed session. */
+  returnToActiveSession: () => void;
 }
 
-const initialSessionId = window.localStorage.getItem('yagr-web-session') ?? crypto.randomUUID();
-window.localStorage.setItem('yagr-web-session', initialSessionId);
+export interface SessionHistoryEntry {
+  id: string;
+  title: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+const SESSION_KEY = 'yagr-web-session';
+const TAB_FLAG = 'yagr:tab-initialized';
+
+// Synchronous — runs before any React render.
+// New tab/browser open → fresh UUID (never inherit previous session context).
+// F5 page refresh → keep the current session from localStorage.
+const isNewTab = !window.sessionStorage.getItem(TAB_FLAG);
+window.sessionStorage.setItem(TAB_FLAG, '1');
+
+/** True when this is a fresh browser/tab open (not an F5 page refresh). */
+export const isNewTabOpen = isNewTab;
+
+const initialSessionId = isNewTab
+  ? (() => {
+      const id = crypto.randomUUID();
+      window.localStorage.setItem(SESSION_KEY, id);
+      return id;
+    })()
+  : window.localStorage.getItem(SESSION_KEY) ?? (() => {
+      const id = crypto.randomUUID();
+      window.localStorage.setItem(SESSION_KEY, id);
+      return id;
+    })();
 
 export const useWebUiStore = create<WebUiState>((set) => ({
   sessionId: initialSessionId,
+  viewSessionId: initialSessionId,
   n8nProjects: [],
   availableModels: [],
+  sessionHistory: [],
   messages: [
     {
       id: crypto.randomUUID(),
@@ -100,6 +147,7 @@ export const useWebUiStore = create<WebUiState>((set) => ({
       text: 'Yagr Web UI ready. Configure the runtime or start chatting.',
     },
   ],
+  viewMessages: null,
   setBusyLabel: (busyLabel) => set({ busyLabel }),
   setError: (error) => set({ error }),
   setSnapshot: (snapshot) => set({
@@ -151,4 +199,36 @@ export const useWebUiStore = create<WebUiState>((set) => ({
       },
     ],
   }),
+  setMessages: (messages) => set({ messages }),
+  setSessionHistory: (sessionHistory) => set({ sessionHistory }),
+  switchSession: (sessionId) => {
+    window.localStorage.setItem(SESSION_KEY, sessionId);
+    set({
+      sessionId,
+      viewSessionId: sessionId,
+      viewMessages: null,
+      messages: [
+        {
+          id: crypto.randomUUID(),
+          role: 'system',
+          text: 'Loading session…',
+        },
+      ],
+    });
+  },
+  browseSession: (viewSessionId) => set({
+    viewSessionId,
+    viewMessages: [
+      {
+        id: crypto.randomUUID(),
+        role: 'system',
+        text: 'Loading session…',
+      },
+    ],
+  }),
+  setViewMessages: (viewMessages) => set({ viewMessages }),
+  returnToActiveSession: () => set((state) => ({
+    viewSessionId: state.sessionId,
+    viewMessages: null,
+  })),
 }));

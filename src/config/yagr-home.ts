@@ -77,6 +77,14 @@ export function getYagrAccountAuthDir(): string {
   return path.join(getYagrHomeDir(), 'oauth');
 }
 
+export function getYagrSessionsDir(): string {
+  return path.join(getYagrHomeDir(), 'sessions');
+}
+
+export function getYagrMemoriesDir(): string {
+  return path.join(getYagrHomeDir(), 'memories');
+}
+
 export function resolveLegacyConfStorePath(
   projectName: string,
   configName: string,
