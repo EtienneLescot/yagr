@@ -66,11 +66,17 @@ export interface ChatProgressEntry {
 }
 
 interface WebUiState {
+  /** The session ID that owns the agent backend — messages stream here. */
   sessionId: string;
+  /** When browsing a different session, viewSessionId differs from sessionId. */
+  viewSessionId: string;
   snapshot?: ConfigSnapshot;
   n8nProjects: Array<{ id: string; name: string }>;
   availableModels: string[];
+  /** Messages for the active/running session (always kept in sync with stream events). */
   messages: ChatMessage[];
+  /** Messages for the browsed session (non-null only when viewing a different session). */
+  viewMessages: ChatMessage[] | null;
   sessionHistory: SessionHistoryEntry[];
   busyLabel?: string;
   error?: string;
@@ -89,6 +95,12 @@ interface WebUiState {
   setSessionHistory: (sessions: SessionHistoryEntry[]) => void;
   /** Switch the active session: updates localStorage and shows a loading placeholder. */
   switchSession: (sessionId: string) => void;
+  /** Browse a different session without changing the active (running) session. */
+  browseSession: (sessionId: string) => void;
+  /** Set the messages for the browsed session. */
+  setViewMessages: (messages: ChatMessage[] | null) => void;
+  /** Return to the active session from a browsed session. */
+  returnToActiveSession: () => void;
 }
 
 export interface SessionHistoryEntry {
@@ -124,6 +136,7 @@ const initialSessionId = isNewTab
 
 export const useWebUiStore = create<WebUiState>((set) => ({
   sessionId: initialSessionId,
+  viewSessionId: initialSessionId,
   n8nProjects: [],
   availableModels: [],
   sessionHistory: [],
@@ -134,6 +147,7 @@ export const useWebUiStore = create<WebUiState>((set) => ({
       text: 'Yagr Web UI ready. Configure the runtime or start chatting.',
     },
   ],
+  viewMessages: null,
   setBusyLabel: (busyLabel) => set({ busyLabel }),
   setError: (error) => set({ error }),
   setSnapshot: (snapshot) => set({
@@ -191,6 +205,8 @@ export const useWebUiStore = create<WebUiState>((set) => ({
     window.localStorage.setItem(SESSION_KEY, sessionId);
     set({
       sessionId,
+      viewSessionId: sessionId,
+      viewMessages: null,
       messages: [
         {
           id: crypto.randomUUID(),
@@ -200,4 +216,19 @@ export const useWebUiStore = create<WebUiState>((set) => ({
       ],
     });
   },
+  browseSession: (viewSessionId) => set({
+    viewSessionId,
+    viewMessages: [
+      {
+        id: crypto.randomUUID(),
+        role: 'system',
+        text: 'Loading session…',
+      },
+    ],
+  }),
+  setViewMessages: (viewMessages) => set({ viewMessages }),
+  returnToActiveSession: () => set((state) => ({
+    viewSessionId: state.sessionId,
+    viewMessages: null,
+  })),
 }));
