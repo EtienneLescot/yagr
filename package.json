@@ -38,7 +38,8 @@
     "release:pending": "node scripts/release/workspace-release.mjs pending-stable",
     "check-versions": "node scripts/check-version-consistency.js",
     "docs": "cd docs && npm start",
-    "docs:build": "cd docs && npm run build"
+    "docs:build": "cd docs && npm run build",
+    "update:snapshot": "node scripts/update-model-snapshot.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",

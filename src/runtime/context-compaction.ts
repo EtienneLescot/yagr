@@ -39,6 +39,8 @@ export interface CompactConversationInput {
   abortSignal?: AbortSignal;
   llmConfig?: YagrLanguageModelConfig;
   condense?: (prompt: string) => Promise<string>;
+  /** Real prompt token count from the last API response. When present, overrides char-based estimation. */
+  knownPromptTokens?: number;
 }
 
 export interface CompactConversationResult {
@@ -238,7 +240,9 @@ async function generateCheckpointSummary(
 export async function compactConversationContext(input: CompactConversationInput): Promise<CompactConversationResult> {
   const charsPerToken = input.budget.charsPerToken ?? DEFAULT_CHARS_PER_TOKEN;
   const preserveRecentMessages = Math.max(2, input.budget.preserveRecentMessages ?? DEFAULT_PRESERVE_RECENT_MESSAGES);
-  const estimatedTokens = estimateTokensFromText(input.systemPrompt, charsPerToken) + estimateMessageTokens(input.messages, charsPerToken);
+  const estimatedTokens = input.knownPromptTokens !== undefined
+    ? input.knownPromptTokens
+    : estimateTokensFromText(input.systemPrompt, charsPerToken) + estimateMessageTokens(input.messages, charsPerToken);
   const thresholdTokens = buildAllowedTokenThreshold(input.budget);
 
   if (estimatedTokens <= thresholdTokens) {

@@ -177,6 +177,7 @@ export interface YagrRunStep {
   toolResults: YagrToolResultTrace[];
   text: string;
   phase: YagrRunPhase;
+  usage?: { promptTokens: number; completionTokens: number };
 }
 
 export interface YagrPhaseEvent {
@@ -253,6 +254,19 @@ export interface YagrContextCompactionEvent {
   fallbackReason?: string;
 }
 
+export interface YagrContextUsageEvent {
+  /** Tokens used by the prompt (input), as reported by the API or estimated from content length. */
+  promptTokens: number;
+  /** Tokens generated in the last completion step. */
+  completionTokens: number;
+  /** Maximum context window for the active model. */
+  contextWindowTokens: number;
+  /** Percentage of the context window consumed by the current prompt (0–100). */
+  fillPercent: number;
+  /** Whether the counts come from the API response or from a character-length estimate. */
+  source: 'api' | 'estimated';
+}
+
 export interface YagrDisplayOptions {
   showThinking?: boolean;
   showExecution?: boolean;
@@ -274,6 +288,7 @@ export interface YagrRunOptions extends YagrLanguageModelConfig {
   display?: YagrDisplayOptions;
   runtimeHooks?: YagrRuntimeHook[];
   onCompaction?: (event: YagrContextCompactionEvent) => void | Promise<void>;
+  onContextUsage?: (event: YagrContextUsageEvent) => void | Promise<void>;
   onTextDelta?: (textDelta: string) => void | Promise<void>;
   onStepFinish?: (step: YagrRunStep) => void | Promise<void>;
   onPhaseChange?: (phase: YagrPhaseEvent) => void | Promise<void>;

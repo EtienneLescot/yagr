@@ -8,6 +8,7 @@ import {
   type YagrModelProvider,
 } from './provider-registry.js';
 import { getProviderPlugin } from './provider-plugin.js';
+import { getCachedProviderModelMetadata, getSnapshotContextWindow } from './provider-metadata.js';
 export type { YagrModelProvider } from './provider-registry.js';
 
 export interface YagrModelContextProfile {
@@ -51,11 +52,17 @@ function inferContextWindowTokens(provider: YagrModelProvider, modelName: string
   }
 
   if (provider === 'openai') {
-    if (normalized.startsWith('gpt-5') || normalized.includes('gpt-5')) {
-      return 400_000;
-    }
-    if (normalized.startsWith('o1') || normalized.startsWith('o3')) {
+    // o-series reasoning models: o1, o3, o4 and future generations
+    if (/^o\d/.test(normalized)) {
       return 200_000;
+    }
+    // gpt-4.1 family has a 1M context window
+    if (normalized.startsWith('gpt-4.1')) {
+      return 1_048_576;
+    }
+    // gpt-5 flagship and pro/codex variants (400k) — "chat" variants ship with 128k
+    if ((normalized.startsWith('gpt-5') || normalized.includes('gpt-5')) && !normalized.includes('-chat')) {
+      return 400_000;
     }
     return 128_000;
   }
@@ -73,12 +80,18 @@ function inferContextWindowTokens(provider: YagrModelProvider, modelName: string
 
 export function resolveModelContextProfile(config: YagrLanguageModelConfig = {}): YagrModelContextProfile {
   const resolvedConfig = resolveLanguageModelConfig(config);
+  const cached = getCachedProviderModelMetadata(resolvedConfig.provider, resolvedConfig.model);
+
+  const contextWindowTokens =
+    cached?.contextWindow ??
+    getSnapshotContextWindow(resolvedConfig.provider, resolvedConfig.model) ??
+    inferContextWindowTokens(resolvedConfig.provider, resolvedConfig.model);
 
   return {
     provider: resolvedConfig.provider,
     model: resolvedConfig.model,
-    contextWindowTokens: inferContextWindowTokens(resolvedConfig.provider, resolvedConfig.model),
-    reservedOutputTokens: DEFAULT_RESERVED_OUTPUT_TOKENS,
+    contextWindowTokens,
+    reservedOutputTokens: cached?.maxOutputTokens ?? DEFAULT_RESERVED_OUTPUT_TOKENS,
   };
 }
 
