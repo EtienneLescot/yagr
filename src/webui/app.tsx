@@ -281,6 +281,8 @@ function SessionSidebar({
   onThemeModeChange,
   sessionHistory,
   activeSessionId,
+  viewSessionId,
+  runningSessionId,
   onNewSession,
   onSwitchSession,
 }: {
@@ -291,6 +293,8 @@ function SessionSidebar({
   onThemeModeChange: (mode: ThemeMode) => void;
   sessionHistory: SessionHistoryEntry[];
   activeSessionId: string;
+  viewSessionId: string;
+  runningSessionId: string | null;
   onNewSession: () => void;
   onSwitchSession: (id: string) => void;
 }): React.JSX.Element {
@@ -371,10 +375,17 @@ function SessionSidebar({
             <button
               key={session.id}
               type="button"
-              className={`historyItem${session.id === activeSessionId ? ' historyItemActive' : ''}`}
+              className={[
+                'historyItem',
+                session.id === viewSessionId ? 'historyItemActive' : '',
+                session.id === runningSessionId ? 'historyItemRunning' : '',
+              ].filter(Boolean).join(' ')}
               onClick={() => onSwitchSession(session.id)}
             >
-              <span className="historyItemTitle">{session.title}</span>
+              <span className="historyItemTitle">
+                {session.id === runningSessionId && <span className="runningDot" aria-label="Running" />}
+                {session.title}
+              </span>
               <span className="historyItemMeta">
                 {new Date(session.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                 {' · '}{session.messageCount} msg
@@ -672,17 +683,21 @@ function HomePage({
   now,
   busyLabel,
   runActive,
+  isBrowsing,
   chatInput,
   onChatInputChange,
   onSendMessage,
   onStopRun,
   onResetChat,
+  onReturnToActive,
   onOpenSetup,
   chatLogRef,
   themeMode,
   onThemeModeChange,
   sessionHistory,
   activeSessionId,
+  viewSessionId,
+  runningSessionId,
   onNewSession,
   onSwitchSession,
 }: {
@@ -691,17 +706,21 @@ function HomePage({
   now: number;
   busyLabel?: string;
   runActive: boolean;
+  isBrowsing: boolean;
   chatInput: string;
   onChatInputChange: (value: string) => void;
   onSendMessage: (event: React.FormEvent) => void;
   onStopRun: () => void;
   onResetChat: () => void;
+  onReturnToActive: () => void;
   onOpenSetup: () => void;
   chatLogRef: React.RefObject<HTMLDivElement | null>;
   themeMode: ThemeMode;
   onThemeModeChange: (mode: ThemeMode) => void;
   sessionHistory: SessionHistoryEntry[];
   activeSessionId: string;
+  viewSessionId: string;
+  runningSessionId: string | null;
   onNewSession: () => void;
   onSwitchSession: (id: string) => void;
 }): React.JSX.Element {
@@ -715,6 +734,8 @@ function HomePage({
         onThemeModeChange={onThemeModeChange}
         sessionHistory={sessionHistory}
         activeSessionId={activeSessionId}
+        viewSessionId={viewSessionId}
+        runningSessionId={runningSessionId}
         onNewSession={onNewSession}
         onSwitchSession={onSwitchSession}
       />
@@ -725,28 +746,39 @@ function HomePage({
             {messages.map((message) => <MessageCard key={message.id} message={message} now={now} />)}
           </div>
 
-          <form className="composer composerDocked" onSubmit={(event) => void onSendMessage(event)}>
-            <textarea
-              value={chatInput}
-              onChange={(event) => onChatInputChange(event.target.value)}
-              rows={4}
-              placeholder="Ask Yagr to inspect, create, validate, or evolve an automation..."
-            />
-            <div className="composerActions">
-              <span className="muted">{busyLabel ?? 'Runtime idle'}</span>
-              {runActive ? (
-                <button className="ghostButton dangerButton stopButton" type="button" onClick={onStopRun}>
-                  <span className="stopButtonSymbol" aria-hidden="true">■</span>
-                  <span>Stop</span>
+          {isBrowsing ? (
+            <div className="composer composerDocked composerBrowsing">
+              <div className="browseOverlay">
+                <span className="muted">Viewing a past conversation</span>
+                <button className="primaryButton" type="button" onClick={onReturnToActive}>
+                  {runActive ? 'Return to active conversation' : 'Return to current session'}
                 </button>
-              ) : (
-                <div className="composerButtonGroup">
-                  <button className="ghostButton resetChatButton" type="button" onClick={onResetChat}>Reset chat</button>
-                  <button className="primaryButton" type="submit">Send</button>
-                </div>
-              )}
+              </div>
             </div>
-          </form>
+          ) : (
+            <form className="composer composerDocked" onSubmit={(event) => void onSendMessage(event)}>
+              <textarea
+                value={chatInput}
+                onChange={(event) => onChatInputChange(event.target.value)}
+                rows={4}
+                placeholder="Ask Yagr to inspect, create, validate, or evolve an automation..."
+              />
+              <div className="composerActions">
+                <span className="muted">{busyLabel ?? 'Runtime idle'}</span>
+                {runActive ? (
+                  <button className="ghostButton dangerButton stopButton" type="button" onClick={onStopRun}>
+                    <span className="stopButtonSymbol" aria-hidden="true">■</span>
+                    <span>Stop</span>
+                  </button>
+                ) : (
+                  <div className="composerButtonGroup">
+                    <button className="ghostButton resetChatButton" type="button" onClick={onResetChat}>Reset chat</button>
+                    <button className="primaryButton" type="submit">Send</button>
+                  </div>
+                )}
+              </div>
+            </form>
+          )}
         </section>
       </main>
     </div>
@@ -1020,6 +1052,11 @@ function App() {
     setSessionHistory,
     setMessages,
     switchSession,
+    viewSessionId,
+    viewMessages,
+    browseSession,
+    setViewMessages,
+    returnToActiveSession,
   } = useWebUiStore();
 
   const notify = useNotice();
@@ -1045,6 +1082,8 @@ function App() {
   const [chatInput, setChatInput] = React.useState('');
   const [now, setNow] = React.useState(() => Date.now());
   const runActive = React.useMemo(() => messages.some((message) => message.streaming), [messages]);
+  const isBrowsing = viewSessionId !== sessionId;
+  const displayMessages = viewMessages ?? messages;
 
   React.useEffect(() => {
     applyThemeMode(themeMode);
@@ -1195,11 +1234,33 @@ function App() {
   }, [switchSession, setMessages, refreshSessions, notify]);
 
   const onSwitchSession = React.useCallback((targetId: string) => {
-    if (activeStreamRef.current) {
+    // If the target is already the active session, just return to it
+    // (clear any browse overlay).
+    if (targetId === sessionId) {
+      returnToActiveSession();
       return;
     }
 
-    switchSession(targetId); // resets messages to "Loading session…" + updates localStorage
+    // If a stream is running, browse read-only instead of hard-switching.
+    if (activeStreamRef.current) {
+      browseSession(targetId);
+
+      void (async () => {
+        try {
+          const session = await request<{
+            messages: Array<{ role: string; content: unknown }>;
+            displayMessages?: SerializedChatMessage[];
+          }>(`/api/sessions/${targetId}`);
+          setViewMessages(restoreSessionMessages(session));
+        } catch {
+          setViewMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Could not restore session.', progress: [] }]);
+        }
+      })();
+      return;
+    }
+
+    // No active stream — hard-switch as before.
+    switchSession(targetId);
     void request('/api/state', { method: 'PUT', body: JSON.stringify({ activeSessionId: targetId }) });
 
     void (async () => {
@@ -1215,7 +1276,7 @@ function App() {
         void refreshSessions();
       }
     })();
-  }, [switchSession, setMessages, refreshSessions]);
+  }, [sessionId, switchSession, setMessages, refreshSessions, browseSession, setViewMessages, returnToActiveSession]);
 
   const onLoadProjects = async () => {
     try {
@@ -1350,7 +1411,7 @@ function App() {
 
   const onSendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (activeStreamRef.current) {
+    if (activeStreamRef.current || isBrowsing) {
       return;
     }
 
@@ -1587,21 +1648,25 @@ function App() {
   return (
     <HomePage
       snapshot={snapshot}
-      messages={messages}
+      messages={displayMessages}
       now={now}
       busyLabel={busyLabel}
       runActive={runActive}
+      isBrowsing={isBrowsing}
       chatInput={chatInput}
       onChatInputChange={setChatInput}
       onSendMessage={onSendMessage}
       onStopRun={onStopRun}
       onResetChat={() => void onResetChat()}
+      onReturnToActive={returnToActiveSession}
       onOpenSetup={() => setView('setup')}
       chatLogRef={chatLogRef}
       themeMode={themeMode}
       onThemeModeChange={setThemeMode}
       sessionHistory={sessionHistory}
       activeSessionId={sessionId}
+      viewSessionId={viewSessionId}
+      runningSessionId={runActive ? sessionId : null}
       onNewSession={onNewSession}
       onSwitchSession={onSwitchSession}
     />

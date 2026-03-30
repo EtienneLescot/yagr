@@ -483,6 +483,39 @@ label span,
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
+.historyItemRunning .historyItemTitle {
+  color: var(--accent);
+}
+
+.runningDot {
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.composerBrowsing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.browseOverlay {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+}
+
 .historyItemTitle {
   font-size: 0.82rem;
   font-weight: 500;
