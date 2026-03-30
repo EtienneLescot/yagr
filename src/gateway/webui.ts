@@ -8,7 +8,9 @@ import {
   type IProject,
 } from 'n8nac';
 import { YagrSessionAgent } from '../agent.js';
-import { getYagrSessionsDir } from '../config/yagr-home.js';
+import { getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
+import { MemoryStore } from '../memory/memory-store.js';
+import { extractSessionMemory } from '../memory/extract-session-memory.js';
 import { SessionStore } from '../session/session-store.js';
 import type { SerializedChatMessage, SessionSummary } from '../session/session-types.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
@@ -193,6 +195,7 @@ class WebUiGateway implements Gateway {
   private readonly agents = new Map<string, YagrSessionAgent>();
   private readonly setupService: YagrSetupApplicationService;
   private readonly sessionStore = new SessionStore(getYagrSessionsDir());
+  private readonly memoryStore = new MemoryStore(getYagrMemoriesDir());
 
   constructor(
     private readonly engineResolver: () => Promise<EngineRuntimePort>,
@@ -571,7 +574,23 @@ class WebUiGateway implements Gateway {
   }
 
   private persistSession(sessionId: string, agent: YagrSessionAgent): void {
-    this.sessionStore.persistRun(sessionId, 'webui', [...agent.messages]);
+    const messages = [...agent.messages];
+    this.sessionStore.persistRun(sessionId, 'webui', messages);
+
+    // Save a compact memory record for cross-session context.
+    // Runs synchronously after the run completes; never throws.
+    try {
+      const session = this.sessionStore.get(sessionId);
+      const memory = extractSessionMemory(
+        sessionId,
+        session?.title ?? 'New conversation',
+        session?.createdAt ?? new Date().toISOString(),
+        messages,
+      );
+      this.memoryStore.save(memory);
+    } catch {
+      // Memory persistence is best-effort — never block the response.
+    }
   }
 
   private async readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
