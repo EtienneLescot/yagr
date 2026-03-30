@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.14](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.13...yagr@v0.2.14) (2026-03-30)
+
+
+### Features
+
+* **memory:** cross-session memory injected into system prompt ([2a56e4f](https://github.com/EtienneLescot/yagr/commit/2a56e4f6549840e115992328f2a6720641a83838))
+* **session:** clean re-implementation of session persistence ([a9b8a15](https://github.com/EtienneLescot/yagr/commit/a9b8a15e4f480c4fb0625b1df266d5d4c27af9c1))
+* **session:** enhance session browsing with visual indicators and state management ([eaed7a3](https://github.com/EtienneLescot/yagr/commit/eaed7a353b8a353444daa4eef3a8fe92f4d3d4d0))
+* **session:** session persistence, cross-session memory & browse-during-run ([ae33ece](https://github.com/EtienneLescot/yagr/commit/ae33ece4902cda141fcb0dfc97793da468d32f42))
+
+
+### Bug Fixes
+
+* **session:** address PR review comments ([8a64f54](https://github.com/EtienneLescot/yagr/commit/8a64f5428164e457ef1bc94fc287e30fe218c6c6))
+* **webui:** always start fresh session on new browser/tab open ([e96a585](https://github.com/EtienneLescot/yagr/commit/e96a585c6f2c0a087f52fe0cc1f8b404f5d5c6d8))
+* **webui:** eliminate session-ID race condition, add greeting handling ([b1a5219](https://github.com/EtienneLescot/yagr/commit/b1a52195e3a4cc67a68544909440ab0187066d7d))
+* **webui:** register first session on disk at mount time ([755a261](https://github.com/EtienneLescot/yagr/commit/755a261776198240edc38b6039f61825688602ed))
+
 ## [0.2.13](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.12...yagr@v0.2.13) (2026-03-25)
 
 
