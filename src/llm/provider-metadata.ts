@@ -1,4 +1,15 @@
 import type { YagrModelProvider } from './provider-registry.js';
+import { MODEL_SNAPSHOT } from './provider-model-snapshot.js';
+
+// ---------------------------------------------------------------------------
+// Static snapshot baseline — populated from the generated snapshot file.
+// Used as a fallback when the live provider metadata cache has no entry.
+// Real API metadata (fetched at runtime) always takes precedence.
+// ---------------------------------------------------------------------------
+const snapshotBaselineMap = new Map<string, { contextWindow: number; maxOutputTokens?: number }>();
+for (const [provider, model, contextWindow, maxOutputTokens] of MODEL_SNAPSHOT) {
+  snapshotBaselineMap.set(`${provider}::${model}`, { contextWindow, maxOutputTokens });
+}
 
 export interface YagrProviderModelMetadata {
   provider: YagrModelProvider;
@@ -66,6 +77,15 @@ export function getCachedProviderModelMetadata(
   }
 
   return entry.metadata;
+}
+
+/**
+ * Returns the context window size for a model from the static snapshot baseline,
+ * falling back to undefined if the model is not in the snapshot.
+ * This is a cheap, always-available alternative to the TTL-bound metadata cache.
+ */
+export function getSnapshotContextWindow(provider: YagrModelProvider, model: string): number | undefined {
+  return snapshotBaselineMap.get(metadataCacheKey(provider, model))?.contextWindow;
 }
 
 export function clearProviderMetadataCache(): void {
@@ -190,6 +210,74 @@ function mergeProviderMetadata(
   };
 }
 
+function normalizeAnthropicModelMetadata(
+  model: string,
+  payload: Record<string, unknown>,
+): YagrProviderModelMetadata | undefined {
+  const contextWindow = asNumber(payload.context_window);
+  const maxOutputTokens = asNumber(payload.max_tokens);
+  if (contextWindow === undefined && maxOutputTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    provider: 'anthropic',
+    model,
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+function normalizeMistralMetadata(payload: Record<string, unknown>): YagrProviderModelMetadata[] {
+  const rawModels = Array.isArray(payload.data) ? payload.data : [];
+  const fetchedAt = new Date().toISOString();
+  const entries: YagrProviderModelMetadata[] = [];
+
+  for (const rawModel of rawModels) {
+    if (!rawModel || typeof rawModel !== 'object') {
+      continue;
+    }
+
+    const record = rawModel as Record<string, unknown>;
+    const model = typeof record.id === 'string' ? record.id.trim() : '';
+    if (!model) {
+      continue;
+    }
+
+    const contextWindow = asNumber(record.max_context_length);
+    const maxOutputTokens = asNumber(record.max_tokens ?? record.max_completion_tokens);
+    entries.push({
+      provider: 'mistral',
+      model,
+      ...(contextWindow !== undefined ? { contextWindow } : {}),
+      ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+      fetchedAt,
+    });
+  }
+
+  return entries;
+}
+
+function normalizeGoogleModelMetadata(
+  model: string,
+  payload: Record<string, unknown>,
+): YagrProviderModelMetadata | undefined {
+  const contextWindow = asNumber(payload.inputTokenLimit);
+  const maxOutputTokens = asNumber(payload.outputTokenLimit);
+  if (contextWindow === undefined && maxOutputTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    provider: 'google',
+    model,
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
 function normalizeOpenRouterMetadata(payload: Record<string, unknown>): YagrProviderModelMetadata[] {
   const rawModels = Array.isArray(payload.data) ? payload.data : [];
   const fetchedAt = new Date().toISOString();
@@ -285,6 +373,8 @@ export function warmProviderMetadataCacheFromDiscovery(
     cacheMetadataEntries(normalizeOpenRouterMetadata(payload));
   } else if (provider === 'copilot-proxy') {
     cacheMetadataEntries(normalizeCopilotMetadata(payload));
+  } else if (provider === 'mistral') {
+    cacheMetadataEntries(normalizeMistralMetadata(payload));
   }
 }
 
@@ -317,6 +407,10 @@ function normalizeOpenRouterEndpointMetadata(
   };
 }
 
+const ANTHROPIC_DEFAULT_BASE_URL = 'https://api.anthropic.com';
+const GOOGLE_NATIVE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+const MISTRAL_DEFAULT_BASE_URL = 'https://api.mistral.ai/v1';
+
 export async function fetchAndCacheProviderMetadata(
   provider: YagrModelProvider,
   apiKey?: string,
@@ -326,13 +420,10 @@ export async function fetchAndCacheProviderMetadata(
   } = {},
 ): Promise<YagrProviderModelMetadata[]> {
   const resolvedBaseUrl = (baseUrl || (provider === 'openrouter' ? OPENROUTER_DEFAULT_BASE_URL : '')).replace(/\/$/, '');
-  const headers: Record<string, string> = {
+  const bearerHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
   };
-
-  if (apiKey) {
-    headers.Authorization = `Bearer ${apiKey}`;
-  }
 
   if (provider === 'openrouter' && options.model) {
     const encodedModelPath = options.model
@@ -340,7 +431,7 @@ export async function fetchAndCacheProviderMetadata(
       .map((segment) => encodeURIComponent(segment))
       .join('/');
     const endpointUrl = `${resolvedBaseUrl}/models/${encodedModelPath}/endpoints`;
-    const response = await fetch(endpointUrl, { headers });
+    const response = await fetch(endpointUrl, { headers: bearerHeaders });
     if (!response.ok) {
       throw new Error(`Failed to fetch provider metadata: ${response.status} ${response.statusText}`);
     }
@@ -355,10 +446,23 @@ export async function fetchAndCacheProviderMetadata(
     return [entry];
   }
 
+  if (provider === 'openrouter') {
+    const metadataUrl = `${resolvedBaseUrl}/models`;
+    const response = await fetch(metadataUrl, { headers: bearerHeaders });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch provider metadata: ${response.status} ${response.statusText}`);
+    }
+
+    const payload = await response.json() as Record<string, unknown>;
+    const entries = normalizeOpenRouterMetadata(payload);
+    cacheMetadataEntries(entries);
+    return entries;
+  }
+
   if (provider === 'copilot-proxy') {
     const response = await fetch(`${resolvedBaseUrl}/models`, {
       headers: {
-        ...headers,
+        ...bearerHeaders,
         Accept: 'application/json',
         'User-Agent': 'GitHubCopilotChat/0.26.7',
         'Editor-Version': 'vscode/1.96.2',
@@ -380,20 +484,67 @@ export async function fetchAndCacheProviderMetadata(
     return entries;
   }
 
-  if (provider !== 'openrouter') {
+  // Anthropic: per-model fetch only — the list endpoint does not expose context_window.
+  // Uses x-api-key header per Anthropic API convention.
+  if (provider === 'anthropic' && options.model) {
+    const anthropicBase = resolvedBaseUrl || ANTHROPIC_DEFAULT_BASE_URL;
+    const anthropicHeaders: Record<string, string> = {
+      'anthropic-version': '2023-06-01',
+      ...(apiKey ? { 'x-api-key': apiKey } : {}),
+    };
+    const encodedModel = encodeURIComponent(options.model.trim());
+    const response = await fetch(`${anthropicBase}/v1/models/${encodedModel}`, { headers: anthropicHeaders });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Anthropic model metadata: ${response.status} ${response.statusText}`);
+    }
+
+    const payload = await response.json() as Record<string, unknown>;
+    const entry = normalizeAnthropicModelMetadata(options.model.trim(), payload);
+    if (entry) {
+      cacheMetadataEntries([entry]);
+      return [entry];
+    }
+
     return [];
   }
 
-  const metadataUrl = `${resolvedBaseUrl}/models`;
-  const response = await fetch(metadataUrl, { headers });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch provider metadata: ${response.status} ${response.statusText}`);
+  // Mistral: full list — each model entry includes max_context_length.
+  if (provider === 'mistral') {
+    const mistralBase = resolvedBaseUrl || MISTRAL_DEFAULT_BASE_URL;
+    const response = await fetch(`${mistralBase}/models`, { headers: bearerHeaders });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Mistral models metadata: ${response.status} ${response.statusText}`);
+    }
+
+    const payload = await response.json() as Record<string, unknown>;
+    const entries = normalizeMistralMetadata(payload);
+    cacheMetadataEntries(entries);
+    return options.model ? entries.filter((entry) => entry.model === options.model) : entries;
   }
 
-  const payload = await response.json() as Record<string, unknown>;
-  const entries = normalizeOpenRouterMetadata(payload);
-  cacheMetadataEntries(entries);
-  return entries;
+  // Google: per-model fetch via native REST API — exposes inputTokenLimit / outputTokenLimit.
+  // The OpenAI-compatible endpoint does not include token limits.
+  if (provider === 'google' && options.model) {
+    const keyParam = apiKey ? `?key=${encodeURIComponent(apiKey)}` : '';
+    const encodedModel = encodeURIComponent(options.model.trim());
+    const response = await fetch(
+      `${GOOGLE_NATIVE_BASE_URL}/models/${encodedModel}${keyParam}`,
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Google model metadata: ${response.status} ${response.statusText}`);
+    }
+
+    const payload = await response.json() as Record<string, unknown>;
+    const entry = normalizeGoogleModelMetadata(options.model.trim(), payload);
+    if (entry) {
+      cacheMetadataEntries([entry]);
+      return [entry];
+    }
+
+    return [];
+  }
+
+  return [];
 }
 
 export async function primeProviderModelMetadata(

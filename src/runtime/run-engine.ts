@@ -8,6 +8,7 @@ import type { YagrModelProvider } from '../llm/provider-registry.js';
 import type {
   YagrAgentState,
   YagrContextCompactionEvent,
+  YagrContextUsageEvent,
   YagrRequiredAction,
   YagrRuntimeContext,
   YagrPhaseEvent,
@@ -82,6 +83,7 @@ type RunState = {
   currentPhase: YagrRunPhase | null;
   currentAgentState: YagrAgentState;
   stepNumber: number;
+  lastKnownPromptTokens?: number;
 };
 
 type SyntheticN8nacIntent = {
@@ -1048,6 +1050,7 @@ async function maybeCompactMessages(
       preserveRecentMessages: options.compactPreserveRecentMessages,
       charsPerToken: options.charsPerToken,
     },
+    knownPromptTokens: state.lastKnownPromptTokens,
     llmConfig: options,
   });
 
@@ -1265,6 +1268,7 @@ async function executePhase(
           result: toolResult.result,
         })),
         text: step.text,
+        usage: step.usage ? { promptTokens: step.usage.promptTokens, completionTokens: step.usage.completionTokens } : undefined,
       });
     }
 
@@ -1310,6 +1314,7 @@ async function executePhase(
           result: toolResult.result,
         })),
         text: stepResult.text,
+        usage: stepResult.usage ? { promptTokens: stepResult.usage.promptTokens, completionTokens: stepResult.usage.completionTokens } : undefined,
       });
     },
   });
@@ -1384,6 +1389,7 @@ async function recordStep(
     toolCalls: Array<{ toolName: string; args: unknown }>;
     toolResults: Array<{ toolName: string; result: unknown }>;
     text: string;
+    usage?: { promptTokens: number; completionTokens: number };
   },
 ): Promise<YagrRunStep> {
   state.stepNumber += 1;
@@ -1404,7 +1410,24 @@ async function recordStep(
     toolResults: step.toolResults,
     text: step.text,
     phase,
+    ...(step.usage ? { usage: step.usage } : {}),
   };
+
+  if (step.usage) {
+    state.lastKnownPromptTokens = step.usage.promptTokens;
+    if (options.onContextUsage) {
+      const modelProfile = resolveModelContextProfile(options);
+      const contextWindowTokens = options.contextWindowTokens ?? modelProfile.contextWindowTokens;
+      const usageEvent: YagrContextUsageEvent = {
+        promptTokens: step.usage.promptTokens,
+        completionTokens: step.usage.completionTokens,
+        contextWindowTokens,
+        fillPercent: contextWindowTokens > 0 ? (step.usage.promptTokens / contextWindowTokens) * 100 : 0,
+        source: 'api',
+      };
+      await options.onContextUsage(usageEvent);
+    }
+  }
 
   await emitJournal(state, options, {
     type: 'step',

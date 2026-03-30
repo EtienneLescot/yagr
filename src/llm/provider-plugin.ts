@@ -9,7 +9,7 @@ import {
   type YagrModelCapabilityProfile,
 } from './model-capabilities.js';
 import { createOpenAiAccountLanguageModel, getOpenAiAccountSession } from './openai-account.js';
-import { fetchAndCacheProviderMetadata, primeProviderModelMetadata, warmProviderMetadataCacheFromDiscovery } from './provider-metadata.js';
+import { primeProviderModelMetadata, warmProviderMetadataCacheFromDiscovery } from './provider-metadata.js';
 import {
   getDefaultBaseUrlForProvider,
   getProviderDefinition,
@@ -83,15 +83,6 @@ function buildProviderPlugin(provider: YagrModelProvider): YagrProviderPlugin {
         await primeProviderModelMetadata(provider, model, apiKey, baseUrl);
       },
     };
-  } else if (definition.modelDiscovery) {
-    plugin.metadata = {
-      warmDiscoveryPayload: (payload) => {
-        warmProviderMetadataCacheFromDiscovery(provider, payload);
-      },
-      primeModelMetadata: async ({ apiKey, baseUrl }) => {
-        await fetchAndCacheProviderMetadata(provider, apiKey, baseUrl).catch(() => undefined);
-      },
-    };
   } else if (provider === 'copilot-proxy') {
     plugin.metadata = {
       warmDiscoveryPayload: (payload) => {
@@ -99,6 +90,30 @@ function buildProviderPlugin(provider: YagrModelProvider): YagrProviderPlugin {
       },
       primeModelMetadata: async ({ model, apiKey, baseUrl }) => {
         await primeProviderModelMetadata(provider, model, apiKey, baseUrl).catch(() => undefined);
+      },
+    };
+  } else if (provider === 'anthropic' || provider === 'google') {
+    // Per-model metadata fetch: context_window from Anthropic individual model endpoint,
+    // inputTokenLimit from Google native REST API.
+    plugin.metadata = {
+      primeModelMetadata: async ({ model, apiKey, baseUrl }) => {
+        await primeProviderModelMetadata(provider, model, apiKey, baseUrl).catch(() => undefined);
+      },
+    };
+  } else if (provider === 'mistral') {
+    // List fetch: Mistral /v1/models includes max_context_length for every model.
+    plugin.metadata = {
+      warmDiscoveryPayload: (payload) => {
+        warmProviderMetadataCacheFromDiscovery(provider, payload);
+      },
+      primeModelMetadata: async ({ model, apiKey, baseUrl }) => {
+        await primeProviderModelMetadata(provider, model, apiKey, baseUrl).catch(() => undefined);
+      },
+    };
+  } else if (definition.modelDiscovery) {
+    plugin.metadata = {
+      warmDiscoveryPayload: (payload) => {
+        warmProviderMetadataCacheFromDiscovery(provider, payload);
       },
     };
   }
