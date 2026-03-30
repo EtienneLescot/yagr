@@ -2,7 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useWebUiStore, type ChatMessage, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot, type SessionHistoryEntry } from './store.js';
+import { useWebUiStore, isNewTabOpen, type ChatMessage, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot, type SessionHistoryEntry } from './store.js';
 import type { SerializedChatMessage } from '../session/session-types.js';
 import { parseWorkflowMap } from '../gateway/workflow-diagram.js';
 import yagrLogoUrl from '../../docs/static/img/yagr-logo.png';
@@ -1135,38 +1135,36 @@ function App() {
     }
   }, [setSessionHistory]); // setSessionHistory is stable — this callback is created once.
 
-  // On mount: use sessionStorage (tab-scoped) to decide whether to start fresh or restore.
-  // sessionStorage survives F5 but is cleared on tab close / new browser open.
-  // This prevents silently continuing a previous session without any visual indication.
+  // On mount: register the current session with the server and load data.
+  // The session ID is already fresh (new tab) or restored (F5) — set
+  // synchronously in store.ts before React renders. No race condition.
   React.useEffect(() => {
     void (async () => {
       try {
-        const isNewTab = !window.sessionStorage.getItem('yagr:tab-initialized');
-        window.sessionStorage.setItem('yagr:tab-initialized', '1');
+        // Ensure the session file exists on disk (creates if missing, idempotent).
+        await request('/api/sessions', { method: 'POST', body: JSON.stringify({ id: sessionId }) });
 
-        if (isNewTab) {
-          // Fresh browser/tab open: always create a brand-new session.
-          // The previous session stays in sidebar history and can be resumed there.
-          const { id } = await request<{ id: string }>('/api/sessions', { method: 'POST' });
-          switchSession(id);
-          setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'New conversation. How can Yagr help?', progress: [] }]);
-          void refreshSessions();
-        } else {
-          // Page refresh (F5): restore the current session so the user can see their history.
+        // On F5: restore messages from the server so the user sees their history.
+        if (!isNewTabOpen) {
           try {
             const session = await request<{
               messages: Array<{ role: string; content: unknown }>;
               displayMessages?: SerializedChatMessage[];
             }>(`/api/sessions/${sessionId}`);
-            setMessages(restoreSessionMessages(session));
+            const restored = restoreSessionMessages(session);
+            if (restored.length > 0 && !(restored.length === 1 && restored[0].role === 'system')) {
+              setMessages(restored);
+            }
           } catch {
-            // Session file missing (edge case: deleted externally) — create it anew.
-            void request('/api/sessions', { method: 'POST', body: JSON.stringify({ id: sessionId }) });
+            // Session file missing or empty — keep the default welcome message.
           }
         }
       } catch {
-        // Ignore — local state is already correct.
+        // Registration failed — the user can still chat; persistSession will
+        // create the file after the first run completes.
       }
+
+      void refreshSessions();
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount only

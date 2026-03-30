@@ -98,8 +98,29 @@ export interface SessionHistoryEntry {
   messageCount: number;
 }
 
-const initialSessionId = window.localStorage.getItem('yagr-web-session') ?? crypto.randomUUID();
-window.localStorage.setItem('yagr-web-session', initialSessionId);
+const SESSION_KEY = 'yagr-web-session';
+const TAB_FLAG = 'yagr:tab-initialized';
+
+// Synchronous — runs before any React render.
+// New tab/browser open → fresh UUID (never inherit previous session context).
+// F5 page refresh → keep the current session from localStorage.
+const isNewTab = !window.sessionStorage.getItem(TAB_FLAG);
+window.sessionStorage.setItem(TAB_FLAG, '1');
+
+/** True when this is a fresh browser/tab open (not an F5 page refresh). */
+export const isNewTabOpen = isNewTab;
+
+const initialSessionId = isNewTab
+  ? (() => {
+      const id = crypto.randomUUID();
+      window.localStorage.setItem(SESSION_KEY, id);
+      return id;
+    })()
+  : window.localStorage.getItem(SESSION_KEY) ?? (() => {
+      const id = crypto.randomUUID();
+      window.localStorage.setItem(SESSION_KEY, id);
+      return id;
+    })();
 
 export const useWebUiStore = create<WebUiState>((set) => ({
   sessionId: initialSessionId,
@@ -167,7 +188,7 @@ export const useWebUiStore = create<WebUiState>((set) => ({
   setMessages: (messages) => set({ messages }),
   setSessionHistory: (sessionHistory) => set({ sessionHistory }),
   switchSession: (sessionId) => {
-    window.localStorage.setItem('yagr-web-session', sessionId);
+    window.localStorage.setItem(SESSION_KEY, sessionId);
     set({
       sessionId,
       messages: [
