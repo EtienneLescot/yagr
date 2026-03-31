@@ -23,6 +23,8 @@
     "test:providers:apikey:strict": "YAGR_IT_PROVIDERS=openai,anthropic,google,mistral,openrouter npm run test:providers:strict",
     "test:providers:apikey:advanced": "YAGR_IT_PROVIDERS=openai,anthropic,google,mistral,openrouter YAGR_IT_ADVANCED=1 npm run test:providers",
     "test:providers:apikey:advanced:strict": "YAGR_IT_PROVIDERS=openai,anthropic,google,mistral,openrouter YAGR_IT_ADVANCED=1 npm run test:providers:strict",
+    "test:scenarios": "npm run build && node scripts/scenario-integration-test.mjs",
+    "test:scenarios:strict": "npm run build && node scripts/scenario-integration-test.mjs --strict",
     "typecheck": "tsc --noEmit",
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
     "yagr:onboard": "YAGR_HOME=.yagr-test-workspace node dist/cli.js onboard",
