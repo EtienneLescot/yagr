@@ -34,12 +34,13 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
   const requiredActions = input.requiredActions.filter((action) => !satisfiedRequiredActionIds.has(action.id));
   const { blocking: blockingRequiredActions } = splitRequiredActions(requiredActions);
   const hasBlockingWorkflowFailures = input.hasWorkflowWrites && input.unresolvedFailureCount > 0;
-  // needsContinuation is true when material work was attempted but produced no concrete result.
-  // executePhaseCalledNoTools only counts when material work was also attempted — without that
-  // condition, it would falsely fire on conversational/Q&A turns where no tool call is correct.
+  // needsContinuation is true when:
+  //  (a) material work was attempted but produced no concrete result, OR
+  //  (b) the execute phase violated the "must call at least one tool" contract by
+  //      responding with plain text only — always requires a repair pass.
   const needsContinuation =
     (input.attemptedMaterialWork && !input.hasConcreteResult && blockingRequiredActions.length === 0)
-    || (input.executePhaseCalledNoTools && input.attemptedMaterialWork && !input.hasConcreteResult && blockingRequiredActions.length === 0);
+    || (input.executePhaseCalledNoTools && !input.hasConcreteResult && blockingRequiredActions.length === 0);
 
   if (blockingRequiredActions.length > 0) {
     reasons.push('Required action is still open.');

@@ -61,8 +61,6 @@ export class N8nEngine implements Engine {
 
   async searchTemplates(query: string): Promise<TemplateSummary[]> {
     const result: UnifiedSearchResult = this.knowledgeSearch.searchAll(query, {
-      type: 'documentation',
-      category: 'advanced-ai',
       limit: 10,
     });
 
