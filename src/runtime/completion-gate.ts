@@ -7,6 +7,9 @@ export interface CompletionGateInput {
   requiredActions: YagrRequiredAction[];
   satisfiedRequiredActionIds?: string[];
   attemptedMaterialWork: boolean;
+  /** True when the execute phase made zero tool calls — treated as a violation of the
+   *  "must call at least one tool" contract, which always requires a repair pass. */
+  executePhaseCalledNoTools: boolean;
   hasConcreteResult: boolean;
   hasWorkflowWrites: boolean;
   successfulValidate: boolean;
@@ -31,7 +34,12 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
   const requiredActions = input.requiredActions.filter((action) => !satisfiedRequiredActionIds.has(action.id));
   const { blocking: blockingRequiredActions } = splitRequiredActions(requiredActions);
   const hasBlockingWorkflowFailures = input.hasWorkflowWrites && input.unresolvedFailureCount > 0;
-  const needsContinuation = input.attemptedMaterialWork && !input.hasConcreteResult && blockingRequiredActions.length === 0;
+  // needsContinuation is true when material work was attempted but produced no concrete result.
+  // executePhaseCalledNoTools only counts when material work was also attempted — without that
+  // condition, it would falsely fire on conversational/Q&A turns where no tool call is correct.
+  const needsContinuation =
+    (input.attemptedMaterialWork && !input.hasConcreteResult && blockingRequiredActions.length === 0)
+    || (input.executePhaseCalledNoTools && input.attemptedMaterialWork && !input.hasConcreteResult && blockingRequiredActions.length === 0);
 
   if (blockingRequiredActions.length > 0) {
     reasons.push('Required action is still open.');

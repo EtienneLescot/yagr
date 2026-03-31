@@ -361,9 +361,7 @@ function createPhasePrompt(
 
   return [
     'Complete the following task end-to-end.',
-    'Author or edit workflow files, validate them, push them to n8n, and verify the deployment.',
     'You must call at least one tool to make progress — do not respond with text alone.',
-    'Ask the user only when a specific missing value blocks execution.',
     ...strategy.executeDirectives,
     `Task: ${userPrompt}`,
   ].join('\n');
@@ -631,6 +629,48 @@ function hasObservedToolCall(journal: YagrRunJournalEntry[], toolNames: readonly
   return false;
 }
 
+/**
+ * Returns true when the journal contains a tool call that represents material
+ * (mutating / write-path) work.  Read-only n8nac actions such as `list`,
+ * `setup_check`, `pull`, `skills`, `init_auth`, and `init_project` are
+ * intentionally excluded so that informational queries do not trigger the
+ * completion-gate's continuation logic.
+ */
+const N8NAC_READONLY_ACTIONS = new Set([
+  'list', 'setup_check', 'skills', 'skillsArgs', 'skillsArgv',
+  'pull', 'init_auth', 'init_project',
+]);
+
+function hasMaterialToolCall(journal: YagrRunJournalEntry[], toolNames: readonly string[]): boolean {
+  const wanted = new Set(toolNames);
+
+  for (const entry of journal) {
+    if (entry.type !== 'step' || !entry.step) {
+      continue;
+    }
+
+    for (const toolCall of entry.step.toolCalls) {
+      if (!wanted.has(toolCall.toolName)) {
+        continue;
+      }
+
+      // For n8nac, only count write/mutating actions as material work.
+      if (toolCall.toolName === 'n8nac') {
+        const action = typeof toolCall.args === 'object' && toolCall.args !== null
+          ? (toolCall.args as { action?: string }).action
+          : undefined;
+        if (typeof action === 'string' && N8NAC_READONLY_ACTIONS.has(action)) {
+          continue;
+        }
+      }
+
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function collectPresentedWorkflow(result: unknown): { workflowId?: string; workflowUrl?: string; title?: string } | undefined {
   if (!result || typeof result !== 'object') {
     return undefined;
@@ -848,10 +888,6 @@ export function shouldForceGroundedFinalAnswer(
     return true;
   }
 
-  if (followUpRequiredActions.length > 0) {
-    return true;
-  }
-
   return Boolean(outcome.hasWorkflowWrites && (outcome.successfulPush || outcome.successfulVerify));
 }
 
@@ -905,6 +941,9 @@ function buildFinalAnswerFacts(
   if (outcome.updatedFiles.length > 0) {
     lines.push(`updated_files=${outcome.updatedFiles.join(', ')}`);
   }
+  if (outcome.deletedFiles.length > 0) {
+    lines.push(`deleted_files=${outcome.deletedFiles.join(', ')}`);
+  }
   if (outcome.successfulActions.length > 0) {
     lines.push(`successful_actions=${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
   }
@@ -926,7 +965,7 @@ function buildCompletionRepairPrompt(): string {
     'Yagr internal completion repair pass.',
     'The previous attempt ended without a concrete result or a structured blocker.',
     'Do not apologize and do not summarize a failure yet.',
-    'Continue working until you either produce a real result or raise requestRequiredAction for the missing user input, permission, or external dependency that blocks progress.',
+    'Continue working until you either produce a real result or raise requestRequiredAction for the missing user input or external dependency that blocks progress.',
     'Do not treat follow-up runtime configuration or post-deploy setup as a blocking reason to stop if you can still build, validate, save, or deploy the current artifact.',
     'If the artifact can be delivered now but still needs later setup, prefer delivering it and raise requestRequiredAction with blocking=false for the next step.',
     'A plain-text statement that the task could not be completed is not an acceptable stopping point.',
@@ -937,7 +976,7 @@ function buildBlockerCapturePrompt(): string {
   return wrapInternal([
     'Yagr internal blocker capture pass.',
     'The run still has no concrete result and no structured blocker.',
-    'If progress is blocked on missing user input, permission, or an external dependency, call requestRequiredAction now.',
+    'If progress is blocked on missing user input or an external dependency, call requestRequiredAction now.',
     'Do not answer with plain prose. Emit only the required action through the tool.',
   ].join(' '));
 }
@@ -1503,13 +1542,15 @@ export class YagrRunEngine {
         role: 'user',
         content: createPhasePrompt('inspect', prompt, runtimeStrategy),
       };
+      const inspectMessages = [...executionContext, inspectInstruction];
+      const inspectMaxSteps = Math.min(options.maxSteps ?? 8, runtimeStrategy.inspectMaxSteps);
       const inspectResult = await generateText({
         abortSignal: options.abortSignal,
         model: createLanguageModel(options),
         system: this.systemPrompt,
         ...(modelInvocationTools ? { tools: modelInvocationTools as AllBuiltTools } : {}),
-        messages: [...executionContext, inspectInstruction],
-        maxSteps: Math.min(options.maxSteps ?? 8, runtimeStrategy.inspectMaxSteps),
+        messages: inspectMessages,
+        maxSteps: inspectMaxSteps,
         providerOptions: runtimeStrategy.providerOptions,
         experimental_repairToolCall: async ({ toolCall, error }) => {
           if (!InvalidToolArgumentsError.isInstance(error)) return null;
@@ -1569,7 +1610,6 @@ export class YagrRunEngine {
       for (let attemptNumber = 1; attemptNumber <= MAX_EXECUTION_ATTEMPTS; attemptNumber += 1) {
         throwIfAborted(options.abortSignal);
         executeMessages = await maybeCompactMessages(state, options, this.systemPrompt, prompt, executeMessages);
-
         const phaseResult = await executePhase(
           state,
           options,
@@ -1657,13 +1697,17 @@ export class YagrRunEngine {
           finishReason,
           requiredActions,
           satisfiedRequiredActionIds: options.satisfiedRequiredActionIds,
-          attemptedMaterialWork: hasObservedToolCall(state.journal, runtimeStrategy.tooling.executionCriticalToolNames),
+          attemptedMaterialWork: hasMaterialToolCall(state.journal, runtimeStrategy.tooling.executionCriticalToolNames),
+          executePhaseCalledNoTools: toolCalls.length === 0,
           hasConcreteResult: Boolean(
             finalOutcome.hasWorkflowWrites
             || finalOutcome.successfulValidate
             || finalOutcome.successfulPush
             || finalOutcome.successfulVerify
-            || extractPresentedWorkflowFromJournal(state.journal),
+            || extractPresentedWorkflowFromJournal(state.journal)
+            || finalOutcome.writtenFiles.length > 0
+            || finalOutcome.updatedFiles.length > 0
+            || finalOutcome.deletedFiles.length > 0
           ),
           hasWorkflowWrites: finalOutcome.hasWorkflowWrites,
           successfulValidate: Boolean(finalOutcome.successfulValidate),
@@ -1673,6 +1717,7 @@ export class YagrRunEngine {
           hooks: runtimeHooks,
           context: buildRuntimeContext(state),
         });
+
 
         if (
           !completionDecision.accepted
@@ -1803,6 +1848,21 @@ export class YagrRunEngine {
         options,
         runtimeStrategy,
       );
+
+      // Ensure the final user-visible response is always the last message in
+      // the persisted conversation history.  ensureFinalText can generate a
+      // polished, grounded summary that differs from the raw execute-phase
+      // text — without this step the model would not see its own clean answer
+      // when the user follows up in the next turn.
+      if (text) {
+        const lastMsg = persistedMessages.at(-1);
+        if (lastMsg?.role === 'assistant') {
+          persistedMessages[persistedMessages.length - 1] = { role: 'assistant', content: text };
+        } else {
+          persistedMessages.push({ role: 'assistant', content: text });
+        }
+      }
+
       if (text) {
         await options.onTextDelta?.(text);
       }

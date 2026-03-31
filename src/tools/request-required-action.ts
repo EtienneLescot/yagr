@@ -6,7 +6,7 @@ import { emitToolEvent, type ToolExecutionObserver } from './observer.js';
 
 export function createRequestRequiredActionTool(observer?: ToolExecutionObserver) {
   return tool({
-    description: 'Raise a structured required action when progress is blocked on user input, permission, or an external dependency. Use blocking=true only when the current task cannot continue or be delivered without that action. Use blocking=false for follow-up setup or next steps that do not prevent delivering the current artifact.',
+    description: 'Raise a structured required action when progress is blocked on missing user input or an external dependency (credentials, API access, remote configuration). Do not use this when you already have a tool that can perform the operation directly. Use blocking=true only when the current task cannot continue or be delivered without that action. Use blocking=false for follow-up setup or next steps that do not prevent delivering the current artifact.',
     parameters: z.object({
       kind: z.enum(['input', 'permission', 'external']).describe('Type of blocker that needs user or external action.'),
       title: z.string().min(1).max(120).describe('Short title for the blocker.'),

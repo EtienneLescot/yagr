@@ -6,7 +6,7 @@ import { fileExists, relativeWorkspacePath, resolveWorkspacePath } from './works
 
 export function createDeleteWorkspaceFileTool(_observer?: ToolExecutionObserver) {
   return tool({
-    description: 'Delete a workspace file that is obsolete, orphaned, or superseded by a canonical copy. Use only when you can attribute the artifact to the current run or prove it is redundant.',
+    description: 'Delete a workspace file. Use when the user explicitly requests deletion, or when a file is obsolete, orphaned, or superseded by a canonical copy.',
     parameters: z.object({
       path: z.string().min(1).describe('Workspace-relative file path.'),
       allowMissing: z.boolean().default(true).describe('Whether missing files should be treated as a non-fatal result.'),

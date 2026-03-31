@@ -87,9 +87,6 @@ export function resolveToolRuntimeStrategy(
         executeDirectives: [
           'Tool calling is natively supported.',
           'Do not respond with only text or an empty response — you must call a tool to make progress.',
-          'If you already have sufficient context, call writeWorkspaceFile immediately to author the workflow file.',
-          'If you still need node schemas or examples, call searchNodes or n8nac skills first, then write the file.',
-          'After writing the workflow file, use n8nac to validate, push, and verify. Stop only after verify succeeds.',
         ],
         recoveryDirectives: [],
       };
@@ -103,9 +100,8 @@ export function resolveToolRuntimeStrategy(
           'Treat tool use as single-step and conservative. Avoid broad exploration once the required path is clear.',
         ],
         executeDirectives: [
+          'Do not respond with text alone — you must call a tool to make progress.',
           'Use one tool at a time when possible.',
-          'Prefer direct workflow actions over repeated workspace searches.',
-          'After push and verify succeed, stop and return the user-facing response.',
         ],
         recoveryDirectives: [
           'Retry only the failing step; do not restart the whole exploration sequence.',
