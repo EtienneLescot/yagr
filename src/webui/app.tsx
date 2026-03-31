@@ -18,6 +18,7 @@ type ChatStreamEvent =
   | { type: 'phase'; phase: string; status: 'started' | 'completed'; message: string }
   | { type: 'state'; state: string; message: string }
   | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
+  | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
@@ -641,6 +642,17 @@ function MessageCard({ message, now }: { message: ChatMessage; now: number }): R
           <div className="workMeta">
             <strong>{message.statusLabel ?? 'Yagr is working…'}</strong>
             <span className="muted">{elapsed ? `Running for ${elapsed}` : 'Thinking, planning, and executing…'}</span>
+            {message.contextFillPercent != null ? (
+              <div className="contextBar">
+                <div
+                  className="contextBarFill"
+                  style={{ width: `${Math.min(100, message.contextFillPercent)}%` }}
+                  data-high={message.contextFillPercent >= 80 ? '' : undefined}
+                  data-warn={message.contextFillPercent >= 60 && message.contextFillPercent < 80 ? '' : undefined}
+                />
+                <span className="contextBarLabel">{Math.round(message.contextFillPercent)}% context</span>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1481,6 +1493,11 @@ function App() {
             statusLabel: streamEvent.detail ?? streamEvent.title,
           });
           setBusyLabel(streamEvent.detail ?? streamEvent.title);
+          return;
+        }
+
+        if (streamEvent.type === 'context-usage') {
+          patchMessage(pendingId, { contextFillPercent: streamEvent.fillPercent });
           return;
         }
 
