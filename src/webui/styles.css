@@ -830,35 +830,59 @@ button {
   gap: 0.2rem;
 }
 
-.contextBar {
+.contextStatus {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  margin-top: 0.3rem;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--panel-border);
 }
 
-.contextBarFill {
-  height: 4px;
+.contextStatusLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.contextStatusTrack {
+  width: 120px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--panel-soft);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.contextStatusFill {
+  height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--blue), #1cc98a);
   transition: width 0.4s ease, background 0.4s ease;
   min-width: 2px;
-  flex-shrink: 0;
-  max-width: 140px;
 }
 
-.contextBarFill[data-warn] {
+.contextStatusFill[data-warn] {
   background: linear-gradient(90deg, #f5a623, #e07b00);
 }
 
-.contextBarFill[data-high] {
+.contextStatusFill[data-high] {
   background: linear-gradient(90deg, #ff7f9a, #d94778);
 }
 
-.contextBarLabel {
-  font-size: 0.78rem;
+.contextStatusLabel {
+  font-size: 0.8rem;
   color: var(--muted);
   white-space: nowrap;
+}
+
+.compactButton {
+  font-size: 0.82rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 0.35rem;
+  flex-shrink: 0;
 }
 
 .workGlyph {

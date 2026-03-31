@@ -56,7 +56,6 @@ export interface ChatMessage {
   finalState?: string;
   progress?: ChatProgressEntry[];
   embed?: ChatWorkflowEmbed;
-  contextFillPercent?: number;
 }
 
 export interface ChatProgressEntry {

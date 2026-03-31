@@ -2,9 +2,13 @@ import type { Engine, EngineIdentityPort, EngineRuntimePort } from './engine/eng
 import type { CoreMessage } from 'ai';
 import { buildSystemPromptSnapshot, type SystemPromptSnapshot } from './prompt/build-system-prompt.js';
 import { YagrRunEngine } from './runtime/run-engine.js';
+import { compactConversationContext } from './runtime/context-compaction.js';
+import { resolveLanguageModelConfig, resolveModelContextProfile } from './llm/create-language-model.js';
 import type {
   DeployedWorkflow,
   GeneratedWorkflow,
+  YagrContextCompactionEvent,
+  YagrLanguageModelConfig,
   YagrRunOptions,
   YagrRunResult,
   WorkflowSpec,
@@ -63,6 +67,39 @@ export class YagrSessionAgent {
   clearConversation(): void {
     this.history.length = 0;
     this.promptSnapshot = this.createPromptSnapshot();
+  }
+
+  /**
+   * Force-compacts the conversation history by summarising older messages
+   * via an LLM call. Updates the in-memory history in place.
+   * Returns the compaction event if compaction happened, undefined otherwise.
+   */
+  async compactHistory(config: YagrLanguageModelConfig = {}): Promise<YagrContextCompactionEvent | undefined> {
+    if (this.history.length < 2) {
+      return undefined;
+    }
+
+    const resolvedConfig = resolveLanguageModelConfig(config);
+    const contextProfile = resolveModelContextProfile(resolvedConfig);
+    const result = await compactConversationContext({
+      messages: [...this.history],
+      prompt: '',
+      journal: [],
+      systemPrompt: this.promptSnapshot.systemPrompt,
+      budget: {
+        contextWindowTokens: contextProfile.contextWindowTokens,
+        reservedOutputTokens: contextProfile.reservedOutputTokens,
+        thresholdPercent: 0, // force compaction regardless of fill level
+      },
+      llmConfig: resolvedConfig,
+    });
+
+    if (result.event) {
+      this.history.length = 0;
+      this.history.push(...result.messages);
+    }
+
+    return result.event;
   }
 
   get messages(): readonly CoreMessage[] {

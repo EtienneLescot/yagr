@@ -735,8 +735,24 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
       return;
     }
 
+    if (prompt === '/compact') {
+      pushEntry('narrative', 'Compact', 'Compacting conversation context…');
+      try {
+        const event = await agent.compactHistory(options);
+        if (event) {
+          setContextFillPercent(null);
+          pushEntry('result', 'Compact', `Context compacted: ${event.messagesCompacted} messages folded, ${event.preservedRecentMessages} recent kept.`);
+        } else {
+          pushEntry('narrative', 'Compact', 'Nothing to compact — conversation is too short.');
+        }
+      } catch (error) {
+        pushEntry('interrupt', 'Compact failed', error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+
     await runPrompt(prompt);
-  }, [agent, app, isRunning, pendingRequiredActions, pushEntry, runPrompt, workflowEmbeds]);
+  }, [agent, app, isRunning, options, pendingRequiredActions, pushEntry, runPrompt, workflowEmbeds]);
 
   useInput((inputKey, key) => {
     if (key.ctrl && inputKey === 'c') {
@@ -854,7 +870,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
                 ? 'History mode is active. Return with Ctrl+Y or Esc.'
                 : latestWorkflowTarget
                   ? `Ctrl+Y for the full transcript. Press Ctrl+O or type /open to open the latest workflow.`
-                  : 'Ctrl+Y to switch to the full transcript.'}
+                  : 'Ctrl+Y to switch to the full transcript. Type /compact to compact context.'}
             </Text>
             {contextFillPercent !== null && (
               <Text dimColor>
