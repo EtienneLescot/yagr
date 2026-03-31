@@ -21,6 +21,7 @@ import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 import type {
   YagrContextCompactionEvent,
+  YagrContextUsageEvent,
   YagrModelProvider,
   YagrPhaseEvent,
   YagrRunOptions,
@@ -77,6 +78,7 @@ type WebUiChatStreamEvent =
   | { type: 'phase'; phase: string; status: 'started' | 'completed'; message: string }
   | { type: 'state'; state: string; message: string }
   | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
+  | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
@@ -770,6 +772,17 @@ class WebUiGateway implements Gateway {
         onCompaction: async (event) => {
           pushCompactionEvent(event);
           await this.options.onCompaction?.(event);
+        },
+        onContextUsage: async (event) => {
+          writeEvent({
+            type: 'context-usage',
+            promptTokens: event.promptTokens,
+            completionTokens: event.completionTokens,
+            contextWindowTokens: event.contextWindowTokens,
+            fillPercent: event.fillPercent,
+            source: event.source,
+          });
+          await this.options.onContextUsage?.(event);
         },
         onTextDelta: async (delta) => {
           streamedText += delta;

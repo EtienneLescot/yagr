@@ -22,6 +22,7 @@ import {
 import type {
   YagrAgentState,
   YagrContextCompactionEvent,
+  YagrContextUsageEvent,
   YagrDisplayOptions,
   YagrPhaseEvent,
   YagrRequiredAction,
@@ -165,6 +166,12 @@ function compactSummary(event: YagrContextCompactionEvent): string {
   const folded = `${event.messagesCompacted} folded`;
   const source = event.source === 'llm' ? 'LLM' : 'fallback';
   return `Context compacted via ${source}: ${folded}, ${preserved}.`;
+}
+
+function buildContextBar(fillPercent: number): string {
+  const TOTAL = 10;
+  const filled = Math.round(Math.max(0, Math.min(100, fillPercent)) / 100 * TOTAL);
+  return `[${'█'.repeat(filled)}${'░'.repeat(TOTAL - filled)}]`;
 }
 
 function buildCommandHistoryText(command: string, stdout: string, stderr: string, exitCode: number, message?: string): string {
@@ -419,6 +426,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   const [statusPulse, setStatusPulse] = useState(0);
   const [activeOperationText, setActiveOperationText] = useState('Ready for a request.');
   const [workflowEmbeds, setWorkflowEmbeds] = useState<WorkflowEmbed[]>([]);
+  const [contextFillPercent, setContextFillPercent] = useState<number | null>(null);
   const nextEntryIdRef = useRef(1);
   const commandBuffersRef = useRef({ stdout: '', stderr: '', command: '', toolName: '' });
   const workspaceLabel = useMemo(() => basename(getYagrN8nWorkspaceDir()), []);
@@ -535,6 +543,11 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     await options.onCompaction?.(event);
   }, [options, pushEntry]);
 
+  const handleContextUsage = useCallback(async (event: YagrContextUsageEvent) => {
+    setContextFillPercent(event.fillPercent);
+    await options.onContextUsage?.(event);
+  }, [options]);
+
   const runPrompt = useCallback(async (prompt: string) => {
     setLastUserPrompt(prompt);
 
@@ -549,12 +562,14 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     setActiveOperationText('Analyzing the workspace and constraints.');
     setLiveAssistantText('');
     setWorkflowEmbeds([]);
+    setContextFillPercent(null);
 
     try {
       const result = await agent.run(prompt, {
         ...options,
         satisfiedRequiredActionIds: approvedRequiredActionIds,
         onCompaction: handleCompaction,
+        onContextUsage: handleContextUsage,
         onPhaseChange: async (event) => {
           const update = mapPhaseEventToUserVisibleUpdate(event);
           if (event.status === 'started') {
@@ -628,7 +643,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     } finally {
       setIsRunning(false);
     }
-  }, [agent, approvedRequiredActionIds, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, handleCompaction, handleToolEvent, options, pushEntry]);
+  }, [agent, approvedRequiredActionIds, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, handleCompaction, handleContextUsage, handleToolEvent, options, pushEntry]);
 
   const submitPrompt = useCallback(async (rawPrompt: string) => {
     const prompt = rawPrompt.trim();
@@ -841,6 +856,11 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
                   ? `Ctrl+Y for the full transcript. Press Ctrl+O or type /open to open the latest workflow.`
                   : 'Ctrl+Y to switch to the full transcript.'}
             </Text>
+            {contextFillPercent !== null && (
+              <Text dimColor>
+                Context: {buildContextBar(contextFillPercent)} {Math.round(contextFillPercent)}%
+              </Text>
+            )}
             {latestWorkflowTarget ? <Text dimColor>Latest workflow: {latestWorkflowTarget}</Text> : null}
           </Box>
           <Box>
