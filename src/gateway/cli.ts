@@ -4,7 +4,7 @@ import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { runInteractiveGateway } from './interactive-ui.js';
 import { resolveLanguageModelConfig, resolveModelProvider, type YagrModelProvider } from '../llm/create-language-model.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
-import type { YagrRunOptions } from '../types.js';
+import type { YagrContextUsageEvent, YagrRunOptions } from '../types.js';
 
 export interface CliGatewayOptions extends YagrRunOptions {
   prompt?: string;
@@ -58,7 +58,21 @@ export async function runCliGateway(agent: YagrSessionAgent, options: CliGateway
   });
 
   if (options.prompt && !options.interactive) {
-    const result = await agent.run(options.prompt, effectiveOptions);
+    const cliContextUsage = (event: YagrContextUsageEvent): void => {
+      if (event.fillPercent >= 70) {
+        process.stderr.write(
+          `[yagr] context ${Math.round(event.fillPercent)}% full (${event.promptTokens.toLocaleString()}/${event.contextWindowTokens.toLocaleString()} tokens)\n`,
+        );
+      }
+    };
+
+    const result = await agent.run(options.prompt, {
+      ...effectiveOptions,
+      onContextUsage: async (event) => {
+        cliContextUsage(event);
+        await effectiveOptions.onContextUsage?.(event);
+      },
+    });
     process.stdout.write(`${result.text}\n`);
     return;
   }

@@ -533,6 +533,12 @@ class TelegramGateway implements Gateway {
           await sendProgressUpdate(mapToolEventToUserVisibleUpdate(event));
           await this.options.onToolEvent?.(event);
         },
+        onContextUsage: async (event) => {
+          if (event.fillPercent >= 80) {
+            await this.sendHtml(chatId, `<i>⚠️ Context window ${Math.round(event.fillPercent)}% full — Yagr may compact the conversation soon.</i>`);
+          }
+          await this.options.onContextUsage?.(event);
+        },
       });
 
       if (result.requiredActions.length > 0) {
