@@ -14,6 +14,7 @@ export type ObservedN8nacAction = {
 export type RunOutcome = {
   writtenFiles: string[];
   updatedFiles: string[];
+  deletedFiles: string[];
   successfulActions: ObservedN8nacAction[];
   failedActions: ObservedN8nacAction[];
   unresolvedFailedActions: ObservedN8nacAction[];
@@ -39,6 +40,7 @@ function asNumber(value: unknown): number | undefined {
 function extractObservedFacts(journal: YagrRunJournalEntry[]) {
   const writtenFiles = new Set<string>();
   const updatedFiles = new Set<string>();
+  const deletedFiles = new Set<string>();
   const n8nacActions: ObservedN8nacAction[] = [];
 
   for (const entry of journal) {
@@ -66,6 +68,15 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
         const filePath = asString(result?.path) ?? asString(args?.path);
         if (filePath) {
           updatedFiles.add(filePath);
+        }
+        continue;
+      }
+
+      if (toolCall.toolName === 'deleteWorkspaceFile') {
+        const deleted = result?.deleted === true;
+        const filePath = asString(result?.path) ?? asString(args?.path);
+        if (deleted && filePath) {
+          deletedFiles.add(filePath);
         }
         continue;
       }
@@ -111,6 +122,7 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
   return {
     writtenFiles: [...writtenFiles],
     updatedFiles: [...updatedFiles],
+    deletedFiles: [...deletedFiles],
     n8nacActions,
   };
 }
@@ -165,6 +177,7 @@ export function analyzeRunOutcome(journal: YagrRunJournalEntry[]): RunOutcome {
   return {
     writtenFiles: facts.writtenFiles,
     updatedFiles: facts.updatedFiles,
+    deletedFiles: facts.deletedFiles,
     successfulActions,
     failedActions,
     unresolvedFailedActions,

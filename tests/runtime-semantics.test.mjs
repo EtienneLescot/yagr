@@ -594,6 +594,7 @@ test('successful push counts as validate and verify evidence for completion gati
     finishReason: 'stop',
     requiredActions: [],
     attemptedMaterialWork: true,
+    executePhaseCalledNoTools: false,
     hasConcreteResult: true,
     hasWorkflowWrites: outcome.hasWorkflowWrites,
     successfulValidate: Boolean(outcome.successfulValidate),
@@ -847,6 +848,7 @@ test('completion gate stays blocked when a required action is still open', async
     finishReason: 'stop',
     requiredActions,
     attemptedMaterialWork: false,
+    executePhaseCalledNoTools: false,
     hasConcreteResult: false,
     hasWorkflowWrites: false,
     successfulValidate: false,
@@ -876,6 +878,7 @@ test('completion gate accepts non-blocking follow-up actions after a concrete re
       },
     ],
     attemptedMaterialWork: true,
+    executePhaseCalledNoTools: false,
     hasConcreteResult: true,
     hasWorkflowWrites: true,
     successfulValidate: true,
@@ -897,6 +900,7 @@ test('beforeCompletion hook can inject a permission blocker', async () => {
     finishReason: 'stop',
     requiredActions: [],
     attemptedMaterialWork: false,
+    executePhaseCalledNoTools: false,
     hasConcreteResult: true,
     hasWorkflowWrites: false,
     successfulValidate: true,
@@ -997,6 +1001,7 @@ test('approved required action bypasses completion blocker', async () => {
     requiredActions: [],
     satisfiedRequiredActionIds: ['approval-4'],
     attemptedMaterialWork: false,
+    executePhaseCalledNoTools: false,
     hasConcreteResult: true,
     hasWorkflowWrites: false,
     successfulValidate: true,
@@ -1032,6 +1037,7 @@ test('completion gate does not fail terminally on exploratory n8nac failures wit
     finishReason: 'stop',
     requiredActions: [],
     attemptedMaterialWork: false,
+    executePhaseCalledNoTools: false,
     hasConcreteResult: false,
     hasWorkflowWrites: false,
     successfulValidate: false,
@@ -1052,6 +1058,7 @@ test('completion gate still fails terminally on unresolved n8nac failures after 
     finishReason: 'stop',
     requiredActions: [],
     attemptedMaterialWork: true,
+    executePhaseCalledNoTools: false,
     hasConcreteResult: false,
     hasWorkflowWrites: true,
     successfulValidate: false,
@@ -1071,6 +1078,7 @@ test('completion gate requests continuation when material work ended without res
     finishReason: 'stop',
     requiredActions: [],
     attemptedMaterialWork: true,
+    executePhaseCalledNoTools: false,
     hasConcreteResult: false,
     hasWorkflowWrites: false,
     successfulValidate: false,
@@ -1084,4 +1092,48 @@ test('completion gate requests continuation when material work ended without res
   assert.equal(decision.state, 'resumable');
   assert.equal(decision.needsContinuation, true);
   assert.match(decision.reasons[0], /concrete result or a structured blocker/i);
+});
+
+test('completion gate accepts a text-only response when no material work was attempted', async () => {
+  // When the execute phase produces text without tool calls and no material work was
+  // attempted (e.g. a Q&A or conversational turn), the completion gate must NOT force
+  // a repair pass — doing so causes amnesia/confusion on follow-up questions.
+  const decision = await evaluateCompletionGate({
+    text: 'Je vais m\'en occuper maintenant.',
+    finishReason: 'stop',
+    requiredActions: [],
+    attemptedMaterialWork: false,
+    executePhaseCalledNoTools: true,
+    hasConcreteResult: false,
+    hasWorkflowWrites: false,
+    successfulValidate: false,
+    successfulPush: false,
+    successfulVerify: false,
+    unresolvedFailureCount: 0,
+    context: { runId: 'run-9', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, true);
+  assert.equal(decision.needsContinuation, false);
+});
+
+test('completion gate accepts an informational text-only response that has a concrete result', async () => {
+  const decision = await evaluateCompletionGate({
+    text: 'Here is the list of your workflows: ...',
+    finishReason: 'stop',
+    requiredActions: [],
+    attemptedMaterialWork: false,
+    executePhaseCalledNoTools: true,
+    hasConcreteResult: true,
+    hasWorkflowWrites: false,
+    successfulValidate: false,
+    successfulPush: false,
+    successfulVerify: false,
+    unresolvedFailureCount: 0,
+    context: { runId: 'run-10', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, true);
+  assert.equal(decision.state, 'completed');
+  assert.equal(decision.needsContinuation, false);
 });
