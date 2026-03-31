@@ -435,7 +435,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
   }));
 
   return tool({
-    description: 'Run n8n-as-code workflow operations from the active workspace. For skills queries, use action="skills" with either skillsArgs as a single shell-like string or skillsArgv as an array of arguments.',
+    description: 'Run n8n-as-code workflow operations from the active workspace. Use action="skills" with skillsArgv to search for node schemas, workflow examples, docs, and templates (e.g. skillsArgv=["examples","search","slack notification"] or skillsArgv=["search","google sheets"]). Use list, pull, push, verify, validate for workflow lifecycle management.',
     parameters: strictCompatibleParameters,
     execute: async ({
       action,

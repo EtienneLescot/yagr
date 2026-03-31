@@ -94,11 +94,9 @@ export function resolveToolRuntimeStrategy(
       return {
         ...base,
         inspectMaxSteps: 4,
-        executeMaxSteps: 8,
+        executeMaxSteps: 14,
         recoveryMaxSteps: 5,
-        inspectDirectives: [
-          'Treat tool use as single-step and conservative. Avoid broad exploration once the required path is clear.',
-        ],
+        inspectDirectives: [],
         executeDirectives: [
           'Do not respond with text alone — you must call a tool to make progress.',
           'Use one tool at a time when possible.',

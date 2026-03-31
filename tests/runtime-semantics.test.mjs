@@ -1094,10 +1094,7 @@ test('completion gate requests continuation when material work ended without res
   assert.match(decision.reasons[0], /concrete result or a structured blocker/i);
 });
 
-test('completion gate accepts a text-only response when no material work was attempted', async () => {
-  // When the execute phase produces text without tool calls and no material work was
-  // attempted (e.g. a Q&A or conversational turn), the completion gate must NOT force
-  // a repair pass — doing so causes amnesia/confusion on follow-up questions.
+test('completion gate requests continuation when execute phase called no tools at all', async () => {
   const decision = await evaluateCompletionGate({
     text: 'Je vais m\'en occuper maintenant.',
     finishReason: 'stop',
@@ -1113,8 +1110,10 @@ test('completion gate accepts a text-only response when no material work was att
     context: { runId: 'run-9', phase: 'summarize', state: 'running' },
   });
 
-  assert.equal(decision.accepted, true);
-  assert.equal(decision.needsContinuation, false);
+  assert.equal(decision.accepted, false);
+  assert.equal(decision.state, 'resumable');
+  assert.equal(decision.needsContinuation, true);
+  assert.match(decision.reasons[0], /concrete result or a structured blocker/i);
 });
 
 test('completion gate accepts an informational text-only response that has a concrete result', async () => {
