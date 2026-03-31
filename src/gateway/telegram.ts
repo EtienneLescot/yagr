@@ -358,6 +358,35 @@ class TelegramGateway implements Gateway {
       await clearSession(String(ctx.chat.id), ctx.reply.bind(ctx));
     });
 
+    this.bot.command('compact', async (ctx) => {
+      const chatId = String(ctx.chat.id);
+      if (!this.isLinkedChat(chatId)) {
+        await ctx.reply('This chat is not linked.');
+        return;
+      }
+      if (this.runningChats.has(chatId)) {
+        await ctx.reply('A run is in progress. Wait for it to finish before compacting.');
+        return;
+      }
+      await ctx.reply('Compacting conversation context…');
+      const agent = await this.getAgent(chatId);
+      const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
+      try {
+        const event = await agent.compactHistory(resolvedConfig);
+        if (event) {
+          await ctx.reply(
+            `Context compacted: ${event.messagesCompacted} messages folded, ${event.preservedRecentMessages} recent messages kept.`,
+          );
+        } else {
+          await ctx.reply('Nothing to compact — conversation is too short.');
+        }
+      } catch (error) {
+        await ctx.reply(
+          `Compaction failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    });
+
     this.bot.command('unlink', async (ctx) => {
       const chatId = String(ctx.chat.id);
       if (!this.isLinkedChat(chatId)) {

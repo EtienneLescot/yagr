@@ -421,6 +421,21 @@ class WebUiGateway implements Gateway {
       return;
     }
 
+    if (method === 'POST' && url.pathname === '/api/chat/compact') {
+      const body = await this.readJson(request);
+      const sessionId = String(body.sessionId ?? '');
+      if (!sessionId || !isValidSessionId(sessionId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
+
+      const agent = await this.resolveAgent(sessionId);
+      const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
+      const event = await agent.compactHistory(resolvedConfig);
+      this.sendJson(response, 200, { compacted: !!event, event: event ?? null });
+      return;
+    }
+
     // -------------------------------------------------------------------------
     // Session management
     // -------------------------------------------------------------------------

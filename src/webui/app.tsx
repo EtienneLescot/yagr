@@ -642,17 +642,6 @@ function MessageCard({ message, now }: { message: ChatMessage; now: number }): R
           <div className="workMeta">
             <strong>{message.statusLabel ?? 'Yagr is working…'}</strong>
             <span className="muted">{elapsed ? `Running for ${elapsed}` : 'Thinking, planning, and executing…'}</span>
-            {message.contextFillPercent != null ? (
-              <div className="contextBar">
-                <div
-                  className="contextBarFill"
-                  style={{ width: `${Math.min(100, message.contextFillPercent)}%` }}
-                  data-high={message.contextFillPercent >= 80 ? '' : undefined}
-                  data-warn={message.contextFillPercent >= 60 && message.contextFillPercent < 80 ? '' : undefined}
-                />
-                <span className="contextBarLabel">{Math.round(message.contextFillPercent)}% context</span>
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}
@@ -709,6 +698,8 @@ function HomePage({
   runningSessionId,
   onNewSession,
   onSwitchSession,
+  contextFillPercent,
+  onCompactContext,
 }: {
   snapshot?: ConfigSnapshot;
   messages: ChatMessage[];
@@ -731,6 +722,8 @@ function HomePage({
   runningSessionId: string | null;
   onNewSession: () => void;
   onSwitchSession: (id: string) => void;
+  contextFillPercent: number | null;
+  onCompactContext: () => void;
 }): React.JSX.Element {
   return (
     <div className="shell shellHome">
@@ -770,6 +763,26 @@ function HomePage({
                 rows={4}
                 placeholder="Ask Yagr to inspect, create, validate, or evolve an automation..."
               />
+              {contextFillPercent != null && (
+                <div className="contextStatus">
+                  <div className="contextStatusLeft">
+                    <div className="contextStatusTrack">
+                      <div
+                        className="contextStatusFill"
+                        style={{ width: `${Math.min(100, contextFillPercent)}%` }}
+                        data-high={contextFillPercent >= 80 ? '' : undefined}
+                        data-warn={contextFillPercent >= 60 && contextFillPercent < 80 ? '' : undefined}
+                      />
+                    </div>
+                    <span className="contextStatusLabel">Context {Math.round(contextFillPercent)}%</span>
+                  </div>
+                  {!runActive && (
+                    <button className="ghostButton compactButton" type="button" onClick={onCompactContext}>
+                      Compact
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="composerActions">
                 <span className="muted">{busyLabel ?? 'Runtime idle'}</span>
                 {runActive ? (
@@ -1088,6 +1101,7 @@ function App() {
 
   const [chatInput, setChatInput] = React.useState('');
   const [now, setNow] = React.useState(() => Date.now());
+  const [contextFillPercent, setContextFillPercent] = React.useState<number | null>(null);
   const runActive = React.useMemo(() => messages.some((message) => message.streaming), [messages]);
   const isBrowsing = viewSessionId !== sessionId;
   const displayMessages = viewMessages ?? messages;
@@ -1407,6 +1421,7 @@ function App() {
         body: JSON.stringify({ sessionId }),
       });
       resetMessages();
+      setContextFillPercent(null);
       notify('Conversation reset.');
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error), 'error');
@@ -1497,7 +1512,7 @@ function App() {
         }
 
         if (streamEvent.type === 'context-usage') {
-          patchMessage(pendingId, { contextFillPercent: streamEvent.fillPercent });
+          setContextFillPercent(streamEvent.fillPercent);
           return;
         }
 
@@ -1615,6 +1630,30 @@ function App() {
     activeStreamRef.current.abort();
   }, [setBusyLabel]);
 
+  const onCompactContext = async () => {
+    if (runActive) {
+      return;
+    }
+
+    setBusyLabel('Compacting context…');
+    try {
+      const result = await request<{ compacted: boolean; event: { messagesCompacted: number; preservedRecentMessages: number } | null }>(
+        '/api/chat/compact',
+        { method: 'POST', body: JSON.stringify({ sessionId }) },
+      );
+      if (result.compacted && result.event) {
+        setContextFillPercent(null);
+        notify(`Context compacted: ${result.event.messagesCompacted} messages folded.`);
+      } else {
+        notify('Nothing to compact — conversation is too short.');
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error), 'error');
+    } finally {
+      setBusyLabel(undefined);
+    }
+  };
+
   if (view === 'setup') {
     return (
       <SetupPage
@@ -1679,6 +1718,8 @@ function App() {
       runningSessionId={runActive ? sessionId : null}
       onNewSession={onNewSession}
       onSwitchSession={onSwitchSession}
+      contextFillPercent={contextFillPercent}
+      onCompactContext={() => void onCompactContext()}
     />
   );
 }
