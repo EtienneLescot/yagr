@@ -2,6 +2,7 @@ import { tool } from 'ai';
 import type { YagrToolRuntimeStrategy } from './tool-runtime-strategy.js';
 import type { YagrAgentState, YagrRunPhase, YagrRuntimeContext, YagrRuntimeHook } from '../types.js';
 import { resolveLocalWorkflowDiagram } from '../tools/present-workflow-result.js';
+import { extractN8nacOperation } from '../tools/n8nac-command.js';
 import { resolveN8nRuntimeState, YagrN8nConfigService } from '../config/n8n-config-service.js';
 
 type ToolLike = {
@@ -129,7 +130,7 @@ export function createWorkflowSyncCompletionGuardHook(strategy: YagrToolRuntimeS
 
       const normalizedArgs = asRecord(args);
       const normalizedResult = asRecord(result);
-      const action = asString(normalizedArgs?.action);
+      const action = extractN8nacOperation(normalizedArgs);
       const exitCode = asNumber(normalizedResult?.exitCode);
 
       if (exitCode !== 0) {
@@ -163,7 +164,7 @@ export function createN8nSetupGuardHook(): YagrRuntimeHook {
       }
 
       const normalizedArgs = asRecord(args);
-      const action = asString(normalizedArgs?.action);
+        const action = extractN8nacOperation(normalizedArgs);
       if (action !== 'init_auth' && action !== 'init_project') {
         return;
       }
@@ -195,7 +196,7 @@ export function createN8nSetupGuardHook(): YagrRuntimeHook {
       }
 
       const normalizedArgs = asRecord(args);
-      const action = asString(normalizedArgs?.action);
+        const action = extractN8nacOperation(normalizedArgs);
       if (action !== 'setup_check') {
         return;
       }
@@ -256,7 +257,7 @@ export function createN8nCredentialQuestionFlowHook(): YagrRuntimeHook {
       }
 
       const normalizedArgs = asRecord(args);
-      const action = asString(normalizedArgs?.action);
+        const action = extractN8nacOperation(normalizedArgs);
       if (isCredentialOrchestrationAction(action)) {
         credentialFlowStarted = true;
         return;

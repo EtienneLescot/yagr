@@ -122,8 +122,8 @@ export function resolveToolRuntimeStrategy(
           'Respond with JSON objects only, no markdown and no prose.',
           'Supported JSON intents are limited to:',
           '{"tool":"writeWorkspaceFile","path":"<workspace-relative .workflow.ts path>","content":"<full file content>","mode":"overwrite"}',
-          '{"tool":"n8nac","action":"validate","validateFile":"<same .workflow.ts path>"}',
-          '{"tool":"n8nac","action":"push","filename":"<same .workflow.ts path>"}',
+          '{"tool":"n8nac","action":"command","commandArgv":["skills","validate","<same .workflow.ts path>"]}',
+          '{"tool":"n8nac","action":"command","commandArgv":["push","<same .workflow.ts path>","--verify"]}',
           'Use the smallest sequence needed to complete the task. Prefer one workflow file write, then validate, then push.',
         ],
         recoveryDirectives: [

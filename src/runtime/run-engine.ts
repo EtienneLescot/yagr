@@ -21,6 +21,7 @@ import type {
   YagrToolEvent,
 } from '../types.js';
 import { buildTools, type AllBuiltTools } from '../tools/index.js';
+import { extractN8nacOperation } from '../tools/n8nac-command.js';
 import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import { resolveWorkflowDiagramFromFilePath } from '../tools/present-workflow-result.js';
 import { evaluateCompletionGate, type CompletionGateDecision } from './completion-gate.js';
@@ -89,6 +90,8 @@ type RunState = {
 type SyntheticN8nacIntent = {
   tool?: string;
   action: string;
+  commandArgs?: string | null;
+  commandArgv?: string[] | null;
   filename?: string;
   validateFile?: string;
   workflowId?: string;
@@ -241,6 +244,8 @@ function parseSyntheticToolIntents(text: string): SyntheticToolIntent[] {
       intents.push({
         tool: typeof parsed.tool === 'string' ? parsed.tool : 'n8nac',
         action: parsed.action,
+        commandArgs: typeof parsed.commandArgs === 'string' || parsed.commandArgs === null ? parsed.commandArgs as string | null : undefined,
+        commandArgv: Array.isArray(parsed.commandArgv) ? parsed.commandArgv.filter((value): value is string => typeof value === 'string') : undefined,
         filename: typeof parsed.filename === 'string' ? parsed.filename : undefined,
         validateFile: typeof parsed.validateFile === 'string' ? parsed.validateFile : undefined,
         workflowId: typeof parsed.workflowId === 'string' ? parsed.workflowId : undefined,
@@ -284,7 +289,11 @@ async function maybeExecuteSyntheticToolIntents(
   const intents = parseSyntheticToolIntents(phaseResult.text)
     .filter((intent) => (
       isSyntheticWriteWorkspaceFileIntent(intent)
-      || (isSyntheticN8nacIntent(intent) && ['validate', 'push', 'verify'].includes(intent.action))
+      || (isSyntheticN8nacIntent(intent) && (
+        (intent.action === 'command' && Array.isArray(intent.commandArgv) && ['push', 'verify'].includes(intent.commandArgv[0] || ''))
+        || (intent.action === 'command' && Array.isArray(intent.commandArgv) && intent.commandArgv[0] === 'skills' && intent.commandArgv[1] === 'validate')
+        || ['validate', 'push', 'verify'].includes(intent.action)
+      ))
     ))
     .slice(0, strategy.capabilityProfile.toolCalling === 'none' ? 4 : 3);
 
@@ -537,12 +546,7 @@ function inferPhaseFromStep(step: {
   const n8nacActions = step.toolCalls
     .filter((toolCall) => toolCall.toolName === 'n8nac')
     .map((toolCall) => {
-      if (!toolCall.args || typeof toolCall.args !== 'object') {
-        return undefined;
-      }
-
-      const action = (toolCall.args as { action?: unknown }).action;
-      return typeof action === 'string' ? action : undefined;
+      return extractN8nacOperation(toolCall.args);
     })
     .filter((action): action is string => Boolean(action));
 
@@ -637,7 +641,7 @@ function hasObservedToolCall(journal: YagrRunJournalEntry[], toolNames: readonly
  * completion-gate's continuation logic.
  */
 const N8NAC_READONLY_ACTIONS = new Set([
-  'list', 'setup_check', 'skills', 'skillsArgs', 'skillsArgv',
+  'list', 'setup_check', 'skills',
   'pull', 'init_auth', 'init_project',
 ]);
 
@@ -656,9 +660,7 @@ function hasMaterialToolCall(journal: YagrRunJournalEntry[], toolNames: readonly
 
       // For n8nac, only count write/mutating actions as material work.
       if (toolCall.toolName === 'n8nac') {
-        const action = typeof toolCall.args === 'object' && toolCall.args !== null
-          ? (toolCall.args as { action?: string }).action
-          : undefined;
+        const action = extractN8nacOperation(toolCall.args);
         if (typeof action === 'string' && N8NAC_READONLY_ACTIONS.has(action)) {
           continue;
         }

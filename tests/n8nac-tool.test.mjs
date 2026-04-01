@@ -7,63 +7,25 @@ import path from 'node:path';
 
 import { createN8nAcTool, getN8nacProcessEnv, pickPreferredWorkspaceWorkflowCandidate } from '../dist/tools/n8nac.js';
 
-test('n8nac tool schema accepts legacy skills action aliases', () => {
+test('n8nac tool schema accepts generic command passthrough', () => {
   const tool = createN8nAcTool();
 
-  const withSkillsArgs = tool.parameters.safeParse({
-    action: 'skillsArgs',
-    skillsArgs: 'examples search "creative fun unusual"',
+  const withArgv = tool.parameters.safeParse({
+    action: 'command',
+    commandArgv: ['workflow', 'credential-required', 'wf_123', '--json'],
   });
-  const withSkillsArgv = tool.parameters.safeParse({
-    action: 'skillsArgv',
-    skillsArgv: ['examples', 'search', 'creative fun unusual'],
+  const withArgs = tool.parameters.safeParse({
+    action: 'command',
+    commandArgs: 'workflow credential-required wf_123 --json',
   });
 
-  assert.equal(withSkillsArgs.success, true);
-  assert.equal(withSkillsArgv.success, true);
+  assert.equal(withArgv.success, true);
+  assert.equal(withArgs.success, true);
 });
 
-test('n8nac tool schema still accepts the canonical skills action', () => {
+test('n8nac tool schema accepts Yagr-specific helper actions', () => {
   const tool = createN8nAcTool();
 
-  const parsed = tool.parameters.safeParse({
-    action: 'skills',
-    skillsArgs: 'search telegram',
-  });
-
-  assert.equal(parsed.success, true);
-});
-
-test('n8nac tool schema accepts credential and execution actions', () => {
-  const tool = createN8nAcTool();
-
-  const credentialList = tool.parameters.safeParse({
-    action: 'credential_list',
-  });
-  const credentialCreate = tool.parameters.safeParse({
-    action: 'credential_create',
-    credentialType: 'openAiApi',
-    credentialName: 'OpenAI Primary',
-    credentialData: '{"apiKey":"sk-demo"}',
-    outputJson: true,
-  });
-  const workflowCredentialRequired = tool.parameters.safeParse({
-    action: 'workflow_credential_required',
-    workflowId: 'wf_123',
-  });
-  const workflowActivate = tool.parameters.safeParse({
-    action: 'workflow_activate',
-    workflowId: 'wf_123',
-  });
-  const workflowDeactivate = tool.parameters.safeParse({
-    action: 'workflow_deactivate',
-    workflowId: 'wf_123',
-  });
-  const executionGet = tool.parameters.safeParse({
-    action: 'execution_get',
-    executionId: 'exec_123',
-    includeData: true,
-  });
   const providerOptions = tool.parameters.safeParse({
     action: 'llm_provider_options',
     nodeName: 'Agent 1',
@@ -74,40 +36,30 @@ test('n8nac tool schema accepts credential and execution actions', () => {
   const warningAccept = tool.parameters.safeParse({
     action: 'yagr_proxy_warning_accept',
   });
-  const testPlanAlias = tool.parameters.safeParse({
-    action: 'test-plan',
-    workflowId: 'wf_123',
-    outputJson: true,
-  });
-  const testRun = tool.parameters.safeParse({
-    action: 'test',
-    workflowId: 'wf_123',
-    testData: '{"chatInput":"Quelle est la capitale de la France?"}',
-    testProd: false,
-  });
 
-  assert.equal(credentialList.success, true);
-  assert.equal(credentialCreate.success, true);
-  assert.equal(workflowCredentialRequired.success, true);
-  assert.equal(workflowActivate.success, true);
-  assert.equal(workflowDeactivate.success, true);
-  assert.equal(executionGet.success, true);
   assert.equal(providerOptions.success, true);
   assert.equal(warningCheck.success, true);
   assert.equal(warningAccept.success, true);
-  assert.equal(testPlanAlias.success, true);
-  assert.equal(testRun.success, true);
+});
+
+test('n8nac tool schema no longer accepts legacy specialized action names', () => {
+  const tool = createN8nAcTool();
+
+  const specialized = tool.parameters.safeParse({ action: 'credential_list' });
+  const alias = tool.parameters.safeParse({ action: 'skillsArgs', skillsArgs: 'search telegram' });
+  const hyphenTestPlan = tool.parameters.safeParse({ action: 'test-plan', workflowId: 'wf_123' });
+
+  assert.equal(specialized.success, false);
+  assert.equal(alias.success, false);
+  assert.equal(hyphenTestPlan.success, false);
 });
 
 test('n8nac tool schema coerces common stringified scalar values from weaker models', () => {
   const tool = createN8nAcTool();
 
   const parsed = tool.parameters.safeParse({
-    action: 'list',
-    projectIndex: '1',
-    outputJson: 'true',
-    includeData: 'false',
-    executionLimit: '25',
+    action: 'command',
+    commandArgv: ['execution', 'list', '--limit', '25'],
   });
 
   assert.equal(parsed.success, true);
@@ -115,10 +67,7 @@ test('n8nac tool schema coerces common stringified scalar values from weaker mod
     return;
   }
 
-  assert.equal(parsed.data.projectIndex, 1);
-  assert.equal(parsed.data.outputJson, true);
-  assert.equal(parsed.data.includeData, false);
-  assert.equal(parsed.data.executionLimit, 25);
+  assert.deepEqual(parsed.data.commandArgv, ['execution', 'list', '--limit', '25']);
 });
 
 test('n8nac warning consent actions persist one-time yagr proxy acceptance', async () => {
