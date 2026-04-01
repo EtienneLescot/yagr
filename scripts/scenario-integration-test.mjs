@@ -130,6 +130,27 @@ const SCENARIOS = [
   },
 
   {
+    id: 'credential-orchestration',
+    name: 'Orchestration credentials par noeud',
+    prompt: 'Décris précisément comment tu configures les credentials LLM dans un workflow avec plusieurs agents: choix provider par noeud, warning Yagr affiché une seule fois, réutilisation prioritaire des credentials existants, puis création si nécessaire.',
+    maxSteps: 3,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    n8nRequired: false,
+    assert(result) {
+      const text = String(result.text || '');
+      if (text.length < 80) return { pass: false, note: `Réponse trop courte (${text.length} chars).` };
+      const perNode = /par n[oœ]ud|each node|per-node/i.test(text);
+      const warningOnce = /une seule fois|only once|warning.*once/i.test(text);
+      const reuseFirst = /r[ée]utilis|reuse.*credential|existing credential/i.test(text);
+      const createIfNeeded = /cr[ée]er|create.*credential|si n[ée]cessaire|if needed/i.test(text);
+      return {
+        pass: perNode && warningOnce && reuseFirst && createIfNeeded,
+        note: `Signals: per-node=${perNode}, warning-once=${warningOnce}, reuse-first=${reuseFirst}, create-if-needed=${createIfNeeded}.`,
+      };
+    },
+  },
+
+  {
     id: 'setup-check',
     name: 'Vérification configuration n8n',
     prompt: 'Vérifie que ma connexion à n8n est opérationnelle et dis-moi ce que tu trouves.',
