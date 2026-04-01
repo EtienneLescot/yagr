@@ -9,6 +9,7 @@ import { evaluateCompletionGate } from '../dist/runtime/completion-gate.js';
 import { analyzeRunOutcome } from '../dist/runtime/outcome.js';
 import {
   createDefaultRuntimeHooks,
+  createN8nCredentialQuestionFlowHook,
   createN8nSetupGuardHook,
   createWorkflowSyncCompletionGuardHook,
   createWorkflowPresentationGuardHook,
@@ -203,6 +204,80 @@ test('workflow sync guard still allows final presentation after a successful pus
   });
 
   assert.equal(presentResult.presented, true);
+});
+
+test('credential question flow hook rejects completion when n8n test reports missing credentials', async () => {
+  const hook = createN8nCredentialQuestionFlowHook();
+
+  await hook.afterTool?.({
+    runId: 'run-cred-flow-1',
+    phase: 'sync',
+    state: 'running',
+    toolName: 'n8nac',
+    args: { action: 'test', workflowId: 'wf-1' },
+    result: {
+      exitCode: 0,
+      stdout: 'Class A: missing credentials/model. Configure your credentials before retrying.',
+      stderr: '',
+    },
+  });
+
+  const decision = await hook.beforeCompletion?.({
+    text: 'Le workflow a ete teste avec succes.',
+    finishReason: 'stop',
+    requiredActions: [],
+  }, {
+    runId: 'run-cred-flow-1',
+    phase: 'summarize',
+    state: 'running',
+  });
+
+  assert.equal(decision?.accepted, false);
+  assert.match(String(decision?.message || ''), /provider-choice questions per LLM node/i);
+});
+
+test('credential question flow hook allows completion after orchestration starts', async () => {
+  const hook = createN8nCredentialQuestionFlowHook();
+
+  await hook.afterTool?.({
+    runId: 'run-cred-flow-2',
+    phase: 'sync',
+    state: 'running',
+    toolName: 'n8nac',
+    args: { action: 'test', workflowId: 'wf-1' },
+    result: {
+      exitCode: 0,
+      stdout: 'Missing credential detected.',
+      stderr: '',
+    },
+  });
+
+  await hook.afterTool?.({
+    runId: 'run-cred-flow-2',
+    phase: 'sync',
+    state: 'running',
+    toolName: 'n8nac',
+    args: { action: 'llm_provider_options', workflowId: 'wf-1' },
+    result: { exitCode: 0, stdout: 'ok', stderr: '' },
+  });
+
+  const decision = await hook.beforeCompletion?.({
+    text: 'Continuation complete.',
+    finishReason: 'stop',
+    requiredActions: [],
+  }, {
+    runId: 'run-cred-flow-2',
+    phase: 'summarize',
+    state: 'running',
+  });
+
+  assert.equal(decision, undefined);
+});
+
+test('default runtime hooks include credential question flow hook', () => {
+  const hooks = createDefaultRuntimeHooks();
+  const hasCredentialHook = hooks.some((hook) => typeof hook.beforeCompletion === 'function');
+  assert.equal(hasCredentialHook, true);
 });
 
 test('n8n setup guard blocks speculative init_auth when the workspace is already configured', async () => {
