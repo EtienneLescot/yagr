@@ -5,7 +5,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import type { LanguageModelV1 } from '@ai-sdk/provider';
 import type { YagrModelCapabilityProfile } from './model-capabilities.js';
 
-export const ANTHROPIC_ACCOUNT_DEFAULT_MODEL = 'claude-sonnet-4-5';
+export const ANTHROPIC_ACCOUNT_DEFAULT_MODEL = 'claude-haiku-4-5';
 
 // ─── Interfaces ────────────────────────────────────────────────────────────────
 
