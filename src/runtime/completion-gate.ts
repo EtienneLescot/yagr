@@ -6,6 +6,7 @@ export interface CompletionGateInput {
   finishReason: string;
   requiredActions: YagrRequiredAction[];
   satisfiedRequiredActionIds?: string[];
+  attemptedAnyToolCalls: boolean;
   attemptedMaterialWork: boolean;
   /** True when the execute phase made zero tool calls — treated as a violation of the
    *  "must call at least one tool" contract, which always requires a repair pass. */
@@ -34,12 +35,22 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
   const requiredActions = input.requiredActions.filter((action) => !satisfiedRequiredActionIds.has(action.id));
   const { blocking: blockingRequiredActions } = splitRequiredActions(requiredActions);
   const hasBlockingWorkflowFailures = input.hasWorkflowWrites && input.unresolvedFailureCount > 0;
+  const usedOnlyReadOnlyTooling = input.attemptedAnyToolCalls && !input.attemptedMaterialWork;
+  const missingWorkflowSyncConfirmation = input.hasWorkflowWrites
+    && (!input.successfulPush || !input.successfulVerify)
+    && input.unresolvedFailureCount === 0;
   // needsContinuation is true when:
   //  (a) material work was attempted but produced no concrete result, OR
-  //  (b) the execute phase violated the "must call at least one tool" contract by
+  //  (b) tooling was used only for read-only exploration and still produced neither
+  //      a concrete result nor a structured blocker, OR
+  //  (c) a workflow file exists locally but sync has not yet been confirmed and no
+  //      structured blocker explains why, OR
+  //  (d) the execute phase violated the "must call at least one tool" contract by
   //      responding with plain text only — always requires a repair pass.
   const needsContinuation =
     (input.attemptedMaterialWork && !input.hasConcreteResult && blockingRequiredActions.length === 0)
+    || (usedOnlyReadOnlyTooling && !input.hasConcreteResult && blockingRequiredActions.length === 0)
+    || (missingWorkflowSyncConfirmation && blockingRequiredActions.length === 0)
     || (input.executePhaseCalledNoTools && !input.hasConcreteResult && blockingRequiredActions.length === 0);
 
   if (blockingRequiredActions.length > 0) {

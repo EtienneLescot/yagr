@@ -384,6 +384,51 @@ export function pickPreferredWorkspaceWorkflowCandidate(
   })[0];
 }
 
+function normalizeWorkspaceRelativePath(candidatePath: string): string {
+  const relativePath = relativeWorkspacePath(candidatePath);
+  return relativePath || candidatePath;
+}
+
+function resolveCommandFileTarget(target: string | undefined, configService = new YagrN8nConfigService()): string | undefined {
+  const normalizedTarget = String(target || '').trim();
+  if (!normalizedTarget) {
+    return undefined;
+  }
+
+  if (path.isAbsolute(normalizedTarget) && fs.existsSync(normalizedTarget)) {
+    return normalizeWorkspaceRelativePath(normalizedTarget);
+  }
+
+  const workspaceTarget = path.resolve(workspaceRoot(), normalizedTarget);
+  if (fs.existsSync(workspaceTarget)) {
+    return normalizedTarget;
+  }
+
+  const preferredCandidate = pickPreferredWorkspaceWorkflowCandidate(normalizedTarget, configService)
+    || pickPreferredWorkspaceWorkflowCandidate(path.basename(normalizedTarget), configService);
+
+  return preferredCandidate ? normalizeWorkspaceRelativePath(preferredCandidate) : normalizedTarget;
+}
+
+function normalizeCommandArgv(argv: string[], configService = new YagrN8nConfigService()): string[] {
+  if (argv.length === 0) {
+    return argv;
+  }
+
+  const normalizedArgv = [...argv];
+  if (argv[0] === 'push' && argv[1]) {
+    normalizedArgv[1] = resolveCommandFileTarget(argv[1], configService) ?? argv[1];
+    return normalizedArgv;
+  }
+
+  if (argv[0] === 'skills' && argv[1] === 'validate' && argv[2]) {
+    normalizedArgv[2] = resolveCommandFileTarget(argv[2], configService) ?? argv[2];
+    return normalizedArgv;
+  }
+
+  return normalizedArgv;
+}
+
 function summarizeN8nacRuntime(cwd: string, env: NodeJS.ProcessEnv = {}, configService = new YagrN8nConfigService()): string {
   const localConfig = configService.getLocalConfig();
   const allowEnvironmentFallback = (env.YAGR_ALLOW_N8N_ENV ?? process.env.YAGR_ALLOW_N8N_ENV) === '1';
@@ -530,8 +575,10 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           throw new Error('command requires commandArgv or commandArgs');
         }
 
-        const result = await runObservedN8nac(observer, argv, cwd);
-        return buildStructuredCommandResult(argv, result);
+        const configService = new YagrN8nConfigService();
+        const normalizedArgv = normalizeCommandArgv(argv, configService);
+        const result = await runObservedN8nac(observer, normalizedArgv, cwd);
+        return buildStructuredCommandResult(normalizedArgv, result, configService);
       }
 
       if (action === 'yagr_proxy_warning_check') {
