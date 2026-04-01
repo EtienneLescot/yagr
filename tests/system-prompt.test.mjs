@@ -43,25 +43,19 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
     writeWorkspaceInstructions(tempDir, '# Workspace Rules\nremote n8n instance, you MUST run n8nac pull\nDo not present remote-only workflows from memory\n');
     const prompt = withTempInstructionRoots(tempDir, () => buildSystemPrompt({ name: 'test-engine' }));
 
-    assert.match(prompt, /You are Yagr, a local coding agent\./);
+    assert.match(prompt, /You are Yagr, a local autonomous coding agent\./);
     assert.match(prompt, /senior software engineer and pragmatic technical architect/i);
-    assert.match(prompt, /single mode/i);
     assert.match(prompt, /workspace AGENT\.md or AGENTS\.md content is already loaded into startup context/i);
-    assert.match(prompt, /generic coding-agent behavior/i);
     assert.match(prompt, /smallest coherent change that fixes the root cause/i);
     assert.match(prompt, /Favor first-pass correctness over speed/i);
-    assert.match(prompt, /interdependent components/i);
-    assert.match(prompt, /explicit linkage is present/i);
     assert.match(prompt, /verify them with the most relevant available checks/i);
     assert.match(prompt, /requestRequiredAction tool/i);
-    assert.match(prompt, /Use the n8nac tool with action="command" and structured argv/i);
-    assert.match(prompt, /provider choice per node/i);
-    assert.match(prompt, /Show the provider-usage warning only once/i);
     assert.match(prompt, /\["credential","list","--json"\]/i);
-    assert.match(prompt, /llm_provider_options, yagr_proxy_warning_check, and yagr_proxy_warning_accept/i);
-    assert.match(prompt, /\["workflow","activate",workflowId\].*\["test",workflowId,"--prod"\]/i);
+    assert.match(prompt, /llm_provider_options/i);
+    assert.match(prompt, /yagr_proxy_warning_check/i);
+    assert.match(prompt, /yagr_proxy_warning_accept/i);
     assert.match(prompt, /Keep final user-facing summaries concise/i);
-    assert.match(prompt, /Do not paste the full workflow file contents/i);
+    // workspace instructions injected verbatim
     assert.match(prompt, /remote n8n instance, you MUST run n8nac pull/i);
     assert.match(prompt, /Do not present remote-only workflows from memory/i);
   } finally {

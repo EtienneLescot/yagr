@@ -85,8 +85,7 @@ export function resolveToolRuntimeStrategy(
         recoveryMaxSteps: 6,
         inspectDirectives: [],
         executeDirectives: [
-          'Tool calling is natively supported.',
-          'Do not respond with only text or an empty response — you must call a tool to make progress.',
+          'Tool calling is natively supported. Use tools to make progress on actionable requests.',
         ],
         recoveryDirectives: [],
       };

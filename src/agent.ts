@@ -111,7 +111,7 @@ export class YagrSessionAgent {
   }
 
   private createRunner(): YagrRunEngineLike {
-    return (this.dependencies.createRunner ?? ((engine, history, systemPrompt) => new YagrRunEngine(engine, history, systemPrompt))) (
+    return (this.dependencies.createRunner ?? ((_engine, history, systemPrompt) => new YagrRunEngine(history, systemPrompt))) (
       this.runtimeEngine,
       this.history,
       this.promptSnapshot.systemPrompt,

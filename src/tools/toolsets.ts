@@ -5,12 +5,7 @@ export const CORE_TOOL_NAMES = [
 ] as const;
 
 export const DISCOVERY_TOOL_NAMES = [
-  'searchNodes',
-  'nodeInfo',
-  'searchTemplates',
   'listDirectory',
-  'listWorkflows',
-  'manageWorkflow',
   'readWorkspaceFile',
   'searchWorkspace',
 ] as const;

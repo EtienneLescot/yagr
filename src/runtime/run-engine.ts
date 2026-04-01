@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { generateText, streamText, InvalidToolArgumentsError, type CoreMessage } from 'ai';
-import type { EngineRuntimePort } from '../engine/engine.js';
+
 import { createLanguageModel } from '../llm/create-language-model.js';
 import { resolveLanguageModelConfig, resolveModelContextProfile } from '../llm/create-language-model.js';
 import { getProviderPlugin } from '../llm/provider-plugin.js';
@@ -1499,7 +1499,6 @@ async function recordStep(
 
 export class YagrRunEngine {
   constructor(
-    private readonly engine: EngineRuntimePort,
     private readonly history: readonly CoreMessage[],
     private readonly systemPrompt: string,
   ) {}
@@ -1526,7 +1525,7 @@ export class YagrRunEngine {
     });
     const runtimeStrategy = resolveToolRuntimeStrategy(resolvedModelConfig.provider, resolvedModelConfig.model);
     const runtimeHooks = [...createDefaultRuntimeHooksForStrategy(runtimeStrategy), ...(options.runtimeHooks ?? [])];
-    const baseTools = buildTools(this.engine, {
+    const baseTools = buildTools({
       onToolEvent: withRuntimeToolEvents(state, options),
     }, {
       allowedToolNames: runtimeStrategy.tooling.availableToolNames,
