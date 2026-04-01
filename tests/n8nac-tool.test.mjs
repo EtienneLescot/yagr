@@ -120,6 +120,82 @@ test('n8nac command push preserves structured workflow metadata', async () => {
   }
 });
 
+test('n8nac command push recovers workflow metadata from local sync state when CLI omits it', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nac-state-'));
+  const fakeNpxPath = path.join(tempDir, 'npx');
+  const previousPath = process.env.PATH;
+  const previousHome = process.env.YAGR_HOME;
+  const previousHost = process.env.N8N_HOST;
+  const previousApiKey = process.env.N8N_API_KEY;
+  const previousAllow = process.env.YAGR_ALLOW_N8N_ENV;
+
+  try {
+    fs.writeFileSync(fakeNpxPath, [
+      '#!/bin/sh',
+      'echo "- Pushing workflow demo.workflow.ts..." 1>&2',
+      'echo "✔ ✔ Pushed workflow demo.workflow.ts." 1>&2',
+      'exit 0',
+    ].join('\n'));
+    fs.chmodSync(fakeNpxPath, 0o755);
+
+    const workspaceDir = path.join(tempDir, 'n8n-workspace');
+    const workflowDir = path.join(workspaceDir, 'workflows', 'local_5678_etienne_l', 'personal');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workspaceDir, 'n8nac-config.json'), JSON.stringify({
+      host: 'http://localhost:5678',
+      syncFolder: 'workflows',
+      instanceIdentifier: 'local_5678_etienne_l',
+      projectName: 'Personal',
+    }, null, 2));
+    fs.writeFileSync(path.join(workflowDir, '.n8n-state.json'), JSON.stringify({
+      workflows: {
+        'wf-999': {
+          filename: 'demo.workflow.ts',
+          lastSyncedHash: 'abc',
+          lastSyncedAt: '2026-04-01T00:00:00.000Z',
+        },
+      },
+    }, null, 2));
+    fs.writeFileSync(path.join(workflowDir, 'demo.workflow.ts'), [
+      "import { workflow } from '@n8n-as-code/transformer';",
+      '',
+      "@workflow({ name: 'Recovered Demo', active: false })",
+      'export class RecoveredDemo {}',
+      '',
+    ].join('\n'));
+
+    process.env.PATH = `${tempDir}:${previousPath || ''}`;
+    process.env.YAGR_HOME = tempDir;
+    process.env.N8N_HOST = 'http://localhost:5678';
+    process.env.N8N_API_KEY = 'test-key';
+    process.env.YAGR_ALLOW_N8N_ENV = '1';
+
+    const tool = createN8nAcTool();
+    const result = await tool.execute({
+      action: 'command',
+      commandArgv: ['push', 'demo.workflow.ts'],
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.workflowId, 'wf-999');
+    assert.equal(result.workflowUrl, 'http://localhost:5678/workflow/wf-999');
+    assert.equal(result.title, 'Recovered Demo');
+    assert.equal(result.verified, false);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    if (previousHost === undefined) delete process.env.N8N_HOST;
+    else process.env.N8N_HOST = previousHost;
+    if (previousApiKey === undefined) delete process.env.N8N_API_KEY;
+    else process.env.N8N_API_KEY = previousApiKey;
+    if (previousAllow === undefined) delete process.env.YAGR_ALLOW_N8N_ENV;
+    else process.env.YAGR_ALLOW_N8N_ENV = previousAllow;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('n8nac warning consent actions persist one-time yagr proxy acceptance', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nac-warning-'));
   const previousYagrHome = process.env.YAGR_HOME;
