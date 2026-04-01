@@ -65,7 +65,7 @@ ignoredTests/
 session_context.json
 
 # Generated test reports
-reports/*
+reports/
 
 # n8n-as-code AI helpers
 
