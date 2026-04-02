@@ -4,9 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createListDirectoryTool } from '../dist/tools/list-directory.js';
-import { createReadWorkspaceFileTool } from '../dist/tools/read-workspace-file.js';
-import { createSearchWorkspaceTool } from '../dist/tools/search-workspace.js';
+import { createListDirTool } from '../dist/tools/list-directory.js';
+import { createReadFileTool } from '../dist/tools/read-workspace-file.js';
+import { createGrepTool } from '../dist/tools/search-workspace.js';
 
 function withTempWorkspace(run) {
   const previousHome = process.env.YAGR_HOME;
@@ -25,9 +25,9 @@ function withTempWorkspace(run) {
   }
 }
 
-test('listDirectory returns a structured error for missing directories', async () => {
+test('listDir returns a structured error for missing directories', async () => {
   await withTempWorkspace(async () => {
-    const tool = createListDirectoryTool();
+    const tool = createListDirTool();
     const result = await tool.execute({ path: 'workflows/Personal', recursive: false, maxDepth: 2 });
 
     assert.equal(result.ok, false);
@@ -36,9 +36,9 @@ test('listDirectory returns a structured error for missing directories', async (
   });
 });
 
-test('readWorkspaceFile returns a structured error for missing files', async () => {
+test('readFile returns a structured error for missing files', async () => {
   await withTempWorkspace(async () => {
-    const tool = createReadWorkspaceFileTool();
+    const tool = createReadFileTool();
     const result = await tool.execute({ path: 'workflows/missing.workflow.ts' });
 
     assert.equal(result.ok, false);
@@ -47,9 +47,9 @@ test('readWorkspaceFile returns a structured error for missing files', async () 
   });
 });
 
-test('searchWorkspace returns a structured error for missing roots', async () => {
+test('grep returns a structured error for missing roots', async () => {
   await withTempWorkspace(async () => {
-    const tool = createSearchWorkspaceTool();
+    const tool = createGrepTool();
     const result = await tool.execute({ query: 'hello', path: 'missing-root', isRegexp: false, maxResults: 10 });
 
     assert.equal(result.ok, false);

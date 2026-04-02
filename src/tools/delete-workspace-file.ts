@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { ToolExecutionObserver } from './observer.js';
 import { fileExists, relativeWorkspacePath, resolveWorkspacePath } from './workspace-utils.js';
 
-export function createDeleteWorkspaceFileTool(_observer?: ToolExecutionObserver) {
+export function createDeleteFileTool(_observer?: ToolExecutionObserver) {
   return tool({
     description: 'Delete a workspace file. Use when the user explicitly requests deletion, or when a file is obsolete, orphaned, or superseded by a canonical copy.',
     parameters: z.object({

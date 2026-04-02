@@ -83,7 +83,7 @@ test('blocking external required actions are rejected until execution or a concr
   const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
   const wrappedTools = wrapToolsWithRuntimeHooks(
     {
-      listDirectory: {
+      listDir: {
         description: 'list directory',
         parameters: undefined,
         execute: async () => ({ ok: true, entries: [] }),
@@ -94,7 +94,7 @@ test('blocking external required actions are rejected until execution or a concr
     () => ({ runId: 'run-ra-1', phase: 'plan', state: 'running' }),
   );
 
-  await wrappedTools.listDirectory.execute({ path: '.' });
+  await wrappedTools.listDir.execute({ path: '.' });
   const result = await wrappedTools.requestRequiredAction.execute({
     kind: 'external',
     title: 'Need remote setup',
@@ -111,7 +111,7 @@ test('blocking external required actions are allowed after execution-critical wo
   const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
   const wrappedTools = wrapToolsWithRuntimeHooks(
     {
-      writeWorkspaceFile: {
+      writeFile: {
         description: 'write file',
         parameters: undefined,
         execute: async () => ({ ok: true, path: 'workflows/demo.workflow.ts' }),
@@ -122,7 +122,7 @@ test('blocking external required actions are allowed after execution-critical wo
     () => ({ runId: 'run-ra-2', phase: 'edit', state: 'running' }),
   );
 
-  await wrappedTools.writeWorkspaceFile.execute({ path: 'workflows/demo.workflow.ts', content: 'demo' });
+  await wrappedTools.writeFile.execute({ path: 'workflows/demo.workflow.ts', content: 'demo' });
   const result = await wrappedTools.requestRequiredAction.execute({
     kind: 'external',
     title: 'Need remote setup',
@@ -138,7 +138,7 @@ test('read-only exploration is blocked after the pre-execution budget is exhaust
   const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
   const wrappedTools = wrapToolsWithRuntimeHooks(
     {
-      listDirectory: {
+      listDir: {
         description: 'list directory',
         parameters: undefined,
         execute: async () => ({ ok: true }),
@@ -148,11 +148,11 @@ test('read-only exploration is blocked after the pre-execution budget is exhaust
     () => ({ runId: 'run-ro-1', phase: 'plan', state: 'running' }),
   );
 
-  assert.equal((await wrappedTools.listDirectory.execute({ path: '.' })).ok, true);
-  assert.equal((await wrappedTools.listDirectory.execute({ path: '.' })).ok, true);
-  assert.equal((await wrappedTools.listDirectory.execute({ path: '.' })).ok, true);
+  assert.equal((await wrappedTools.listDir.execute({ path: '.' })).ok, true);
+  assert.equal((await wrappedTools.listDir.execute({ path: '.' })).ok, true);
+  assert.equal((await wrappedTools.listDir.execute({ path: '.' })).ok, true);
 
-  const blocked = await wrappedTools.listDirectory.execute({ path: '.' });
+  const blocked = await wrappedTools.listDir.execute({ path: '.' });
 
   assert.equal(blocked.ok, false);
   assert.equal(blocked.blocked, true);
@@ -240,7 +240,7 @@ test('workflow sync guard blocks exploratory tools after a successful push', asy
         parameters: undefined,
         execute: async () => ({ exitCode: 0 }),
       },
-      listDirectory: {
+      listDir: {
         description: 'list directory',
         parameters: undefined,
         execute: async () => ({ ok: true }),
@@ -251,7 +251,7 @@ test('workflow sync guard blocks exploratory tools after a successful push', asy
   );
 
   const pushResult = await wrappedTools.n8nac.execute({ action: 'push', filename: 'demo.workflow.ts' });
-  const blockedResult = await wrappedTools.listDirectory.execute({ path: '.' });
+  const blockedResult = await wrappedTools.listDir.execute({ path: '.' });
 
   assert.equal(pushResult.exitCode, 0);
   assert.equal(blockedResult.ok, false);
@@ -683,7 +683,7 @@ test('assistant response messages are sanitized before reuse across phases', () 
     },
     {
       role: 'tool',
-      content: [{ type: 'tool-result', toolCallId: 'call-1', toolName: 'listDirectory', result: { ok: true } }],
+      content: [{ type: 'tool-result', toolCallId: 'call-1', toolName: 'listDir', result: { ok: true } }],
     },
   ]);
 
@@ -729,11 +729,11 @@ test('successful push counts as validate and verify evidence for completion gati
         phase: 'sync',
         text: '',
         toolCalls: [
-          { toolName: 'writeWorkspaceFile', args: { path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
           { toolName: 'n8nac', args: { action: 'push', filename: 'demo.workflow.ts' } },
         ],
         toolResults: [
-          { toolName: 'writeWorkspaceFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
           { toolName: 'n8nac', result: { exitCode: 0 } },
         ],
       },
@@ -782,11 +782,11 @@ test('grounded summary prefers a user-facing workflow completion message when a 
         phase: 'sync',
         text: '',
         toolCalls: [
-          { toolName: 'writeWorkspaceFile', args: { path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
           { toolName: 'n8nac', args: { action: 'push', filename: 'demo.workflow.ts' } },
         ],
         toolResults: [
-          { toolName: 'writeWorkspaceFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
           { toolName: 'n8nac', result: { exitCode: 0 } },
         ],
       },
@@ -837,11 +837,11 @@ test('grounded summary includes workflow URL from presentWorkflowResult when ava
         phase: 'sync',
         text: '',
         toolCalls: [
-          { toolName: 'writeWorkspaceFile', args: { path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
           { toolName: 'n8nac', args: { action: 'push', filename: 'demo.workflow.ts' } },
         ],
         toolResults: [
-          { toolName: 'writeWorkspaceFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
           { toolName: 'n8nac', result: { exitCode: 0 } },
         ],
       },
@@ -871,11 +871,11 @@ test('grounded summary falls back to successful push metadata when no presentWor
         phase: 'sync',
         text: '',
         toolCalls: [
-          { toolName: 'writeWorkspaceFile', args: { path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
           { toolName: 'n8nac', args: { action: 'push', filename: 'workflows/demo.workflow.ts' } },
         ],
         toolResults: [
-          { toolName: 'writeWorkspaceFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
           {
             toolName: 'n8nac',
             result: {
@@ -915,11 +915,11 @@ test('final answer policy forces a grounded summary when a workflow URL is known
         phase: 'sync',
         text: '',
         toolCalls: [
-          { toolName: 'writeWorkspaceFile', args: { path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
           { toolName: 'n8nac', args: { action: 'push', filename: 'workflows/demo.workflow.ts' } },
         ],
         toolResults: [
-          { toolName: 'writeWorkspaceFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
+          { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
           {
             toolName: 'n8nac',
             result: {

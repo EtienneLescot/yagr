@@ -23,6 +23,8 @@ import { prepareProviderRuntime } from './proxy-runtime.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import type { YagrModelProvider } from './provider-registry.js';
 
+export const YAGR_LLM_RELAY_HOST_ENV = 'YAGR_LLM_RELAY_HOST';
+
 export const N8N_RELAY_FAKE_API_KEY = 'yagr-relay-key';
 const N8N_RELAY_DEFAULT_PORT = 11437;
 
@@ -98,7 +100,7 @@ function isRelayAlive(state: N8nRelayServerState): boolean {
  *   5. Fallback: 127.0.0.1
  */
 export async function resolveDockerHostAddress(): Promise<string> {
-  const override = process.env.YAGR_N8N_RELAY_HOST?.trim();
+  const override = process.env[YAGR_LLM_RELAY_HOST_ENV]?.trim() ?? process.env['YAGR_N8N_RELAY_HOST']?.trim();
   if (override) {
     return override;
   }
@@ -187,12 +189,12 @@ function spawnRelayProcess(): void {
   const paths = getYagrPaths();
   const logDir = path.join(paths.proxyRuntimeDir, 'logs');
   fs.mkdirSync(logDir, { recursive: true });
-  const logPath = path.join(logDir, 'n8n-relay.log');
+  const logPath = path.join(logDir, 'llm-relay.log');
   const logFd = fs.openSync(logPath, 'a');
 
   const entrypoint = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    'n8n-relay-entrypoint.js',
+    'llm-relay-entrypoint.js',
   );
 
   const child = spawn(process.execPath, [entrypoint], {
@@ -213,7 +215,7 @@ async function waitForRelayState(timeoutMs: number): Promise<N8nRelayServerState
     }
     await delay(200);
   }
-  throw new Error(`n8n relay server did not start within ${timeoutMs}ms. Check ~/.yagr/proxy-runtime/logs/n8n-relay.log`);
+  throw new Error(`LLM relay server did not start within ${timeoutMs}ms. Check ~/.yagr/proxy-runtime/logs/llm-relay.log`);
 }
 
 function delay(ms: number): Promise<void> {
@@ -221,7 +223,7 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Called inside the detached child process (n8n-relay-entrypoint.ts).
+ * Called inside the detached child process (llm-relay-entrypoint.ts).
  */
 export async function ensureN8nRelayServerInProcess(): Promise<N8nRelayInfo> {
   const existing = getN8nRelayState();

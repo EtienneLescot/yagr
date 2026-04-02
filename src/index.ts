@@ -74,15 +74,15 @@ export {
 export { buildSystemPrompt } from './prompt/build-system-prompt.js';
 export {
   buildTools,
-  createListDirectoryTool,
-  createDeleteWorkspaceFileTool,
+  createListDirTool,
+  createDeleteFileTool,
   createN8nAcTool,
-  createMoveWorkspaceFileTool,
-  createReadWorkspaceFileTool,
-  createReplaceInWorkspaceFileTool,
+  createMoveFileTool,
+  createReadFileTool,
+  createReplaceInFileTool,
   createRequestRequiredActionTool,
-  createSearchWorkspaceTool,
-  createWriteWorkspaceFileTool,
+  createGrepTool,
+  createWriteFileTool,
 } from './tools/index.js';
 
 export type {

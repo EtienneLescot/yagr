@@ -18,7 +18,7 @@ import {
   type YagrModelProvider,
 } from '../llm/provider-registry.js';
 import { prepareProviderRuntime } from '../llm/proxy-runtime.js';
-import { ensureN8nRelayServer, resolveDockerHostAddress } from '../llm/n8n-relay-server.js';
+import { ensureN8nRelayServer, resolveDockerHostAddress } from '../llm/llm-relay-server.js';
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import { resolveModelProvider } from '../llm/create-language-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
