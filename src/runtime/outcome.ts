@@ -10,6 +10,7 @@ export type ObservedN8nacAction = {
   title?: string;
   validateFile?: string;
   exitCode?: number;
+  testOutput?: string;
 };
 
 export type RunOutcome = {
@@ -21,6 +22,7 @@ export type RunOutcome = {
   unresolvedFailedActions: ObservedN8nacAction[];
   blockingUnresolvedFailedActions: ObservedN8nacAction[];
   successfulValidate?: ObservedN8nacAction;
+  successfulTest?: ObservedN8nacAction;
   successfulPush?: ObservedN8nacAction;
   successfulVerify?: ObservedN8nacAction;
   hasWorkflowWrites: boolean;
@@ -99,6 +101,7 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
           title: asString(result?.title),
           validateFile: targetMeta.validateFile,
           exitCode: asNumber(result?.exitCode),
+          testOutput: action === 'test' ? (asString(result?.stdout) ?? undefined) : undefined,
         };
 
         n8nacActions.push(observedAction);
@@ -153,6 +156,7 @@ export function analyzeRunOutcome(journal: YagrRunJournalEntry[]): RunOutcome {
   const successfulPush = findSuccessfulAction(facts.n8nacActions, 'push');
   const successfulValidate = findSuccessfulAction(facts.n8nacActions, 'validate') ?? successfulPush;
   const successfulVerify = findSuccessfulAction(facts.n8nacActions, 'verify') ?? successfulPush;
+  const successfulTest = findSuccessfulAction(facts.n8nacActions, 'test');
   const blockingUnresolvedFailedActions = unresolvedFailedActions.filter((action) => {
     if (!(successfulPush && successfulVerify)) {
       return true;
@@ -188,6 +192,7 @@ export function analyzeRunOutcome(journal: YagrRunJournalEntry[]): RunOutcome {
     successfulValidate,
     successfulPush,
     successfulVerify,
+    successfulTest,
     hasWorkflowWrites,
   };
 }

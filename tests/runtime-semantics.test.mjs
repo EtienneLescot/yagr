@@ -991,7 +991,7 @@ test('completion gate requests continuation when material work ended without res
   assert.match(decision.reasons[0], /concrete result or a structured blocker/i);
 });
 
-test('completion gate requests continuation when execute phase called no tools at all', async () => {
+test('completion gate accepts execute phase with text reply and no tool calls (conversational response)', async () => {
   const decision = await evaluateCompletionGate({
     text: 'Je vais m\'en occuper maintenant.',
     finishReason: 'stop',
@@ -1001,6 +1001,23 @@ test('completion gate requests continuation when execute phase called no tools a
     executePhaseCalledNoTools: true,
     hasConcreteResult: false,
     context: { runId: 'run-9', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, true);
+  assert.equal(decision.state, 'completed');
+  assert.equal(decision.needsContinuation, false);
+});
+
+test('completion gate requests continuation when execute phase called no tools and produced no text', async () => {
+  const decision = await evaluateCompletionGate({
+    text: '',
+    finishReason: 'stop',
+    requiredActions: [],
+    attemptedAnyToolCalls: false,
+    attemptedMaterialWork: false,
+    executePhaseCalledNoTools: true,
+    hasConcreteResult: false,
+    context: { runId: 'run-9b', phase: 'summarize', state: 'running' },
   });
 
   assert.equal(decision.accepted, false);
