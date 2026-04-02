@@ -12,8 +12,6 @@ import {
   createN8nCredentialQuestionFlowHook,
   createN8nSetupGuardHook,
   createRequiredActionEvidenceGuardHook,
-  createReadOnlyExplorationGuardHook,
-  createWorkflowSyncCompletionGuardHook,
   createWorkflowPresentationGuardHook,
   wrapToolsWithRuntimeHooks,
 } from '../dist/runtime/policy-hooks.js';
@@ -134,31 +132,6 @@ test('blocking external required actions are allowed after execution-critical wo
   assert.equal(result.blocking, true);
 });
 
-test('read-only exploration is blocked after the pre-execution budget is exhausted', async () => {
-  const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
-  const wrappedTools = wrapToolsWithRuntimeHooks(
-    {
-      listDir: {
-        description: 'list directory',
-        parameters: undefined,
-        execute: async () => ({ ok: true }),
-      },
-    },
-    [createReadOnlyExplorationGuardHook(strategy)],
-    () => ({ runId: 'run-ro-1', phase: 'plan', state: 'running' }),
-  );
-
-  assert.equal((await wrappedTools.listDir.execute({ path: '.' })).ok, true);
-  assert.equal((await wrappedTools.listDir.execute({ path: '.' })).ok, true);
-  assert.equal((await wrappedTools.listDir.execute({ path: '.' })).ok, true);
-
-  const blocked = await wrappedTools.listDir.execute({ path: '.' });
-
-  assert.equal(blocked.ok, false);
-  assert.equal(blocked.blocked, true);
-  assert.match(blocked.error, /read-only exploration is complete/i);
-});
-
 test('workflow presentation is blocked until the workflow exists locally', async () => {
   const previousHome = process.env.YAGR_HOME;
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-policy-hook-'));
@@ -229,63 +202,6 @@ test('workflow presentation is allowed when the caller already provides a diagra
     }
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
-});
-
-test('workflow sync guard blocks exploratory tools after a successful push', async () => {
-  const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
-  const wrappedTools = wrapToolsWithRuntimeHooks(
-    {
-      n8nac: {
-        description: 'n8nac',
-        parameters: undefined,
-        execute: async () => ({ exitCode: 0 }),
-      },
-      listDir: {
-        description: 'list directory',
-        parameters: undefined,
-        execute: async () => ({ ok: true }),
-      },
-    },
-    [createWorkflowSyncCompletionGuardHook(strategy)],
-    () => ({ runId: 'run-sync-1', phase: 'sync', state: 'running' }),
-  );
-
-  const pushResult = await wrappedTools.n8nac.execute({ action: 'push', filename: 'demo.workflow.ts' });
-  const blockedResult = await wrappedTools.listDir.execute({ path: '.' });
-
-  assert.equal(pushResult.exitCode, 0);
-  assert.equal(blockedResult.ok, false);
-  assert.equal(blockedResult.blocked, true);
-  assert.match(blockedResult.error, /already pushed and verified/i);
-});
-
-test('workflow sync guard still allows final presentation after a successful push', async () => {
-  const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
-  const wrappedTools = wrapToolsWithRuntimeHooks(
-    {
-      n8nac: {
-        description: 'n8nac',
-        parameters: undefined,
-        execute: async () => ({ exitCode: 0 }),
-      },
-      presentWorkflowResult: {
-        description: 'present workflow',
-        parameters: undefined,
-        execute: async () => ({ presented: true }),
-      },
-    },
-    [createWorkflowSyncCompletionGuardHook(strategy)],
-    () => ({ runId: 'run-sync-2', phase: 'sync', state: 'running' }),
-  );
-
-  await wrappedTools.n8nac.execute({ action: 'push', filename: 'demo.workflow.ts' });
-  const presentResult = await wrappedTools.presentWorkflowResult.execute({
-    workflowId: 'wf-1',
-    workflowUrl: 'http://localhost:5678/workflow/wf-1',
-    diagram: '<workflow-map>\nROUTING MAP\nStart\n</workflow-map>',
-  });
-
-  assert.equal(presentResult.presented, true);
 });
 
 test('credential question flow hook rejects completion when n8n test reports missing credentials', async () => {

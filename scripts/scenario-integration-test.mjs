@@ -284,6 +284,60 @@ const SCENARIOS = [
   },
 
   {
+    id: 'yagr-proxy-workflow',
+    name: 'Workflow AI Agent via Yagr LLM Proxy (création + exécution)',
+    prompt:
+      'Crée un workflow n8n qui répond à des questions de géographie. '
+      + 'Structure exacte : (1) Webhook POST sur /capital-test, (2) AI Agent qui lit `={{ $json.body.country }}` '
+      + 'avec system prompt "Tu es un assistant géographie. Donne uniquement le nom de la capitale du pays fourni.", '
+      + '(3) lmChatOpenAi v1.3 avec Yagr LLM Proxy — lance yagr_proxy_relay_start d\'abord pour obtenir credentialId et baseURL, '
+      + 'puis configure : model { mode: "id", value: "gpt-4o-mini" }, responsesApiEnabled: false, options.baseURL depuis le relay. '
+      + 'Séquence OBLIGATOIRE après push : '
+      + '(A) active avec `n8nac workflow activate <workflowId>`, '
+      + '(B) teste avec `n8nac test <workflowId> --prod --data \'{"country":"France"}\'`. '
+      + 'Ne termine pas avant d\'avoir exécuté ces deux commandes et rapporté le résultat du test.',
+    maxSteps: 40,
+    timeoutMs: CREATION_TIMEOUT_MS,
+    n8nRequired: true,
+    assert(result, outcome) {
+      if (!outcome.successfulPush) {
+        const text = String(result.text || '');
+        return { pass: false, note: `Workflow non poussé. Réponse: ${text.slice(0, 150)}` };
+      }
+
+      const workflowId = outcome.successfulPush.workflowId;
+
+      // Check if n8nac test was executed
+      const testAction = outcome.successfulActions.find((a) => a.action === 'test');
+      const failedTest = outcome.failedActions.find((a) => a.action === 'test');
+
+      if (testAction) {
+        // n8nac test succeeded (exit 0 — includes Class A config gaps which are non-blocking)
+        const text = String(result.text || '');
+        const mentionsCapital = /paris|capital/i.test(text);
+        return {
+          pass: true,
+          note: `Proxy LLM opérationnel — n8nac test passé${mentionsCapital ? ', mentionne Paris/capital' : ''}. workflowId=${workflowId}`,
+        };
+      }
+
+      if (failedTest) {
+        // n8nac test returned exit 1 → Class B wiring error
+        return {
+          pass: false,
+          note: `n8nac test a échoué (Class B). workflowId=${workflowId}`,
+        };
+      }
+
+      // push succeeded but test not run — FAIL, not a partial pass
+      return {
+        pass: false,
+        note: `Workflow poussé (${workflowId ?? 'id inconnu'}) mais n8nac test non exécuté.`,
+      };
+    },
+  },
+
+  {
     id: 'explain-workflow',
     name: 'Explication d\'un workflow existant',
     prompt: 'Explique en détail le fonctionnement d\'un de mes workflows : '
@@ -408,7 +462,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
 
       const mergedJournal = result.journal?.length ? result.journal : journal;
       const outcome = analyzeRunOutcome(mergedJournal);
-      const assertion = scenario.assert(result, outcome, toolEvents);
+      const assertion = await Promise.resolve(scenario.assert(result, outcome, toolEvents, testN8nRuntime));
 
       return {
         status: assertion.pass ? 'PASS' : 'FAIL',

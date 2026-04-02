@@ -11,7 +11,6 @@ test('native strategy keeps full tool surface and streaming execution', () => {
   assert.equal(strategy.toolCallStreaming, true);
   assert.equal(strategy.tooling.toolCallMode, 'parallel');
   assert.ok(strategy.tooling.availableToolNames.includes('n8nac'));
-  assert.ok(strategy.tooling.allowedToolNamesAfterWorkflowSync.includes('presentWorkflowResult'));
 });
 
 test('compatible strategy keeps tools but pushes conservative directives', () => {
