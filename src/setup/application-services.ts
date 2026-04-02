@@ -6,6 +6,7 @@ import {
   normalizeGatewaySurfaces,
   type YagrConfigService,
   type YagrConfigStoreLike,
+  type YagrLlmProxyConfig,
   type YagrLocalConfig,
   type YagrTelegramLinkedChat,
 } from '../config/yagr-config-service.js';
@@ -17,6 +18,7 @@ import {
   type YagrModelProvider,
 } from '../llm/provider-registry.js';
 import { prepareProviderRuntime } from '../llm/proxy-runtime.js';
+import { ensureN8nRelayServer, resolveDockerHostAddress } from '../llm/n8n-relay-server.js';
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import { resolveModelProvider } from '../llm/create-language-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
@@ -425,6 +427,66 @@ export class YagrSetupApplicationService {
     }
 
     this.yagrConfigService.setEnabledGatewaySurfaces(input.surfaces);
+  }
+
+  async setupLlmProxy(runtimeSource: 'managed-local' | 'external', _n8nUrl: string): Promise<{
+    mode: YagrLlmProxyConfig['mode'];
+    credentialBaseUrl: string;
+    dockerHostAddress?: string;
+    tunnelUrl?: string;
+  }> {
+    if (runtimeSource === 'external') {
+      // Cloud/external n8n cannot reach loopback; spawn a Cloudflare tunnel.
+      const tunnel = await this.startCloudflareTunnel();
+      const relay = await ensureN8nRelayServer();
+      return { mode: 'tunnel', credentialBaseUrl: `${tunnel}/v1`, tunnelUrl: tunnel };
+    }
+
+    // Managed-local: detect Docker bridge or fall back to loopback.
+    const dockerHost = await resolveDockerHostAddress();
+    const isDocker = dockerHost !== '127.0.0.1';
+    const relay = await ensureN8nRelayServer();
+    if (isDocker) {
+      return {
+        mode: 'docker',
+        credentialBaseUrl: `http://${dockerHost}:${relay.port}/v1`,
+        dockerHostAddress: dockerHost,
+      };
+    }
+    return { mode: 'local', credentialBaseUrl: relay.hostBaseUrl };
+  }
+
+  private startCloudflareTunnel(): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const { spawn } = require('node:child_process') as typeof import('node:child_process');
+      const child = spawn('cloudflared', ['tunnel', '--url', 'http://localhost:11437', '--no-autoupdate', '--logfile', '/dev/null'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const onData = (data: Buffer) => {
+        const text = data.toString();
+        const match = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+        if (match) {
+          child.stdout?.off('data', onData);
+          child.stderr?.off('data', onData);
+          resolve(match[0]);
+        }
+      };
+      child.stdout?.on('data', onData);
+      child.stderr?.on('data', onData);
+      child.on('close', (code) => {
+        if (code !== 0) reject(new Error(`cloudflared exited with code ${code}. Make sure cloudflared is installed: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/`));
+      });
+      child.on('error', (err) => reject(new Error(`cloudflared not found: ${err.message}. Install from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/`)));
+      setTimeout(() => reject(new Error('cloudflared did not emit a trycloudflare.com URL within 30s')), 30_000);
+    });
+  }
+
+  saveLlmProxyConfig(config: YagrLlmProxyConfig): void {
+    this.yagrConfigService.saveLlmProxyConfig(config);
+  }
+
+  isLlmProxyEnabled(): boolean {
+    return this.yagrConfigService.isLlmProxyEnabled();
   }
 
   async configureTelegram(botToken: string): Promise<{ username: string; firstName: string }> {

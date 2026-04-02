@@ -60,6 +60,15 @@ export async function runYagrLlmSetup(
   return result.ok;
 }
 
+export async function runYagrLlmProxySetup(
+  yagrConfigService = new YagrConfigService(),
+  n8nConfigService = new YagrN8nConfigService(),
+): Promise<boolean> {
+  const callbacks = createSetupCallbacks(yagrConfigService, n8nConfigService);
+  const result = await runSetupWizard(callbacks, { mode: 'proxy-only' });
+  return result.ok;
+}
+
 function createSetupCallbacks(
   yagrConfigService: YagrConfigService,
   n8nConfigService: YagrN8nConfigService,
@@ -77,6 +86,7 @@ function createSetupCallbacks(
         apiKey: hostForKey ? n8nConfigService.getApiKey(hostForKey) : undefined,
         projectId: cfg.projectId,
         syncFolder: cfg.syncFolder,
+        runtimeSource: cfg.runtimeSource,
       };
     },
 
@@ -186,6 +196,18 @@ function createSetupCallbacks(
 
     saveSurfaces({ surfaces, telegram }) {
       setupService.saveSurfaces({ surfaces, telegram });
+    },
+
+    async setupLlmProxy(runtimeSource, n8nUrl) {
+      return setupService.setupLlmProxy(runtimeSource, n8nUrl);
+    },
+
+    saveLlmProxyConfig(config) {
+      setupService.saveLlmProxyConfig(config);
+    },
+
+    isLlmProxyEnabled() {
+      return setupService.isLlmProxyEnabled();
     },
   };
   return callbacks;

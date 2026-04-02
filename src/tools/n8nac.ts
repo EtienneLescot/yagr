@@ -35,15 +35,10 @@ type WorkflowSyncState = {
 const N8NAC_ACTIONS = [
   'command',
   'llm_provider_options',
-  'yagr_proxy_warning_check',
-  'yagr_proxy_warning_accept',
   'yagr_proxy_relay_start',
 ] as const;
 
 type N8nAcAction = typeof N8NAC_ACTIONS[number];
-
-const YAGR_PROXY_WARNING_VERSION = 'yagr-proxy-v1';
-const YAGR_PROXY_WARNING_MESSAGE = 'Using Yagr proxy credentials with provider-linked accounts (for example Copilot or Codex OAuth sessions) remains subject to provider terms. High-volume automation or policy-violating usage may lead to account limits or suspension.';
 
 type LlmProviderOption = {
   id: string;
@@ -557,14 +552,14 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       commandArgv: nullify(obj.commandArgv),
     };
   }, z.object({
-    action: z.enum(N8NAC_ACTIONS).describe('Use action="command" for normal n8nac usage. The other actions are Yagr-specific helpers: llm_provider_options lists available LLM providers, yagr_proxy_warning_check/accept manage the one-time compliance warning, yagr_proxy_relay_start starts the local Yagr relay AND automatically creates the openAiApi credential in n8n (idempotent) — returns credentialId ready to assign.'),
+    action: z.enum(N8NAC_ACTIONS).describe('Use action="command" for normal n8nac usage. action="llm_provider_options" lists available LLM providers. action="yagr_proxy_relay_start" starts the local Yagr relay AND automatically creates the openAiApi credential in n8n (idempotent) — returns credentialId ready to assign.'),
     nodeName: z.string().nullable().describe('Optional workflow node name used for contextual provider-choice prompts.'),
     commandArgs: z.string().nullable().describe('Generic raw n8nac argument string for action="command", for example "workflow credential-required wf_123 --json".'),
     commandArgv: z.array(z.string()).nullable().describe('Generic raw n8nac argv for action="command", preferred over commandArgs when arguments contain spaces.'),
   }));
 
   return tool({
-    description: 'Run n8n-as-code operations from the active workspace. Use action="command" for normal n8nac usage; the remaining actions are Yagr-specific helpers for provider selection and one-time warning state.',
+    description: 'Run n8n-as-code operations from the active workspace. Use action="command" for normal n8nac usage; action="llm_provider_options" lists available LLM providers; action="yagr_proxy_relay_start" starts the Yagr relay and creates the openAiApi credential (idempotent).',
     parameters: strictCompatibleParameters,
     execute: async ({
       action: rawAction,
@@ -592,46 +587,18 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         return buildStructuredCommandResult(normalizedArgv, result, configService);
       }
 
-      if (action === 'yagr_proxy_warning_check') {
-        const consent = new YagrConfigService().getYagrProxyCredentialWarningConsent();
-        const accepted = consent?.warningVersion === YAGR_PROXY_WARNING_VERSION;
-        return {
-          accepted,
-          warningVersion: YAGR_PROXY_WARNING_VERSION,
-          warningMessage: YAGR_PROXY_WARNING_MESSAGE,
-          acceptedAt: consent?.acceptedAt ?? null,
-          next: accepted
-            ? 'Yagr proxy warning already accepted; proceed without showing it again.'
-            : 'Present this warning to the user once. If accepted, call yagr_proxy_warning_accept.',
-        };
-      }
-
-      if (action === 'yagr_proxy_warning_accept') {
-        const acceptedAt = new Date().toISOString();
-        new YagrConfigService().saveYagrProxyCredentialWarningConsent({
-          warningVersion: YAGR_PROXY_WARNING_VERSION,
-          acceptedAt,
-        });
-        return {
-          accepted: true,
-          warningVersion: YAGR_PROXY_WARNING_VERSION,
-          acceptedAt,
-          next: 'Warning acceptance saved. Do not show this warning again unless warningVersion changes.',
-        };
-      }
-
       if (action === 'llm_provider_options') {
         const options = getLlmProviderCatalog();
+        const proxyEnabled = new YagrConfigService().isLlmProxyEnabled();
         const credentialsResult = await runObservedN8nac(observer, ['credential', 'list', '--json'], cwd);
         const parsed = parseJsonPayload(credentialsResult.stdout);
         const credentials = Array.isArray(parsed)
           ? parsed as Array<{ id?: string; name?: string; type?: string }>
           : [];
-        const consent = new YagrConfigService().getYagrProxyCredentialWarningConsent();
-        const warningAccepted = consent?.warningVersion === YAGR_PROXY_WARNING_VERSION;
 
         return {
           nodeName: nodeName ?? null,
+          yagrProxyEnabled: proxyEnabled,
           providers: options.map((provider) => ({
             ...provider,
             credentials: credentials
@@ -642,15 +609,11 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
                 type: entry.type || null,
               })),
           })),
-          yagrWarning: {
-            accepted: warningAccepted,
-            warningVersion: YAGR_PROXY_WARNING_VERSION,
-            warningMessage: YAGR_PROXY_WARNING_MESSAGE,
-            acceptedAt: consent?.acceptedAt ?? null,
-          },
           credentialListExitCode: credentialsResult.exitCode,
           credentialListStderr: truncateText(credentialsResult.stderr),
-          next: 'Ask the user which provider to use for this node. Prefer existing credentials; create a new one only if needed. Only offer providers marked available=true. For Yagr Proxy (frictionless, no API key), call yagr_proxy_relay_start — it starts the relay, creates the openAiApi credential in n8n automatically, and returns the credential id ready to assign.',
+          next: proxyEnabled
+            ? 'Yagr Proxy is globally configured (user already consented at setup). It is the preferred provider — call yagr_proxy_relay_start directly, no warning needed.'
+            : 'Ask the user which provider to use for this node. Prefer existing credentials; create a new one only if needed. Only offer providers marked available=true. For Yagr Proxy (frictionless, no API key), call yagr_proxy_relay_start.',
         };
       }
 
@@ -667,16 +630,9 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           (c) => c.name === N8N_RELAY_CREDENTIAL_NAME && c.type === 'openAiApi',
         );
 
-        if (existing) {
-          return {
-            port: relay.port,
-            baseUrl: relay.baseUrl,
-            credentialId: existing.id ?? null,
-            credentialName: N8N_RELAY_CREDENTIAL_NAME,
-            credentialType: 'openAiApi',
-            created: false,
-            next: `Relay is running and credential "${N8N_RELAY_CREDENTIAL_NAME}" (id: ${existing.id}) already exists. Assign it to the node.`,
-          };
+        if (existing?.id) {
+          // Delete and recreate to ensure the URL is always up-to-date (e.g. docker host changed).
+          await runObservedN8nac(observer, ['credential', 'delete', existing.id], cwd);
         }
 
         // Create the openAiApi credential with the correct field name ("url", not "baseUrl").

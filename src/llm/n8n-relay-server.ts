@@ -1,18 +1,21 @@
 /**
  * Local OpenAI-compatible HTTP relay server for n8n Chat Model nodes.
  *
- * n8n credentials of type openAiApi point to this server (baseUrl = http://127.0.0.1:PORT/v1).
+ * n8n credentials of type openAiApi point to this server at the configured baseUrl.
  * Incoming requests are proxied to the currently active Yagr LLM provider, transparently
  * handling OAuth token refresh and other provider-specific auth.
  *
- * Architecture: the relay server runs as a detached child process that outlives the agent session.
+ * Architecture: the relay runs as a detached child process that outlives the agent session.
  * `ensureN8nRelayServer()` spawns that process if not already running.
  * `ensureN8nRelayServerInProcess()` is the entrypoint called inside the child process.
+ *
+ * Binding: always 0.0.0.0 so Docker containers can reach it via the host bridge address.
  */
 
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
@@ -33,11 +36,16 @@ export interface N8nRelayServerState {
 
 export interface N8nRelayInfo {
   port: number;
+  /** Base URL to use in the n8n credential (may be docker host IP or tunnel URL) */
   baseUrl: string;
+  /** Base URL reachable from the local host machine */
+  hostBaseUrl: string;
   apiKey: string;
 }
 
 let activeServer: http.Server | undefined;
+
+// ─── State persistence ────────────────────────────────────────────────────────
 
 export function getN8nRelayState(): N8nRelayServerState | undefined {
   try {
@@ -68,27 +76,100 @@ function isRelayAlive(state: N8nRelayServerState): boolean {
   }
 }
 
+// ─── Docker host address detection ───────────────────────────────────────────
+
 /**
- * Called from the agent process. Spawns the relay as a detached child if not already running,
- * then waits briefly for it to bind and write its state file.
+ * Resolve the address that Docker containers should use to reach this host.
+ * Priority:
+ *   1. YAGR_N8N_RELAY_HOST env override
+ *   2. host.docker.internal (Docker Desktop / WSL2 mirrored)
+ *   3. docker0 bridge IP from network interfaces
+ *   4. docker network inspect bridge gateway
+ *   5. Fallback: 127.0.0.1
+ */
+export async function resolveDockerHostAddress(): Promise<string> {
+  const override = process.env.YAGR_N8N_RELAY_HOST?.trim();
+  if (override) {
+    return override;
+  }
+
+  // Try host.docker.internal
+  try {
+    const { Resolver } = await import('node:dns/promises');
+    const resolver = new Resolver();
+    const addrs = await resolver.resolve4('host.docker.internal');
+    if (addrs.length > 0) {
+      return 'host.docker.internal';
+    }
+  } catch {
+    // not resolvable
+  }
+
+  // Try docker0 from network interfaces
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    if (!/docker/i.test(name)) continue;
+    for (const iface of ifaces[name] ?? []) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+
+  // Try docker network inspect
+  try {
+    const ip = await getDockerBridgeGateway();
+    if (ip) return ip;
+  } catch {
+    // docker not available
+  }
+
+  return '127.0.0.1';
+}
+
+function getDockerBridgeGateway(): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const child = spawn('docker', ['network', 'inspect', 'bridge', '--format', '{{range .IPAM.Config}}{{.Gateway}}{{end}}'], {
+      stdio: 'pipe',
+    });
+    let out = '';
+    child.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+    child.on('close', () => resolve(out.trim() || undefined));
+    child.on('error', () => resolve(undefined));
+  });
+}
+
+// ─── Relay lifecycle ──────────────────────────────────────────────────────────
+
+/**
+ * Called from the agent process. Spawns the relay as a detached child if not already running.
+ * Returns the baseUrl using the stored proxy config (tunnel, docker host, or loopback).
  */
 export async function ensureN8nRelayServer(): Promise<N8nRelayInfo> {
   const existing = getN8nRelayState();
   if (existing && isRelayAlive(existing)) {
-    return {
-      port: existing.port,
-      baseUrl: `http://127.0.0.1:${existing.port}/v1`,
-      apiKey: N8N_RELAY_FAKE_API_KEY,
-    };
+    return buildRelayInfo(existing.port);
   }
 
   spawnRelayProcess();
   const state = await waitForRelayState(8_000);
-  return {
-    port: state.port,
-    baseUrl: `http://127.0.0.1:${state.port}/v1`,
-    apiKey: N8N_RELAY_FAKE_API_KEY,
-  };
+  return buildRelayInfo(state.port);
+}
+
+function buildRelayInfo(port: number): N8nRelayInfo {
+  const configService = new YagrConfigService();
+  const proxyConfig = configService.getLocalConfig().llmProxy;
+  const hostBaseUrl = `http://127.0.0.1:${port}/v1`;
+
+  if (proxyConfig?.mode === 'tunnel' && proxyConfig.tunnelUrl) {
+    return { port, baseUrl: `${proxyConfig.tunnelUrl}/v1`, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
+  }
+
+  if (proxyConfig?.mode === 'docker' && proxyConfig.dockerHostAddress) {
+    return { port, baseUrl: `http://${proxyConfig.dockerHostAddress}:${port}/v1`, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
+  }
+
+  return { port, baseUrl: hostBaseUrl, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
 }
 
 function spawnRelayProcess(): void {
@@ -99,7 +180,6 @@ function spawnRelayProcess(): void {
   const logPath = path.join(logDir, 'n8n-relay.log');
   const logFd = fs.openSync(logPath, 'a');
 
-  // Resolve the compiled entrypoint path relative to this file.
   const entrypoint = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     'n8n-relay-entrypoint.js',
@@ -132,25 +212,15 @@ function delay(ms: number): Promise<void> {
 
 /**
  * Called inside the detached child process (n8n-relay-entrypoint.ts).
- * Starts the HTTP server in-process and keeps running indefinitely.
  */
 export async function ensureN8nRelayServerInProcess(): Promise<N8nRelayInfo> {
-  // If another relay process is already alive, let it keep running.
   const existing = getN8nRelayState();
   if (existing && isRelayAlive(existing)) {
-    return {
-      port: existing.port,
-      baseUrl: `http://127.0.0.1:${existing.port}/v1`,
-      apiKey: N8N_RELAY_FAKE_API_KEY,
-    };
+    return buildRelayInfo(existing.port);
   }
 
   const port = await startRelayInProcess();
-  return {
-    port,
-    baseUrl: `http://127.0.0.1:${port}/v1`,
-    apiKey: N8N_RELAY_FAKE_API_KEY,
-  };
+  return buildRelayInfo(port);
 }
 
 async function attemptListen(server: http.Server, port: number): Promise<number> {
@@ -160,12 +230,11 @@ async function attemptListen(server: http.Server, port: number): Promise<number>
       resolve(typeof addr === 'object' && addr !== null ? addr.port : port);
     });
     server.once('error', reject);
-    server.listen(port, '127.0.0.1');
+    server.listen(port, '0.0.0.0');
   });
 }
 
 async function startRelayInProcess(): Promise<number> {
-  // Try fixed well-known port first, then fall back to OS-assigned port.
   for (const preferredPort of [N8N_RELAY_DEFAULT_PORT, 0]) {
     const server = http.createServer((req, res) => {
       void handleRequest(req, res);
@@ -189,6 +258,8 @@ async function startRelayInProcess(): Promise<number> {
 
   throw new Error('Failed to start n8n relay server: no available port');
 }
+
+// ─── HTTP request handling ────────────────────────────────────────────────────
 
 async function resolveProviderRuntime() {
   const configService = new YagrConfigService();
@@ -271,15 +342,12 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   const body = await readBody(req);
   const targetUrl = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
-  const forwardHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+  const forwardHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
 
   if (apiKey) {
     forwardHeaders['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  // Forward any provider-specific headers from the original request
   for (const [key, value] of Object.entries(req.headers)) {
     const lower = key.toLowerCase();
     if (lower.startsWith('openai-') || lower.startsWith('anthropic-') || lower.startsWith('x-')) {
