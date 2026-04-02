@@ -294,23 +294,31 @@ const SCENARIOS = [
     timeoutMs: CREATION_TIMEOUT_MS,
     n8nRequired: true,
     assert(result, outcome) {
-      if (!outcome.successfulPush) {
-        const text = String(result.text || '');
-        return { pass: false, note: `Workflow non poussé. Réponse: ${text.slice(0, 150)}` };
-      }
-
-      const workflowId = outcome.successfulPush.workflowId;
-
+      const workflowId = outcome.successfulPush?.workflowId;
       const testAction = outcome.successfulActions.find((a) => a.action === 'test');
       const failedTest = outcome.failedActions.find((a) => a.action === 'test');
+      const text = String(result.text || '');
 
-      if (testAction) {
-        const text = String(result.text || '');
+      // Accept: push + successful test
+      if (outcome.successfulPush && testAction) {
         const mentionsCapital = /paris|capital/i.test(text) || /paris|capital/i.test(testAction.testOutput ?? '');
         return {
           pass: true,
           note: `Proxy LLM opérationnel — workflow créé, testé${mentionsCapital ? ', résultat mentionne Paris/capital' : ''}. workflowId=${workflowId}`,
         };
+      }
+
+      // Accept: agent reused existing workflow (activate + test without push) and got a result
+      if (!outcome.successfulPush && testAction) {
+        const mentionsCapital = /paris|capital/i.test(text) || /paris|capital/i.test(testAction.testOutput ?? '');
+        return {
+          pass: true,
+          note: `Workflow réutilisé (pas de push), testé${mentionsCapital ? ', résultat mentionne Paris/capital' : ''}. workflowId=${testAction.workflowId ?? 'inconnu'}`,
+        };
+      }
+
+      if (!outcome.successfulPush) {
+        return { pass: false, note: `Workflow non poussé et non testé. Réponse: ${text.slice(0, 150)}` };
       }
 
       if (failedTest) {
