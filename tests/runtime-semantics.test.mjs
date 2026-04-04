@@ -180,9 +180,10 @@ test('n8n setup guard blocks speculative init_auth when the workspace is already
     );
 
     const result = await wrappedTools.n8nac.execute({
-      action: 'init_auth',
-      n8nHost: 'http://localhost:5678',
-      n8nApiKey: 'secret',
+      action: 'command',
+      commandArgv: ['init-auth', '--host', 'http://localhost:5678', '--api-key', 'secret'],
+      nodeName: null,
+      commandArgs: null,
     });
 
     assert.equal(result.ok, false);
@@ -224,9 +225,10 @@ test('n8n setup guard blocks init_auth when automated test env credentials are a
     );
 
     const result = await wrappedTools.n8nac.execute({
-      action: 'init_auth',
-      n8nHost: 'http://localhost:5678',
-      n8nApiKey: 'secret',
+      action: 'command',
+      commandArgv: ['init-auth', '--host', 'http://localhost:5678', '--api-key', 'secret'],
+      nodeName: null,
+      commandArgs: null,
     });
 
     assert.equal(result.ok, false);
@@ -260,7 +262,7 @@ test('later successful retry clears an earlier unresolved n8nac failure', () => 
         finishReason: 'tool-calls',
         phase: 'validate',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'validate', validateFile: 'demo.workflow.ts' } }],
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['skills', 'validate', 'demo.workflow.ts'] } }],
         toolResults: [{ toolName: 'n8nac', result: { exitCode: 1 } }],
       },
     },
@@ -277,7 +279,7 @@ test('later successful retry clears an earlier unresolved n8nac failure', () => 
         finishReason: 'tool-calls',
         phase: 'validate',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'validate', validateFile: 'demo.workflow.ts' } }],
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['skills', 'validate', 'demo.workflow.ts'] } }],
         toolResults: [{ toolName: 'n8nac', result: { exitCode: 0 } }],
       },
     },
@@ -304,7 +306,7 @@ test('setup_check is ignored in observed n8nac failures', () => {
         finishReason: 'tool-calls',
         phase: 'plan',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'setup_check' } }],
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['setup-check'] } }],
         toolResults: [{ toolName: 'n8nac', result: { initialized: false } }],
       },
     },
@@ -331,7 +333,7 @@ test('push with built-in verify resolves prior verify failures and carries workf
         finishReason: 'tool-calls',
         phase: 'verify',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'verify', workflowId: 'wf-1' } }],
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['verify', 'wf-1'] } }],
         toolResults: [{ toolName: 'n8nac', result: { exitCode: 1 } }],
       },
     },
@@ -348,7 +350,7 @@ test('push with built-in verify resolves prior verify failures and carries workf
         finishReason: 'tool-calls',
         phase: 'sync',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'push', filename: 'workflows/demo.workflow.ts' } }],
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'workflows/demo.workflow.ts'] } }],
         toolResults: [{
           toolName: 'n8nac',
           result: {
@@ -385,7 +387,7 @@ test('exploratory setup failures stop being blocking once push and verify succee
         finishReason: 'tool-calls',
         phase: 'plan',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'init_auth' } }],
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['init-auth'] } }],
         toolResults: [{ toolName: 'n8nac', result: { exitCode: 1 } }],
       },
     },
@@ -402,7 +404,7 @@ test('exploratory setup failures stop being blocking once push and verify succee
         finishReason: 'tool-calls',
         phase: 'sync',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'push', filename: 'workflows/demo.workflow.ts' } }],
+        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'workflows/demo.workflow.ts'] } }],
         toolResults: [{
           toolName: 'n8nac',
           result: {
@@ -518,7 +520,7 @@ test('successful push counts as validate and verify evidence for completion gati
         text: '',
         toolCalls: [
           { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', args: { action: 'push', filename: 'demo.workflow.ts' } },
+          { toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'demo.workflow.ts'] } },
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
@@ -566,7 +568,7 @@ test('grounded summary prefers a user-facing workflow completion message when a 
         text: '',
         toolCalls: [
           { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', args: { action: 'push', filename: 'demo.workflow.ts' } },
+          { toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'demo.workflow.ts'] } },
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
@@ -621,7 +623,7 @@ test('grounded summary includes workflow URL from presentWorkflowResult when ava
         text: '',
         toolCalls: [
           { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', args: { action: 'push', filename: 'demo.workflow.ts' } },
+          { toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'demo.workflow.ts'] } },
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
@@ -655,7 +657,7 @@ test('grounded summary falls back to successful push metadata when no presentWor
         text: '',
         toolCalls: [
           { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', args: { action: 'push', filename: 'workflows/demo.workflow.ts' } },
+          { toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'workflows/demo.workflow.ts'] } },
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
@@ -699,7 +701,7 @@ test('final answer policy forces a grounded summary when a workflow URL is known
         text: '',
         toolCalls: [
           { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', args: { action: 'push', filename: 'workflows/demo.workflow.ts' } },
+          { toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'workflows/demo.workflow.ts'] } },
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },

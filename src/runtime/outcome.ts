@@ -1,5 +1,4 @@
 import type { YagrRunJournalEntry } from '../types.js';
-import { extractN8nacOperation, extractN8nacTargetMeta } from '../tools/n8nac-command.js';
 
 export type ObservedN8nacAction = {
   action: string;
@@ -85,22 +84,19 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
       }
 
       if (toolCall.toolName === 'n8nac') {
-        const action = extractN8nacOperation(toolCall.args) ?? 'unknown';
-        if (action === 'setup_check') {
-          continue;
-        }
+          const action = asString(result?.operation) ?? 'unknown';
+          if (action === 'setup_check') {
+            continue;
+          }
 
-        const targetMeta = extractN8nacTargetMeta(toolCall.args);
-
-        const observedAction: ObservedN8nacAction = {
-          action,
-          success: (asNumber(result?.exitCode) ?? 1) === 0,
-          filename: asString(result?.pushTarget) ?? targetMeta.filename,
-          workflowId: asString(result?.workflowId) ?? targetMeta.workflowId,
-          workflowUrl: asString(result?.workflowUrl),
-          title: asString(result?.title),
-          validateFile: targetMeta.validateFile,
-          exitCode: asNumber(result?.exitCode),
+          const observedAction: ObservedN8nacAction = {
+            action,
+            success: (asNumber(result?.exitCode) ?? 1) === 0,
+            filename: asString(result?.pushTarget),
+            workflowId: asString(result?.workflowId),
+            workflowUrl: asString(result?.workflowUrl),
+            title: asString(result?.title),
+            validateFile: asString(result?.validateFile),
           testOutput: action === 'test' ? (asString(result?.stdout) ?? undefined) : undefined,
         };
 

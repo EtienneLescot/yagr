@@ -1,7 +1,6 @@
 import { tool } from 'ai';
 import type { YagrAgentState, YagrRunPhase, YagrRuntimeContext, YagrRuntimeHook } from '../types.js';
 import { resolveLocalWorkflowDiagram } from '../tools/present-workflow-result.js';
-import { extractN8nacOperation } from '../tools/n8nac-command.js';
 import { resolveN8nRuntimeState, YagrN8nConfigService } from '../config/n8n-config-service.js';
 
 type ToolLike = {
@@ -84,13 +83,13 @@ export function createN8nSetupGuardHook(): YagrRuntimeHook {
       }
 
       const normalizedArgs = asRecord(args);
-        const action = extractN8nacOperation(normalizedArgs);
-      if (action !== 'init_auth' && action !== 'init_project') {
-        return;
-      }
+        const argv = Array.isArray(normalizedArgs?.commandArgv) ? normalizedArgs.commandArgv as string[] : [];
+        const command = argv[0];
+        if (command !== 'init-auth' && command !== 'init-project') {
+          return;
+        }
 
-      if (action === 'init_auth' && credentialsAvailable) {
-        return {
+        if (command === 'init-auth' && credentialsAvailable) {
           allowed: false,
           message: 'n8n credentials are already available. Do not rerun init_auth. Continue with setup_check or init_project.',
         };
@@ -116,9 +115,8 @@ export function createN8nSetupGuardHook(): YagrRuntimeHook {
       }
 
       const normalizedArgs = asRecord(args);
-        const action = extractN8nacOperation(normalizedArgs);
-      if (action !== 'setup_check') {
-        return;
+        const argv = Array.isArray(normalizedArgs?.commandArgv) ? normalizedArgs.commandArgv as string[] : [];
+        if (argv[0] !== 'setup-check') {
       }
 
       const normalizedResult = asRecord(result);
