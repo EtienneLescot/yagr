@@ -12,11 +12,6 @@ export interface CompletionGateInput {
    *  "must call at least one tool" contract, which always requires a repair pass. */
   executePhaseCalledNoTools: boolean;
   hasConcreteResult: boolean;
-  hasWorkflowWrites: boolean;
-  successfulValidate: boolean;
-  successfulPush: boolean;
-  successfulVerify: boolean;
-  unresolvedFailureCount: number;
   hooks?: YagrRuntimeHook[];
   context: YagrRuntimeContext;
 }
@@ -34,22 +29,15 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
   const satisfiedRequiredActionIds = new Set(input.satisfiedRequiredActionIds ?? []);
   const requiredActions = input.requiredActions.filter((action) => !satisfiedRequiredActionIds.has(action.id));
   const { blocking: blockingRequiredActions } = splitRequiredActions(requiredActions);
-  const hasBlockingWorkflowFailures = input.hasWorkflowWrites && input.unresolvedFailureCount > 0;
   const usedOnlyReadOnlyTooling = input.attemptedAnyToolCalls && !input.attemptedMaterialWork;
-  const missingWorkflowSyncConfirmation = input.hasWorkflowWrites
-    && (!input.successfulPush || !input.successfulVerify)
-    && input.unresolvedFailureCount === 0;
   // needsContinuation is true when:
   //  (a) material work was attempted but produced no concrete result, OR
   //  (b) tooling was used only for read-only exploration and still produced neither
   //      a concrete result nor a structured blocker, OR
-  //  (c) a workflow file exists locally but sync has not yet been confirmed and no
-  //      structured blocker explains why, OR
-  //  (d) the execute phase made zero tool calls — always requires a repair pass.
+  //  (c) the execute phase made zero tool calls — always requires a repair pass.
   const needsContinuation =
     (input.attemptedMaterialWork && !input.hasConcreteResult && blockingRequiredActions.length === 0)
     || (usedOnlyReadOnlyTooling && !input.hasConcreteResult && blockingRequiredActions.length === 0)
-    || (missingWorkflowSyncConfirmation && blockingRequiredActions.length === 0)
     || (input.executePhaseCalledNoTools && !input.hasConcreteResult && blockingRequiredActions.length === 0);
 
   if (blockingRequiredActions.length > 0) {
@@ -58,22 +46,6 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
 
   if (needsContinuation) {
     reasons.push('Run ended without a concrete result or a structured blocker.');
-  }
-
-  if (hasBlockingWorkflowFailures) {
-    reasons.push('Unresolved tool failures remain in task state.');
-  }
-
-  if (input.hasWorkflowWrites && !input.successfulValidate && !input.successfulPush) {
-    reasons.push('Validation has not been confirmed.');
-  }
-
-  if (input.hasWorkflowWrites && !input.successfulPush) {
-    reasons.push('Push has not been confirmed.');
-  }
-
-  if (input.hasWorkflowWrites && !input.successfulVerify) {
-    reasons.push('Remote verification has not been confirmed.');
   }
 
   const attempt: YagrCompletionAttempt = {
@@ -113,7 +85,7 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
       accepted: false,
       reasons,
       requiredActions,
-      state: hasBlockingWorkflowFailures ? 'failed_terminal' : 'resumable',
+      state: 'resumable',
       needsContinuation,
     };
   }

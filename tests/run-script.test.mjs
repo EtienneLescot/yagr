@@ -15,15 +15,15 @@ test('runScript executes an allowed command and returns stdout', async () => {
   assert.equal(result.stdout, 'hello');
 });
 
-test('runScript rejects a command not in the allowlist', async () => {
-  const tool = createRunScriptTool();
+test('runScript rejects a command not in the approved list when mode is user-approved', async () => {
+  const tool = createRunScriptTool(undefined, { mode: 'user-approved', approved: ['npm run', 'node -e'] });
   const result = await tool.execute({
     command: 'rm -rf /tmp/yagr-test-should-never-run',
     timeoutMs: 5000,
   });
 
   assert.equal(result.ok, false);
-  assert.match(result.error, /not in allowlist/i);
+  assert.match(result.error, /not in approved list/i);
 });
 
 test('runScript captures non-zero exit code', async () => {
