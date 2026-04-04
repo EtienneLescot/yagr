@@ -28,7 +28,7 @@ const { YagrN8nConfigService } = await import('../dist/config/n8n-config-service
 const { getYagrPaths } = await import('../dist/config/yagr-home.js');
 const { YagrAgent } = await import('../dist/agent.js');
 const { createN8nEngineFromWorkspace } = await import('../dist/config/load-n8n-engine-config.js');
-const { analyzeRunOutcome, formatObservedAction } = await import('../dist/runtime/outcome.js');
+const { analyzeRunOutcome } = await import('../dist/runtime/outcome.js');
 const { resolveToolRuntimeStrategy } = await import('../dist/runtime/tool-runtime-strategy.js');
 const { collectRequiredActions, splitRequiredActions } = await import('../dist/runtime/required-actions.js');
 
@@ -917,23 +917,17 @@ function buildAdvancedChecklist({
   const outcome = analyzeRunOutcome(journal || []);
   const requiredActions = collectRequiredActions(journal || []);
   const { blocking: blockingRequiredActions, followUp: followUpRequiredActions } = splitRequiredActions(requiredActions);
-  const n8nacActions = [...outcome.successfulActions, ...outcome.failedActions];
-  const actionNames = n8nacActions.map((action) => action.action);
   const commandStarts = (toolEvents || []).filter((event) => event.type === 'command-start' && event.toolName === 'n8nac');
   const commandEnds = (toolEvents || []).filter((event) => event.type === 'command-end' && event.toolName === 'n8nac');
   const workflowEmbeds = (toolEvents || []).filter((event) => event.type === 'embed' && event.kind === 'workflow');
 
   return {
-    usedN8nac: commandStarts.length > 0 || n8nacActions.length > 0,
-    n8nacActionCount: n8nacActions.length,
+    usedN8nac: commandStarts.length > 0,
+    scriptRunCount: outcome.successfulScriptRuns + outcome.failedScriptRuns,
     commandStartCount: commandStarts.length,
     commandEndCount: commandEnds.length,
-    actionNames,
-    successfulActions: outcome.successfulActions.map(formatObservedAction),
-    failedActions: outcome.failedActions.map(formatObservedAction),
-    hasPush: Boolean(outcome.successfulPush),
-    hasVerify: Boolean(outcome.successfulVerify),
-    hasValidate: Boolean(outcome.successfulValidate),
+    successfulScriptRuns: outcome.successfulScriptRuns,
+    failedScriptRuns: outcome.failedScriptRuns,
     hasWorkflowEmbed: workflowEmbeds.length > 0,
     hasWorkflowEmbedUrl: workflowEmbeds.some((event) => Boolean(String(event.url || '').trim())),
     hasWorkflowEmbedDiagram: workflowEmbeds.some((event) => Boolean(String(event.diagram || '').trim())),
