@@ -26,6 +26,7 @@ Le principe durable conserve des anciens plans est le suivant:
 - [owner-credentials.ts](/home/etienne/repos/yagr/src/n8n-local/owner-credentials.ts)
 - [browser-auth.ts](/home/etienne/repos/yagr/src/n8n-local/browser-auth.ts)
 - [state.ts](/home/etienne/repos/yagr/src/n8n-local/state.ts)
+- [n8n-tunnel.ts](/home/etienne/repos/yagr/src/n8n-local/n8n-tunnel.ts) — Cloudflare Tunnel exposure
 
 ## Vue d'ensemble
 
@@ -41,6 +42,9 @@ flowchart TD
     MGR --> STATE[state.ts]
     MGR --> CREDS[owner-credentials.ts]
     CREDS --> AUTH[browser-auth.ts]
+    MGR --> TUNNEL[n8n-tunnel.ts]
+    DOCKER --> TUNNEL
+    DIRECT --> TUNNEL
 ```
 
 ## Regles de conception
@@ -90,3 +94,40 @@ Regle durable:
 - la confiance principale doit venir des tests de planification et detection purs
 - les tests d'integration doivent valider un environnement propre et reproductible
 - les validations lourdes manuelles ne doivent pas devenir la source canonique de confiance
+
+## Cloudflare Tunnel
+
+Le module `n8n-tunnel.ts` permet d'exposer l'instance n8n locale via un tunnel Cloudflare, rendant les webhooks accessibles depuis l'exterieur.
+
+### Composants
+
+| Element | Role |
+|---|---|
+| `startN8nTunnel(targetUrl)` | Spawne `cloudflared tunnel --url <targetUrl>` en detaché, detecte l'URL publique dans le log |
+| `stopN8nTunnel()` | Tue le process cloudflared et nettoie le state |
+| `refreshN8nTunnel(targetUrl)` | Stop + start pour renouveler l'URL |
+| `getActiveTunnelState()` | Retourne le state si le process est vivant, null sinon |
+| `installCloudflaredIfNeeded()` | Telecharge cloudflared dans `YAGR_HOME/bin` si absent du PATH |
+| `resolveN8nTunnelTargetUrl()` | Resout l'URL locale n8n cible (managed uniquement) |
+| `startProxyTunnel(targetUrl)` | Tunnel dedie pour le LLM Proxy (deduplication par targetUrl) |
+
+### Persistance
+
+L'etat du tunnel est persiste dans `YAGR_HOME/n8n-tunnel-state.json`:
+
+```typescript
+interface N8nTunnelState {
+  publicUrl: string;   // URL trycloudflare.com
+  targetUrl: string;   // URL locale n8n
+  pid: number;         // PID du process cloudflared
+  startedAt: string;   // ISO timestamp
+}
+```
+
+### Regles de conception
+
+- Le tunnel ne s'applique qu'aux instances **locales** (Yagr-managed). Les instances cloud/distante sont deja publiques.
+- Deux tunnels coexistent : Tunnel A (LLM Proxy) et Tunnel B (N8N Webhook Exposure).
+- Les URL `trycloudflare.com` changent a chaque restart — le systeme supporte `refresh` manuel.
+- `N8N_WEBHOOK_URL` est positionne au demarrage n8n ; un refresh tunnel propose un redemarrage explicite.
+- Le tunnel expose une surface **non authentifiee** par defaut pour les webhooks.

@@ -6,10 +6,10 @@ Elle doit toujours refleter le code tel qu'il existe maintenant.
 
 ## Contenu
 
-- `system-overview.md`: vue d'ensemble des grands blocs logiques, incluant la doctrine d'outillage (trois couches)
+- `system-overview.md`: vue d'ensemble des grands blocs logiques, incluant la doctrine d'outillage (trois couches) et l'exposition Cloudflare Tunnel
 - `module-map.md`: cartographie plus fine par dossier et responsabilites
-- `runtime-flows.md`: flux transverses importants
-- `n8n-local.md`: architecture actuelle du bootstrap n8n local et de sa strategie de test
+- `runtime-flows.md`: flux transverses importants, dont le flux Cloudflare Tunnel
+- `n8n-local.md`: architecture actuelle du bootstrap n8n local, de sa strategie de test et du module Cloudflare Tunnel
 - `tui-ux.md`: principes durables de l'UX agentique TUI
 
 Les trois pages principales doivent rester coherentes entre elles:
