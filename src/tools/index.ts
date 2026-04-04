@@ -4,7 +4,7 @@ export { createHttpRequestTool } from './http-request.js';
 export { createRunScriptTool } from './run-script.js';
 export { createRunShellTool, isShellEnabled, YAGR_ENABLE_SHELL_ENV } from './run-shell.js';
 export { createListDirTool } from './list-directory.js';
-export { createN8nAcTool } from './n8nac.js';
+export { createYagrProxyTool } from './yagr-proxy-tool.js';
 export { createMoveFileTool } from './move-workspace-file.js';
 export { createReadFileTool } from './read-workspace-file.js';
 export { createReplaceInFileTool } from './replace-in-workspace-file.js';

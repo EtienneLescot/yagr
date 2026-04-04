@@ -31,6 +31,17 @@ const sidebars: SidebarsConfig = {
       id: 'reference/commands',
       label: 'Commands',
     },
+    {
+      type: 'category',
+      label: 'Contributing',
+      link: {
+        type: 'doc',
+        id: 'contributing/index',
+      },
+      items: [
+        'contributing/testing',
+      ],
+    },
   ],
 };
 
