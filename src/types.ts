@@ -167,6 +167,12 @@ export type YagrToolEvent =
       targetUrl?: string;
       title?: string;
       diagram?: string;
+      executionResult?: {
+        status: 'success' | 'error' | 'waiting';
+        executionId?: string;
+        summary?: string;
+        data?: string;
+      };
     };
 
 export interface YagrRunStep {
