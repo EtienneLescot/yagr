@@ -194,3 +194,52 @@ Quand un flux transverse change, il faut:
 - le runtime produit ne doit pas dependre de `N8N_HOST` / `N8N_API_KEY`
 - le harness de tests providers peut injecter ces valeurs, mais uniquement via l'opt-in `YAGR_ALLOW_N8N_ENV=1`
 - cette separation doit rester visible dans `src/config/n8n-config-service.ts`, `src/tools/n8nac.ts`, `src/runtime/policy-hooks.ts` et `scripts/provider-integration-matrix.mjs`
+
+## 8. Cloudflare Tunnel n8n
+
+### Flux de demarrage du tunnel
+
+```mermaid
+sequenceDiagram
+    participant CLI as yagr n8n tunnel start
+    participant Resolver as resolveN8nTunnelTargetUrl
+    participant CF as installCloudflaredIfNeeded
+    participant TunnelMgr as startN8nTunnel
+    participant CFProc as cloudflared process
+    participant State as n8n-tunnel-state.json
+    participant N8N as n8n instance
+
+    CLI->>Resolver: resolve target URL
+    Resolver-->>CLI: http://127.0.0.1:5678
+    CLI->>CF: check/install cloudflared
+    CF-->>CLI: binary path
+    CLI->>TunnelMgr: start(targetUrl, bin)
+    TunnelMgr->>CFProc: spawn detached
+    CFProc-->>TunnelMgr: PID
+    CFProc-->>TunnelMgr: URL in log file
+    TunnelMgr->>State: persist N8nTunnelState
+    TunnelMgr-->>CLI: { publicUrl, targetUrl, pid }
+    CLI->>N8N: restartManagedN8nForTunnel(publicUrl)
+```
+
+### Injection dans le system prompt
+
+```mermaid
+flowchart LR
+    SP[build-system-prompt.ts]
+    TUNNEL[getActiveTunnelState]
+    STATE[n8n-tunnel-state.json]
+    PROMPT[system prompt]
+
+    SP --> TUNNEL
+    TUNNEL --> STATE
+    TUNNEL --> PROMPT
+```
+
+Quand le tunnel est actif, le system prompt injecte:
+
+> The n8n instance is publicly reachable via Cloudflare Tunnel at {publicUrl}. Use this URL for webhooks and externally-triggered workflows.
+
+### Substitution URL workflow
+
+`resolveWorkflowOpenLink` dans `workflow-links.ts` substitue l'origine de l'URL workflow par l'URL tunnel publique quand `n8nTunnelPublicUrl` est fourni, pour que les liens presentes soient cliquables depuis l'exterieur.

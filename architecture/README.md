@@ -50,10 +50,11 @@ architecture/
 │   ├── system-overview.md   ← vue d'ensemble + doctrine d'outillage
 │   ├── module-map.md
 │   ├── runtime-flows.md
-│   ├── n8n-local.md
+│   ├── n8n-local.md         ← bootstrap n8n + Cloudflare Tunnel
 │   └── tui-ux.md
 └── target/
-    └── backlog.md
+    ├── backlog.md           ← travail restant
+    └── yagr-engine-architecture.md  ← direction cible Yagr Engine
 ```
 
 ## Usage attendu

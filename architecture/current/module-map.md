@@ -42,13 +42,14 @@ Responsabilites actuelles:
 
 - contrat abstrait de backend automation
 - ports specialises pour catalogue, compilation, validation et lifecycle workflow
-- implementation n8n
-- stub du futur moteur natif
+- implementation n8n (`N8nEngine`)
+- stub du futur moteur natif (`YagrNativeEngine` avec `name = 'yagr-engine'`)
 
 Dette structurelle:
 
 - le contrat `Engine` complet reste encore present pour compatibilite
 - la migration vers les ports fins est maintenant appliquee aux tools, au runtime, au prompt et aux gateways
+- `YagrNativeEngine` est un stub non implemente — la direction cible est documentee dans `../target/yagr-engine-architecture.md`
 
 ### `src/runtime/`
 
