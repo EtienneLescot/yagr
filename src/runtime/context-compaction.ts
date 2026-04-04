@@ -2,7 +2,7 @@ import { generateText, type CoreMessage } from 'ai';
 import type { YagrContextCompactionEvent, YagrLanguageModelConfig, YagrRunJournalEntry } from '../types.js';
 import { createLanguageModel } from '../llm/create-language-model.js';
 import { getProviderOptionsForCapability, resolveModelCapabilityProfile } from '../llm/model-capabilities.js';
-import { analyzeRunOutcome, formatObservedAction } from './outcome.js';
+import { analyzeRunOutcome } from './outcome.js';
 import { collectRequiredActions } from './required-actions.js';
 import { INTERNAL_TAG_OPEN } from './run-engine.js';
 
@@ -143,12 +143,12 @@ function buildJournalDigest(prompt: string, journal: YagrRunJournalEntry[]): str
     lines.push(`Updated files: ${outcome.updatedFiles.join(', ')}`);
   }
 
-  if (outcome.successfulActions.length > 0) {
-    lines.push(`Successful actions: ${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
+  if (outcome.successfulScriptRuns > 0) {
+    lines.push(`Successful script runs: ${outcome.successfulScriptRuns}`);
   }
 
-  if (outcome.unresolvedFailedActions.length > 0) {
-    lines.push(`Unresolved failures: ${outcome.unresolvedFailedActions.map(formatObservedAction).join(', ')}`);
+  if (outcome.failedScriptRuns > 0) {
+    lines.push(`Unresolved script failures: ${outcome.failedScriptRuns}`);
   }
 
   if (requiredActions.length > 0) {

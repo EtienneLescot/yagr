@@ -25,7 +25,7 @@ import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import { resolveWorkflowDiagramFromFilePath } from '../tools/present-workflow-result.js';
 import { evaluateCompletionGate, type CompletionGateDecision } from './completion-gate.js';
 import { compactConversationContext } from './context-compaction.js';
-import { analyzeRunOutcome, formatObservedAction, type RunOutcome } from './outcome.js';
+import { analyzeRunOutcome, type RunOutcome } from './outcome.js';
 import { createDefaultRuntimeHooksForStrategy, wrapToolsWithRuntimeHooks } from './policy-hooks.js';
 import { blockingStateForRequiredActions, collectRequiredActions, splitRequiredActions } from './required-actions.js';
 import { resolveToolRuntimeStrategy, type YagrToolRuntimeStrategy } from './tool-runtime-strategy.js';
@@ -699,28 +699,12 @@ function collectPresentedWorkflow(result: unknown): { workflowId?: string; workf
   return { workflowId, workflowUrl, title };
 }
 
-function collectWorkflowPresentationFromOutcome(outcome: RunOutcome): { workflowId?: string; workflowUrl?: string; title?: string } | undefined {
-  const workflowId = outcome.successfulVerify?.workflowId ?? outcome.successfulPush?.workflowId;
-  const workflowUrl = outcome.successfulVerify?.workflowUrl ?? outcome.successfulPush?.workflowUrl;
-  const title = outcome.successfulVerify?.title ?? outcome.successfulPush?.title;
+function extractWorkflowLabel(outcome: RunOutcome): string | undefined {
+  const workflowFilePath =
+    outcome.writtenFiles.find((f) => f.endsWith('.workflow.ts'))
+    || outcome.updatedFiles.find((f) => f.endsWith('.workflow.ts'));
 
-  if (!workflowId && !workflowUrl && !title) {
-    return undefined;
-  }
-
-  return { workflowId, workflowUrl, title };
-}
-
-function extractWorkflowLabel(outcome: RunOutcome, journal: YagrRunJournalEntry[]): string | undefined {
-  const successfulPushTarget = outcome.successfulPush?.filename;
-  const workflowFilePath = successfulPushTarget
-    || outcome.writtenFiles.find((filePath) => filePath.endsWith('.workflow.ts'))
-    || outcome.updatedFiles.find((filePath) => filePath.endsWith('.workflow.ts'));
-
-  if (!workflowFilePath) {
-    return undefined;
-  }
-
+  if (!workflowFilePath) return undefined;
   const baseName = workflowFilePath.split('/').pop() ?? workflowFilePath;
   return baseName.replace(/\.workflow\.ts$/i, '');
 }
@@ -748,43 +732,32 @@ function extractPresentedWorkflowFromJournal(journal: YagrRunJournalEntry[]): { 
 }
 
 async function maybeEmitSyntheticWorkflowEmbed(
-  outcome: RunOutcome,
+  _outcome: RunOutcome,
   journal: YagrRunJournalEntry[],
   onToolEvent: YagrRunOptions['onToolEvent'],
 ): Promise<void> {
-  if (!onToolEvent) {
-    return;
-  }
-
+  if (!onToolEvent) return;
+  // The canonical source of workflow embed data is the presentWorkflowResult tool call.
+  // Without it we don't have structured workflowId / url to emit a meaningful embed.
   const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
-  if (presentedWorkflow?.workflowUrl) {
-    return;
-  }
+  if (!presentedWorkflow?.workflowUrl) return;
 
-  const fallbackWorkflow = collectWorkflowPresentationFromOutcome(outcome);
-  if (!fallbackWorkflow?.workflowId || !fallbackWorkflow.workflowUrl) {
-    return;
-  }
-
-  const workflowLink = resolveWorkflowOpenLink(fallbackWorkflow.workflowUrl);
-  const pushTarget = outcome.successfulPush?.filename;
-  const diagram = (pushTarget ? resolveWorkflowDiagramFromFilePath(pushTarget) : undefined)
-    || [
-      '<workflow-map>',
-      `// Workflow : ${fallbackWorkflow.title || fallbackWorkflow.workflowId || 'Workflow'}`,
-      '// ROUTING MAP',
-      '// Diagram unavailable in source; link card synthesized from successful push/verify facts.',
-      '</workflow-map>',
-    ].join('\n');
+  const workflowLink = resolveWorkflowOpenLink(presentedWorkflow.workflowUrl);
+  const diagram = [
+    '<workflow-map>',
+    `// Workflow : ${presentedWorkflow.title || presentedWorkflow.workflowId || 'Workflow'}`,
+    '// ROUTING MAP',
+    '</workflow-map>',
+  ].join('\n');
 
   await onToolEvent({
     type: 'embed',
     toolName: 'presentWorkflowResult',
     kind: 'workflow',
-    workflowId: fallbackWorkflow.workflowId,
+    workflowId: presentedWorkflow.workflowId ?? '',
     url: workflowLink.openUrl,
     targetUrl: workflowLink.targetUrl,
-    title: fallbackWorkflow.title,
+    title: presentedWorkflow.title,
     diagram,
   });
 }
@@ -798,23 +771,13 @@ export function buildGroundedSummary(
   const lines: string[] = [];
   const outcome = analyzeRunOutcome(journal);
   const { blocking: blockingRequiredActions, followUp: followUpRequiredActions } = splitRequiredActions(requiredActions);
-  const workflowLabel = extractWorkflowLabel(outcome, journal);
-  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
+  const workflowLabel = extractWorkflowLabel(outcome);
+  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
   const presentedWorkflowUrl = presentedWorkflow?.workflowUrl;
 
-  if (outcome.hasWorkflowWrites && outcome.successfulPush) {
+  if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0) {
     const workflowName = presentedWorkflow?.title || workflowLabel || 'the workflow';
-    const completionBits = [
-      `The workflow ${workflowName === 'the workflow' ? workflowName : `\`${workflowName}\``} is ready`,
-      outcome.successfulValidate ? 'validated' : undefined,
-      outcome.successfulPush ? 'pushed to n8n' : undefined,
-      outcome.successfulVerify ? 'verified' : undefined,
-    ].filter(Boolean);
-
-    if (completionBits.length > 0) {
-      lines.push(`${completionBits.join(', ')}.`);
-    }
-
+    lines.push(`The workflow ${workflowName === 'the workflow' ? workflowName : `\`${workflowName}\``} is ready.`);
     if (presentedWorkflowUrl) {
       lines.push(`Workflow link: ${presentedWorkflowUrl}`);
     }
@@ -844,32 +807,16 @@ export function buildGroundedSummary(
     lines.push('The task updated local files, but the final result is not fully confirmed yet.');
   }
 
-  if (outcome.blockingUnresolvedFailedActions.length > 0) {
+  if (outcome.failedScriptRuns > 0) {
     lines.push('The run stopped because some execution steps still need correction.');
   }
 
-  if (blockingRequiredActions.length > 0 && !(outcome.successfulPush && outcome.successfulVerify)) {
+  if (blockingRequiredActions.length > 0) {
     lines.push(`Pending required actions: ${blockingRequiredActions.map((action) => action.title).join(', ')}`);
   }
 
-  if (followUpRequiredActions.length > 0 && (outcome.successfulPush || outcome.successfulVerify || presentedWorkflowUrl)) {
+  if (followUpRequiredActions.length > 0 && (outcome.successfulScriptRuns > 0 || presentedWorkflowUrl)) {
     lines.push(`Next steps: ${followUpRequiredActions.map((action) => action.title).join(', ')}`);
-  }
-
-  if (outcome.hasWorkflowWrites && !outcome.successfulValidate) {
-    lines.push('Workflow validation was not confirmed.');
-  }
-
-  if (outcome.hasWorkflowWrites && !outcome.successfulPush) {
-    lines.push('Push to n8n was not confirmed.');
-  }
-
-  if (outcome.hasWorkflowWrites && !outcome.successfulVerify) {
-    lines.push('Remote verification was not confirmed.');
-  }
-
-  if (outcome.hasWorkflowWrites && outcome.blockingUnresolvedFailedActions.length > 0) {
-    lines.push('The run stopped while some actions were still failing. More fixes are needed or an external blocker is still present.');
   }
 
   if (lines.length === 0 && finishReason !== 'stop') {
@@ -888,18 +835,12 @@ export function shouldForceGroundedFinalAnswer(
   requiredActions: YagrRequiredAction[] = [],
 ): boolean {
   const outcome = analyzeRunOutcome(journal);
-  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
-  const { blocking: blockingRequiredActions, followUp: followUpRequiredActions } = splitRequiredActions(requiredActions);
+  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
+  const { blocking: blockingRequiredActions } = splitRequiredActions(requiredActions);
 
-  if (blockingRequiredActions.length > 0) {
-    return true;
-  }
-
-  if (presentedWorkflow?.workflowUrl) {
-    return true;
-  }
-
-  return Boolean(outcome.hasWorkflowWrites && (outcome.successfulPush || outcome.successfulVerify));
+  if (blockingRequiredActions.length > 0) return true;
+  if (presentedWorkflow?.workflowUrl) return true;
+  return Boolean(outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0);
 }
 
 export function finalAnswerSatisfiesGroundedWorkflowFacts(
@@ -912,7 +853,7 @@ export function finalAnswerSatisfiesGroundedWorkflowFacts(
   }
 
   const outcome = analyzeRunOutcome(journal);
-  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
+  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
   if (presentedWorkflow?.workflowUrl && !normalizedText.includes(presentedWorkflow.workflowUrl)) {
     return false;
   }
@@ -927,46 +868,23 @@ function buildFinalAnswerFacts(
 ): string {
   const outcome = analyzeRunOutcome(journal);
   const { blocking: blockingRequiredActions, followUp: followUpRequiredActions } = splitRequiredActions(requiredActions);
-  const workflowLabel = extractWorkflowLabel(outcome, journal);
-  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal) ?? collectWorkflowPresentationFromOutcome(outcome);
+  const workflowLabel = extractWorkflowLabel(outcome);
+  const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
   const lines: string[] = [];
 
   lines.push(`finish_reason=${finishReason}`);
   lines.push(`workflow_writes=${outcome.hasWorkflowWrites ? 'yes' : 'no'}`);
-  lines.push(`validate_confirmed=${outcome.successfulValidate ? 'yes' : 'no'}`);
-  lines.push(`push_confirmed=${outcome.successfulPush ? 'yes' : 'no'}`);
-  lines.push(`verify_confirmed=${outcome.successfulVerify ? 'yes' : 'no'}`);
+  lines.push(`successful_script_runs=${outcome.successfulScriptRuns}`);
+  lines.push(`failed_script_runs=${outcome.failedScriptRuns}`);
 
-  if (workflowLabel) {
-    lines.push(`workflow_label=${workflowLabel}`);
-  }
-  if (presentedWorkflow?.title) {
-    lines.push(`workflow_title=${presentedWorkflow.title}`);
-  }
-  if (presentedWorkflow?.workflowUrl) {
-    lines.push(`workflow_url=${presentedWorkflow.workflowUrl}`);
-  }
-  if (outcome.writtenFiles.length > 0) {
-    lines.push(`written_files=${outcome.writtenFiles.join(', ')}`);
-  }
-  if (outcome.updatedFiles.length > 0) {
-    lines.push(`updated_files=${outcome.updatedFiles.join(', ')}`);
-  }
-  if (outcome.deletedFiles.length > 0) {
-    lines.push(`deleted_files=${outcome.deletedFiles.join(', ')}`);
-  }
-  if (outcome.successfulActions.length > 0) {
-    lines.push(`successful_actions=${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
-  }
-  if (outcome.blockingUnresolvedFailedActions.length > 0) {
-    lines.push(`blocking_failed_actions=${outcome.blockingUnresolvedFailedActions.map(formatObservedAction).join(', ')}`);
-  }
-  if (blockingRequiredActions.length > 0) {
-    lines.push(`blocking_required_actions=${blockingRequiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
-  }
-  if (followUpRequiredActions.length > 0) {
-    lines.push(`follow_up_actions=${followUpRequiredActions.map((action) => `${action.title} [${action.kind}]`).join(', ')}`);
-  }
+  if (workflowLabel) lines.push(`workflow_label=${workflowLabel}`);
+  if (presentedWorkflow?.title) lines.push(`workflow_title=${presentedWorkflow.title}`);
+  if (presentedWorkflow?.workflowUrl) lines.push(`workflow_url=${presentedWorkflow.workflowUrl}`);
+  if (outcome.writtenFiles.length > 0) lines.push(`written_files=${outcome.writtenFiles.join(', ')}`);
+  if (outcome.updatedFiles.length > 0) lines.push(`updated_files=${outcome.updatedFiles.join(', ')}`);
+  if (outcome.deletedFiles.length > 0) lines.push(`deleted_files=${outcome.deletedFiles.join(', ')}`);
+  if (blockingRequiredActions.length > 0) lines.push(`blocking_required_actions=${blockingRequiredActions.map((a) => `${a.title} [${a.kind}]`).join(', ')}`);
+  if (followUpRequiredActions.length > 0) lines.push(`follow_up_actions=${followUpRequiredActions.map((a) => `${a.title} [${a.kind}]`).join(', ')}`);
 
   return lines.join('\n');
 }
@@ -1174,11 +1092,11 @@ function shouldAttemptRecovery(outcome: RunOutcome, attemptNumber: number, requi
     return false;
   }
 
-  if (outcome.blockingUnresolvedFailedActions.length > 0) {
+  if (outcome.failedScriptRuns > 0) {
     return true;
   }
 
-  if (outcome.hasWorkflowWrites && (!outcome.successfulValidate || !outcome.successfulPush)) {
+  if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns === 0) {
     return true;
   }
 
@@ -1186,44 +1104,28 @@ function shouldAttemptRecovery(outcome: RunOutcome, attemptNumber: number, requi
 }
 
 function buildRecoveryPrompt(outcome: RunOutcome, attemptNumber: number): string {
-  const failedActions = outcome.failedActions.map(formatObservedAction).join(', ');
-  const missingChecks: string[] = [];
-
-  if (outcome.hasWorkflowWrites && !outcome.successfulValidate) {
-    missingChecks.push('validation');
+  if (outcome.failedScriptRuns > 0) {
+    return wrapInternal([
+      `Yagr internal recovery pass ${attemptNumber}.`,
+      `${outcome.failedScriptRuns} script run(s) failed.`,
+      'Do not summarize yet.',
+      'Inspect the failing tool output, correct the local files or command arguments, and retry the necessary steps now.',
+      'Only stop if a genuine blocker remains that cannot be resolved locally in this run.',
+    ].join(' '));
   }
 
-  if (outcome.hasWorkflowWrites && !outcome.successfulPush) {
-    missingChecks.push('push');
-  }
-
-  if (outcome.hasWorkflowWrites && !outcome.successfulVerify) {
-    missingChecks.push('remote verification');
-  }
-
-  // When the workflow file was already written but deployment steps are still
-  // missing and there are no failed actions, give a plain direct instruction
-  // instead of a confusing "inspect failing tool output" message.  Some models
-  // (e.g. Gemini) do not respond to internal-tagged prompts in recovery passes
-  // when no concrete error is present.
-  if (outcome.hasWorkflowWrites && missingChecks.length > 0 && !failedActions) {
+  if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns === 0) {
     const writtenFile = outcome.writtenFiles.find((f) => f.endsWith('.workflow.ts')) ?? outcome.writtenFiles[0];
     const fileNote = writtenFile ? ` (${writtenFile})` : '';
     return [
       `The workflow file${fileNote} was written successfully.`,
-      `The following deployment steps are still needed: ${missingChecks.join(', ')}.`,
-      'Use runScript to run npx n8nac commands to complete them now. Do not stop until push succeeds.',
+      'The deployment steps are still needed.',
+      'Use runScript to run the necessary commands to complete them now. Do not stop until done.',
     ].join(' ');
   }
 
-  const issues = [
-    failedActions ? `Failed actions: ${failedActions}.` : '',
-    missingChecks.length > 0 ? `Unconfirmed steps: ${missingChecks.join(', ')}.` : '',
-  ].filter(Boolean).join(' ');
-
   return wrapInternal([
     `Yagr internal recovery pass ${attemptNumber}.`,
-    issues,
     'Do not summarize yet.',
     'Inspect the failing tool output, correct the local files or command arguments, and retry the necessary steps now.',
     'Only stop if a genuine blocker remains that cannot be resolved locally in this run.',
@@ -1716,10 +1618,7 @@ export class YagrRunEngine {
           executePhaseCalledNoTools: toolCalls.length === 0,
           hasConcreteResult: Boolean(
             finalOutcome.hasWorkflowWrites
-            || finalOutcome.successfulValidate
-            || finalOutcome.successfulPush
-            || finalOutcome.successfulVerify
-            || finalOutcome.successfulTest
+            || finalOutcome.successfulScriptRuns > 0
             || extractPresentedWorkflowFromJournal(state.journal)
             || finalOutcome.writtenFiles.length > 0
             || finalOutcome.updatedFiles.length > 0
