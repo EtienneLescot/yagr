@@ -83,13 +83,14 @@ export function createN8nSetupGuardHook(): YagrRuntimeHook {
       }
 
       const normalizedArgs = asRecord(args);
-        const argv = Array.isArray(normalizedArgs?.commandArgv) ? normalizedArgs.commandArgv as string[] : [];
-        const command = argv[0];
-        if (command !== 'init-auth' && command !== 'init-project') {
-          return;
-        }
+      const argv = Array.isArray(normalizedArgs?.commandArgv) ? normalizedArgs.commandArgv as string[] : [];
+      const command = argv[0];
+      if (command !== 'init-auth' && command !== 'init-project') {
+        return;
+      }
 
-        if (command === 'init-auth' && credentialsAvailable) {
+      if (command === 'init-auth' && credentialsAvailable) {
+        return {
           allowed: false,
           message: 'n8n credentials are already available. Do not rerun init_auth. Continue with setup_check or init_project.',
         };
@@ -115,8 +116,9 @@ export function createN8nSetupGuardHook(): YagrRuntimeHook {
       }
 
       const normalizedArgs = asRecord(args);
-        const argv = Array.isArray(normalizedArgs?.commandArgv) ? normalizedArgs.commandArgv as string[] : [];
-        if (argv[0] !== 'setup-check') {
+      const argv = Array.isArray(normalizedArgs?.commandArgv) ? normalizedArgs.commandArgv as string[] : [];
+      if (argv[0] !== 'setup-check') {
+        return;
       }
 
       const normalizedResult = asRecord(result);
