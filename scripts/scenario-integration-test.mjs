@@ -468,22 +468,17 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
       const mergedJournal = result.journal?.length ? result.journal : journal;
       const outcome = analyzeRunOutcome(mergedJournal);
       const assertion = await Promise.resolve(scenario.assert(result, outcome, toolEvents, testN8nRuntime));
-      const createdWorkflowIds = [
-        ...outcome.successfulActions
-          .filter((a) => a.workflowId)
-          .map((a) => a.workflowId),
-        ...outcome.failedActions
-          .filter((a) => a.workflowId)
-          .map((a) => a.workflowId),
-      ].filter((id, i, arr) => arr.indexOf(id) === i);
-
+      const createdWorkflowIds = toolEvents
+        .filter((e) => e.type === 'embed' && e.kind === 'workflow' && e.workflowId)
+        .map((e) => e.workflowId)
+        .filter((id, i, arr) => arr.indexOf(id) === i);
       return {
         status: assertion.pass ? 'PASS' : 'FAIL',
         note: assertion.note,
         text: result.text || '',
         steps: result.steps || 0,
         timedOut: false,
-        createdWorkflowIds,
+        createdWorkflowIds: [],
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
