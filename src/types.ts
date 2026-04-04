@@ -91,7 +91,7 @@ export interface N8nEngineConfig {
 
 export type { YagrLanguageModelConfig, YagrModelProvider };
 
-export type YagrRunPhase = 'inspect' | 'plan' | 'edit' | 'validate' | 'sync' | 'verify' | 'summarize';
+export type YagrRunPhase = 'inspect' | 'plan' | 'edit' | 'summarize';
 
 export type YagrAgentState =
   | 'idle'

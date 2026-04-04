@@ -61,7 +61,7 @@ const BAR_CYCLE = (BAR_WIDTH - 1) * 2; // 30 ticks per back-and-forth
 const PULSE_CYCLE = BAR_CYCLE * SPINNER_FRAMES.length; // 120 — LCM of both animations
 
 const ACTIVITY_PHASES: Array<YagrPhaseEvent['phase']> = [
-  'inspect', 'plan', 'edit', 'validate', 'sync', 'verify', 'summarize',
+  'inspect', 'plan', 'edit', 'summarize',
 ];
 
 function buildActivityBar(pulse: number): string {
@@ -82,9 +82,6 @@ function phaseLabel(phase: YagrPhaseEvent['phase'] | null): string {
     case 'inspect': return 'Inspect';
     case 'plan': return 'Plan';
     case 'edit': return 'Edit';
-    case 'validate': return 'Validate';
-    case 'sync': return 'Sync';
-    case 'verify': return 'Verify';
     case 'summarize': return 'Summary';
     default: return 'Waiting';
   }
