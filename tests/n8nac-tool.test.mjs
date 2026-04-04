@@ -51,6 +51,14 @@ test('n8nac tool schema accepts credential and execution actions', () => {
     action: 'workflow_credential_required',
     workflowId: 'wf_123',
   });
+  const workflowActivate = tool.parameters.safeParse({
+    action: 'workflow_activate',
+    workflowId: 'wf_123',
+  });
+  const workflowDeactivate = tool.parameters.safeParse({
+    action: 'workflow_deactivate',
+    workflowId: 'wf_123',
+  });
   const executionGet = tool.parameters.safeParse({
     action: 'execution_get',
     executionId: 'exec_123',
@@ -66,14 +74,51 @@ test('n8nac tool schema accepts credential and execution actions', () => {
   const warningAccept = tool.parameters.safeParse({
     action: 'yagr_proxy_warning_accept',
   });
+  const testPlanAlias = tool.parameters.safeParse({
+    action: 'test-plan',
+    workflowId: 'wf_123',
+    outputJson: true,
+  });
+  const testRun = tool.parameters.safeParse({
+    action: 'test',
+    workflowId: 'wf_123',
+    testData: '{"chatInput":"Quelle est la capitale de la France?"}',
+    testProd: false,
+  });
 
   assert.equal(credentialList.success, true);
   assert.equal(credentialCreate.success, true);
   assert.equal(workflowCredentialRequired.success, true);
+  assert.equal(workflowActivate.success, true);
+  assert.equal(workflowDeactivate.success, true);
   assert.equal(executionGet.success, true);
   assert.equal(providerOptions.success, true);
   assert.equal(warningCheck.success, true);
   assert.equal(warningAccept.success, true);
+  assert.equal(testPlanAlias.success, true);
+  assert.equal(testRun.success, true);
+});
+
+test('n8nac tool schema coerces common stringified scalar values from weaker models', () => {
+  const tool = createN8nAcTool();
+
+  const parsed = tool.parameters.safeParse({
+    action: 'list',
+    projectIndex: '1',
+    outputJson: 'true',
+    includeData: 'false',
+    executionLimit: '25',
+  });
+
+  assert.equal(parsed.success, true);
+  if (!parsed.success) {
+    return;
+  }
+
+  assert.equal(parsed.data.projectIndex, 1);
+  assert.equal(parsed.data.outputJson, true);
+  assert.equal(parsed.data.includeData, false);
+  assert.equal(parsed.data.executionLimit, 25);
 });
 
 test('n8nac warning consent actions persist one-time yagr proxy acceptance', async () => {
