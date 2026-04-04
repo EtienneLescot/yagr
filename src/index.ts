@@ -1,4 +1,4 @@
-export { YagrAgent, YagrSessionAgent } from './agent.js';
+export { YagrSessionAgent } from './agent.js';
 export { YagrRunEngine } from './runtime/run-engine.js';
 export { resolveToolRuntimeStrategy } from './runtime/tool-runtime-strategy.js';
 export {
