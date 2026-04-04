@@ -412,3 +412,64 @@ test('n8nac command push rewrites a bare filename to the active workflow path wh
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+import { detectWorkflowNodeMisconfigurations } from '../dist/tools/n8nac.js';
+
+test('detectWorkflowNodeMisconfigurations: no issue when responsesApiEnabled is false', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-test-'));
+  const filePath = path.join(tempDir, 'test.workflow.ts');
+  try {
+    fs.writeFileSync(filePath, `
+      @node({ type: '@n8n/n8n-nodes-langchain.lmChatOpenAi', parameters: {
+        model: { mode: 'id', value: 'gpt-4o-mini' },
+        responsesApiEnabled: false,
+        options: { baseURL: 'http://localhost:11437/v1' },
+      }})
+    `);
+    const issues = detectWorkflowNodeMisconfigurations(filePath);
+    assert.equal(issues.length, 0);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('detectWorkflowNodeMisconfigurations: flags proxy node missing responsesApiEnabled', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-test-'));
+  const filePath = path.join(tempDir, 'test.workflow.ts');
+  try {
+    fs.writeFileSync(filePath, `
+      @node({ type: '@n8n/n8n-nodes-langchain.lmChatOpenAi', parameters: {
+        model: { mode: 'id', value: 'gpt-4o-mini' },
+        options: { baseURL: 'http://localhost:11437/v1' },
+      }})
+    `);
+    const issues = detectWorkflowNodeMisconfigurations(filePath);
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0].nodeType, 'lmChatOpenAi');
+    assert.match(issues[0].fix, /responsesApiEnabled: false/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('detectWorkflowNodeMisconfigurations: no issue when no baseURL is present', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-test-'));
+  const filePath = path.join(tempDir, 'test.workflow.ts');
+  try {
+    fs.writeFileSync(filePath, `
+      @node({ type: '@n8n/n8n-nodes-langchain.lmChatOpenAi', parameters: {
+        model: { mode: 'list', value: 'gpt-4o-mini' },
+        options: {},
+      }})
+    `);
+    const issues = detectWorkflowNodeMisconfigurations(filePath);
+    assert.equal(issues.length, 0);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('detectWorkflowNodeMisconfigurations: returns empty array for non-existent file', () => {
+  const issues = detectWorkflowNodeMisconfigurations('/non/existent/file.workflow.ts');
+  assert.deepEqual(issues, []);
+});
