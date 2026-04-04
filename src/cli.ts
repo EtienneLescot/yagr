@@ -889,11 +889,10 @@ async function main(): Promise<void> {
       if (!completed) {
         return;
       }
-      // After onboarding, if n8n is local and no tunnel is configured yet, offer tunnel setup.
-      const n8nCfg = new YagrN8nConfigService();
-      const n8nHost = n8nCfg.getLocalConfig().host;
+      // After onboarding, if n8n is a Yagr-managed instance and no tunnel is configured yet, offer tunnel setup.
+      const managedN8nState = readManagedN8nState();
       const tunnelCfg = configService.getN8nTunnelConfig();
-      if (n8nHost && isLocalUrl(n8nHost) && !tunnelCfg?.enabled) {
+      if (managedN8nState && managedN8nState.status !== 'stopped' && !tunnelCfg?.enabled) {
         process.stdout.write('\n──────────────────────────────────────────────────\n');
         process.stdout.write('Your n8n instance is local. Setting up a Cloudflare Tunnel\n');
         process.stdout.write('so it is reachable for webhooks and Telegram triggers…\n\n');
