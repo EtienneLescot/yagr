@@ -645,7 +645,7 @@ function toCodexTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string
     type: 'function',
     name: tool.name,
     ...(tool.description ? { description: tool.description } : {}),
-    parameters: normalizeFunctionToolParametersSchema(tool.parameters, {
+    parameters: normalizeFunctionToolParametersSchema(tool.parameters as Record<string, unknown>, {
       forceRequiredObjectProperties: true,
     }),
   }));
