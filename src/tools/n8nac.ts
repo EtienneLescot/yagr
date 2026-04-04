@@ -6,11 +6,32 @@ import { z } from 'zod';
 import { YagrN8nConfigService, resolveN8nRuntimeState, resolveWorkflowDir, type YagrN8nLocalConfig } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
-import { extractN8nacOperation, splitN8nacArgv } from './n8nac-command.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { ensureN8nRelayServer, N8N_RELAY_CREDENTIAL_NAME, N8N_RELAY_FAKE_API_KEY } from '../llm/llm-relay-server.js';
-import { findFileInWorkspace, parseJsonPayload, relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
+import { findFileInWorkspace, parseJsonPayload, relativeWorkspacePath, resolveWorkspacePath, splitShellArgv, truncateText, workspaceRoot } from './workspace-utils.js';
 import { pollUntil } from '../system/async-poll.js';
+
+function resolveN8nacOperation(argv: string[]): string {
+  const [head, second] = argv;
+  if (head === 'workflow' && second === 'activate') return 'workflow_activate';
+  if (head === 'workflow' && second === 'deactivate') return 'workflow_deactivate';
+  if (head === 'workflow' && second === 'credential-required') return 'workflow_credential_required';
+  if (head === 'credential' && second === 'schema') return 'credential_schema';
+  if (head === 'credential' && second === 'list') return 'credential_list';
+  if (head === 'credential' && second === 'get') return 'credential_get';
+  if (head === 'credential' && second === 'create') return 'credential_create';
+  if (head === 'credential' && second === 'delete') return 'credential_delete';
+  if (head === 'execution' && second === 'list') return 'execution_list';
+  if (head === 'execution' && second === 'get') return 'execution_get';
+  if (head === 'skills' && second === 'validate') return 'validate';
+  if (head === 'skills') return 'skills';
+  if (head === 'test-plan') return 'test_plan';
+  if (head === 'init-auth') return 'init_auth';
+  if (head === 'init-project') return 'init_project';
+  if (head === 'update-ai') return 'update_ai';
+  if (head === 'setup-check') return 'setup_check';
+  return head ?? 'unknown';
+}
 
 type RunResult = {
   stdout: string;
@@ -391,8 +412,9 @@ async function buildStructuredCommandResult(
     argv,
   };
 
-  const operation = extractN8nacOperation({ action: 'command', commandArgv: argv });
-  if (!operation) {
+  const operation = resolveN8nacOperation(argv);
+  response.operation = operation;
+  if (!operation || operation === 'unknown') {
     return response;
   }
 
@@ -411,6 +433,7 @@ async function buildStructuredCommandResult(
     response.workflowUrl = syncFacts.workflowUrl ?? fallbackFacts.workflowUrl ?? null;
     response.title = syncFacts.workflowName ?? fallbackFacts.workflowName ?? null;
     response.verified = result.exitCode === 0 && Boolean(syncFacts.workflowId);
+    response.operation = 'push';
     return response;
   }
 
@@ -418,6 +441,13 @@ async function buildStructuredCommandResult(
     response.workflowId = syncFacts.workflowId ?? argv[1] ?? null;
     response.workflowUrl = syncFacts.workflowUrl ?? null;
     response.title = syncFacts.workflowName ?? null;
+    response.operation = operation;
+    return response;
+  }
+
+  if (operation === 'validate') {
+    response.validateFile = argv[2] ?? null;
+    response.operation = 'validate';
     return response;
   }
 
@@ -676,7 +706,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         const argv = Array.isArray(commandArgv) && commandArgv.length > 0
           ? commandArgv
           : commandArgs
-            ? splitN8nacArgv(commandArgs)
+            ? splitShellArgv(commandArgs)
             : null;
 
         if (!argv || argv.length === 0) {

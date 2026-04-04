@@ -21,7 +21,6 @@ import type {
   YagrToolEvent,
 } from '../types.js';
 import { buildTools, type AllBuiltTools } from '../tools/index.js';
-import { extractN8nacOperation } from '../tools/n8nac-command.js';
 import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import { resolveWorkflowDiagramFromFilePath } from '../tools/present-workflow-result.js';
 import { evaluateCompletionGate, type CompletionGateDecision } from './completion-gate.js';
@@ -543,10 +542,11 @@ function inferPhaseFromStep(step: {
   toolCalls: Array<{ toolName: string; args: unknown }>;
   toolResults: Array<{ toolName: string; result: unknown }>;
 }): YagrRunPhase {
-  const n8nacActions = step.toolCalls
-    .filter((toolCall) => toolCall.toolName === 'n8nac')
-    .map((toolCall) => {
-      return extractN8nacOperation(toolCall.args);
+  const n8nacActions = step.toolResults
+    .filter((toolResult) => toolResult.toolName === 'n8nac')
+    .map((toolResult) => {
+      const result = toolResult.result as Record<string, unknown> | undefined;
+      return typeof result?.operation === 'string' ? result.operation : undefined;
     })
     .filter((action): action is string => Boolean(action));
 
@@ -660,8 +660,11 @@ function hasMaterialToolCall(journal: YagrRunJournalEntry[], toolNames: readonly
 
       // For n8nac, only count write/mutating actions as material work.
       if (toolCall.toolName === 'n8nac') {
-        const action = extractN8nacOperation(toolCall.args);
-        if (typeof action === 'string' && N8NAC_READONLY_ACTIONS.has(action)) {
+        const toolResult = entry.step.toolResults.find((r) => r.toolName === 'n8nac');
+        const operation = typeof (toolResult?.result as Record<string, unknown> | undefined)?.operation === 'string'
+          ? (toolResult!.result as Record<string, unknown>).operation as string
+          : undefined;
+        if (operation && N8NAC_READONLY_ACTIONS.has(operation)) {
           continue;
         }
       }
