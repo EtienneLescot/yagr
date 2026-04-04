@@ -15,7 +15,7 @@ Spec detaillee : `n8n-cloudflare-tunnel-exposure.md`
 
 - Creer `n8n-local/n8n-tunnel.ts` : module `N8nTunnelManager` (start / stop / refresh / status), persistance dans `YAGR_HOME/n8n-tunnel.json`
 - Ajouter `N8nTunnelConfig` dans `config/yagr-config-service.ts`
-- Ajouter `setupN8nTunnel()` dans `setup/application-services.ts`, resolution de `targetUrl` selon les 4 figures d'instance (managed/externe x direct/Docker)
+- Ajouter `setupN8nTunnel()` dans `setup/application-services.ts`, resolution de `targetUrl` selon les 3 figures applicables (Managed direct, Managed Docker, Non-Managed local) avec refus explicite pour Non-Managed cloud (instance deja publique)
 - Exposer les commandes LLM + CLI : `n8n tunnel start|stop|refresh|status|url`
 - Modifier `gateway/workflow-links.ts` pour substituer l'URL n8n par l'URL tunnel publique quand active
 - Injecter l'URL tunnel publique dans le prompt systeme quand active

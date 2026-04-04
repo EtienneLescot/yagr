@@ -63,6 +63,15 @@ export interface YagrLlmProxyConfig {
   consentAcceptedAt: string;
 }
 
+export interface N8nTunnelConfig {
+  /** Whether the user has enabled the n8n exposure tunnel. */
+  enabled: boolean;
+  /** The local n8n URL being tunneled (e.g. http://127.0.0.1:5678). */
+  targetUrl: string;
+  /** Last known public Cloudflare URL — may be stale if the daemon was restarted. */
+  publicUrl?: string;
+}
+
 export type YagrShellCommandsMode = 'allow-all' | 'user-approved';
 
 export interface YagrShellCommandsConfig {
@@ -81,6 +90,7 @@ export interface YagrLocalConfig {
   compliance?: YagrComplianceConfig;
   llmProxy?: YagrLlmProxyConfig;
   shellCommands?: YagrShellCommandsConfig;
+  n8nTunnel?: N8nTunnelConfig;
 }
 
 export interface YagrConfigStoreLike {
@@ -101,6 +111,9 @@ export interface YagrConfigStoreLike {
   getLlmProxyConfig(): YagrLlmProxyConfig | undefined;
   isLlmProxyEnabled(): boolean;
   saveLlmProxyConfig(config: YagrLlmProxyConfig): YagrLocalConfig;
+  getN8nTunnelConfig(): N8nTunnelConfig | undefined;
+  saveN8nTunnelConfig(config: N8nTunnelConfig): YagrLocalConfig;
+  clearN8nTunnelConfig(): YagrLocalConfig;
   clearLocalConfig?(): void;
   clearAllApiKeys?(): void;
 }
@@ -247,6 +260,18 @@ export class YagrConfigService {
 
   saveLlmProxyConfig(config: YagrLlmProxyConfig): YagrLocalConfig {
     return this.updateLocalConfig((localConfig) => ({ ...localConfig, llmProxy: config }));
+  }
+
+  getN8nTunnelConfig(): N8nTunnelConfig | undefined {
+    return this.getLocalConfig().n8nTunnel;
+  }
+
+  saveN8nTunnelConfig(config: N8nTunnelConfig): YagrLocalConfig {
+    return this.updateLocalConfig((localConfig) => ({ ...localConfig, n8nTunnel: config }));
+  }
+
+  clearN8nTunnelConfig(): YagrLocalConfig {
+    return this.updateLocalConfig(({ n8nTunnel: _removed, ...rest }) => rest);
   }
 
   private migrateLegacyCredentials(): void {

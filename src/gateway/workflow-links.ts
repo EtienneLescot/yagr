@@ -13,6 +13,8 @@ export function resolveWorkflowOpenLink(
   options: {
     n8nConfigService?: YagrN8nConfigService;
     ownerCredentialService?: ManagedN8nOwnerCredentialService;
+    /** When set, the public Cloudflare tunnel URL replaces the local origin in openUrl. */
+    n8nTunnelPublicUrl?: string;
   } = {},
 ): WorkflowOpenLink {
   const targetUrl = normalizeUrl(workflowUrl);
@@ -22,6 +24,20 @@ export function resolveWorkflowOpenLink(
       targetUrl: workflowUrl,
       via: 'direct',
     };
+  }
+
+  // When a tunnel is active, expose the public URL directly.
+  // The self-contained auth bridge is a local data: URI — not useful externally.
+  if (options.n8nTunnelPublicUrl) {
+    const tunnelOrigin = normalizeUrl(options.n8nTunnelPublicUrl)?.origin;
+    if (tunnelOrigin) {
+      const publicUrl = targetUrl.toString().replace(targetUrl.origin, tunnelOrigin);
+      return {
+        openUrl: publicUrl,
+        targetUrl: targetUrl.toString(),
+        via: 'direct',
+      };
+    }
   }
 
   const n8nConfigService = options.n8nConfigService ?? new YagrN8nConfigService();

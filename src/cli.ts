@@ -44,13 +44,20 @@ import { YagrSetupApplicationService } from './setup/application-services.js';
 import { openExternalUrl } from './system/open-external.js';
 import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
+import {
+  getActiveTunnelState,
+  refreshN8nTunnel,
+  resolveN8nTunnelTargetUrl,
+  startN8nTunnel,
+  stopN8nTunnel,
+} from './n8n-local/n8n-tunnel.js';
 import { ensureN8nRelayServer } from './llm/llm-relay-server.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url';
   startTarget?: 'webui' | 'tui';
   n8nLocalRuntime?: 'docker' | 'direct';
   prompt?: string;
@@ -240,6 +247,31 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'open') {
     parsed.command = 'n8n-local-open';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'start') {
+    parsed.command = 'n8n-tunnel-start';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'stop') {
+    parsed.command = 'n8n-tunnel-stop';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'refresh') {
+    parsed.command = 'n8n-tunnel-refresh';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'status') {
+    parsed.command = 'n8n-tunnel-status';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'url') {
+    parsed.command = 'n8n-tunnel-url';
     return parsed;
   }
 
@@ -674,6 +706,11 @@ Commands:
   n8n local status             Show status for the Yagr-managed local n8n runtime
   n8n local logs               Show recent logs for the Yagr-managed local n8n runtime
   n8n local open               Open the Yagr-managed local n8n runtime in the browser
+  n8n tunnel start             Expose n8n via Cloudflare Tunnel (spawns a persistent daemon)
+  n8n tunnel stop              Stop the running n8n Cloudflare Tunnel
+  n8n tunnel refresh           Renew the tunnel (stop + start, new public URL)
+  n8n tunnel status            Show tunnel status (JSON)
+  n8n tunnel url               Print the current public tunnel URL
 
   config show                  Show current configuration (JSON)
   config reset                 Clear all configuration and stored credentials
@@ -951,6 +988,68 @@ async function main(): Promise<void> {
       }
       await openExternalUrl(state.url);
       process.stdout.write(`Opened ${state.url}\n`);
+      return;
+    }
+
+    if (args.command === 'n8n-tunnel-start') {
+      const targetUrl = resolveN8nTunnelTargetUrl();
+      const state = await runWithSpinner(
+        `Starting Cloudflare Tunnel for ${targetUrl}…`,
+        () => startN8nTunnel(targetUrl),
+        'Waiting for cloudflared to emit a public URL (up to 30s).',
+      );
+      const config = new YagrConfigService();
+      config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
+      process.stdout.write(`Tunnel started: ${state.publicUrl}\n`);
+      process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
+      return;
+    }
+
+    if (args.command === 'n8n-tunnel-stop') {
+      await stopN8nTunnel();
+      const config = new YagrConfigService();
+      config.clearN8nTunnelConfig();
+      process.stdout.write('Tunnel stopped.\n');
+      return;
+    }
+
+    if (args.command === 'n8n-tunnel-refresh') {
+      const targetUrl = resolveN8nTunnelTargetUrl();
+      const state = await runWithSpinner(
+        `Refreshing Cloudflare Tunnel for ${targetUrl}…`,
+        () => refreshN8nTunnel(targetUrl),
+        'Stopping current tunnel and starting a new one.',
+      );
+      const config = new YagrConfigService();
+      config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
+      process.stdout.write(`Tunnel refreshed: ${state.publicUrl}\n`);
+      process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
+      const managedState = readManagedN8nState();
+      if (managedState && managedState.status !== 'stopped') {
+        process.stdout.write(`\nIMPORTANT: Restart the managed n8n instance so it picks up the new N8N_WEBHOOK_URL.\n`);
+        process.stdout.write(`New webhook base URL: ${state.publicUrl}\n`);
+      }
+
+      return;
+    }
+
+    if (args.command === 'n8n-tunnel-status') {
+      const active = getActiveTunnelState();
+      const payload = active
+        ? { running: true, publicUrl: active.publicUrl, targetUrl: active.targetUrl, pid: active.pid, startedAt: active.startedAt }
+        : { running: false };
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      return;
+    }
+
+    if (args.command === 'n8n-tunnel-url') {
+      const active = getActiveTunnelState();
+      if (!active) {
+        process.stdout.write('No tunnel is currently active. Run `yagr n8n tunnel start` first.\n');
+        return;
+      }
+
+      process.stdout.write(`${active.publicUrl}\n`);
       return;
     }
   }
