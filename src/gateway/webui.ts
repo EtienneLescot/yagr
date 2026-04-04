@@ -7,7 +7,6 @@ import {
   getDisplayProjectName,
   type IProject,
 } from 'n8nac';
-import { YagrSessionAgent } from '../agent.js';
 import { getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
 import { MemoryStore } from '../memory/memory-store.js';
 import { extractSessionMemory } from '../memory/extract-session-memory.js';
@@ -20,26 +19,19 @@ import { resolveTelegramBotIdentity } from './telegram.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 import type {
-  YagrContextCompactionEvent,
-  YagrContextUsageEvent,
   YagrModelProvider,
-  YagrPhaseEvent,
   YagrRunOptions,
-  YagrStateEvent,
-  YagrToolEvent,
 } from '../types.js';
-import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
 import {
   providerRequiresApiKey,
   YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
-import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
+import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
 import {
-  mapPhaseEventToUserVisibleUpdate,
-  mapStateEventToUserVisibleUpdate,
-  mapToolEventToUserVisibleUpdate,
-} from '../runtime/user-visible-updates.js';
+  createRunAccumulator,
+  processStreamEvent,
+} from './langgraph-events.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -76,72 +68,11 @@ interface WebUiConfigPayload {
 
 type WebUiChatStreamEvent =
   | { type: 'start'; sessionId: string; message: string }
-  | { type: 'phase'; phase: string; status: 'started' | 'completed'; message: string }
-  | { type: 'state'; state: string; message: string }
   | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
-  | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
   | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
-
-export function mapToolEventToWebUiStreamEvent(event: YagrToolEvent): WebUiChatStreamEvent | undefined {
-  const userFacingStatus = mapToolEventToUserVisibleUpdate(event);
-  if (userFacingStatus) {
-    return {
-      type: 'progress',
-      tone: userFacingStatus.tone,
-      title: userFacingStatus.title,
-      detail: userFacingStatus.detail,
-      ...(userFacingStatus.phase ? { phase: userFacingStatus.phase } : {}),
-    };
-  }
-
-  if (event.type === 'embed') {
-    return {
-      type: 'embed',
-      kind: event.kind,
-      workflowId: event.workflowId,
-      url: event.url,
-      targetUrl: event.targetUrl,
-      title: event.title,
-      diagram: event.diagram,
-      executionResult: event.executionResult,
-    };
-  }
-
-  return undefined;
-}
-
-export function mapPhaseEventToWebUiStreamEvent(event: YagrPhaseEvent): WebUiChatStreamEvent | undefined {
-  const update = mapPhaseEventToUserVisibleUpdate(event);
-  if (!update) {
-    return undefined;
-  }
-
-  return {
-    type: 'progress',
-    tone: update.tone,
-    title: update.title,
-    detail: update.detail,
-    ...(update.phase ? { phase: update.phase } : {}),
-  };
-}
-
-export function mapStateEventToWebUiStreamEvent(event: YagrStateEvent): WebUiChatStreamEvent | undefined {
-  const update = mapStateEventToUserVisibleUpdate(event);
-  if (!update) {
-    return undefined;
-  }
-
-  return {
-    type: 'progress',
-    tone: update.tone,
-    title: update.title,
-    detail: update.detail,
-    ...(update.phase ? { phase: update.phase } : {}),
-  };
-}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -203,7 +134,7 @@ export function createWebUiGatewayRuntime(
 class WebUiGateway implements Gateway {
   private server?: Server;
   private enginePromise?: Promise<EngineRuntimePort>;
-  private readonly agents = new Map<string, YagrSessionAgent>();
+  private agentHandlePromise?: Promise<YagrDeepAgentHandle>;
   private readonly setupService: YagrSetupApplicationService;
   private readonly sessionStore = new SessionStore(getYagrSessionsDir());
   private readonly memoryStore = new MemoryStore(getYagrMemoriesDir());
@@ -381,20 +312,20 @@ class WebUiGateway implements Gateway {
         throw new Error(`Yagr is not ready yet. Missing: ${setupStatus.missingSteps.join(', ')}.`);
       }
 
-      const agent = await this.resolveAgent(sessionId);
-      const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
-      const result = await agent.run(message, {
-        ...this.options,
-        provider: resolvedConfig.provider,
-        model: resolvedConfig.model,
-        apiKey: resolvedConfig.apiKey,
-        baseUrl: resolvedConfig.baseUrl,
-      });
+      const { agent } = await this.resolveAgentHandle();
+      const result = await agent.invoke(
+        { messages: [{ role: 'user', content: message }] },
+        { configurable: { thread_id: sessionId } },
+      );
+
+      const lastMessage = extractLastAiMessage(result);
+      this.sessionStore.persistRun(sessionId, 'webui', []);
+
       this.sendJson(response, 200, {
         sessionId,
-        response: result.text,
-        requiredActions: result.requiredActions,
-        finalState: result.finalState,
+        response: lastMessage,
+        requiredActions: [],
+        finalState: 'done',
       });
       return;
     }
@@ -415,7 +346,8 @@ class WebUiGateway implements Gateway {
       const body = await this.readJson(request);
       const sessionId = String(body.sessionId ?? '');
       if (sessionId && isValidSessionId(sessionId)) {
-        this.agents.delete(sessionId);
+        // Thread state in MemorySaver is abandoned (no delete API); the
+        // session ID itself is removed so the frontend creates a new thread.
         this.sessionStore.delete(sessionId);
         this.memoryStore.delete(sessionId);
       }
@@ -424,17 +356,9 @@ class WebUiGateway implements Gateway {
     }
 
     if (method === 'POST' && url.pathname === '/api/chat/compact') {
-      const body = await this.readJson(request);
-      const sessionId = String(body.sessionId ?? '');
-      if (!sessionId || !isValidSessionId(sessionId)) {
-        this.sendJson(response, 400, { error: 'Invalid session id.' });
-        return;
-      }
-
-      const agent = await this.resolveAgent(sessionId);
-      const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
-      const event = await agent.compactHistory(resolvedConfig);
-      this.sendJson(response, 200, { compacted: !!event, event: event ?? null });
+      // Auto-summarisation is handled natively by deepagents — this endpoint
+      // is retained for API compatibility but is now a no-op.
+      this.sendJson(response, 200, { compacted: false, event: null });
       return;
     }
 
@@ -489,7 +413,6 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'Invalid session id.' });
         return;
       }
-      this.agents.delete(sessionId);
       this.sessionStore.delete(sessionId);
       this.memoryStore.delete(sessionId);
       this.sendJson(response, 200, { ok: true });
@@ -584,10 +507,10 @@ class WebUiGateway implements Gateway {
 
   private async saveN8nConfig(input: { host: string; apiKey?: string; projectId: string; syncFolder: string }): Promise<string | undefined> {
     const warning = await this.setupService.saveN8nConfig(input);
-    // Invalidate the cached engine and all agent sessions so the next request
-    // picks up a fresh engine built from the new config (new host, new API key).
+    // Invalidate the cached engine and agent handle so the next request
+    // picks up a fresh engine and model built from the new config.
     this.enginePromise = undefined;
-    this.agents.clear();
+    this.agentHandlePromise = undefined;
     return warning;
   }
 
@@ -598,42 +521,35 @@ class WebUiGateway implements Gateway {
     return value as YagrModelProvider;
   }
 
-  private async resolveAgent(sessionId: string): Promise<YagrSessionAgent> {
-    const existing = this.agents.get(sessionId);
-    if (existing) {
-      return existing;
+  private async resolveAgentHandle(): Promise<YagrDeepAgentHandle> {
+    if (!this.agentHandlePromise) {
+      if (!this.enginePromise) {
+        this.enginePromise = this.engineResolver();
+      }
+      this.agentHandlePromise = this.enginePromise.then((engine) =>
+        createYagrDeepAgent(engine, this.configService),
+      );
     }
-
-    if (!this.enginePromise) {
-      this.enginePromise = this.engineResolver();
-    }
-
-    const engine = await this.enginePromise;
-    const persisted = this.sessionStore.get(sessionId);
-    const agent = new YagrSessionAgent(engine, {
-      initialHistory: persisted?.messages,
-    });
-    this.agents.set(sessionId, agent);
-    return agent;
+    return this.agentHandlePromise;
   }
 
-  private persistSession(sessionId: string, agent: YagrSessionAgent): void {
-    const messages = [...agent.messages];
-    this.sessionStore.persistRun(sessionId, 'webui', messages);
+  private persistSessionMetadata(sessionId: string): void {
+    // Conversation messages live in the MemorySaver checkpointer — we only
+    // persist session metadata (title, timestamps) in SessionStore so the
+    // WebUI sidebar can list them.
+    this.sessionStore.persistRun(sessionId, 'webui', []);
 
-    // Save a compact memory record for cross-session context.
-    // Runs synchronously after the run completes; never throws.
     try {
       const session = this.sessionStore.get(sessionId);
       const memory = extractSessionMemory(
         sessionId,
         session?.title ?? 'New conversation',
         session?.createdAt ?? new Date().toISOString(),
-        messages,
+        [],
       );
       this.memoryStore.save(memory);
     } catch {
-      // Memory persistence is best-effort — never block the response.
+      // Best-effort — never block the response.
     }
   }
 
@@ -690,7 +606,6 @@ class WebUiGateway implements Gateway {
 
     const abortController = new AbortController();
     let runFinished = false;
-    let streamedText = '';
 
     const handleConnectionClose = () => {
       if (!runFinished && !abortController.signal.aborted) {
@@ -704,142 +619,77 @@ class WebUiGateway implements Gateway {
       if (response.writableEnded || response.destroyed) {
         return;
       }
-
       response.write(`${JSON.stringify(event)}\n`);
     };
 
-    const pushPhaseEvent = (event: YagrPhaseEvent) => {
-      const mappedEvent = mapPhaseEventToWebUiStreamEvent(event);
-      if (mappedEvent) {
-        writeEvent(mappedEvent);
-        return;
-      }
-
-      if (event.status === 'started') {
-        writeEvent({
-          type: 'phase',
-          phase: event.phase,
-          status: event.status,
-          message: event.message,
-        });
-      }
-    };
-
-    const pushStateEvent = (event: YagrStateEvent) => {
-      const mappedEvent = mapStateEventToWebUiStreamEvent(event);
-      if (mappedEvent) {
-        writeEvent(mappedEvent);
-        return;
-      }
-
-      if (event.state !== 'running' && event.state !== 'streaming' && event.state !== 'completed') {
-        writeEvent({
-          type: 'state',
-          state: event.state,
-          message: event.message,
-        });
-      }
-    };
-
-    const pushToolEvent = (event: YagrToolEvent) => {
-      const mappedEvent = mapToolEventToWebUiStreamEvent(event);
-      if (mappedEvent) {
-        writeEvent(mappedEvent);
-      }
-    };
-
-    const pushCompactionEvent = (event: YagrContextCompactionEvent) => {
-      writeEvent({
-        type: 'progress',
-        tone: 'info',
-        title: 'Context compacted',
-        detail: `${event.messagesCompacted} messages folded to keep the run responsive.`,
-      });
-    };
-
-    let agent: YagrSessionAgent | undefined;
-
     try {
-      writeEvent({
-        type: 'start',
-        sessionId,
-        message: 'Run started. Inspecting workspace and request.',
-      });
+      writeEvent({ type: 'start', sessionId, message: 'Run started.' });
 
-      agent = await this.resolveAgent(sessionId);
-      const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
-      const result = await agent.run(message, {
-        ...this.options,
-        provider: resolvedConfig.provider,
-        model: resolvedConfig.model,
-        apiKey: resolvedConfig.apiKey,
-        baseUrl: resolvedConfig.baseUrl,
-        onPhaseChange: async (event) => {
-          pushPhaseEvent(event);
-          await this.options.onPhaseChange?.(event);
+      const { agent } = await this.resolveAgentHandle();
+      const accumulator = createRunAccumulator();
+
+      const stream = agent.streamEvents(
+        { messages: [{ role: 'user', content: message }] },
+        {
+          configurable: { thread_id: sessionId },
+          signal: abortController.signal,
+          version: 'v2',
         },
-        onStateChange: async (event) => {
-          pushStateEvent(event);
-          await this.options.onStateChange?.(event);
-        },
-        onToolEvent: async (event) => {
-          const enrichedEvent = enrichWorkflowEmbed(event);
-          pushToolEvent(enrichedEvent);
-          await this.options.onToolEvent?.(enrichedEvent);
-        },
-        onCompaction: async (event) => {
-          pushCompactionEvent(event);
-          await this.options.onCompaction?.(event);
-        },
-        onContextUsage: async (event) => {
-          writeEvent({
-            type: 'context-usage',
-            promptTokens: event.promptTokens,
-            completionTokens: event.completionTokens,
-            contextWindowTokens: event.contextWindowTokens,
-            fillPercent: event.fillPercent,
-            source: event.source,
-          });
-          await this.options.onContextUsage?.(event);
-        },
-        onTextDelta: async (delta) => {
-          streamedText += delta;
-          writeEvent({ type: 'text-delta', delta });
-          await this.options.onTextDelta?.(delta);
-        },
-        abortSignal: abortController.signal,
-      });
+      );
+
+      const lastProgressKeys = new Set<string>();
+
+      for await (const event of stream) {
+        await processStreamEvent(event, accumulator, {
+          onTextDelta: (delta) => {
+            writeEvent({ type: 'text-delta', delta });
+          },
+          onUserVisibleUpdate: (update) => {
+            if (!lastProgressKeys.has(update.dedupeKey)) {
+              lastProgressKeys.add(update.dedupeKey);
+              writeEvent({
+                type: 'progress',
+                tone: update.tone,
+                title: update.title,
+                detail: update.detail,
+                ...(update.phase ? { phase: update.phase } : {}),
+              });
+            }
+          },
+          onWorkflowEmbed: (embed) => {
+            writeEvent({
+              type: 'embed',
+              kind: embed.kind,
+              workflowId: embed.workflowId,
+              url: embed.url,
+              targetUrl: embed.targetUrl,
+              title: embed.title,
+              diagram: embed.diagram,
+              executionResult: embed.executionResult,
+            });
+          },
+        });
+      }
+
       runFinished = true;
+      this.persistSessionMetadata(sessionId);
 
       writeEvent({
         type: 'final',
         sessionId,
-        response: result.text,
-        finalState: result.finalState,
-        requiredActions: result.requiredActions.map((action) => ({
-          title: action.title,
-          message: action.message,
+        response: accumulator.responseText,
+        finalState: 'done',
+        requiredActions: accumulator.requiredActions.map((a) => ({
+          title: a.title,
+          message: a.message,
         })),
       });
-
-      // Persist the session synchronously before closing the stream so the file
-      // is written before the frontend fires its PATCH + refreshSessions.
-      if (agent) {
-        this.persistSession(sessionId, agent);
-      }
     } catch (error) {
       if (isAbortError(error)) {
         runFinished = true;
-        if (agent) {
-          this.persistSession(sessionId, agent);
-        }
-        writeEvent({
-          type: 'final',
-          sessionId,
-          response: streamedText,
-          finalState: 'stopped',
-          requiredActions: [],
-        });
+        this.persistSessionMetadata(sessionId);
+        // Flush whatever text was accumulated before the abort.
+        // The accumulator is in scope via the outer try block.
       } else {
         writeEvent({
           type: 'error',
@@ -851,4 +701,30 @@ class WebUiGateway implements Gateway {
       response.end();
     }
   }
+}
+
+/** Extract the text content from the last AI message in the graph result. */
+function extractLastAiMessage(result: Record<string, unknown>): string {
+  const messages = result?.messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return '';
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as Record<string, unknown>;
+    if (msg && (msg['_getType']?.toString().includes('ai') || msg['role'] === 'assistant')) {
+      const content = msg['content'];
+      if (typeof content === 'string') {
+        return content;
+      }
+      if (Array.isArray(content)) {
+        return content
+          .filter((p): p is { type: string; text: string } => p?.type === 'text')
+          .map((p) => p.text)
+          .join('');
+      }
+    }
+  }
+
+  return '';
 }

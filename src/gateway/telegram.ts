@@ -1,27 +1,20 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import { Telegraf } from 'telegraf';
-import { YagrSessionAgent } from '../agent.js';
 import { YagrConfigService, type YagrConfigStoreLike, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import type { EngineRuntimePort } from '../engine/engine.js';
-import { resolveLanguageModelConfig } from '../llm/create-language-model.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
-import {
-  mapPhaseEventToUserVisibleUpdate,
-  mapStateEventToUserVisibleUpdate,
-  mapToolEventToUserVisibleUpdate,
-  type YagrUserVisibleUpdate,
-} from '../runtime/user-visible-updates.js';
+import type { YagrUserVisibleUpdate } from '../runtime/user-visible-updates.js';
+import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
+import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import {
   type WorkflowEmbed,
   buildWorkflowBannerHtml,
-  extractWorkflowEmbed,
   markdownToTelegramHtml,
   escapeHtml,
 } from './format-message.js';
-import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
@@ -249,7 +242,8 @@ export function createTelegramGatewayRuntime(
 
 class TelegramGateway implements Gateway {
   private readonly bot: Telegraf;
-  private readonly agents = new Map<string, YagrSessionAgent>();
+  private agentHandlePromise?: Promise<YagrDeepAgentHandle>;
+  private readonly threadIds = new Map<string, string>();
   private readonly runningChats = new Set<string>();
   private readonly pendingApprovals = new Map<string, YagrRequiredAction[]>();
   private enginePromise?: Promise<EngineRuntimePort>;
@@ -360,32 +354,7 @@ class TelegramGateway implements Gateway {
     });
 
     this.bot.command('compact', async (ctx) => {
-      const chatId = String(ctx.chat.id);
-      if (!this.isLinkedChat(chatId)) {
-        await ctx.reply('This chat is not linked.');
-        return;
-      }
-      if (this.runningChats.has(chatId)) {
-        await ctx.reply('A run is in progress. Wait for it to finish before compacting.');
-        return;
-      }
-      await ctx.reply('Compacting conversation context…');
-      const agent = await this.getAgent(chatId);
-      const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
-      try {
-        const event = await agent.compactHistory(resolvedConfig);
-        if (event) {
-          await ctx.reply(
-            `Context compacted: ${event.messagesCompacted} messages folded, ${event.preservedRecentMessages} recent messages kept.`,
-          );
-        } else {
-          await ctx.reply('Nothing to compact — conversation is too short.');
-        }
-      } catch (error) {
-        await ctx.reply(
-          `Compaction failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
+      await ctx.reply('Conversation compaction is handled automatically by Yagr.');
     });
 
     this.bot.command('unlink', async (ctx) => {
@@ -399,7 +368,7 @@ class TelegramGateway implements Gateway {
       }
 
       this.unlinkChat(chatId);
-      this.agents.delete(chatId);
+      this.threadIds.delete(chatId);
       this.pendingApprovals.delete(chatId);
       await ctx.reply('Chat unlinked. Use the onboarding link or QR code again to reconnect.');
     });
@@ -498,26 +467,31 @@ class TelegramGateway implements Gateway {
     return await this.enginePromise;
   }
 
-  private async getAgent(chatId: string): Promise<YagrSessionAgent> {
-    const existing = this.agents.get(chatId);
-    if (existing) {
-      return existing;
-    }
+  private async resolveAgentHandle(): Promise<YagrDeepAgentHandle> {
+    this.agentHandlePromise ??= createYagrDeepAgent(await this.getEngine(), this.configService);
+    return await this.agentHandlePromise;
+  }
 
-    const next = new YagrSessionAgent(await this.getEngine());
-    this.agents.set(chatId, next);
-    return next;
+  private getOrCreateThreadId(chatId: string): string {
+    let threadId = this.threadIds.get(chatId);
+    if (!threadId) {
+      threadId = randomUUID();
+      this.threadIds.set(chatId, threadId);
+    }
+    return threadId;
   }
 
   private resetChatSession(chatId: string): void {
-    this.agents.delete(chatId);
+    // Abandon the current LangGraph thread by deleting its ID.
+    // The next message will start a fresh thread via getOrCreateThreadId.
+    this.threadIds.delete(chatId);
     this.pendingApprovals.delete(chatId);
   }
 
   private async executeRun(
     chatId: string,
     prompt: string,
-    satisfiedRequiredActions: YagrRequiredAction[],
+    _satisfiedRequiredActions: YagrRequiredAction[],
     reply: (text: string) => Promise<unknown>,
   ): Promise<void> {
     if (this.runningChats.has(chatId)) {
@@ -529,61 +503,58 @@ class TelegramGateway implements Gateway {
     try {
       await reply('Yagr is working...');
 
+      const { agent } = await this.resolveAgentHandle();
+      const threadId = this.getOrCreateThreadId(chatId);
+      const accumulator = createRunAccumulator();
+
       let lastProgressKey = '';
-      const sendProgressUpdate = async (update: YagrUserVisibleUpdate | undefined): Promise<void> => {
-        if (!update || update.dedupeKey === lastProgressKey) {
+      const sendProgressUpdate = async (update: YagrUserVisibleUpdate): Promise<void> => {
+        if (update.dedupeKey === lastProgressKey) {
           return;
         }
-
         lastProgressKey = update.dedupeKey;
         await this.sendHtml(chatId, formatTelegramProgressHtml(update));
       };
 
-      const embeds: WorkflowEmbed[] = [];
-      const resolvedConfig = resolveLanguageModelConfig({}, this.configService);
-      const result = await (await this.getAgent(chatId)).run(prompt, {
-        ...this.options,
-        provider: resolvedConfig.provider,
-        model: resolvedConfig.model,
-        apiKey: resolvedConfig.apiKey,
-        baseUrl: resolvedConfig.baseUrl,
-        display: undefined,
-        satisfiedRequiredActionIds: satisfiedRequiredActions.map((action) => action.id),
-        onPhaseChange: async (event) => {
-          await sendProgressUpdate(mapPhaseEventToUserVisibleUpdate(event));
-          await this.options.onPhaseChange?.(event);
-        },
-        onStateChange: async (event) => {
-          await sendProgressUpdate(mapStateEventToUserVisibleUpdate(event));
-          await this.options.onStateChange?.(event);
-        },
-        onToolEvent: async (event) => {
-          const enrichedEvent = enrichWorkflowEmbed(event);
-          const embed = extractWorkflowEmbed(enrichedEvent);
-          if (embed) embeds.push(embed);
-          await sendProgressUpdate(mapToolEventToUserVisibleUpdate(enrichedEvent));
-          await this.options.onToolEvent?.(enrichedEvent);
-        },
-        onContextUsage: async (event) => {
-          if (event.fillPercent >= 80) {
-            await this.sendHtml(chatId, `<i>⚠️ Context window ${Math.round(event.fillPercent)}% full — Yagr may compact the conversation soon.</i>`);
-          }
-          await this.options.onContextUsage?.(event);
-        },
-      });
+      const stream = agent.streamEvents(
+        { messages: [{ role: 'user', content: prompt }] },
+        { configurable: { thread_id: threadId }, version: 'v2' },
+      );
 
-      if (result.requiredActions.length > 0) {
-        this.pendingApprovals.set(chatId, result.requiredActions);
+      for await (const event of stream) {
+        await processStreamEvent(event, accumulator, {
+          onUserVisibleUpdate: sendProgressUpdate,
+        });
+      }
+
+      if (accumulator.requiredActions.length > 0) {
+        this.pendingApprovals.set(chatId, accumulator.requiredActions);
       } else {
         this.pendingApprovals.delete(chatId);
       }
 
-      const htmlSections = [markdownToTelegramHtml(result.text.trim())];
-      const workflowBanner = buildWorkflowBannerHtml(embeds);
-      if (workflowBanner) {
-        htmlSections.push(workflowBanner);
+      const htmlSections: string[] = [];
+
+      if (accumulator.responseText.trim()) {
+        htmlSections.push(markdownToTelegramHtml(accumulator.responseText.trim()));
       }
-      const requiredActionsText = formatRequiredActions(result.requiredActions);
+
+      if (accumulator.workflowEmbeds.length > 0) {
+        const embeds: WorkflowEmbed[] = accumulator.workflowEmbeds.map((embed) => ({
+          workflowId: embed.workflowId,
+          url: embed.url,
+          targetUrl: embed.targetUrl,
+          title: embed.title,
+          diagram: embed.diagram,
+          executionResult: embed.executionResult,
+        }));
+        const banner = buildWorkflowBannerHtml(embeds);
+        if (banner) {
+          htmlSections.push(banner);
+        }
+      }
+
+      const requiredActionsText = formatRequiredActions(accumulator.requiredActions);
       if (requiredActionsText) {
         htmlSections.push(escapeHtml(requiredActionsText));
       }
