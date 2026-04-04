@@ -6,7 +6,7 @@ import { countOccurrences, readTextFile, relativeWorkspacePath, resolveWorkspace
 
 export function createReplaceInFileTool(_observer?: ToolExecutionObserver) {
   return tool({
-    description: 'Replace exact text in a workspace file. Prefer this for focused edits to existing workflow TypeScript files.',
+    description: 'Edit an existing workspace file by replacing exact text. THIS IS THE DEFAULT TOOL FOR ALL FILE EDITS. Requires oldText to match exactly once — this forces you to have read the file first, preventing accidental loss of metadata (IDs, generated content) that external tools may have written.',
     parameters: z.object({
       path: z.string().min(1).describe('Workspace-relative file path.'),
       oldText: z.string().min(1).describe('Exact text to replace.'),

@@ -6,7 +6,7 @@ import { ensureParentDirectory, fileExists, relativeWorkspacePath, resolveWorksp
 
 export function createWriteFileTool(_observer?: ToolExecutionObserver) {
   return tool({
-    description: 'Create or overwrite a workspace file. Use this for new .workflow.ts files or deliberate full-file rewrites.',
+    description: 'Write a workspace file. Use ONLY for creating brand-new files that do not exist yet. To modify an existing file use replaceInFile — never overwrite an existing file with writeFile, as this discards metadata (e.g. workflow IDs) written by external tools.',
     parameters: z.preprocess((input) => {
       if (!input || typeof input !== 'object') {
         return input;
@@ -21,7 +21,7 @@ export function createWriteFileTool(_observer?: ToolExecutionObserver) {
     }, z.object({
       path: z.string().min(1).nullable().describe('Workspace-relative file path.'),
       content: z.string().nullable().describe('Full file content to write.'),
-      mode: z.enum(['create', 'overwrite', 'append']).default('overwrite').describe('Write mode for the target file.'),
+      mode: z.enum(['create', 'overwrite', 'append']).default('create').describe('Write mode. Default is "create" — fails if the file already exists. Use "overwrite" only when intentionally replacing a file you have already read in full.'),
     })),
     execute: async ({ path: inputPath, content, mode }) => {
       if (!inputPath || typeof inputPath !== 'string') {
