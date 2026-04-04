@@ -8,7 +8,7 @@ test('runtime tool surface includes core and filesystem tools', () => {
 
   assert.ok(tools.reportProgress);
   assert.ok(tools.requestRequiredAction);
-  assert.ok(tools.n8nac);
+  assert.ok(tools.yagrProxy);
   assert.ok(tools.listDir);
   assert.ok(tools.readFile);
   assert.ok(tools.grep);

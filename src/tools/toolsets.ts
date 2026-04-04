@@ -19,7 +19,7 @@ export const EDIT_TOOL_NAMES = [
 ] as const;
 
 export const WORKFLOW_EXECUTION_TOOL_NAMES = [
-  'n8nac',
+  'yagrProxy',
   'runScript',
   'runShell',
 ] as const;
@@ -44,7 +44,7 @@ export const MINIMAL_RUNTIME_TOOL_NAMES = [
 export const SYNTHETIC_RUNTIME_TOOL_NAMES = [
   ...CORE_TOOL_NAMES,
   'writeFile',
-  'n8nac',
+  'yagrProxy',
 ] as const;
 
 export type YagrToolName =

@@ -76,7 +76,7 @@ export {
   buildTools,
   createListDirTool,
   createDeleteFileTool,
-  createN8nAcTool,
+  createYagrProxyTool,
   createMoveFileTool,
   createReadFileTool,
   createReplaceInFileTool,

@@ -10,7 +10,7 @@ test('native strategy keeps full tool surface and streaming execution', () => {
   assert.equal(strategy.executionMode, 'stream');
   assert.equal(strategy.toolCallStreaming, true);
   assert.equal(strategy.tooling.toolCallMode, 'parallel');
-  assert.ok(strategy.tooling.availableToolNames.includes('n8nac'));
+  assert.ok(strategy.tooling.availableToolNames.includes('yagrProxy'));
 });
 
 test('compatible strategy keeps tools but pushes conservative directives', () => {
@@ -37,7 +37,7 @@ test('none strategy keeps a synthetic runtime tool subset while disabling model 
 
   assert.equal(strategy.capabilityProfile.toolCalling, 'none');
   assert.ok(strategy.tooling.availableToolNames.includes('writeFile'));
-  assert.ok(strategy.tooling.availableToolNames.includes('n8nac'));
+  assert.ok(strategy.tooling.availableToolNames.includes('yagrProxy'));
   assert.equal(strategy.tooling.toolCallMode, 'disabled');
   assert.ok(strategy.executeDirectives.some((line) => /json objects only/i.test(line)));
 });
