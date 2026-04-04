@@ -1,7 +1,7 @@
 # Migration vers deepagentsjs — Spec de migration
 
 > Document d'architecture cible pour le remplacement de la couche agentique Yagr
-> par `deepagentsjs` (LangChain/LangGraph).
+> par `deepagentsjs` (LangChain/LangGraph). https://github.com/langchain-ai/deepagentsjs - from https://github.com/langchain-ai/deepagents
 >
 > Statut : document de référence consolidé
 
