@@ -53,8 +53,10 @@ export type YagrLlmProxyMode = 'local' | 'docker' | 'tunnel';
 export interface YagrLlmProxyConfig {
   enabled: boolean;
   mode: YagrLlmProxyMode;
-  /** URL to use when creating the n8n credential (may be docker host or tunnel) */
+  /** Target URL computed at onboard time (may be docker host or tunnel). Used to build the credential URL. */
   credentialBaseUrl: string;
+  /** URL last confirmed written into the n8n credential by yagr_proxy_relay_start. Used to detect stale credentials. */
+  confirmedCredentialBaseUrl?: string;
   /** docker bridge gateway address, only set when mode=docker */
   dockerHostAddress?: string;
   /** Cloudflare tunnel URL, only set when mode=tunnel */
@@ -111,6 +113,7 @@ export interface YagrConfigStoreLike {
   getLlmProxyConfig(): YagrLlmProxyConfig | undefined;
   isLlmProxyEnabled(): boolean;
   saveLlmProxyConfig(config: YagrLlmProxyConfig): YagrLocalConfig;
+  updateLlmProxyCredentialBaseUrl(credentialBaseUrl: string): void;
   getN8nTunnelConfig(): N8nTunnelConfig | undefined;
   saveN8nTunnelConfig(config: N8nTunnelConfig): YagrLocalConfig;
   clearN8nTunnelConfig(): YagrLocalConfig;
@@ -260,6 +263,13 @@ export class YagrConfigService {
 
   saveLlmProxyConfig(config: YagrLlmProxyConfig): YagrLocalConfig {
     return this.updateLocalConfig((localConfig) => ({ ...localConfig, llmProxy: config }));
+  }
+
+  updateLlmProxyCredentialBaseUrl(credentialBaseUrl: string): void {
+    this.updateLocalConfig((localConfig) => ({
+      ...localConfig,
+      llmProxy: localConfig.llmProxy ? { ...localConfig.llmProxy, confirmedCredentialBaseUrl: credentialBaseUrl } : localConfig.llmProxy,
+    }));
   }
 
   getN8nTunnelConfig(): N8nTunnelConfig | undefined {
