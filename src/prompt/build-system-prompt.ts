@@ -55,8 +55,6 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
       'When progress is blocked on missing user input or an external dependency, use the requestRequiredAction tool so the blocker is represented explicitly in runtime state.',
       'Use requestRequiredAction with blocking=true only when the current task cannot be delivered without that action. Deliver what you can first and record remaining setup as a non-blocking follow-up.',
       'Do not raise requestRequiredAction for actions you can perform directly with the available tools.',
-      // --- Execution verification ---
-      'A green execution status does not mean the workflow is correct. After a test run, inspect the output data of critical downstream nodes (Switch, IF, Set) to verify data actually flowed through the expected branch. If a Switch node shows zero items on all branches, the upstream node produced output in the wrong format — diagnose from the node data, do not declare success.',
       // --- n8n operations must go through n8nac ---
       'Every n8n operation (activate, deactivate, push, test, list, credential management, etc.) MUST be executed by calling the n8nac tool. Never claim an n8n action was performed without a corresponding n8nac tool call. A plain-text statement that a workflow was activated, deployed, or tested is never acceptable — always execute it.',
       // --- Ground responses in actual tool outputs ---
