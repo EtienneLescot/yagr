@@ -196,7 +196,21 @@ export async function prepareProviderRuntime(
       };
     }
 
-    const runtimeAuth = await resolveCopilotApiToken(session.githubToken);
+    let runtimeAuth: { token: string; baseUrl: string; expiresAt: number };
+    try {
+      runtimeAuth = await resolveCopilotApiToken(session.githubToken);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        ready: false,
+        reason: `GitHub Copilot token exchange failed: ${msg}`,
+        notes: [
+          'A stored GitHub session was found but the Copilot runtime token could not be obtained.',
+          'The session may have expired. Run `yagr setup` again to re-authenticate.',
+        ],
+      };
+    }
+
     const probe = await validateGitHubCopilotRuntime();
     if (!probe.ok) {
       return {
@@ -235,6 +249,7 @@ export async function prepareProviderRuntime(
       runtime: {
         provider,
         baseUrl: runtimeAuth.baseUrl,
+        apiKey: runtimeAuth.token,
         models,
         notes: copilotNotes,
         autoStarted: false,

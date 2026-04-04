@@ -126,6 +126,7 @@ type Phase =
   | { kind: 'n8n-local-ready'; url: string; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
+  | { kind: 'llm-oauth-reuse'; provider: YagrModelProvider; cursor: number }
   | { kind: 'llm-account-auth'; provider: YagrModelProvider; cursor: number }
   | { kind: 'llm-account-input'; provider: YagrModelProvider; title: string; instructions: string[]; placeholder?: string; submitLabel: string; state?: string; err?: string }
   | { kind: 'llm-reuse-config'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
@@ -696,21 +697,9 @@ function SetupWizard({ callbacks, options, onDone }: {
           }
           models = prepared.models ?? [];
         } else if (isOAuthAccountProvider(phase.provider)) {
-          const preparedError = prepared.error?.toLowerCase() ?? '';
-          if (preparedError.includes('insufficient authentication scopes') || preparedError.includes('http 403')) {
-            setTextValue('');
-            setPhase({ kind: 'llm-account-auth', provider: phase.provider, cursor: 0 });
-            return;
-          }
-          setPhase({
-            kind: 'llm-model',
-            provider: phase.provider,
-            apiKey: phase.apiKey,
-            models: [],
-            defModel: phase.defModel,
-            cursor: 0,
-            note: prepared.error || note,
-          });
+          // OAuth provider failed — redirect to auth flow.
+          setTextValue('');
+          setPhase({ kind: 'llm-account-auth', provider: phase.provider, cursor: 0 });
           return;
         }
 
@@ -943,8 +932,8 @@ function SetupWizard({ callbacks, options, onDone }: {
           void (async () => {
             const hasSession = await callbacks.hasAccountSession(provider);
             if (hasSession) {
-              const defModel = llmDef.getDefaultModel(provider);
-              transitionToLlmModelsLoading(provider, '', defModel);
+              setTextValue('');
+              setPhase({ kind: 'llm-oauth-reuse', provider, cursor: 0 });
             } else {
               setTextValue('');
               setPhase({ kind: 'llm-account-auth', provider, cursor: 0 });
@@ -959,6 +948,20 @@ function SetupWizard({ callbacks, options, onDone }: {
         } else {
           setPhase({ kind: 'llm-apikey', provider });
           setTextValue(llmApiKeyDraftsRef.current[provider] ?? '');
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'llm-oauth-reuse') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      else if (key.return) {
+        if (phase.cursor === 0) {
+          // Use existing auth — try to load models directly
+          const defModel = llmDef.getDefaultModel(phase.provider);
+          transitionToLlmModelsLoading(phase.provider, '', defModel);
+        } else {
+          // Renew auth
+          setTextValue('');
+          setPhase({ kind: 'llm-account-auth', provider: phase.provider, cursor: 0 });
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-account-auth') {
@@ -1145,7 +1148,7 @@ function SetupWizard({ callbacks, options, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'llm-model' && phase.models.length > 0)
     || (phase.kind === 'llm-proxy-setup' && (phase.status === 'ready' || phase.status === 'failed'));
 
@@ -1445,6 +1448,23 @@ function SetupWizard({ callbacks, options, onDone }: {
           </Box>
         );
         }
+
+      case 'llm-oauth-reuse':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label={`${getProviderDisplayName(phase.provider)} authentication`} />
+            <Text dimColor>  A saved session exists for {getProviderDisplayName(phase.provider)}</Text>
+            <SelectList
+              options={['Use existing authentication', 'Renew authentication'] as const}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              getHint={(v) => v.startsWith('Use') ? 'recommended' : undefined}
+              maxVisibleRows={getListViewportHeight(terminalRows, 11)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
+          </Box>
+        );
 
       case 'llm-account-input':
         return (
