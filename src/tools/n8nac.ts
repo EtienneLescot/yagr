@@ -9,7 +9,8 @@ import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from 
 import { extractN8nacOperation, splitN8nacArgv } from './n8nac-command.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { ensureN8nRelayServer, N8N_RELAY_CREDENTIAL_NAME, N8N_RELAY_FAKE_API_KEY } from '../llm/llm-relay-server.js';
-import { relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
+import { findFileInWorkspace, parseJsonPayload, relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
+import { pollUntil } from '../system/async-poll.js';
 
 type RunResult = {
   stdout: string;
@@ -67,32 +68,7 @@ function getLlmProviderCatalog(): LlmProviderOption[] {
   ];
 }
 
-function parseJsonPayload(raw: string): unknown {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return undefined;
-  }
 
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const firstBrace = trimmed.search(/[\[{]/);
-    if (firstBrace < 0) {
-      return undefined;
-    }
-
-    const candidate = trimmed.slice(firstBrace);
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      return undefined;
-    }
-  }
-}
-
-function normalizeN8nAcAction(action: N8nAcAction): string {
-  return action;
-}
 
 function runN8nac(
   args: string[],
@@ -331,11 +307,82 @@ function resolveWorkflowSyncFactsFromLocalState(
   };
 }
 
-function buildStructuredCommandResult(
+async function pollExecutionResult(
+  observer: ToolExecutionObserver | undefined,
+  workflowId: string,
+  cwd: string,
+  host: string | undefined,
+  configService: YagrN8nConfigService,
+): Promise<{ executionId: string; status: string; output: string | null; summary: string } | null> {
+  // Step 1: poll until the latest execution for this workflow is no longer running.
+  // The generic pollUntil handles the retry loop and timeout — n8n-specific logic
+  // lives only in the predicate below (which commands to call, which statuses mean "done").
+  const executionId = await pollUntil<string>(async () => {
+    const listResult = await runObservedN8nac(
+      observer,
+      ['execution', 'list', '--workflow-id', workflowId, '--limit', '1', '--json'],
+      cwd,
+    );
+    const parsed = parseJsonPayload(listResult.stdout);
+    const executions = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as Record<string, unknown>)?.data)
+        ? (parsed as Record<string, unknown>).data as unknown[]
+        : null;
+    const latest = Array.isArray(executions) ? executions[0] as Record<string, unknown> : null;
+    if (!latest) return null;
+    const id = String(latest.id ?? '').trim() || null;
+    const status = String(latest.status ?? '').toLowerCase();
+    // Still in-flight — keep polling
+    if (status === 'running' || status === 'new') return null;
+    return id;
+  }, { intervalMs: 2000, timeoutMs: 30_000 });
+
+  if (!executionId) return null;
+
+  // Step 2: fetch execution detail
+  const getResult = await runObservedN8nac(
+    observer,
+    ['execution', 'get', executionId, '--include-data', '--json'],
+    cwd,
+  );
+  const detail = parseJsonPayload(getResult.stdout) as Record<string, unknown> | undefined;
+  const status = String((detail as Record<string, unknown>)?.status ?? 'unknown');
+  const success = status === 'success';
+
+  // Best-effort: try to extract the last node output as a readable value
+  let output: string | null = null;
+  try {
+    const data = (detail as Record<string, unknown>)?.data as Record<string, unknown>;
+    const resultData = data?.resultData as Record<string, unknown>;
+    const runData = resultData?.runData as Record<string, Record<string, unknown>[]>;
+    if (runData) {
+      // Take the last node's first item output
+      const lastNodeData = Object.values(runData).at(-1);
+      const firstExec = Array.isArray(lastNodeData) ? lastNodeData[0] : undefined;
+      const json = (firstExec?.data as Record<string, unknown>)?.main;
+      if (json) {
+        output = JSON.stringify(json);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const summary = success
+    ? `Async execution confirmed: executionId=${executionId} status=${status}${output ? ` output=${output}` : ''}`
+    : `Async execution finished with status=${status} executionId=${executionId}. Check execution details for error.`;
+
+  return { executionId, status, output, summary };
+}
+
+async function buildStructuredCommandResult(
   argv: string[],
   result: RunResult,
   configService = new YagrN8nConfigService(),
-): Record<string, unknown> {
+  observer?: ToolExecutionObserver,
+  cwd = process.cwd(),
+): Promise<Record<string, unknown>> {
   const response: Record<string, unknown> = {
     exitCode: result.exitCode,
     timedOut: result.timedOut,
@@ -377,59 +424,37 @@ function buildStructuredCommandResult(
   if (operation === 'test') {
     // Detect async webhook trigger: n8n responds with {"message":"Workflow was started"}
     // which confirms HTTP acceptance only — the execution runs asynchronously and may fail.
-    // Surface this as a structured signal so the agent knows to follow up with execution list/get.
+    // Rather than exposing this ambiguity to the LLM (which tends to report it as success),
+    // the tool resolves asyncness itself: poll execution list/get until the execution finishes.
     const isAsyncTrigger = /workflow was started/i.test(result.stdout);
     if (isAsyncTrigger) {
+      const workflowId = argv[1] ?? null;
+      if (workflowId) {
+        const resolved2 = resolveN8nRuntimeState(configService, process.env, {
+          allowEnvironmentFallback: process.env.YAGR_ALLOW_N8N_ENV === '1',
+        });
+        const polledResult = await pollExecutionResult(observer, workflowId, cwd, resolved2.host, configService);
+        if (polledResult) {
+          return {
+            ...response,
+            asyncTrigger: true,
+            executionConfirmed: true,
+            executionId: polledResult.executionId,
+            executionStatus: polledResult.status,
+            executionOutput: polledResult.output,
+            stdout: result.stdout + '\n' + polledResult.summary,
+          };
+        }
+      }
+      // Fallback: couldn't poll — surface signal so completion gate doesn't accept
       response.asyncTrigger = true;
       response.executionConfirmed = false;
-      response.note = 'The webhook accepted the request asynchronously. The execution status is unconfirmed. Use execution list --workflow-id <id> --limit 1 --json then execution get <executionId> --include-data --json to confirm success or diagnose failure.';
+      response.note = 'The webhook accepted the request asynchronously but execution status could not be confirmed. Check execution list manually.';
     }
     return response;
   }
 
   return response;
-}
-
-function findWorkspaceWorkflowCandidates(filename: string): string[] {
-  const root = workspaceRoot();
-  const target = filename.trim();
-  if (!target) {
-    return [];
-  }
-
-  const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.nuxt', 'coverage', '.cache']);
-
-  const matches: string[] = [];
-  const visit = (dirPath: string) => {
-    let entries;
-    try {
-      entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) {
-          continue;
-        }
-        visit(path.join(dirPath, entry.name));
-        continue;
-      }
-
-      if (!entry.isFile()) {
-        continue;
-      }
-
-      const entryPath = path.join(dirPath, entry.name);
-      if (entry.name === target || relativeWorkspacePath(entryPath) === target) {
-        matches.push(entryPath);
-      }
-    }
-  };
-
-  visit(root);
-  return matches;
 }
 
 function rankWorkspaceWorkflowCandidate(candidatePath: string, workflowDir: string | undefined): number {
@@ -452,7 +477,7 @@ export function pickPreferredWorkspaceWorkflowCandidate(
 ): string | undefined {
   const localConfig = configService.getLocalConfig();
   const workflowDir = resolveWorkflowDir(localConfig);
-  const candidates = findWorkspaceWorkflowCandidates(filename);
+  const candidates = findFileInWorkspace(filename);
   if (candidates.length === 0) {
     return undefined;
   }
@@ -644,7 +669,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       commandArgs,
       commandArgv,
     }) => {
-      const action = normalizeN8nAcAction(rawAction);
+        const action = rawAction;
       const cwd = workspaceRoot();
 
       if (action === 'command') {
@@ -688,7 +713,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         }
 
         const result = await runObservedN8nac(observer, normalizedArgv, cwd);
-        return buildStructuredCommandResult(normalizedArgv, result, configService);
+        return await buildStructuredCommandResult(normalizedArgv, result, configService, observer, cwd);
       }
 
       if (action === 'llm_provider_options') {

@@ -73,6 +73,87 @@ export function shouldIgnorePath(targetPath: string): boolean {
     || relative.startsWith(`.next${path.sep}`);
 }
 
+/**
+ * Recursively search the workspace root for files whose name or
+ * workspace-relative path matches `filename`.
+ *
+ * Skips common non-source directories (node_modules, .git, dist, build, etc.)
+ * and hidden directories.
+ */
+export function findFileInWorkspace(filename: string): string[] {
+  const root = workspaceRoot();
+  const target = filename.trim();
+  if (!target) {
+    return [];
+  }
+
+  const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.nuxt', 'coverage', '.cache']);
+  const matches: string[] = [];
+
+  const visit = (dirPath: string) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) {
+          continue;
+        }
+        visit(path.join(dirPath, entry.name));
+        continue;
+      }
+
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      const entryPath = path.join(dirPath, entry.name);
+      if (entry.name === target || relativeWorkspacePath(entryPath) === target) {
+        matches.push(entryPath);
+      }
+    }
+  };
+
+  visit(root);
+  return matches;
+}
+
 export function fileExists(targetPath: string): boolean {
   return fs.existsSync(targetPath);
+}
+
+/**
+ * Parse JSON from a raw CLI output string.
+ *
+ * Tries a direct JSON.parse first; if that fails, scans for the first `{` or
+ * `[` character and retries from there. This handles CLI tools that prefix
+ * their JSON output with status text or ANSI codes.
+ *
+ * Returns `undefined` if no parseable JSON is found.
+ */
+export function parseJsonPayload(raw: string): unknown {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const firstBrace = trimmed.search(/[{[]/);
+    if (firstBrace < 0) {
+      return undefined;
+    }
+
+    const candidate = trimmed.slice(firstBrace);
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      return undefined;
+    }
+  }
 }
