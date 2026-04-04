@@ -31,6 +31,7 @@ import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.
 import {
   createRunAccumulator,
   processStreamEvent,
+  extractLastAiMessage,
 } from './langgraph-events.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -703,28 +704,3 @@ class WebUiGateway implements Gateway {
   }
 }
 
-/** Extract the text content from the last AI message in the graph result. */
-function extractLastAiMessage(result: Record<string, unknown>): string {
-  const messages = result?.messages;
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return '';
-  }
-
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i] as Record<string, unknown>;
-    if (msg && (msg['_getType']?.toString().includes('ai') || msg['role'] === 'assistant')) {
-      const content = msg['content'];
-      if (typeof content === 'string') {
-        return content;
-      }
-      if (Array.isArray(content)) {
-        return content
-          .filter((p): p is { type: string; text: string } => p?.type === 'text')
-          .map((p) => p.text)
-          .join('');
-      }
-    }
-  }
-
-  return '';
-}

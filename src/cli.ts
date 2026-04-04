@@ -17,7 +17,7 @@ import {
   showTelegramOnboarding,
   setupTelegramGateway,
 } from './gateway/telegram.js';
-import { YagrSessionAgent } from './agent.js';
+import { createYagrDeepAgent } from './agent-factory.js';
 import type { YagrModelProvider } from './llm/create-language-model.js';
 import {
   getManagedDockerN8nLogs,
@@ -620,10 +620,10 @@ async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigS
 
 async function runTui(args: ParsedArgs): Promise<void> {
   const engine = await createN8nEngineFromWorkspace();
-  const agent = new YagrSessionAgent(engine);
+  const handle = await createYagrDeepAgent(engine);
   const { runCliGateway } = await import('./gateway/cli.js');
 
-  await runCliGateway(agent, {
+  await runCliGateway(handle, {
     prompt: args.prompt,
     interactive: true,
     provider: args.provider,
@@ -1257,10 +1257,10 @@ async function main(): Promise<void> {
   await ensureRelayAtLaunch();
   const engine = await createN8nEngineFromWorkspace();
 
-  const agent = new YagrSessionAgent(engine);
+  const handle = await createYagrDeepAgent(engine);
   const { runCliGateway } = await import('./gateway/cli.js');
 
-  await runCliGateway(agent, {
+  await runCliGateway(handle, {
     prompt: args.prompt,
     interactive: args.interactive,
     provider: args.provider,
