@@ -27,19 +27,21 @@ Runs a multi-scenario integration test against a **single** LLM provider. Each s
 
 **CLI options** (env vars accepted as fallback):
 
-| Option | Env var fallback | Default | Description |
+| Option | Env var | Default | Description |
 |---|---|---|---|
 | `--provider <name>` | `YAGR_SCN_PROVIDER` | `DEFAULT_PROVIDER` | Provider to use |
 | `--model <name>` | `YAGR_SCN_MODEL` | `DEFAULT_MODEL` | Model to use |
-| `--scenarios <ids>` | `YAGR_SCN_SCENARIOS` | *(all)* | Comma-separated scenario IDs to run |
+| *(env var only)* | `YAGR_SCN_SCENARIOS` | *(all)* | Comma-separated scenario IDs to run |
 | `--no-markdown` | — | off | Skip writing the markdown report |
+
+> **Note**: `YAGR_SCN_SCENARIOS` must be an env var (not a CLI arg) because `node --test` runs scripts in worker threads where custom argv is not forwarded.
 
 Also reads `N8N_HOST` / `YAGR_IT_N8N_HOST` and `N8N_API_KEY` / `YAGR_IT_N8N_API_KEY` from the environment.
 
-**Example — run a single scenario with a specific model:**
+**Example — run specific failing scenarios:**
 
 ```bash
-npm run test:integration -- --provider anthropic --model claude-sonnet-4-5 --scenarios credential-orchestration
+YAGR_SCN_SCENARIOS=setup-check,yagr-proxy-workflow npm run test:integration
 ```
 
 ## Provider tests
