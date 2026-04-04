@@ -52,13 +52,13 @@ test('resolveLanguageModelConfig returns persisted provider model and api key', 
 
 test('resolveLanguageModelConfig supports proxy providers without api keys', () => {
   const configStore = createConfigStore(
-    { provider: 'anthropic-proxy', model: 'claude-sonnet-4-5' },
+    { provider: 'anthropic-proxy', model: 'claude-haiku-4-5' },
     {},
   );
 
   assert.deepEqual(resolveLanguageModelConfig({}, configStore), {
     provider: 'anthropic-proxy',
-    model: 'claude-sonnet-4-5',
+    model: 'claude-haiku-4-5',
     apiKey: undefined,
     baseUrl: undefined,
   });

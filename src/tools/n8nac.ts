@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { YagrN8nConfigService, resolveN8nRuntimeState, resolveWorkflowDir, type YagrN8nLocalConfig } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
-import { splitN8nacArgv } from './n8nac-command.js';
+import { extractN8nacOperation, splitN8nacArgv } from './n8nac-command.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
 
@@ -187,6 +187,48 @@ function parseWorkflowSyncFacts(stdout: string, stderr: string, host: string | u
     workflowName: workflowName || undefined,
     workflowUrl,
   };
+}
+
+function buildStructuredCommandResult(
+  argv: string[],
+  result: RunResult,
+  configService = new YagrN8nConfigService(),
+): Record<string, unknown> {
+  const response: Record<string, unknown> = {
+    exitCode: result.exitCode,
+    timedOut: result.timedOut,
+    stdout: truncateText(result.stdout),
+    stderr: truncateText(result.stderr),
+    argv,
+  };
+
+  const operation = extractN8nacOperation({ action: 'command', commandArgv: argv });
+  if (!operation) {
+    return response;
+  }
+
+  const resolved = resolveN8nRuntimeState(configService, process.env, {
+    allowEnvironmentFallback: process.env.YAGR_ALLOW_N8N_ENV === '1',
+  });
+  const syncFacts = parseWorkflowSyncFacts(result.stdout, result.stderr, resolved.host);
+
+  if (operation === 'push') {
+    response.pushTarget = argv[1] ?? null;
+    response.workflowId = syncFacts.workflowId ?? null;
+    response.workflowUrl = syncFacts.workflowUrl ?? null;
+    response.title = syncFacts.workflowName ?? null;
+    response.verified = result.exitCode === 0 && Boolean(syncFacts.workflowId);
+    return response;
+  }
+
+  if (operation === 'verify' || operation === 'pull') {
+    response.workflowId = syncFacts.workflowId ?? argv[1] ?? null;
+    response.workflowUrl = syncFacts.workflowUrl ?? null;
+    response.title = syncFacts.workflowName ?? null;
+    return response;
+  }
+
+  return response;
 }
 
 function findWorkspaceWorkflowCandidates(filename: string): string[] {
@@ -390,7 +432,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
   }));
 
   return tool({
-    description: 'Run n8n-as-code operations from the active workspace. Supports specialized workflow/credential/execution helpers plus a generic passthrough via action="command" for newer n8nac capabilities that are not yet modeled explicitly.',
+    description: 'Run n8n-as-code operations from the active workspace. Use action="command" for normal n8nac usage; the remaining actions are Yagr-specific helpers for provider selection and one-time warning state.',
     parameters: strictCompatibleParameters,
     execute: async ({
       action: rawAction,
@@ -413,13 +455,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         }
 
         const result = await runObservedN8nac(observer, argv, cwd);
-        return {
-          exitCode: result.exitCode,
-          timedOut: result.timedOut,
-          stdout: truncateText(result.stdout),
-          stderr: truncateText(result.stderr),
-          argv,
-        };
+        return buildStructuredCommandResult(argv, result);
       }
 
       if (action === 'yagr_proxy_warning_check') {

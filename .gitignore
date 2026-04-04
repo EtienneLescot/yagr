@@ -64,6 +64,12 @@ workflows_test/
 ignoredTests/
 session_context.json
 
+# Generated test reports
+reports/provider-integration-matrix.md
+reports/scenario-integration-report.md
+reports/provider-advanced-logs/
+reports/scenario-matrix/
+
 # n8n-as-code AI helpers
 
 conversation.md

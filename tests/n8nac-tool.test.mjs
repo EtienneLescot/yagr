@@ -70,6 +70,56 @@ test('n8nac tool schema coerces common stringified scalar values from weaker mod
   assert.deepEqual(parsed.data.commandArgv, ['execution', 'list', '--limit', '25']);
 });
 
+test('n8nac command push preserves structured workflow metadata', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nac-command-'));
+  const fakeNpxPath = path.join(tempDir, 'npx');
+  const previousPath = process.env.PATH;
+  const previousHost = process.env.N8N_HOST;
+  const previousApiKey = process.env.N8N_API_KEY;
+  const previousAllow = process.env.YAGR_ALLOW_N8N_ENV;
+
+  try {
+    fs.writeFileSync(fakeNpxPath, [
+      '#!/bin/sh',
+      'echo "- Pushing workflow demo.workflow.ts..." 1>&2',
+      'echo "✔ ✔ Pushed workflow demo.workflow.ts." 1>&2',
+      'echo "- Fetching workflow wf-123 from n8n for verification..." 1>&2',
+      'echo "✔ ✔ Fetched \"Demo Flow\" (2 nodes)" 1>&2',
+      'echo ""',
+      'echo "✅ Workflow looks clean — no issues found."',
+      'exit 0',
+    ].join('\n'));
+    fs.chmodSync(fakeNpxPath, 0o755);
+
+    process.env.PATH = `${tempDir}:${previousPath || ''}`;
+    process.env.N8N_HOST = 'http://localhost:5678';
+    process.env.N8N_API_KEY = 'test-key';
+    process.env.YAGR_ALLOW_N8N_ENV = '1';
+
+    const tool = createN8nAcTool();
+    const result = await tool.execute({
+      action: 'command',
+      commandArgv: ['push', 'demo.workflow.ts', '--verify'],
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.pushTarget, 'demo.workflow.ts');
+    assert.equal(result.workflowId, 'wf-123');
+    assert.equal(result.workflowUrl, 'http://localhost:5678/workflow/wf-123');
+    assert.equal(result.verified, true);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousHost === undefined) delete process.env.N8N_HOST;
+    else process.env.N8N_HOST = previousHost;
+    if (previousApiKey === undefined) delete process.env.N8N_API_KEY;
+    else process.env.N8N_API_KEY = previousApiKey;
+    if (previousAllow === undefined) delete process.env.YAGR_ALLOW_N8N_ENV;
+    else process.env.YAGR_ALLOW_N8N_ENV = previousAllow;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('n8nac warning consent actions persist one-time yagr proxy acceptance', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nac-warning-'));
   const previousYagrHome = process.env.YAGR_HOME;
