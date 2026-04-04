@@ -19,6 +19,7 @@ const DEFAULT_POST_SYNC_ALLOWED_TOOL_NAMES = [
   'reportProgress',
   'requestRequiredAction',
 ];
+const MAX_READONLY_PRE_EXECUTION_CALLS = 3;
 
 function createFallbackRuntimeStrategy(): YagrToolRuntimeStrategy {
   return {
@@ -104,6 +105,63 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+const N8NAC_READONLY_ACTIONS = new Set([
+  'list',
+  'setup_check',
+  'skills',
+  'pull',
+  'init_auth',
+  'init_project',
+]);
+
+function isMaterialExecutionAttempt(toolName: string, args: unknown, strategy: YagrToolRuntimeStrategy): boolean {
+  if (!strategy.tooling.executionCriticalToolNames.includes(toolName)) {
+    return false;
+  }
+
+  if (toolName !== 'n8nac') {
+    return true;
+  }
+
+  const action = extractN8nacOperation(asRecord(args));
+  return !(typeof action === 'string' && N8NAC_READONLY_ACTIONS.has(action));
+}
+
+function hasStructuredRequiredAction(value: unknown): boolean {
+  const record = asRecord(value);
+  return Boolean(record && asString(record.id) && asString(record.kind) && asString(record.title) && asString(record.message));
+}
+
+function isBlockingExternalRequiredActionRequest(args: unknown): boolean {
+  const record = asRecord(args);
+  if (!record) {
+    return false;
+  }
+
+  return asString(record.kind) === 'external' && (asBoolean(record.blocking) ?? true);
+}
+
+function isReadOnlyExplorationTool(toolName: string, args: unknown, strategy: YagrToolRuntimeStrategy): boolean {
+  if (toolName === 'reportProgress' || toolName === 'requestRequiredAction' || toolName === 'presentWorkflowResult') {
+    return false;
+  }
+
+  if (isMaterialExecutionAttempt(toolName, args, strategy)) {
+    return false;
+  }
+
+  if (toolName === 'n8nac') {
+    const action = extractN8nacOperation(asRecord(args));
+    return typeof action !== 'string' || N8NAC_READONLY_ACTIONS.has(action);
+  }
+
+  return true;
+}
+
 export function createWorkflowSyncCompletionGuardHook(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook {
   let workflowSyncSettled = false;
   const toolsAllowedAfterSuccessfulSync = new Set(strategy.tooling.allowedToolNamesAfterWorkflowSync);
@@ -139,6 +197,74 @@ export function createWorkflowSyncCompletionGuardHook(strategy: YagrToolRuntimeS
 
       if (action === 'push' || action === 'verify') {
         workflowSyncSettled = true;
+      }
+    },
+  };
+}
+
+export function createRequiredActionEvidenceGuardHook(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook {
+  let materialExecutionAttempted = false;
+  let concreteExternalBlockerObserved = false;
+
+  return {
+    beforeTool: async ({ toolName, args }) => {
+      if (toolName !== 'requestRequiredAction' || !isBlockingExternalRequiredActionRequest(args)) {
+        return;
+      }
+
+      if (materialExecutionAttempted || concreteExternalBlockerObserved || strategy.tooling.executionCriticalToolNames.length === 0) {
+        return;
+      }
+
+      return {
+        allowed: false,
+        message: 'Do not raise a blocking external required action before a tool has either attempted execution-critical work or surfaced a concrete blocker. Continue by using an available execution tool first.',
+      };
+    },
+    afterTool: async ({ toolName, args, result }) => {
+      if (toolName === 'requestRequiredAction') {
+        return;
+      }
+
+      if (isMaterialExecutionAttempt(toolName, args, strategy)) {
+        materialExecutionAttempted = true;
+      }
+
+      const normalizedResult = asRecord(result);
+      if (normalizedResult?.blocked === true || hasStructuredRequiredAction(normalizedResult?.requiredAction)) {
+        concreteExternalBlockerObserved = true;
+      }
+    },
+  };
+}
+
+export function createReadOnlyExplorationGuardHook(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook {
+  let materialExecutionAttempted = false;
+  let readOnlyCallCount = 0;
+
+  return {
+    beforeTool: async ({ toolName, args }) => {
+      if (materialExecutionAttempted || !isReadOnlyExplorationTool(toolName, args, strategy)) {
+        return;
+      }
+
+      if (readOnlyCallCount < MAX_READONLY_PRE_EXECUTION_CALLS) {
+        return;
+      }
+
+      return {
+        allowed: false,
+        message: 'Read-only exploration is complete. Stop listing, searching, or inspecting. Use an execution-critical tool now to write, validate, push, or verify the workflow.',
+      };
+    },
+    afterTool: async ({ toolName, args }) => {
+      if (isMaterialExecutionAttempt(toolName, args, strategy)) {
+        materialExecutionAttempted = true;
+        return;
+      }
+
+      if (isReadOnlyExplorationTool(toolName, args, strategy)) {
+        readOnlyCallCount += 1;
       }
     },
   };
@@ -293,6 +419,8 @@ export function createDefaultRuntimeHooksForStrategy(strategy: YagrToolRuntimeSt
   return [
     createN8nSetupGuardHook(),
     createN8nCredentialQuestionFlowHook(),
+    createReadOnlyExplorationGuardHook(strategy),
+    createRequiredActionEvidenceGuardHook(strategy),
     createWorkflowPresentationGuardHook(),
     createWorkflowSyncCompletionGuardHook(strategy),
   ];

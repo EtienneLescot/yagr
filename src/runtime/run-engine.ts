@@ -673,6 +673,20 @@ function hasMaterialToolCall(journal: YagrRunJournalEntry[], toolNames: readonly
   return false;
 }
 
+function hasAnyToolCall(journal: YagrRunJournalEntry[]): boolean {
+  for (const entry of journal) {
+    if (entry.type !== 'step' || !entry.step) {
+      continue;
+    }
+
+    if (entry.step.toolCalls.length > 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function collectPresentedWorkflow(result: unknown): { workflowId?: string; workflowUrl?: string; title?: string } | undefined {
   if (!result || typeof result !== 'object') {
     return undefined;
@@ -1699,6 +1713,7 @@ export class YagrRunEngine {
           finishReason,
           requiredActions,
           satisfiedRequiredActionIds: options.satisfiedRequiredActionIds,
+          attemptedAnyToolCalls: hasAnyToolCall(state.journal),
           attemptedMaterialWork: hasMaterialToolCall(state.journal, runtimeStrategy.tooling.executionCriticalToolNames),
           executePhaseCalledNoTools: toolCalls.length === 0,
           hasConcreteResult: Boolean(
