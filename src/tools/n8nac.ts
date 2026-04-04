@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { YagrN8nConfigService, resolveN8nRuntimeState, resolveWorkflowDir, type YagrN8nLocalConfig } from '../config/n8n-config-service.js';
+import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
@@ -29,6 +30,17 @@ const N8NAC_ACTIONS = [
   'pull',
   'push',
   'verify',
+  'workflow_credential_required',
+  'credential_schema',
+  'credential_list',
+  'credential_get',
+  'credential_create',
+  'credential_delete',
+  'execution_list',
+  'execution_get',
+  'llm_provider_options',
+  'yagr_proxy_warning_check',
+  'yagr_proxy_warning_accept',
   'skills',
   'validate',
   'update_ai',
@@ -38,6 +50,50 @@ const N8NAC_ACTIONS = [
 ] as const;
 
 type N8nAcAction = typeof N8NAC_ACTIONS[number];
+
+const YAGR_PROXY_WARNING_VERSION = 'yagr-proxy-v1';
+const YAGR_PROXY_WARNING_MESSAGE = 'Using Yagr proxy credentials with provider-linked accounts (for example Copilot or Codex OAuth sessions) remains subject to provider terms. High-volume automation or policy-violating usage may lead to account limits or suspension.';
+
+type LlmProviderOption = {
+  id: string;
+  label: string;
+  credentialType: string;
+  frictionless: boolean;
+};
+
+function getLlmProviderCatalog(): LlmProviderOption[] {
+  return [
+    { id: 'yagr', label: 'Yagr Proxy (no API key)', credentialType: 'openAiApi', frictionless: true },
+    { id: 'openai', label: 'OpenAI', credentialType: 'openAiApi', frictionless: false },
+    { id: 'anthropic', label: 'Anthropic', credentialType: 'anthropicApi', frictionless: false },
+    { id: 'google', label: 'Google Gemini', credentialType: 'googlePalmApi', frictionless: false },
+    { id: 'mistral', label: 'Mistral', credentialType: 'mistralCloudApi', frictionless: false },
+    { id: 'openrouter', label: 'OpenRouter', credentialType: 'openRouterApi', frictionless: false },
+  ];
+}
+
+function parseJsonPayload(raw: string): unknown {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const firstBrace = trimmed.search(/[\[{]/);
+    if (firstBrace < 0) {
+      return undefined;
+    }
+
+    const candidate = trimmed.slice(firstBrace);
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      return undefined;
+    }
+  }
+}
 
 function normalizeN8nAcAction(action: N8nAcAction): Exclude<N8nAcAction, 'skillsArgs' | 'skillsArgv'> {
   if (action === 'skillsArgs' || action === 'skillsArgv') {
@@ -416,6 +472,18 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       validateFile: nullify(obj.validateFile),
       syncFolder: nullify(obj.syncFolder),
       resolveMode: nullify(obj.resolveMode),
+      credentialType: nullify(obj.credentialType),
+      credentialId: nullify(obj.credentialId),
+      credentialName: nullify(obj.credentialName),
+      credentialData: nullify(obj.credentialData),
+      credentialFile: nullify(obj.credentialFile),
+      outputJson: nullify(obj.outputJson),
+      executionId: nullify(obj.executionId),
+      executionStatus: nullify(obj.executionStatus),
+      executionLimit: nullify(obj.executionLimit),
+      executionCursor: nullify(obj.executionCursor),
+      includeData: nullify(obj.includeData),
+      nodeName: nullify(obj.nodeName),
     };
   }, z.object({
     action: z.enum(N8NAC_ACTIONS).describe('Primary n8nac action. Use skills for any n8nac skills subcommand; skillsArgs and skillsArgv are accepted as legacy aliases and normalize to skills.'),
@@ -432,10 +500,22 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
     validateFile: z.string().nullable().describe('Local workflow file path for n8nac skills validate.'),
     syncFolder: z.string().nullable().describe('Sync folder to pass to init_project. Defaults to workflows.'),
     resolveMode: z.enum(['keep-current', 'keep-incoming']).nullable().describe('Conflict resolution mode for resolve.'),
+    credentialType: z.string().nullable().describe('Credential type for credential_schema or credential_create (for example openAiApi or anthropicApi).'),
+    credentialId: z.string().nullable().describe('Credential ID for credential_get or credential_delete.'),
+    credentialName: z.string().nullable().describe('Credential display name for credential_create.'),
+    credentialData: z.string().nullable().describe('Inline credential JSON string for credential_create. Prefer credentialFile to avoid shell-history secret leakage.'),
+    credentialFile: z.string().nullable().describe('Credential JSON file path for credential_create.'),
+    outputJson: z.boolean().nullable().describe('When true, pass --json for machine-readable output where supported.'),
+    executionId: z.string().nullable().describe('Execution ID for execution_get.'),
+    executionStatus: z.enum(['canceled', 'crashed', 'error', 'new', 'running', 'success', 'unknown', 'waiting']).nullable().describe('Execution status filter for execution_list.'),
+    executionLimit: z.number().int().min(1).nullable().describe('Maximum execution rows to return for execution_list.'),
+    executionCursor: z.string().nullable().describe('Pagination cursor for execution_list.'),
+    includeData: z.boolean().nullable().describe('Include detailed run data for execution_list or execution_get.'),
+    nodeName: z.string().nullable().describe('Optional workflow node name used for contextual provider-choice prompts.'),
   }));
 
   return tool({
-    description: 'Run n8n-as-code workflow operations from the active workspace. Use action="skills" with skillsArgv to search for node schemas, workflow examples, docs, and templates (e.g. skillsArgv=["examples","search","slack notification"] or skillsArgv=["search","google sheets"]). Use list, pull, push, verify, validate for workflow lifecycle management.',
+    description: 'Run n8n-as-code operations from the active workspace. Supports workflow lifecycle actions (list, pull, push, verify, resolve), credential management (schema, list, get, create, delete), execution diagnostics (execution_list, execution_get), and skills search/validation via action="skills" with skillsArgv.',
     parameters: strictCompatibleParameters,
     execute: async ({
       action,
@@ -452,9 +532,83 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       validateFile,
       syncFolder,
       resolveMode,
+      credentialType,
+      credentialId,
+      credentialName,
+      credentialData,
+      credentialFile,
+      outputJson,
+      executionId,
+      executionStatus,
+      executionLimit,
+      executionCursor,
+      includeData,
+      nodeName,
     }) => {
       action = normalizeN8nAcAction(action);
       const cwd = workspaceRoot();
+
+      if (action === 'yagr_proxy_warning_check') {
+        const consent = new YagrConfigService().getYagrProxyCredentialWarningConsent();
+        const accepted = consent?.warningVersion === YAGR_PROXY_WARNING_VERSION;
+        return {
+          accepted,
+          warningVersion: YAGR_PROXY_WARNING_VERSION,
+          warningMessage: YAGR_PROXY_WARNING_MESSAGE,
+          acceptedAt: consent?.acceptedAt ?? null,
+          next: accepted
+            ? 'Yagr proxy warning already accepted; proceed without showing it again.'
+            : 'Present this warning to the user once. If accepted, call yagr_proxy_warning_accept.',
+        };
+      }
+
+      if (action === 'yagr_proxy_warning_accept') {
+        const acceptedAt = new Date().toISOString();
+        new YagrConfigService().saveYagrProxyCredentialWarningConsent({
+          warningVersion: YAGR_PROXY_WARNING_VERSION,
+          acceptedAt,
+        });
+        return {
+          accepted: true,
+          warningVersion: YAGR_PROXY_WARNING_VERSION,
+          acceptedAt,
+          next: 'Warning acceptance saved. Do not show this warning again unless warningVersion changes.',
+        };
+      }
+
+      if (action === 'llm_provider_options') {
+        const options = getLlmProviderCatalog();
+        const credentialsResult = await runObservedN8nac(observer, ['credential', 'list', '--json'], cwd);
+        const parsed = parseJsonPayload(credentialsResult.stdout);
+        const credentials = Array.isArray(parsed)
+          ? parsed as Array<{ id?: string; name?: string; type?: string }>
+          : [];
+        const consent = new YagrConfigService().getYagrProxyCredentialWarningConsent();
+        const warningAccepted = consent?.warningVersion === YAGR_PROXY_WARNING_VERSION;
+
+        return {
+          nodeName: nodeName ?? null,
+          providers: options.map((provider) => ({
+            ...provider,
+            credentials: credentials
+              .filter((entry) => (entry.type || '').trim() === provider.credentialType)
+              .map((entry) => ({
+                id: entry.id || null,
+                name: entry.name || null,
+                type: entry.type || null,
+              })),
+          })),
+          yagrWarning: {
+            accepted: warningAccepted,
+            warningVersion: YAGR_PROXY_WARNING_VERSION,
+            warningMessage: YAGR_PROXY_WARNING_MESSAGE,
+            acceptedAt: consent?.acceptedAt ?? null,
+          },
+          credentialListExitCode: credentialsResult.exitCode,
+          credentialListStderr: truncateText(credentialsResult.stderr),
+          next: 'Ask the user which provider to use for this node. Prefer existing credentials; create a new one only if needed.',
+        };
+      }
 
       if (action === 'setup_check') {
         const status = isWorkspaceInitialized();
@@ -606,6 +760,178 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           workflowId: syncFacts.workflowId ?? workflowId,
           workflowUrl: syncFacts.workflowUrl ?? null,
           title: syncFacts.workflowName ?? null,
+        };
+      }
+
+      if (action === 'workflow_credential_required') {
+        if (!workflowId) {
+          throw new Error('workflow_credential_required requires workflowId');
+        }
+
+        const args = ['workflow', 'credential-required', workflowId];
+        if (outputJson !== false) {
+          args.push('--json');
+        }
+        const result = await runObservedN8nac(observer, args, cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+          workflowId,
+        };
+      }
+
+      if (action === 'credential_schema') {
+        if (!credentialType) {
+          throw new Error('credential_schema requires credentialType');
+        }
+
+        const args = ['credential', 'schema', credentialType];
+        if (outputJson !== false) {
+          args.push('--json');
+        }
+        const result = await runObservedN8nac(observer, args, cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+          credentialType,
+        };
+      }
+
+      if (action === 'credential_list') {
+        const args = ['credential', 'list'];
+        if (outputJson !== false) {
+          args.push('--json');
+        }
+        const result = await runObservedN8nac(observer, args, cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+        };
+      }
+
+      if (action === 'credential_get') {
+        if (!credentialId) {
+          throw new Error('credential_get requires credentialId');
+        }
+
+        const args = ['credential', 'get', credentialId];
+        if (outputJson !== false) {
+          args.push('--json');
+        }
+        const result = await runObservedN8nac(observer, args, cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+          credentialId,
+        };
+      }
+
+      if (action === 'credential_create') {
+        if (!credentialType || !credentialName) {
+          throw new Error('credential_create requires credentialType and credentialName');
+        }
+        if (!credentialData && !credentialFile) {
+          throw new Error('credential_create requires credentialData or credentialFile');
+        }
+
+        const args = ['credential', 'create', '--type', credentialType, '--name', credentialName];
+        if (credentialFile) {
+          const filePath = relativeWorkspacePath(resolveWorkspacePath(credentialFile));
+          args.push('--file', filePath);
+        } else if (credentialData) {
+          args.push('--data', credentialData);
+        }
+        if (projectId) {
+          args.push('--project-id', projectId);
+        }
+        if (outputJson !== false) {
+          args.push('--json');
+        }
+        const result = await runObservedN8nac(observer, args, cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+          credentialType,
+          credentialName,
+        };
+      }
+
+      if (action === 'credential_delete') {
+        if (!credentialId) {
+          throw new Error('credential_delete requires credentialId');
+        }
+
+        const result = await runObservedN8nac(observer, ['credential', 'delete', credentialId], cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+          credentialId,
+        };
+      }
+
+      if (action === 'execution_list') {
+        const args = ['execution', 'list'];
+        if (workflowId) {
+          args.push('--workflow-id', workflowId);
+        }
+        if (projectId) {
+          args.push('--project-id', projectId);
+        }
+        if (executionStatus) {
+          args.push('--status', executionStatus);
+        }
+        if (executionLimit) {
+          args.push('--limit', String(executionLimit));
+        }
+        if (executionCursor) {
+          args.push('--cursor', executionCursor);
+        }
+        if (includeData) {
+          args.push('--include-data');
+        }
+        if (outputJson !== false) {
+          args.push('--json');
+        }
+        const result = await runObservedN8nac(observer, args, cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+        };
+      }
+
+      if (action === 'execution_get') {
+        if (!executionId) {
+          throw new Error('execution_get requires executionId');
+        }
+
+        const args = ['execution', 'get', executionId];
+        if (includeData) {
+          args.push('--include-data');
+        }
+        if (outputJson !== false) {
+          args.push('--json');
+        }
+        const result = await runObservedN8nac(observer, args, cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+          executionId,
         };
       }
 
