@@ -34,6 +34,7 @@ import {
   YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
+import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 import {
   mapPhaseEventToUserVisibleUpdate,
   mapStateEventToUserVisibleUpdate,
@@ -782,8 +783,9 @@ class WebUiGateway implements Gateway {
           await this.options.onStateChange?.(event);
         },
         onToolEvent: async (event) => {
-          pushToolEvent(event);
-          await this.options.onToolEvent?.(event);
+          const enrichedEvent = enrichWorkflowEmbed(event);
+          pushToolEvent(enrichedEvent);
+          await this.options.onToolEvent?.(enrichedEvent);
         },
         onCompaction: async (event) => {
           pushCompactionEvent(event);

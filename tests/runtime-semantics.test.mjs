@@ -581,7 +581,7 @@ test('grounded summary includes workflow URL from presentWorkflowResult when ava
           { toolName: 'presentWorkflowResult', args: { workflowId: 'wf-1', workflowUrl: 'http://localhost:5678/workflow/wf-1' } },
         ],
         toolResults: [
-          { toolName: 'presentWorkflowResult', result: { presented: true, workflowId: 'wf-1', workflowUrl: 'http://localhost:5678/workflow/wf-1', title: 'Demo Flow' } },
+          { toolName: 'presentWorkflowResult', result: { presented: true, workflowId: 'wf-1', workflowUrl: 'http://localhost:5678/workflow/wf-1', canonicalUrl: 'http://localhost:5678/workflow/wf-1', title: 'Demo Flow' } },
         ],
       },
     },
@@ -676,7 +676,7 @@ test('final answer policy forces a grounded summary when a workflow URL is known
           { toolName: 'presentWorkflowResult', args: { workflowId: 'wf-3', workflowUrl: 'http://localhost:5678/workflow/wf-3', title: 'Demo Flow' } },
         ],
         toolResults: [
-          { toolName: 'presentWorkflowResult', result: { presented: true, workflowId: 'wf-3', workflowUrl: 'http://localhost:5678/workflow/wf-3', title: 'Demo Flow' } },
+          { toolName: 'presentWorkflowResult', result: { presented: true, workflowId: 'wf-3', workflowUrl: 'http://localhost:5678/workflow/wf-3', canonicalUrl: 'http://localhost:5678/workflow/wf-3', title: 'Demo Flow' } },
         ],
       },
     },
@@ -712,7 +712,7 @@ test('grounded summary stays user-facing when a workflow was only presented', ()
           { toolName: 'presentWorkflowResult', args: { workflowId: 'wf-2', workflowUrl: 'http://localhost:5678/workflow/wf-2', title: 'Existing Flow' } },
         ],
         toolResults: [
-          { toolName: 'presentWorkflowResult', result: { presented: true, workflowId: 'wf-2', workflowUrl: 'http://localhost:5678/workflow/wf-2', title: 'Existing Flow' } },
+          { toolName: 'presentWorkflowResult', result: { presented: true, workflowId: 'wf-2', workflowUrl: 'http://localhost:5678/workflow/wf-2', canonicalUrl: 'http://localhost:5678/workflow/wf-2', title: 'Existing Flow' } },
         ],
       },
     },
