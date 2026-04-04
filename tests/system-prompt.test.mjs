@@ -58,6 +58,7 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
     assert.match(prompt, /Show the provider-usage warning only once/i);
     assert.match(prompt, /n8nac credential, workflow credential-required, and execution commands/i);
     assert.match(prompt, /llm_provider_options, yagr_proxy_warning_check, and yagr_proxy_warning_accept/i);
+    assert.match(prompt, /n8nac workflow activate \+ n8nac test --prod/i);
     assert.match(prompt, /Keep final user-facing summaries concise/i);
     assert.match(prompt, /Do not paste the full workflow file contents/i);
     assert.match(prompt, /remote n8n instance, you MUST run n8nac pull/i);

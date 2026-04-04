@@ -208,6 +208,82 @@ export function createN8nSetupGuardHook(): YagrRuntimeHook {
   };
 }
 
+function resultText(result: unknown): string {
+  const record = asRecord(result);
+  if (!record) {
+    return '';
+  }
+
+  const stdout = asString(record.stdout) ?? '';
+  const stderr = asString(record.stderr) ?? '';
+  return `${stdout}\n${stderr}`.trim();
+}
+
+function looksLikeMissingCredentialSignal(text: string): boolean {
+  if (!text) {
+    return false;
+  }
+
+  return /(missing credentials?|missing credential|missing model|credentials? (are|is) required|configure (your )?credentials?|configuration des identifiants requise)/i.test(text);
+}
+
+function isCredentialOrchestrationAction(action: string | undefined): boolean {
+  if (!action) {
+    return false;
+  }
+
+  return [
+    'llm_provider_options',
+    'yagr_proxy_warning_check',
+    'yagr_proxy_warning_accept',
+    'workflow_credential_required',
+    'credential_schema',
+    'credential_list',
+    'credential_get',
+    'credential_create',
+    'credential_delete',
+  ].includes(action);
+}
+
+export function createN8nCredentialQuestionFlowHook(): YagrRuntimeHook {
+  let missingCredentialSignalSeen = false;
+  let credentialFlowStarted = false;
+
+  return {
+    afterTool: async ({ toolName, args, result }) => {
+      if (toolName !== 'n8nac') {
+        return;
+      }
+
+      const normalizedArgs = asRecord(args);
+      const action = asString(normalizedArgs?.action);
+      if (isCredentialOrchestrationAction(action)) {
+        credentialFlowStarted = true;
+        return;
+      }
+
+      if (action !== 'test') {
+        return;
+      }
+
+      const text = resultText(result);
+      if (looksLikeMissingCredentialSignal(text)) {
+        missingCredentialSignalSeen = true;
+      }
+    },
+    beforeCompletion: async () => {
+      if (!missingCredentialSignalSeen || credentialFlowStarted) {
+        return;
+      }
+
+      return {
+        accepted: false,
+        message: 'n8n test reported missing credentials. Continue by asking provider-choice questions per LLM node and running deterministic credential orchestration (llm_provider_options, credential_list/create, warning check/accept) before finishing.',
+      };
+    },
+  };
+}
+
 export function createDefaultRuntimeHooks(): YagrRuntimeHook[] {
   return createDefaultRuntimeHooksForStrategy(createFallbackRuntimeStrategy());
 }
@@ -215,6 +291,7 @@ export function createDefaultRuntimeHooks(): YagrRuntimeHook[] {
 export function createDefaultRuntimeHooksForStrategy(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook[] {
   return [
     createN8nSetupGuardHook(),
+    createN8nCredentialQuestionFlowHook(),
     createWorkflowPresentationGuardHook(),
     createWorkflowSyncCompletionGuardHook(strategy),
   ];
