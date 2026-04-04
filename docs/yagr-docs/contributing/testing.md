@@ -25,25 +25,22 @@ npm run test:integration
 
 Runs a multi-scenario integration test against a **single** LLM provider. Each scenario exercises a real-world agent interaction: answering questions, listing workflows, creating simple or complex workflows, explaining existing ones, etc. Results are written to `reports/scenario-integration-report.md`.
 
-**Configuration via environment variables:**
+**CLI options** (env vars accepted as fallback):
 
-| Variable | Default | Description |
-|---|---|---|
-| `YAGR_SCN_PROVIDER` | `openrouter` | Provider to use |
-| `YAGR_SCN_MODEL` | `google/gemini-3-flash-preview` | Model to use |
-| `YAGR_SCN_SCENARIOS` | *(all)* | Comma-separated scenario IDs to run |
-| `YAGR_SCN_TIMEOUT_MS` | `60000` | Timeout for Q&A scenarios (ms) |
-| `YAGR_SCN_CREATION_TIMEOUT_MS` | `180000` | Timeout for workflow creation scenarios (ms) |
-| `N8N_HOST` / `YAGR_IT_N8N_HOST` | — | n8n host |
-| `N8N_API_KEY` / `YAGR_IT_N8N_API_KEY` | — | n8n API key |
+| Option | Env var fallback | Default | Description |
+|---|---|---|---|
+| `--provider <name>` | `YAGR_SCN_PROVIDER` | `DEFAULT_PROVIDER` | Provider to use |
+| `--model <name>` | `YAGR_SCN_MODEL` | `DEFAULT_MODEL` | Model to use |
+| `--scenarios <ids>` | `YAGR_SCN_SCENARIOS` | *(all)* | Comma-separated scenario IDs to run |
+| `--strict` | — | off | Fail on any non-pass result |
+| `--no-markdown` | — | off | Skip writing the markdown report |
+
+Also reads `N8N_HOST` / `YAGR_IT_N8N_HOST` and `N8N_API_KEY` / `YAGR_IT_N8N_API_KEY` from the environment.
 
 **Example — run a single scenario with a specific model:**
 
 ```bash
-YAGR_SCN_SCENARIOS=credential-orchestration \
-YAGR_SCN_PROVIDER=anthropic \
-YAGR_SCN_MODEL=claude-sonnet-4-5 \
-npm run test:integration
+npm run test:integration -- --provider anthropic --model claude-sonnet-4-5 --scenarios credential-orchestration
 ```
 
 ## Provider tests
