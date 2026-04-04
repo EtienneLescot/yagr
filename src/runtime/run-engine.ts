@@ -21,7 +21,7 @@ import type {
   YagrToolEvent,
 } from '../types.js';
 import { buildTools, type AllBuiltTools } from '../tools/index.js';
-import { resolveWorkflowDiagramFromFilePath } from '../tools/present-workflow-result.js';
+import { resolveWorkflowDiagramFromFilePath } from '../manager-tooling/present-workflow.js';
 import { evaluateCompletionGate, type CompletionGateDecision } from './completion-gate.js';
 import { compactConversationContext } from './context-compaction.js';
 import { analyzeRunOutcome, type RunOutcome } from './outcome.js';

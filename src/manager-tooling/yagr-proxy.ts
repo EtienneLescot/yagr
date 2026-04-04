@@ -1,11 +1,18 @@
+/**
+ * Yagr Manager tooling: yagrProxy
+ *
+ * This tool is owned by yagr-manager, not yagr-agent.
+ * It is registered dynamically when the n8n engine is active.
+ */
+
 import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
-import { emitToolEvent, type ToolExecutionObserver } from './observer.js';
+import { emitToolEvent, type ToolExecutionObserver } from '../tools/observer.js';
 import { ensureN8nRelayServer, N8N_RELAY_CREDENTIAL_NAME, N8N_RELAY_FAKE_API_KEY } from '../llm/llm-relay-server.js';
-import { parseJsonPayload, workspaceRoot } from './workspace-utils.js';
+import { parseJsonPayload, workspaceRoot } from '../tools/workspace-utils.js';
 
 type RunResult = { stdout: string; stderr: string; exitCode: number };
 

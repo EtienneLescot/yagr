@@ -1,3 +1,10 @@
+/**
+ * Yagr Manager tooling: presentWorkflowResult
+ *
+ * This tool is owned by yagr-manager, not yagr-agent.
+ * It is registered dynamically when the n8n engine is active.
+ */
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { tool } from 'ai';
@@ -6,9 +13,9 @@ import { getYagrLaunchDir, getYagrN8nWorkspaceDir } from '../config/yagr-home.js
 import { normalizeRenderableWorkflowDiagram } from '../gateway/workflow-diagram.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { getActiveTunnelState } from '../n8n-local/n8n-tunnel.js';
-import type { ToolExecutionObserver } from './observer.js';
-import { emitToolEvent } from './observer.js';
-import { resolveWorkspacePath } from './workspace-utils.js';
+import type { ToolExecutionObserver } from '../tools/observer.js';
+import { emitToolEvent } from '../tools/observer.js';
+import { resolveWorkspacePath } from '../tools/workspace-utils.js';
 
 const WORKFLOW_FILE_SUFFIX = '.workflow.ts';
 const WORKFLOW_SCAN_SKIP_DIRS = new Set(['.git', 'dist', 'node_modules', 'docs', 'build']);

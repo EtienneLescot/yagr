@@ -5,14 +5,13 @@ import { createListDirTool } from './list-directory.js';
 import { createRunScriptTool } from './run-script.js';
 import { createRunShellTool } from './run-shell.js';
 import { createMoveFileTool } from './move-workspace-file.js';
-import { createYagrProxyTool } from './yagr-proxy-tool.js';
 import { createReadFileTool } from './read-workspace-file.js';
 import { createReplaceInFileTool } from './replace-in-workspace-file.js';
 import { createReportProgressTool } from './report-progress.js';
 import { createRequestRequiredActionTool } from './request-required-action.js';
 import { createGrepTool } from './search-workspace.js';
 import { createWriteFileTool } from './write-workspace-file.js';
-import { createPresentWorkflowResultTool } from './present-workflow-result.js';
+import { createPresentWorkflowResultTool, createYagrProxyTool } from '../manager-tooling/index.js';
 import { FULL_RUNTIME_TOOL_NAMES } from './toolsets.js';
 
 function createAllTools(observer?: ToolExecutionObserver) {
