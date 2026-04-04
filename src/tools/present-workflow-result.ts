@@ -4,6 +4,8 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { getYagrLaunchDir, getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { normalizeRenderableWorkflowDiagram } from '../gateway/workflow-diagram.js';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { getActiveTunnelState } from '../n8n-local/n8n-tunnel.js';
 import type { ToolExecutionObserver } from './observer.js';
 import { emitToolEvent } from './observer.js';
 import { resolveWorkspacePath } from './workspace-utils.js';
@@ -110,6 +112,46 @@ export function resolveLocalWorkflowDiagram(workflowId: string): string | undefi
   return undefined;
 }
 
+/**
+ * Resolves the canonical n8n workflow URL from a workflow ID.
+ * Uses the configured n8n host and applies the tunnel public URL if active.
+ * Falls back to the agent-provided URL if the workflowId looks invalid.
+ */
+function resolveWorkflowUrl(workflowId: string, agentProvidedUrl?: string): string {
+  // If the workflowId looks like a full URL, trust it as fallback
+  if (workflowId && /^https?:\/\//.test(workflowId)) {
+    return normalizeWorkflowUrl(workflowId);
+  }
+
+  try {
+    const config = new YagrN8nConfigService().getLocalConfig();
+    const host = config.host;
+    if (!host) {
+      return agentProvidedUrl || `http://localhost:5678/workflow/${workflowId}`;
+    }
+
+    const baseUrl = normalizeWorkflowUrl(host);
+    const tunnelUrl = getActiveTunnelState()?.publicUrl;
+
+    // Build the workflow URL
+    const workflowUrl = `${baseUrl}/workflow/${workflowId}`;
+
+    // If tunnel is active, substitute the origin
+    if (tunnelUrl) {
+      const tunnelOrigin = normalizeWorkflowUrl(tunnelUrl);
+      return workflowUrl.replace(baseUrl, tunnelOrigin);
+    }
+
+    return workflowUrl;
+  } catch {
+    return agentProvidedUrl || `http://localhost:5678/workflow/${workflowId}`;
+  }
+}
+
+function normalizeWorkflowUrl(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
 export function resolveWorkflowDiagram(workflowId: string, fallbackDiagram?: string): string | undefined {
   const localDiagram = resolveLocalWorkflowDiagram(workflowId);
   if (localDiagram) {
@@ -141,13 +183,16 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
     }),
     execute: async ({ workflowId, workflowUrl, title, diagram, executionResult }) => {
       const resolvedDiagram = resolveWorkflowDiagram(workflowId, diagram);
+      // Resolve the canonical n8n URL from config + workflowId, ignoring any
+      // hallucinated URL the agent may have passed in workflowUrl.
+      const canonicalUrl = resolveWorkflowUrl(workflowId, workflowUrl);
       await emitToolEvent(observer, {
         type: 'embed',
         toolName: 'presentWorkflowResult',
         kind: 'workflow',
         workflowId,
-        url: workflowUrl,
-        targetUrl: workflowUrl,
+        url: canonicalUrl,
+        targetUrl: canonicalUrl,
         title,
         diagram: resolvedDiagram,
         executionResult,
@@ -155,8 +200,8 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
       return {
         presented: true,
         workflowId,
-        workflowUrl,
-        canonicalUrl: workflowUrl,
+        workflowUrl: canonicalUrl,
+        canonicalUrl,
         title: title ?? null,
         executionResult: executionResult ?? null,
       };
