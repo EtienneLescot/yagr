@@ -1,18 +1,14 @@
-import type { Engine, EngineIdentityPort, EngineRuntimePort } from './engine/engine.js';
+import type { EngineIdentityPort, EngineRuntimePort } from './engine/engine.js';
 import type { CoreMessage } from 'ai';
 import { buildSystemPromptSnapshot, type SystemPromptSnapshot } from './prompt/build-system-prompt.js';
 import { YagrRunEngine } from './runtime/run-engine.js';
 import { compactConversationContext } from './runtime/context-compaction.js';
 import { resolveLanguageModelConfig, resolveModelContextProfile } from './llm/create-language-model.js';
 import type {
-  DeployedWorkflow,
-  GeneratedWorkflow,
   YagrContextCompactionEvent,
   YagrLanguageModelConfig,
   YagrRunOptions,
   YagrRunResult,
-  WorkflowSpec,
-  WorkflowValidationResult,
 } from './types.js';
 
 type YagrRunEngineLike = Pick<YagrRunEngine, 'execute'>;
@@ -126,50 +122,5 @@ export class YagrSessionAgent {
 
     this.history.length = 0;
     this.promptSnapshot = nextSnapshot;
-  }
-}
-
-export class YagrAgent extends YagrSessionAgent {
-  constructor(
-    private readonly engine: Engine,
-    dependencies: YagrSessionAgentDependencies = {},
-  ) {
-    super(engine, dependencies);
-  }
-
-  async plan(spec: WorkflowSpec): Promise<GeneratedWorkflow> {
-    return this.engine.generateWorkflow(spec);
-  }
-
-  async validate(generatedWorkflow: GeneratedWorkflow): Promise<WorkflowValidationResult> {
-    return this.engine.validate(generatedWorkflow);
-  }
-
-  async create(spec: WorkflowSpec): Promise<{ workflow: GeneratedWorkflow; validation: WorkflowValidationResult; deployed?: DeployedWorkflow }> {
-    const workflow = await this.plan(spec);
-    const validation = await this.validate(workflow);
-
-    if (!validation.valid) {
-      return { workflow, validation };
-    }
-
-    const deployed = await this.engine.deploy(workflow);
-    return { workflow, validation, deployed };
-  }
-
-  async list(): Promise<DeployedWorkflow[]> {
-    return this.engine.listWorkflows();
-  }
-
-  async activate(id: string): Promise<void> {
-    return this.engine.activateWorkflow(id);
-  }
-
-  async deactivate(id: string): Promise<void> {
-    return this.engine.deactivateWorkflow(id);
-  }
-
-  async delete(id: string): Promise<void> {
-    return this.engine.deleteWorkflow(id);
   }
 }
