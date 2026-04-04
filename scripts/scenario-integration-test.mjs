@@ -528,9 +528,9 @@ for (const scenario of scenariosToRun) {
 
 // Cleanup created workflows from n8n
 const createdWorkflowIds = results.flatMap((r) => r.createdWorkflowIds ?? []);
-if (createdWorkflowIds.length > 0 && testN8nRuntime.configured) {
+if (createdWorkflowIds.length > 0) {
   process.stdout.write(`\nCleaning up ${createdWorkflowIds.length} workflow(s) created during tests…\n`);
-  await cleanupWorkflows(createdWorkflowIds, testN8nRuntime);
+  await cleanupWorkflows(createdWorkflowIds, isolatedHome, testN8nRuntime);
 }
 
 // Cleanup isolated home
@@ -681,8 +681,17 @@ function escapeMd(text) {
   return String(text).replace(/\|/g, '\\|');
 }
 
-async function cleanupWorkflows(workflowIds, n8nRuntime) {
-  const { host, apiKey } = n8nRuntime;
+async function cleanupWorkflows(workflowIds, isolatedHome, n8nRuntime) {
+  // Read host/apiKey from the isolated home's n8nac-config.json — same source the agent used.
+  // Fall back to testN8nRuntime (env vars) if the file is missing.
+  const n8nConfigPath = path.join(isolatedHome, 'n8n-workspace', 'n8nac-config.json');
+  const n8nConfig = readJsonIfExists(n8nConfigPath) || {};
+  const host = n8nConfig.host || n8nRuntime.host;
+  const apiKey = n8nRuntime.apiKey; // apiKey comes from env (not stored in config file)
+  if (!host || !apiKey) {
+    process.stdout.write('  ✗ Cannot cleanup: n8n host or API key not resolved.\n');
+    return;
+  }
   const baseUrl = host.replace(/\/+$/, '');
   const headers = { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' };
 
