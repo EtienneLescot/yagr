@@ -966,10 +966,6 @@ function buildFinalAnswerFacts(
   if (outcome.successfulActions.length > 0) {
     lines.push(`successful_actions=${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
   }
-  const testAction = outcome.successfulActions.find((a) => a.action === 'test');
-  if (testAction?.testOutput) {
-    lines.push(`test_output=${testAction.testOutput.slice(0, 2000)}`);
-  }
   if (outcome.blockingUnresolvedFailedActions.length > 0) {
     lines.push(`blocking_failed_actions=${outcome.blockingUnresolvedFailedActions.map(formatObservedAction).join(', ')}`);
   }

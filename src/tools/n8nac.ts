@@ -334,7 +334,7 @@ async function pollExecutionResult(
   cwd: string,
   host: string | undefined,
   configService: YagrN8nConfigService,
-): Promise<{ executionId: string; status: string; output: string | null; summary: string } | null> {
+): Promise<{ executionId: string; status: string; output: string | null; errorMessage: string | null; errorNodeName: string | null; summary: string } | null> {
   // Step 1: poll until the latest execution for this workflow is no longer running.
   // The generic pollUntil handles the retry loop and timeout — n8n-specific logic
   // lives only in the predicate below (which commands to call, which statuses mean "done").
@@ -373,33 +373,57 @@ async function pollExecutionResult(
 
   // Best-effort: extract a readable output from the last node's execution data
   let output: string | null = null;
+  let errorMessage: string | null = null;
+  let errorNodeName: string | null = null;
   try {
     const data = (detail as Record<string, unknown>)?.data as Record<string, unknown>;
     const resultData = data?.resultData as Record<string, unknown>;
     const runData = resultData?.runData as Record<string, unknown[]>;
+    // Extract error from lastNodeExecuted
+    const lastNodeName = String(resultData?.lastNodeExecuted ?? '');
+    if (lastNodeName) errorNodeName = lastNodeName;
+    const error = resultData?.error as Record<string, unknown> | undefined;
+    if (error) {
+      errorMessage = String(error.message ?? error.description ?? '').trim() || null;
+    }
     if (runData) {
-      const lastNodeData = Object.values(runData).at(-1);
+      const lastNodeData = lastNodeName ? runData[lastNodeName] : Object.values(runData).at(-1);
       const firstExec = Array.isArray(lastNodeData) ? lastNodeData[0] as Record<string, unknown> : undefined;
-      // main is an array of item arrays: [[{json:{...}}], ...]
-      const main = (firstExec?.data as Record<string, unknown>)?.main;
-      const firstBranch = Array.isArray(main) ? main[0] : undefined;
-      const firstItem = Array.isArray(firstBranch) ? firstBranch[0] as Record<string, unknown> : undefined;
-      const json = firstItem?.json as Record<string, unknown> | undefined;
-      if (json) {
-        // AI agent nodes typically put the response in json.output
-        const text = json.output ?? json.text ?? json.response ?? json.answer ?? json.result;
-        output = typeof text === 'string' ? text : JSON.stringify(json);
+      // Check for per-node error
+      if (!errorMessage && firstExec?.error) {
+        const nodeErr = firstExec.error as Record<string, unknown>;
+        errorMessage = String(nodeErr.message ?? nodeErr.description ?? '').trim() || null;
+      }
+      if (!errorMessage && Array.isArray(firstExec?.error)) {
+        errorMessage = JSON.stringify(firstExec?.error);
+      }
+      if (success) {
+        // main is an array of item arrays: [[{json:{...}}], ...]
+        const main = (firstExec?.data as Record<string, unknown>)?.main;
+        const firstBranch = Array.isArray(main) ? main[0] : undefined;
+        const firstItem = Array.isArray(firstBranch) ? firstBranch[0] as Record<string, unknown> : undefined;
+        const json = firstItem?.json as Record<string, unknown> | undefined;
+        if (json) {
+          // AI agent nodes typically put the response in json.output
+          const text = json.output ?? json.text ?? json.response ?? json.answer ?? json.result;
+          output = typeof text === 'string' ? text : JSON.stringify(json);
+        }
       }
     }
   } catch {
     // ignore
   }
 
-  const summary = success
-    ? `Async execution confirmed: executionId=${executionId} status=success${output ? `\nAgent output: ${output}` : ''}`
-    : `Async execution finished with status=${status} executionId=${executionId}. Check execution details for error.`;
+  let summary: string;
+  if (success) {
+    summary = `Async execution confirmed: executionId=${executionId} status=success${output ? `\nAgent output: ${output}` : ''}`;
+  } else {
+    const where = errorNodeName ? ` in node "${errorNodeName}"` : '';
+    const why = errorMessage ? `\nError: ${errorMessage}` : '';
+    summary = `Async execution failed: executionId=${executionId} status=${status}${where}.${why}\nYou must inspect this error, fix the workflow file accordingly, push again, and re-test.`;
+  }
 
-  return { executionId, status, output, summary };
+  return { executionId, status, output, errorMessage, errorNodeName, summary };
 }
 
 async function buildStructuredCommandResult(
@@ -473,10 +497,12 @@ async function buildStructuredCommandResult(
           return {
             ...response,
             asyncTrigger: true,
-            executionConfirmed: true,
+            executionConfirmed: polledResult.status === 'success',
             executionId: polledResult.executionId,
             executionStatus: polledResult.status,
             executionOutput: polledResult.output,
+            executionError: polledResult.errorMessage,
+            executionErrorNode: polledResult.errorNodeName,
             stdout: result.stdout + '\n' + polledResult.summary,
           };
         }
