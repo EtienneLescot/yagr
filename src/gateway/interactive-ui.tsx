@@ -19,6 +19,7 @@ import {
   resolveTerminalWorkflowOpenUrl,
   workflowEmbedKey,
 } from './format-message.js';
+import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 import type {
   YagrAgentState,
   YagrContextCompactionEvent,
@@ -492,7 +493,8 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   }, [display.showResponses, pushEntry]);
 
   const handleToolEvent = useCallback((event: YagrToolEvent) => {
-    const userFacingStatus = mapToolEventToUserVisibleUpdate(event);
+    const enrichedEvent = enrichWorkflowEmbed(event);
+    const userFacingStatus = mapToolEventToUserVisibleUpdate(enrichedEvent);
     if (userFacingStatus) {
       if (display.showThinking) {
         pushEntry('narrative', userFacingStatus.title, userFacingStatus.detail ?? userFacingStatus.title);
@@ -627,8 +629,9 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
           await options.onTextDelta?.(textDelta);
         },
         onToolEvent: async (event) => {
-          handleToolEvent(event);
-          await options.onToolEvent?.(event);
+          const enrichedEvent = enrichWorkflowEmbed(event);
+          handleToolEvent(enrichedEvent);
+          await options.onToolEvent?.(enrichedEvent);
         },
       });
 

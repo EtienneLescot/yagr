@@ -21,7 +21,6 @@ import type {
   YagrToolEvent,
 } from '../types.js';
 import { buildTools, type AllBuiltTools } from '../tools/index.js';
-import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import { resolveWorkflowDiagramFromFilePath } from '../tools/present-workflow-result.js';
 import { evaluateCompletionGate, type CompletionGateDecision } from './completion-gate.js';
 import { compactConversationContext } from './context-compaction.js';
@@ -682,7 +681,7 @@ function hasAnyToolCall(journal: YagrRunJournalEntry[]): boolean {
   return false;
 }
 
-function collectPresentedWorkflow(result: unknown): { workflowId?: string; workflowUrl?: string; title?: string } | undefined {
+function collectPresentedWorkflow(result: unknown): { workflowId?: string; workflowUrl?: string; canonicalUrl?: string; title?: string } | undefined {
   if (!result || typeof result !== 'object') {
     return undefined;
   }
@@ -690,13 +689,14 @@ function collectPresentedWorkflow(result: unknown): { workflowId?: string; workf
   const record = result as Record<string, unknown>;
   const workflowId = typeof record.workflowId === 'string' ? record.workflowId : undefined;
   const workflowUrl = typeof record.workflowUrl === 'string' ? record.workflowUrl : undefined;
+  const canonicalUrl = typeof record.canonicalUrl === 'string' ? record.canonicalUrl : undefined;
   const title = typeof record.title === 'string' ? record.title : undefined;
 
   if (!workflowId && !workflowUrl && !title) {
     return undefined;
   }
 
-  return { workflowId, workflowUrl, title };
+  return { workflowId, workflowUrl, canonicalUrl, title };
 }
 
 function extractWorkflowLabel(outcome: RunOutcome): string | undefined {
@@ -709,7 +709,7 @@ function extractWorkflowLabel(outcome: RunOutcome): string | undefined {
   return baseName.replace(/\.workflow\.ts$/i, '');
 }
 
-function extractPresentedWorkflowFromJournal(journal: YagrRunJournalEntry[]): { workflowId?: string; workflowUrl?: string; title?: string } | undefined {
+function extractPresentedWorkflowFromJournal(journal: YagrRunJournalEntry[]): { workflowId?: string; workflowUrl?: string; canonicalUrl?: string; title?: string } | undefined {
   for (let index = journal.length - 1; index >= 0; index -= 1) {
     const entry = journal[index];
     if (entry.type !== 'step' || !entry.step) {
@@ -740,9 +740,8 @@ async function maybeEmitSyntheticWorkflowEmbed(
   // The canonical source of workflow embed data is the presentWorkflowResult tool call.
   // Without it we don't have structured workflowId / url to emit a meaningful embed.
   const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
-  if (!presentedWorkflow?.workflowUrl) return;
+  if (!presentedWorkflow?.canonicalUrl) return;
 
-  const workflowLink = resolveWorkflowOpenLink(presentedWorkflow.workflowUrl);
   const diagram = [
     '<workflow-map>',
     `// Workflow : ${presentedWorkflow.title || presentedWorkflow.workflowId || 'Workflow'}`,
@@ -755,8 +754,8 @@ async function maybeEmitSyntheticWorkflowEmbed(
     toolName: 'presentWorkflowResult',
     kind: 'workflow',
     workflowId: presentedWorkflow.workflowId ?? '',
-    url: workflowLink.openUrl,
-    targetUrl: workflowLink.targetUrl,
+    url: presentedWorkflow.canonicalUrl,
+    targetUrl: presentedWorkflow.canonicalUrl,
     title: presentedWorkflow.title,
     diagram,
   });
@@ -773,7 +772,7 @@ export function buildGroundedSummary(
   const { blocking: blockingRequiredActions, followUp: followUpRequiredActions } = splitRequiredActions(requiredActions);
   const workflowLabel = extractWorkflowLabel(outcome);
   const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
-  const presentedWorkflowUrl = presentedWorkflow?.workflowUrl;
+  const presentedWorkflowUrl = presentedWorkflow?.canonicalUrl;
 
   if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0) {
     const workflowName = presentedWorkflow?.title || workflowLabel || 'the workflow';
@@ -783,7 +782,7 @@ export function buildGroundedSummary(
     }
   }
 
-  if (lines.length === 0 && presentedWorkflowUrl) {
+  if (lines.length === 0 && presentedWorkflowUrl && presentedWorkflow) {
     const workflowName = presentedWorkflow.title || workflowLabel || 'the workflow';
     lines.push(
       workflowName === 'the workflow'
@@ -839,7 +838,7 @@ export function shouldForceGroundedFinalAnswer(
   const { blocking: blockingRequiredActions } = splitRequiredActions(requiredActions);
 
   if (blockingRequiredActions.length > 0) return true;
-  if (presentedWorkflow?.workflowUrl) return true;
+  if (presentedWorkflow?.canonicalUrl) return true;
   return Boolean(outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0);
 }
 
@@ -854,7 +853,7 @@ export function finalAnswerSatisfiesGroundedWorkflowFacts(
 
   const outcome = analyzeRunOutcome(journal);
   const presentedWorkflow = extractPresentedWorkflowFromJournal(journal);
-  if (presentedWorkflow?.workflowUrl && !normalizedText.includes(presentedWorkflow.workflowUrl)) {
+  if (presentedWorkflow?.canonicalUrl && !normalizedText.includes(presentedWorkflow.canonicalUrl)) {
     return false;
   }
 
@@ -879,7 +878,7 @@ function buildFinalAnswerFacts(
 
   if (workflowLabel) lines.push(`workflow_label=${workflowLabel}`);
   if (presentedWorkflow?.title) lines.push(`workflow_title=${presentedWorkflow.title}`);
-  if (presentedWorkflow?.workflowUrl) lines.push(`workflow_url=${presentedWorkflow.workflowUrl}`);
+  if (presentedWorkflow?.canonicalUrl) lines.push(`workflow_url=${presentedWorkflow.canonicalUrl}`);
   if (outcome.writtenFiles.length > 0) lines.push(`written_files=${outcome.writtenFiles.join(', ')}`);
   if (outcome.updatedFiles.length > 0) lines.push(`updated_files=${outcome.updatedFiles.join(', ')}`);
   if (outcome.deletedFiles.length > 0) lines.push(`deleted_files=${outcome.deletedFiles.join(', ')}`);
