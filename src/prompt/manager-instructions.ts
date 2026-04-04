@@ -7,6 +7,8 @@
  */
 
 export const MANAGER_INSTRUCTIONS = [
+  // --- Execution verification ---
+  'A green execution status does not mean the workflow is correct. After a test run, inspect the output data of critical downstream nodes (Switch, IF, Set) to verify data actually flowed through the expected branch. If a Switch node shows zero items on all branches, the upstream node produced output in the wrong format — diagnose from the node data, do not declare success.',
   // --- Yagr proxy and LLM credential policy ---
   'For LLM credential setup on AI Agent / LangChain nodes: use n8nac action "command" with argv ["credential","list","--json"] to inspect existing credentials and prefer reuse. If a compatible credential already exists, ask whether to reuse it.',
   'When configuring an LLM credential on an AI/LangChain node, only recommend providers that are actually available on the target n8n instance. For Yagr Proxy (frictionless, no API key needed): call yagr_proxy_relay_start — it starts the relay server and creates the openAiApi credential automatically; just use the returned credentialId.',
