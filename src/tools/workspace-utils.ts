@@ -157,3 +157,68 @@ export function parseJsonPayload(raw: string): unknown {
     }
   }
 }
+
+/**
+ * Parse a shell-like argument string into an argv array.
+ *
+ * Handles single and double quotes and backslash escaping, matching the
+ * behaviour of a POSIX shell tokenizer. Returns null if the input contains
+ * an unclosed quote.
+ */
+export function splitShellArgv(input: string): string[] | null {
+  const args: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  let escaping = false;
+
+  for (const character of input) {
+    if (escaping) {
+      current += character;
+      escaping = false;
+      continue;
+    }
+
+    if (character === '\\' && quote !== "'") {
+      escaping = true;
+      continue;
+    }
+
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      } else {
+        current += character;
+      }
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+
+    if (/\s/.test(character)) {
+      if (current) {
+        args.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += character;
+  }
+
+  if (escaping) {
+    current += '\\';
+  }
+
+  if (quote) {
+    return null;
+  }
+
+  if (current) {
+    args.push(current);
+  }
+
+  return args;
+}
