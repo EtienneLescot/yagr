@@ -13,7 +13,6 @@ import {
   startN8nTunnel,
   stopN8nTunnel,
 } from '../dist/n8n-local/n8n-tunnel.js';
-import { YagrN8nConfigService } from '../dist/config/n8n-config-service.js';
 import { buildManagedN8nState, writeManagedN8nState } from '../dist/n8n-local/state.js';
 
 const execFileAsync = promisify(execFile);
@@ -186,51 +185,16 @@ test('resolveN8nTunnelTargetUrl uses the managed instance port when a managed in
   }
 });
 
-test('resolveN8nTunnelTargetUrl uses the configured local host for non-managed instances', () => {
+test('resolveN8nTunnelTargetUrl throws for non-managed instances', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-tunnel-'));
   const previousHome = process.env.YAGR_HOME;
   process.env.YAGR_HOME = tempHome;
 
   try {
-    const configService = new YagrN8nConfigService();
-    configService.saveLocalConfig({ host: 'http://127.0.0.1:5679', runtimeSource: 'external' });
-    const targetUrl = resolveN8nTunnelTargetUrl();
-    assert.equal(targetUrl, 'http://127.0.0.1:5679');
-  } finally {
-    if (previousHome === undefined) delete process.env.YAGR_HOME;
-    else process.env.YAGR_HOME = previousHome;
-    fs.rmSync(tempHome, { recursive: true, force: true });
-  }
-});
-
-test('resolveN8nTunnelTargetUrl throws for a remote/cloud non-managed host', () => {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-tunnel-'));
-  const previousHome = process.env.YAGR_HOME;
-  process.env.YAGR_HOME = tempHome;
-
-  try {
-    const configService = new YagrN8nConfigService();
-    configService.saveLocalConfig({ host: 'https://my-n8n.example.com', runtimeSource: 'external' });
+    // No managed state written — only an external host configured.
     assert.throws(
       () => resolveN8nTunnelTargetUrl(),
-      /remote or cloud URL/,
-    );
-  } finally {
-    if (previousHome === undefined) delete process.env.YAGR_HOME;
-    else process.env.YAGR_HOME = previousHome;
-    fs.rmSync(tempHome, { recursive: true, force: true });
-  }
-});
-
-test('resolveN8nTunnelTargetUrl throws when nothing is configured', () => {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-tunnel-'));
-  const previousHome = process.env.YAGR_HOME;
-  process.env.YAGR_HOME = tempHome;
-
-  try {
-    assert.throws(
-      () => resolveN8nTunnelTargetUrl(),
-      /No n8n instance is configured/,
+      /Yagr-managed/,
     );
   } finally {
     if (previousHome === undefined) delete process.env.YAGR_HOME;

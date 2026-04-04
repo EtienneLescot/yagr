@@ -7,7 +7,6 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import { readManagedN8nState } from './state.js';
-import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -379,31 +378,15 @@ export async function refreshN8nTunnel(targetUrl: string, cloudflaredBin?: strin
  * configured at all.
  */
 export function resolveN8nTunnelTargetUrl(): string {
-  // Managed instance: Yagr owns the process, port is always local.
   const managedState = readManagedN8nState();
   if (managedState && managedState.status !== 'stopped') {
     return `http://127.0.0.1:${managedState.port}`;
   }
 
-  // Non-managed: accept only if the host is a local/private address.
-  const configService = new YagrN8nConfigService();
-  const host = configService.getLocalConfig().host;
-
-  if (!host) {
-    throw new Error(
-      'No n8n instance is configured. ' +
-      'Run `yagr n8n local install` to set up a managed instance, or configure a local n8n host first.',
-    );
-  }
-
-  if (!isLocalUrl(host)) {
-    throw new Error(
-      `The configured n8n instance (${host}) is a remote or cloud URL and is already publicly accessible. ` +
-      `The Cloudflare tunnel applies only to locally-hosted instances.`,
-    );
-  }
-
-  return host.replace(/\/$/, '');
+  throw new Error(
+    'The Cloudflare Tunnel feature is only available for Yagr-managed n8n instances. ' +
+    'Run `yagr n8n local install` to set one up, or manage your own tunneling for externally-hosted instances.',
+  );
 }
 
 /**
