@@ -293,8 +293,10 @@ const SCENARIOS = [
       + '(3) lmChatOpenAi v1.3 avec Yagr LLM Proxy — lance yagr_proxy_relay_start d\'abord pour obtenir credentialId et baseURL, '
       + 'puis configure : model { mode: "id", value: "gpt-4o-mini" }, responsesApiEnabled: false, options.baseURL depuis le relay. '
       + 'Séquence OBLIGATOIRE après push : '
-      + '(A) active avec `n8nac workflow activate <workflowId>`, '
-      + '(B) teste avec `n8nac test <workflowId> --prod --data \'{"country":"France"}\'`. '
+      + '(A) active avec n8nac commandArgv=["workflow","activate","<workflowId>"], '
+      + '(B) teste OBLIGATOIREMENT avec --prod : n8nac commandArgv=["test","<workflowId>","--prod","--data",\'{"country":"France"}\'] — '
+      + 'IMPORTANT: n8nac test sans --prod utilise /webhook-test/ qui nécessite un arm manuel dans le browser et retournera toujours 404. '
+      + 'Seul --prod utilise la vraie URL de production /webhook/ qui fonctionne quand le workflow est actif. '
       + 'Ne termine pas avant d\'avoir exécuté ces deux commandes et rapporté le résultat du test.',
     maxSteps: 40,
     timeoutMs: CREATION_TIMEOUT_MS,
