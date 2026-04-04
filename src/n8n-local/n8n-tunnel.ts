@@ -250,12 +250,14 @@ export async function startN8nTunnel(targetUrl: string, cloudflaredBin?: string)
   }
 
   return new Promise<N8nTunnelState>((resolve, reject) => {
+    const logFile = path.join(os.tmpdir(), `cloudflared-${Date.now()}.log`);
+
     const child = spawn(
       bin,
-      ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', '/dev/null'],
+      ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', logFile],
       {
         detached: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: 'ignore',
       },
     );
 
@@ -264,48 +266,50 @@ export async function startN8nTunnel(targetUrl: string, cloudflaredBin?: string)
       return;
     }
 
+    // Unref immediately — the child is fully detached and survives the parent.
+    child.unref();
+
     const pid = child.pid;
     let settled = false;
 
-    const onData = (data: Buffer) => {
-      if (settled) {
-        return;
-      }
-
-      const text = data.toString();
-      const match = text.match(CLOUDFLARE_URL_PATTERN);
-      if (!match) {
-        return;
-      }
-
-      settled = true;
-      child.stdout?.off('data', onData);
-      child.stderr?.off('data', onData);
-
-      // Release the pipe references so the parent process can exit cleanly.
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-      child.unref();
-
-      const state: N8nTunnelState = {
-        publicUrl: match[0],
-        targetUrl,
-        pid,
-        startedAt: new Date().toISOString(),
-      };
-      writeTunnelState(state);
-      resolve(state);
+    const cleanup = () => {
+      try { fs.unlinkSync(logFile); } catch { /* ignore */ }
     };
 
-    child.stdout?.on('data', onData);
-    child.stderr?.on('data', onData);
+    // Poll the log file for the public URL (cloudflared writes it to the log).
+    const pollInterval = setInterval(() => {
+      if (settled) {
+        clearInterval(pollInterval);
+        return;
+      }
+      try {
+        const text = fs.readFileSync(logFile, 'utf8');
+        const match = text.match(CLOUDFLARE_URL_PATTERN);
+        if (match) {
+          settled = true;
+          clearInterval(pollInterval);
+          const state: N8nTunnelState = {
+            publicUrl: match[0],
+            targetUrl,
+            pid,
+            startedAt: new Date().toISOString(),
+          };
+          writeTunnelState(state);
+          cleanup();
+          resolve(state);
+        }
+      } catch {
+        // Log file not yet created — keep polling.
+      }
+    }, 500);
 
     child.on('error', (err) => {
       if (settled) {
         return;
       }
-
       settled = true;
+      clearInterval(pollInterval);
+      cleanup();
       reject(new Error(
         `cloudflared failed to start: ${err.message}. ` +
         `Run \`yagr n8n tunnel setup\` to install it automatically.`,
@@ -316,8 +320,9 @@ export async function startN8nTunnel(targetUrl: string, cloudflaredBin?: string)
       if (settled) {
         return;
       }
-
       settled = true;
+      clearInterval(pollInterval);
+      cleanup();
       reject(new Error(
         `cloudflared exited early with code ${code}. ` +
         `Run \`yagr n8n tunnel setup\` to re-install it.`,
@@ -330,12 +335,10 @@ export async function startN8nTunnel(targetUrl: string, cloudflaredBin?: string)
       }
 
       settled = true;
-      try {
-        child.kill();
-      } catch {
-        // Ignore — process may have already exited.
-      }
-
+      clearInterval(pollInterval);
+      cleanup();
+      // cloudflared is already unref'd and detached — leave it running but
+      // report the timeout so the caller knows the URL was not captured.
       reject(new Error('cloudflared did not emit a trycloudflare.com URL within 30s.'));
     }, TUNNEL_TIMEOUT_MS);
   });
