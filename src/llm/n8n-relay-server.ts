@@ -43,6 +43,16 @@ export interface N8nRelayInfo {
   apiKey: string;
 }
 
+interface ResponsesApiRequest {
+  model?: string;
+  instructions?: string;
+  input?: Array<Record<string, unknown>>;
+  tools?: Array<Record<string, unknown>>;
+  tool_choice?: unknown;
+  stream?: boolean;
+  max_output_tokens?: number;
+}
+
 let activeServer: http.Server | undefined;
 
 // ─── State persistence ────────────────────────────────────────────────────────
@@ -294,7 +304,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 
   if (req.method === 'POST' && (url === '/v1/chat/completions' || url === '/v1/responses')) {
-    await handleChatCompletions(req, res);
+    await handleChatCompletions(req, res, url === '/v1/responses');
     return;
   }
 
@@ -314,7 +324,117 @@ async function handleModels(res: http.ServerResponse): Promise<void> {
   }
 }
 
-async function handleChatCompletions(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+function extractResponsesTextContent(content: unknown, type: 'input_text' | 'output_text'): string {
+  if (!Array.isArray(content)) {
+    return '';
+  }
+  return content
+    .filter((part): part is { type?: unknown; text?: unknown } => typeof part === 'object' && part !== null)
+    .filter((part) => part.type === type && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('\n')
+    .trim();
+}
+
+export function translateResponsesRequestToChatCompletionsBody(body: Buffer): Buffer {
+  let payload: ResponsesApiRequest;
+  try {
+    payload = JSON.parse(body.toString('utf-8')) as ResponsesApiRequest;
+  } catch {
+    return body;
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return body;
+  }
+
+  const input = Array.isArray(payload.input) ? payload.input : [];
+  const messages: Array<Record<string, unknown>> = [];
+
+  if (typeof payload.instructions === 'string' && payload.instructions.trim().length > 0) {
+    messages.push({ role: 'system', content: payload.instructions });
+  }
+
+  for (const item of input) {
+    const itemType = typeof item.type === 'string' ? item.type : undefined;
+    const role = typeof item.role === 'string' ? item.role : undefined;
+
+    if (role === 'user') {
+      const text = extractResponsesTextContent(item.content, 'input_text');
+      if (text) {
+        messages.push({ role: 'user', content: text });
+      }
+      continue;
+    }
+
+    if (role === 'assistant') {
+      const text = extractResponsesTextContent(item.content, 'output_text');
+      if (text) {
+        messages.push({ role: 'assistant', content: text });
+      }
+      continue;
+    }
+
+    if (itemType === 'function_call') {
+      messages.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: [{
+          id: typeof item.call_id === 'string' ? item.call_id : 'call_0',
+          type: 'function',
+          function: {
+            name: typeof item.name === 'string' ? item.name : 'tool',
+            arguments: typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {}),
+          },
+        }],
+      });
+      continue;
+    }
+
+    if (itemType === 'function_call_output') {
+      messages.push({
+        role: 'tool',
+        tool_call_id: typeof item.call_id === 'string' ? item.call_id : 'call_0',
+        content: typeof item.output === 'string' ? item.output : JSON.stringify(item.output ?? ''),
+      });
+    }
+  }
+
+  const translated: Record<string, unknown> = {
+    model: payload.model,
+    messages,
+    stream: payload.stream ?? false,
+  };
+
+  if (Array.isArray(payload.tools) && payload.tools.length > 0) {
+    translated.tools = payload.tools.map((tool) => {
+      if (tool?.type !== 'function') {
+        return tool;
+      }
+      return {
+        type: 'function',
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+          ...(tool.strict === true ? { strict: true } : {}),
+        },
+      };
+    });
+  }
+
+  if (payload.tool_choice !== undefined) {
+    translated.tool_choice = payload.tool_choice;
+  }
+
+  if (typeof payload.max_output_tokens === 'number') {
+    translated.max_tokens = payload.max_output_tokens;
+  }
+
+  return Buffer.from(JSON.stringify(translated), 'utf-8');
+}
+
+async function handleChatCompletions(req: http.IncomingMessage, res: http.ServerResponse, fromResponsesApi = false): Promise<void> {
   const result = await resolveProviderRuntime();
 
   if (!result.ready || !result.runtime) {
@@ -340,6 +460,7 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   }
 
   const body = await readBody(req);
+  const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
   const targetUrl = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   const forwardHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -358,7 +479,7 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   const upstream = await fetch(targetUrl, {
     method: 'POST',
     headers: forwardHeaders,
-    body: body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer,
+    body: normalizedBody.buffer.slice(normalizedBody.byteOffset, normalizedBody.byteOffset + normalizedBody.byteLength) as ArrayBuffer,
   });
 
   res.writeHead(upstream.status, {
