@@ -25,6 +25,7 @@ import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotS
 import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';
 import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
+import { installCloudflaredIfNeeded, startProxyTunnel } from '../n8n-local/n8n-tunnel.js';
 
 type N8nProjectClient = Pick<N8nApiClient, 'testConnection' | 'getProjects'>;
 
@@ -437,8 +438,8 @@ export class YagrSetupApplicationService {
   }> {
     if (runtimeSource === 'external') {
       // Cloud/external n8n cannot reach loopback; spawn a Cloudflare tunnel.
-      const tunnel = await this.startCloudflareTunnel();
       const relay = await ensureN8nRelayServer();
+      const tunnel = await this.startCloudflareTunnel(relay.hostBaseUrl);
       return { mode: 'tunnel', credentialBaseUrl: `${tunnel}/v1`, tunnelUrl: tunnel };
     }
 
@@ -456,29 +457,9 @@ export class YagrSetupApplicationService {
     return { mode: 'local', credentialBaseUrl: relay.hostBaseUrl };
   }
 
-  private startCloudflareTunnel(): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
-      const { spawn } = require('node:child_process') as typeof import('node:child_process');
-      const child = spawn('cloudflared', ['tunnel', '--url', 'http://localhost:11437', '--no-autoupdate', '--logfile', '/dev/null'], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      const onData = (data: Buffer) => {
-        const text = data.toString();
-        const match = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
-        if (match) {
-          child.stdout?.off('data', onData);
-          child.stderr?.off('data', onData);
-          resolve(match[0]);
-        }
-      };
-      child.stdout?.on('data', onData);
-      child.stderr?.on('data', onData);
-      child.on('close', (code) => {
-        if (code !== 0) reject(new Error(`cloudflared exited with code ${code}. Make sure cloudflared is installed: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/`));
-      });
-      child.on('error', (err) => reject(new Error(`cloudflared not found: ${err.message}. Install from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/`)));
-      setTimeout(() => reject(new Error('cloudflared did not emit a trycloudflare.com URL within 30s')), 30_000);
-    });
+  private async startCloudflareTunnel(targetUrl: string): Promise<string> {
+    const bin = await installCloudflaredIfNeeded();
+    return startProxyTunnel(targetUrl, bin);
   }
 
   saveLlmProxyConfig(config: YagrLlmProxyConfig): void {
