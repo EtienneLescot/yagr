@@ -27,6 +27,7 @@ export function buildSystemPrompt(engine: EngineIdentityPort): string {
 export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPromptSnapshot {
   const homeInstructions = loadHomeInstructions();
   const workspaceInstructions = loadWorkspaceInstructions();
+  const yagentsInstructions = loadYagentsInstructions();
   const workflowDir = resolveActiveWorkflowDir();
   const n8nHost = resolveActiveN8nHost();
   const n8nTunnelPublicUrl = resolveActiveTunnelPublicUrl();
@@ -62,6 +63,8 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
       'When a tool call reveals that a previous assumption was wrong, correct the assumption immediately from the tool output before continuing. Do not carry forward stale beliefs once new evidence is available.',
       // --- Yagr manager instructions (proxy, LLM credentials, n8n node wiring) ---
       MANAGER_INSTRUCTIONS,
+      // --- Yagr manager tooling instructions (presentWorkflowResult, yagrProxy) ---
+      yagentsInstructions ? `Yagr manager tooling instructions: ${yagentsInstructions.content}` : '',
       // --- Workspace instructions (n8nac AGENT.md and home memory) ---
       'The active workspace AGENT.md or AGENTS.md content is already loaded into startup context. Treat it as a foundational instruction source for automation and workflow work. Do not reinvent rules it already defines.',
       workflowDir ? `The active n8n workflow directory is ${workflowDir}.` : '',
@@ -142,6 +145,23 @@ function loadRecentMemory(): string {
   } catch {
     return '';
   }
+}
+
+function loadYagentsInstructions(): InstructionContentSnapshot | undefined {
+  try {
+    const yagentsPath = path.resolve(getYagrLaunchDir(), 'node_modules', '@yagr', 'manager-tooling', 'YAGENTS.md');
+    if (fs.existsSync(yagentsPath)) {
+      return readInstructionFile(yagentsPath);
+    }
+    // Fallback: read from source tree during development
+    const devPath = path.resolve(getYagrLaunchDir(), 'src', 'manager-tooling', 'YAGENTS.md');
+    if (fs.existsSync(devPath)) {
+      return readInstructionFile(devPath);
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
 }
 
 function loadWorkspaceInstructions(): InstructionContentSnapshot | undefined {
