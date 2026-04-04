@@ -40,6 +40,31 @@ yagr config show
 yagr config reset
 ```
 
+## n8n — local instance
+
+```bash
+yagr n8n doctor              # inspect local n8n bootstrap readiness
+yagr n8n local install       # install and start a Yagr-managed local n8n
+yagr n8n local start         # start the managed instance
+yagr n8n local stop          # stop the managed instance
+yagr n8n local status        # show managed instance status (JSON)
+yagr n8n local logs          # show recent logs
+yagr n8n local open          # open the editor in the browser
+```
+
+## n8n — Cloudflare Tunnel
+
+Exposes a local n8n instance to the internet. Requires `cloudflared` to be installed separately.
+See [Exposing n8n via Cloudflare Tunnel](../usage/n8n-tunnel) for a full guide.
+
+```bash
+yagr n8n tunnel start        # start the tunnel — prints the public URL
+yagr n8n tunnel stop         # stop the tunnel
+yagr n8n tunnel refresh      # renew (stop + start, new public URL)
+yagr n8n tunnel status       # show tunnel state (JSON)
+yagr n8n tunnel url          # print only the public URL
+```
+
 ## Notes
 
 - `yagr onboard` is the standard first-run command and currently drives the same interactive setup flow as `yagr setup`.

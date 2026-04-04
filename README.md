@@ -259,6 +259,17 @@ If you need to re-share the Telegram onboarding link (for example when linking a
 yagr telegram onboarding
 ```
 
+To expose a local n8n instance publicly via a Cloudflare Quick Tunnel (useful for webhooks, Telegram triggers, etc.):
+
+```bash
+yagr n8n tunnel setup     # install cloudflared if needed + start + enable auto-start
+yagr n8n tunnel url       # show the current public URL
+yagr n8n tunnel refresh   # renew the URL (restarts the tunnel)
+yagr n8n tunnel stop      # stop the tunnel
+```
+
+Yagr downloads and manages the `cloudflared` binary automatically. No Cloudflare account required.
+
 To reset everything and start over:
 
 ```bash
