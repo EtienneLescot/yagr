@@ -11,6 +11,32 @@ import { ensureN8nRelayServer, N8N_RELAY_CREDENTIAL_NAME, N8N_RELAY_FAKE_API_KEY
 import { findFileInWorkspace, parseJsonPayload, relativeWorkspacePath, resolveWorkspacePath, splitShellArgv, truncateText, workspaceRoot } from './workspace-utils.js';
 import { pollUntil } from '../system/async-poll.js';
 
+// ─── N8n credential REST helpers ─────────────────────────────────────────────
+
+/**
+ * Patches the stored data of an existing n8n credential via the public REST API.
+ * Used to update the relay URL in "Yagr LLM Proxy" without changing the credential ID
+ * (which would break all workflows that reference it).
+ */
+async function patchN8nCredential(
+  host: string,
+  apiKey: string,
+  credentialId: string,
+  data: Record<string, string>,
+): Promise<boolean> {
+  try {
+    const url = `${host.replace(/\/+$/, '')}/api/v1/credentials/${credentialId}`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 function resolveN8nacOperation(argv: string[]): string {
   const [head, second] = argv;
   if (head === 'workflow' && second === 'activate') return 'workflow_activate';
@@ -821,10 +847,24 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         );
 
         if (existing?.id) {
-          // Credential already exists — reuse it. The relay URL is deterministic
-          // (same port within the same Yagr session), so the stored value is still
-          // correct. Deleting and recreating would change the credential ID and
-          // invalidate any workflow already referencing the old ID.
+          // Credential exists — check if the relay URL has rotated (e.g. tunnel restarted).
+          // The credential ID must stay the same to avoid breaking existing workflow node refs,
+          // so we PATCH the data in-place when the URL changed.
+          const n8nRuntime = resolveN8nRuntimeState(new YagrN8nConfigService(), process.env, { allowEnvironmentFallback: true });
+          const storedRelayUrl = (new YagrConfigService()).getLocalConfig().llmProxy?.credentialBaseUrl;
+
+          let urlUpdated = false;
+          if (storedRelayUrl !== relay.baseUrl && n8nRuntime.host && n8nRuntime.apiKey) {
+            const patched = await patchN8nCredential(
+              n8nRuntime.host,
+              n8nRuntime.apiKey,
+              existing.id,
+              { apiKey: N8N_RELAY_FAKE_API_KEY, url: relay.baseUrl },
+            );
+            urlUpdated = patched;
+          }
+
+          const urlNote = urlUpdated ? ` URL rotated and updated to ${relay.baseUrl}.` : '';
           return {
             port: relay.port,
             baseUrl: relay.baseUrl,
@@ -833,7 +873,8 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
             credentialType: 'openAiApi',
             created: false,
             reused: true,
-            next: `Relay is running. Reusing existing credential "${N8N_RELAY_CREDENTIAL_NAME}" (id: ${existing.id}). Assign it to the node.`,
+            urlUpdated,
+            next: `Relay is running.${urlNote} Reusing existing credential "${N8N_RELAY_CREDENTIAL_NAME}" (id: ${existing.id}). Assign it to the node.`,
           };
         }
 

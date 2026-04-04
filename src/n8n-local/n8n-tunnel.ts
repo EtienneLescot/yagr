@@ -367,13 +367,56 @@ export async function refreshN8nTunnel(targetUrl: string, cloudflaredBin?: strin
   return startN8nTunnel(targetUrl, cloudflaredBin);
 }
 
+// ─── Proxy tunnel state (for LLM relay deduplication) ─────────────────────────
+
+interface ProxyTunnelState {
+  pid: number;
+  tunnelUrl: string;
+  targetUrl: string;
+  startedAt: string;
+}
+
+function readProxyTunnelState(): ProxyTunnelState | null {
+  try {
+    const p = getYagrPaths().proxyTunnelStatePath;
+    if (!fs.existsSync(p)) return null;
+    return JSON.parse(fs.readFileSync(p, 'utf-8')) as ProxyTunnelState;
+  } catch {
+    return null;
+  }
+}
+
+function writeProxyTunnelState(state: ProxyTunnelState | null): void {
+  const p = getYagrPaths().proxyTunnelStatePath;
+  if (state === null) {
+    try { fs.unlinkSync(p); } catch { /* ignore */ }
+    return;
+  }
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, JSON.stringify(state, null, 2));
+}
+
 /**
  * Starts a detached cloudflared tunnel for an arbitrary target URL and returns
- * the public trycloudflare.com URL. Unlike startN8nTunnel, this does NOT
- * persist tunnel state — it is intended for ephemeral use-cases such as
- * exposing the LLM relay server during setup.
+ * the public trycloudflare.com URL.
+ *
+ * Deduplicates: if a previous proxy tunnel pointing to the same targetUrl is
+ * still alive, its URL is returned immediately without spawning a new process.
+ * Stale/dead tunnels are cleaned up before spawning a new one.
  */
 export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: string): Promise<string> {
+  // Reuse existing tunnel if alive and pointing to the same target.
+  const existing = readProxyTunnelState();
+  if (existing && existing.targetUrl === targetUrl && isPidAlive(existing.pid)) {
+    return existing.tunnelUrl;
+  }
+
+  // Kill stale process if any.
+  if (existing?.pid && isPidAlive(existing.pid)) {
+    try { process.kill(existing.pid, 'SIGTERM'); } catch { /* ignore */ }
+  }
+  writeProxyTunnelState(null);
+
   const bin = cloudflaredBin ?? await findCloudflaredBinary();
   if (!bin) {
     throw new Error(
@@ -395,6 +438,7 @@ export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: strin
     }
 
     child.unref();
+    const pid = child.pid;
 
     let settled = false;
     const cleanup = () => { try { fs.unlinkSync(logFile); } catch { /* ignore */ } };
@@ -408,6 +452,7 @@ export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: strin
           settled = true;
           clearInterval(pollInterval);
           cleanup();
+          writeProxyTunnelState({ pid, tunnelUrl: match[0], targetUrl, startedAt: new Date().toISOString() });
           resolve(match[0]);
         }
       } catch { /* log file not yet created */ }
