@@ -6,6 +6,7 @@ import { resolveWorkflowDir, YagrN8nConfigService } from '../config/n8n-config-s
 import { getActiveTunnelState } from '../n8n-local/n8n-tunnel.js';
 import { MemoryStore } from '../memory/memory-store.js';
 import type { EngineIdentityPort } from '../engine/engine.js';
+import { MANAGER_INSTRUCTIONS } from './manager-instructions.js';
 
 export interface InstructionContentSnapshot {
   path: string;
@@ -54,12 +55,6 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
       'When progress is blocked on missing user input or an external dependency, use the requestRequiredAction tool so the blocker is represented explicitly in runtime state.',
       'Use requestRequiredAction with blocking=true only when the current task cannot be delivered without that action. Deliver what you can first and record remaining setup as a non-blocking follow-up.',
       'Do not raise requestRequiredAction for actions you can perform directly with the available tools.',
-      // --- Yagr proxy and LLM credential policy (Yagr-specific, not in AGENT.md) ---
-      'For LLM credential setup on AI Agent / LangChain nodes: use n8nac action llm_provider_options to get the provider menu before recommending a provider.',
-      'Before asking for new LLM secrets, call n8nac with argv ["credential","list","--json"] to inspect existing credentials and prefer reuse. If a compatible credential already exists, ask whether to reuse it.',
-      'When configuring an LLM credential on an AI/LangChain node, trust llm_provider_options as the source of truth. Only recommend providers whose metadata says available=true. For Yagr Proxy (frictionless, no API key needed): call yagr_proxy_relay_start — it starts the relay server and creates the openAiApi credential automatically; just use the returned credentialId. If llm_provider_options returns yagrProxyEnabled=true the user already consented at setup — no compliance warning is needed.',
-      // --- lmChatOpenAi node wiring rules ---
-      'lmChatOpenAi v1.3 node MANDATORY rules: (1) When using a custom baseURL (any proxy, relay, or local LLM) you MUST set responsesApiEnabled: false — without it n8n sends a Responses API request and gets "Input required: specify prompt or messages" because only api.openai.com supports that API. (2) When using a custom baseURL set model mode to "id" not "list" — "list" triggers a /models fetch that proxies may not expose. Correct form: { model: { mode: "id", value: "gpt-4o-mini" }, responsesApiEnabled: false, options: { baseURL: "http://..." } }.',
       // --- Execution verification ---
       'A green execution status does not mean the workflow is correct. After a test run, inspect the output data of critical downstream nodes (Switch, IF, Set) to verify data actually flowed through the expected branch. If a Switch node shows zero items on all branches, the upstream node produced output in the wrong format — diagnose from the node data, do not declare success.',
       // --- n8n operations must go through n8nac ---
@@ -67,6 +62,8 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
       // --- Ground responses in actual tool outputs ---
       'Always base your final response on the actual tool outputs from this conversation. Never replace tool output with fabricated data, inferred values, or memories from earlier turns. If a tool returned a result, quote or paraphrase its real content. If the result was an error, report the actual error text — do not substitute a generic message or redirect the user to an unrelated action.',
       'When a tool call reveals that a previous assumption was wrong, correct the assumption immediately from the tool output before continuing. Do not carry forward stale beliefs once new evidence is available.',
+      // --- Yagr manager instructions (proxy, LLM credentials, n8n node wiring) ---
+      MANAGER_INSTRUCTIONS,
       // --- Workspace instructions (n8nac AGENT.md and home memory) ---
       'The active workspace AGENT.md or AGENTS.md content is already loaded into startup context. Treat it as a foundational instruction source for automation and workflow work. Do not reinvent rules it already defines.',
       workflowDir ? `The active n8n workflow directory is ${workflowDir}.` : '',
