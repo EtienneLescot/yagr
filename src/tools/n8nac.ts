@@ -557,7 +557,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       commandArgv: nullify(obj.commandArgv),
     };
   }, z.object({
-    action: z.enum(N8NAC_ACTIONS).describe('Use action="command" for normal n8nac usage. The other actions are Yagr-specific helpers: llm_provider_options lists available LLM providers, yagr_proxy_warning_check/accept manage the one-time compliance warning, yagr_proxy_relay_start starts the local Yagr relay and returns connection info for creating the n8n credential.'),
+    action: z.enum(N8NAC_ACTIONS).describe('Use action="command" for normal n8nac usage. The other actions are Yagr-specific helpers: llm_provider_options lists available LLM providers, yagr_proxy_warning_check/accept manage the one-time compliance warning, yagr_proxy_relay_start starts the local Yagr relay AND automatically creates the openAiApi credential in n8n (idempotent) — returns credentialId ready to assign.'),
     nodeName: z.string().nullable().describe('Optional workflow node name used for contextual provider-choice prompts.'),
     commandArgs: z.string().nullable().describe('Generic raw n8nac argument string for action="command", for example "workflow credential-required wf_123 --json".'),
     commandArgv: z.array(z.string()).nullable().describe('Generic raw n8nac argv for action="command", preferred over commandArgs when arguments contain spaces.'),
@@ -650,19 +650,56 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           },
           credentialListExitCode: credentialsResult.exitCode,
           credentialListStderr: truncateText(credentialsResult.stderr),
-          next: 'Ask the user which provider to use for this node. Prefer existing credentials; create a new one only if needed. Only offer providers marked available=true. For Yagr Proxy (frictionless, no API key), call yagr_proxy_relay_start to get the relay URL before creating the credential.',
+          next: 'Ask the user which provider to use for this node. Prefer existing credentials; create a new one only if needed. Only offer providers marked available=true. For Yagr Proxy (frictionless, no API key), call yagr_proxy_relay_start — it starts the relay, creates the openAiApi credential in n8n automatically, and returns the credential id ready to assign.',
         };
       }
 
       if (action === 'yagr_proxy_relay_start') {
         const relay = await ensureN8nRelayServer();
+
+        // Check whether the Yagr relay credential already exists.
+        const listResult = await runObservedN8nac(observer, ['credential', 'list', '--json'], cwd);
+        const existingList = parseJsonPayload(listResult.stdout);
+        const existingCredentials = Array.isArray(existingList)
+          ? existingList as Array<{ id?: string; name?: string; type?: string }>
+          : [];
+        const existing = existingCredentials.find(
+          (c) => c.name === N8N_RELAY_CREDENTIAL_NAME && c.type === 'openAiApi',
+        );
+
+        if (existing) {
+          return {
+            port: relay.port,
+            baseUrl: relay.baseUrl,
+            credentialId: existing.id ?? null,
+            credentialName: N8N_RELAY_CREDENTIAL_NAME,
+            credentialType: 'openAiApi',
+            created: false,
+            next: `Relay is running and credential "${N8N_RELAY_CREDENTIAL_NAME}" (id: ${existing.id}) already exists. Assign it to the node.`,
+          };
+        }
+
+        // Create the openAiApi credential with the correct field name ("url", not "baseUrl").
+        const credData = JSON.stringify({ apiKey: N8N_RELAY_FAKE_API_KEY, url: relay.baseUrl });
+        const createResult = await runObservedN8nac(
+          observer,
+          ['credential', 'create', '--type', 'openAiApi', '--name', N8N_RELAY_CREDENTIAL_NAME, '--data', credData, '--json'],
+          cwd,
+        );
+        const created = parseJsonPayload(createResult.stdout) as Record<string, unknown> | undefined;
+
         return {
           port: relay.port,
           baseUrl: relay.baseUrl,
-          apiKey: N8N_RELAY_FAKE_API_KEY,
+          credentialId: (created?.id as string | undefined) ?? null,
           credentialName: N8N_RELAY_CREDENTIAL_NAME,
           credentialType: 'openAiApi',
-          next: `Relay is running. Create an openAiApi credential named "${N8N_RELAY_CREDENTIAL_NAME}" with baseUrl=${relay.baseUrl} and apiKey=${N8N_RELAY_FAKE_API_KEY} using the n8nac command action, then assign it to the node.`,
+          created: createResult.exitCode === 0,
+          createExitCode: createResult.exitCode,
+          createStderr: createResult.stderr || null,
+          next: createResult.exitCode === 0
+            ? `Relay is running and credential "${N8N_RELAY_CREDENTIAL_NAME}" created (id: ${created?.id ?? '?'}). Assign it to the node.`
+            : `Relay is running but credential creation failed (exit ${createResult.exitCode}). Inspect createStderr and fix before assigning.`,
         };
       }
 

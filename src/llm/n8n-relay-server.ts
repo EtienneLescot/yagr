@@ -5,11 +5,16 @@
  * Incoming requests are proxied to the currently active Yagr LLM provider, transparently
  * handling OAuth token refresh and other provider-specific auth.
  *
- * Constraint: Yagr must be running for workflows using the relay to function.
+ * Architecture: the relay server runs as a detached child process that outlives the agent session.
+ * `ensureN8nRelayServer()` spawns that process if not already running.
+ * `ensureN8nRelayServerInProcess()` is the entrypoint called inside the child process.
  */
 
 import http from 'node:http';
 import fs from 'node:fs';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import { prepareProviderRuntime } from './proxy-runtime.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
@@ -64,7 +69,8 @@ function isRelayAlive(state: N8nRelayServerState): boolean {
 }
 
 /**
- * Ensures the relay server is running. Starts it if needed. Returns connection info.
+ * Called from the agent process. Spawns the relay as a detached child if not already running,
+ * then waits briefly for it to bind and write its state file.
  */
 export async function ensureN8nRelayServer(): Promise<N8nRelayInfo> {
   const existing = getN8nRelayState();
@@ -76,7 +82,70 @@ export async function ensureN8nRelayServer(): Promise<N8nRelayInfo> {
     };
   }
 
-  const port = await startRelay();
+  spawnRelayProcess();
+  const state = await waitForRelayState(8_000);
+  return {
+    port: state.port,
+    baseUrl: `http://127.0.0.1:${state.port}/v1`,
+    apiKey: N8N_RELAY_FAKE_API_KEY,
+  };
+}
+
+function spawnRelayProcess(): void {
+  ensureYagrHomeDir();
+  const paths = getYagrPaths();
+  const logDir = path.join(paths.proxyRuntimeDir, 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+  const logPath = path.join(logDir, 'n8n-relay.log');
+  const logFd = fs.openSync(logPath, 'a');
+
+  // Resolve the compiled entrypoint path relative to this file.
+  const entrypoint = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    'n8n-relay-entrypoint.js',
+  );
+
+  const child = spawn(process.execPath, [entrypoint], {
+    detached: true,
+    stdio: ['ignore', logFd, logFd],
+    env: process.env,
+  });
+  child.unref();
+  fs.closeSync(logFd);
+}
+
+async function waitForRelayState(timeoutMs: number): Promise<N8nRelayServerState> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = getN8nRelayState();
+    if (state && isRelayAlive(state)) {
+      return state;
+    }
+    await delay(200);
+  }
+  throw new Error(`n8n relay server did not start within ${timeoutMs}ms. Check ~/.yagr/proxy-runtime/logs/n8n-relay.log`);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Called inside the detached child process (n8n-relay-entrypoint.ts).
+ * Starts the HTTP server in-process and keeps running indefinitely.
+ */
+export async function ensureN8nRelayServerInProcess(): Promise<N8nRelayInfo> {
+  // If another relay process is already alive, let it keep running.
+  const existing = getN8nRelayState();
+  if (existing && isRelayAlive(existing)) {
+    return {
+      port: existing.port,
+      baseUrl: `http://127.0.0.1:${existing.port}/v1`,
+      apiKey: N8N_RELAY_FAKE_API_KEY,
+    };
+  }
+
+  const port = await startRelayInProcess();
   return {
     port,
     baseUrl: `http://127.0.0.1:${port}/v1`,
@@ -95,7 +164,7 @@ async function attemptListen(server: http.Server, port: number): Promise<number>
   });
 }
 
-async function startRelay(): Promise<number> {
+async function startRelayInProcess(): Promise<number> {
   // Try fixed well-known port first, then fall back to OS-assigned port.
   for (const preferredPort of [N8N_RELAY_DEFAULT_PORT, 0]) {
     const server = http.createServer((req, res) => {
