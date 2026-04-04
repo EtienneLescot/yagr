@@ -28,14 +28,14 @@ test('mapStateEventToUserVisibleUpdate surfaces actionable waiting states only',
   assert.deepEqual(
     mapStateEventToUserVisibleUpdate({
       state: 'waiting_for_permission',
-      phase: 'sync',
+      phase: 'edit',
       message: 'Need permission to push the workflow.',
     }),
     {
       tone: 'info',
       title: 'Needs permission',
       detail: 'Need permission to push the workflow.',
-      phase: 'sync',
+      phase: 'edit',
       dedupeKey: 'state:waiting_for_permission:Need permission to push the workflow.',
     },
   );

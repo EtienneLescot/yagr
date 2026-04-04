@@ -32,7 +32,7 @@ import { resolveToolRuntimeStrategy, type YagrToolRuntimeStrategy } from './tool
 const MAX_EXECUTION_ATTEMPTS = 3;
 const MAX_COMPLETION_REPAIR_ATTEMPTS = 1;
 const MAX_BLOCKER_CAPTURE_ATTEMPTS = 1;
-const PHASE_ORDER: YagrRunPhase[] = ['inspect', 'plan', 'edit', 'validate', 'sync', 'verify', 'summarize'];
+const PHASE_ORDER: YagrRunPhase[] = ['inspect', 'plan', 'edit', 'summarize'];
 const STREAM_FILTER_HOLDBACK = 256;
 
 /**
@@ -549,33 +549,6 @@ function inferPhaseFromStep(step: {
   toolCalls: Array<{ toolName: string; args: unknown }>;
   toolResults: Array<{ toolName: string; result: unknown }>;
 }): YagrRunPhase {
-  const n8nacActions = step.toolCalls
-    .filter((toolCall) => toolCall.toolName === 'runScript')
-    .map((toolCall) => {
-      const command = typeof (toolCall.args as Record<string, unknown> | undefined)?.command === 'string'
-        ? (toolCall.args as Record<string, unknown>).command as string
-        : '';
-      const match = /\bn8nac\s+(\S+)/.exec(command);
-      return match ? match[1] : undefined;
-    })
-    .filter((action): action is string => Boolean(action));
-
-  if (n8nacActions.some((action) => action === 'verify')) {
-    return 'verify';
-  }
-
-  if (n8nacActions.some((action) => action === 'push' || action === 'resolve')) {
-    return 'sync';
-  }
-
-  if (n8nacActions.some((action) => action === 'validate')) {
-    return 'validate';
-  }
-
-  if (n8nacActions.some((action) => action === 'setup_check' || action === 'init_auth' || action === 'init_project' || action === 'list' || action === 'pull' || action === 'skills' || action === 'update_ai')) {
-    return 'plan';
-  }
-
   if (step.toolCalls.some((toolCall) => toolCall.toolName === 'writeFile' || toolCall.toolName === 'replaceInFile')) {
     return 'edit';
   }

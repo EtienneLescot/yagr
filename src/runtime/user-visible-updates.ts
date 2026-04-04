@@ -17,12 +17,6 @@ function phaseTitle(phase: YagrRunPhase): string {
       return 'Plan';
     case 'edit':
       return 'Edit';
-    case 'validate':
-      return 'Validate';
-    case 'sync':
-      return 'Sync';
-    case 'verify':
-      return 'Verify';
     case 'summarize':
       return 'Summarize';
     default:
