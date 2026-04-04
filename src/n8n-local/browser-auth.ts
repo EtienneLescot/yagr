@@ -11,9 +11,6 @@ export function buildManagedN8nWorkflowOpenPage(input: {
   const escapedEmail = escapeHtml(input.credentials.email);
   const escapedPassword = escapeHtml(input.credentials.password);
 
-  // Derive the API base URL from the login URL (strip /rest/login).
-  const apiUrl = input.loginUrl.replace(/\/rest\/login$/, '');
-
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -117,12 +114,15 @@ export function buildManagedN8nWorkflowOpenPage(input: {
         <p>Email<br /><code>${escapedEmail}</code></p>
         <p>Password<br /><code>${escapedPassword}</code></p>
       </section>
+      <!-- Hidden form that submits credentials to n8n login endpoint -->
+      <form id="login-form" method="post" action="${escapedLoginUrl}" style="display:none">
+        <input type="hidden" name="emailOrLdapLoginId" value="${escapedEmail}" />
+        <input type="hidden" name="password" value="${escapedPassword}" />
+      </form>
     </main>
     <script>
       const targetUrl = ${JSON.stringify(input.targetUrl)};
-      const apiUrl = ${JSON.stringify(apiUrl)};
-      const email = ${JSON.stringify(input.credentials.email)};
-      const password = ${JSON.stringify(input.credentials.password)};
+      const loginForm = document.getElementById('login-form');
       const status = document.getElementById('status');
       const credentials = document.getElementById('credentials');
       const showCredsButton = document.getElementById('show-creds');
@@ -131,39 +131,27 @@ export function buildManagedN8nWorkflowOpenPage(input: {
         credentials?.classList.remove('hidden');
       });
 
-      async function loginAndRedirect() {
-        try {
-          // Step 1: Login via n8n REST API with credentials
-          const loginResponse = await fetch(apiUrl + '/rest/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ emailOrLdapLoginId: email, password: password }),
-          });
-
-          if (!loginResponse.ok) {
-            const errorText = await loginResponse.text();
-            throw new Error('Login failed: ' + loginResponse.status);
-          }
-
-          // Step 2: Verify session is active by fetching user endpoint
-          const userResponse = await fetch(apiUrl + '/rest/me', {
-            credentials: 'include',
-          });
-
-          if (!userResponse.ok) {
-            throw new Error('Session verification failed');
-          }
-
-          status.textContent = 'Authenticated! Opening workflow…';
-          window.location.replace(targetUrl);
-        } catch (error) {
-          status.textContent = error instanceof Error ? error.message : 'Authentication failed.';
-          credentials?.classList.remove('hidden');
+      // Submit the login form in the current window so cookies are set,
+      // then redirect to the workflow after a short delay.
+      try {
+        if (!(loginForm instanceof HTMLFormElement)) {
+          throw new Error('Login form is unavailable.');
         }
+        // Submit the form — n8n will respond with a redirect or set-cookie.
+        // We intercept the navigation by replacing after a delay.
+        loginForm.submit();
+        window.setTimeout(() => {
+          status.textContent = 'Opening workflow…';
+          window.location.replace(targetUrl);
+        }, 1200);
+        window.setTimeout(() => {
+          status.textContent = 'If the workflow still asks for login, reveal the credentials below and sign in once.';
+          credentials?.classList.remove('hidden');
+        }, 4000);
+      } catch (error) {
+        status.textContent = error instanceof Error ? error.message : 'Automatic sign-in could not start.';
+        credentials?.classList.remove('hidden');
       }
-
-      loginAndRedirect();
     </script>
   </body>
 </html>`;
