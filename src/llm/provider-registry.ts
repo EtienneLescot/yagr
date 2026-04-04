@@ -51,7 +51,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   anthropic: {
     id: 'anthropic',
     displayName: 'Claude',
-    defaultModel: 'claude-sonnet-4-5',
+    defaultModel: 'claude-haiku-4-5',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
     modelDiscovery: {

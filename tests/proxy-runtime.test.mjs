@@ -245,8 +245,7 @@ test('prepareProviderRuntime resolves the local Anthropic credentials for anthro
       assert.equal(url, 'https://api.anthropic.com/v1/models');
       return new Response(JSON.stringify({
         data: [
-          { id: 'claude-opus-4-5' },
-          { id: 'claude-sonnet-4-5' },
+          { id: 'claude-haiku-4-5' },
         ],
       }), {
         status: 200,
@@ -257,7 +256,7 @@ test('prepareProviderRuntime resolves the local Anthropic credentials for anthro
 
       assert.equal(result.ready, true);
       assert.equal(result.runtime?.apiKey, 'sk-ant-test-key');
-      assert.deepEqual(result.runtime?.models, ['claude-opus-4-5', 'claude-sonnet-4-5']);
+      assert.deepEqual(result.runtime?.models, ['claude-haiku-4-5']);
       assert.ok(result.notes.some((note) => note.includes('Claude Code CLI credentials')));
     });
   } finally {
