@@ -75,7 +75,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
   google: {
     id: 'google',
     displayName: 'Gemini',
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: 'gemini-3-flash-preview',
     defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: true,
