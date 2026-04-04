@@ -50,7 +50,12 @@ export function buildManagedN8nWorkflowOpenPage(input: {
         <p>Email<br /><code>${escapedEmail}</code></p>
         <p>Password<br /><code>${escapedPassword}</code></p>
       </section>
-      <form id="login-form" method="post" action="${escapedLoginUrl}" style="display:none">
+      <!-- The form targets a hidden iframe: the main page (and its meta-refresh) stays
+           alive while the iframe absorbs the JSON login response. The Set-Cookie header
+           from n8n is stored for the tunnel domain by the browser. When the meta-refresh
+           fires (top-level GET navigation), the SameSite=Lax cookie is sent → authenticated. -->
+      <iframe name="login-frame" style="display:none" aria-hidden="true"></iframe>
+      <form id="login-form" method="post" action="${escapedLoginUrl}" target="login-frame" style="display:none">
         <input type="hidden" name="emailOrLdapLoginId" value="${escapedEmail}" />
         <input type="hidden" name="password" value="${escapedPassword}" />
       </form>
