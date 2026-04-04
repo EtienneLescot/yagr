@@ -131,22 +131,39 @@ const SCENARIOS = [
 
   {
     id: 'credential-orchestration',
-    name: 'Orchestration credentials par noeud',
-    prompt: 'Décris précisément comment tu configures les credentials LLM dans un workflow avec plusieurs agents: choix provider par noeud, warning Yagr affiché une seule fois, réutilisation prioritaire des credentials existants, puis création si nécessaire.',
-    maxSteps: 3,
-    timeoutMs: DEFAULT_TIMEOUT_MS,
-    n8nRequired: false,
-    assert(result) {
+    name: 'Workflow LangChain Agent avec credential LLM',
+    prompt: 'Crée un workflow n8n avec un nœud LangChain AI Agent. '
+      + 'Configure le credential LLM pour ce nœud: inspecte les credentials existants, '
+      + 'propose un provider, et déploie le workflow. '
+      + 'Ne me pose pas de questions inutiles, avance au maximum avec les outils disponibles.',
+    maxSteps: 20,
+    timeoutMs: CREATION_TIMEOUT_MS,
+    n8nRequired: true,
+    assert(result, outcome) {
+      // Primary signal: workflow was pushed
+      if (outcome.successfulPush) {
+        const checkedCredentials = outcome.successfulActions.some((a) =>
+          /credential|llm_provider/i.test(a.action),
+        );
+        return {
+          pass: true,
+          note: `Workflow poussé${outcome.successfulVerify ? ' + vérifié' : ''}. Credentials inspectés: ${checkedCredentials}.`,
+        };
+      }
+      // Secondary signal: agent hit a structured blocker on credentials (acceptable)
       const text = String(result.text || '');
-      if (text.length < 80) return { pass: false, note: `Réponse trop courte (${text.length} chars).` };
-      const perNode = /par n[oœ]ud|each node|per-node/i.test(text);
-      const warningOnce = /une seule fois|only once|warning.*once/i.test(text);
-      const reuseFirst = /r[ée]utilis|reuse.*credential|existing credential/i.test(text);
-      const createIfNeeded = /cr[ée]er|create.*credential|si n[ée]cessaire|if needed/i.test(text);
-      return {
-        pass: perNode && warningOnce && reuseFirst && createIfNeeded,
-        note: `Signals: per-node=${perNode}, warning-once=${warningOnce}, reuse-first=${reuseFirst}, create-if-needed=${createIfNeeded}.`,
-      };
+      const hasRequiredAction = outcome.successfulActions.some((a) => a.action === 'requestRequiredAction')
+        || /credential|provider|clé|api key/i.test(text);
+      if (outcome.hasWorkflowWrites && hasRequiredAction) {
+        return {
+          pass: true,
+          note: `Workflow écrit, bloqueur credential structuré détecté.`,
+        };
+      }
+      if (outcome.hasWorkflowWrites) {
+        return { pass: false, note: 'Workflow écrit mais push non confirmé et aucun bloqueur credential.' };
+      }
+      return { pass: false, note: `Aucun workflow créé. Réponse: ${text.slice(0, 150)}` };
     },
   },
 
