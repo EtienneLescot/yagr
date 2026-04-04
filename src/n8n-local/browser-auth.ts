@@ -11,6 +11,9 @@ export function buildManagedN8nWorkflowOpenPage(input: {
   const escapedEmail = escapeHtml(input.credentials.email);
   const escapedPassword = escapeHtml(input.credentials.password);
 
+  // Derive the API base URL from the login URL (strip /rest/login).
+  const apiUrl = input.loginUrl.replace(/\/rest\/login$/, '');
+
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -104,7 +107,7 @@ export function buildManagedN8nWorkflowOpenPage(input: {
     <main class="panel">
       <h1>Opening n8n workflow</h1>
       <p>Yagr is signing you into its managed local n8n instance, then redirecting you to the workflow.</p>
-      <div class="status" id="status">Starting secure browser session…</div>
+      <div class="status" id="status">Authenticating…</div>
       <div class="actions">
         <a class="primary" href="${escapedTargetUrl}" id="open-link">Open workflow now</a>
         <button class="secondary" type="button" id="show-creds">Show login credentials</button>
@@ -114,15 +117,12 @@ export function buildManagedN8nWorkflowOpenPage(input: {
         <p>Email<br /><code>${escapedEmail}</code></p>
         <p>Password<br /><code>${escapedPassword}</code></p>
       </section>
-      <iframe class="hidden" name="n8n-login-bridge" title="n8n login bridge"></iframe>
-      <form class="hidden" id="login-form" method="post" action="${escapedLoginUrl}" target="n8n-login-bridge">
-        <input type="hidden" name="emailOrLdapLoginId" value="${escapedEmail}" />
-        <input type="hidden" name="password" value="${escapedPassword}" />
-      </form>
     </main>
     <script>
       const targetUrl = ${JSON.stringify(input.targetUrl)};
-      const loginForm = document.getElementById('login-form');
+      const apiUrl = ${JSON.stringify(apiUrl)};
+      const email = ${JSON.stringify(input.credentials.email)};
+      const password = ${JSON.stringify(input.credentials.password)};
       const status = document.getElementById('status');
       const credentials = document.getElementById('credentials');
       const showCredsButton = document.getElementById('show-creds');
@@ -131,23 +131,39 @@ export function buildManagedN8nWorkflowOpenPage(input: {
         credentials?.classList.remove('hidden');
       });
 
-      try {
-        if (!(loginForm instanceof HTMLFormElement)) {
-          throw new Error('Login form is unavailable.');
-        }
-        loginForm.submit();
-        window.setTimeout(() => {
-          status.textContent = 'Opening workflow…';
+      async function loginAndRedirect() {
+        try {
+          // Step 1: Login via n8n REST API with credentials
+          const loginResponse = await fetch(apiUrl + '/rest/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ emailOrLdapLoginId: email, password: password }),
+          });
+
+          if (!loginResponse.ok) {
+            const errorText = await loginResponse.text();
+            throw new Error('Login failed: ' + loginResponse.status);
+          }
+
+          // Step 2: Verify session is active by fetching user endpoint
+          const userResponse = await fetch(apiUrl + '/rest/me', {
+            credentials: 'include',
+          });
+
+          if (!userResponse.ok) {
+            throw new Error('Session verification failed');
+          }
+
+          status.textContent = 'Authenticated! Opening workflow…';
           window.location.replace(targetUrl);
-        }, 900);
-        window.setTimeout(() => {
-          status.textContent = 'If the workflow still asks for login, reveal the credentials below and sign in once.';
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : 'Authentication failed.';
           credentials?.classList.remove('hidden');
-        }, 3000);
-      } catch (error) {
-        status.textContent = error instanceof Error ? error.message : 'Automatic sign-in could not start.';
-        credentials?.classList.remove('hidden');
+        }
       }
+
+      loginAndRedirect();
     </script>
   </body>
 </html>`;
