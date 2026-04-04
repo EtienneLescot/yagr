@@ -114,8 +114,9 @@ export function buildManagedN8nWorkflowOpenPage(input: {
         <p>Email<br /><code>${escapedEmail}</code></p>
         <p>Password<br /><code>${escapedPassword}</code></p>
       </section>
-      <!-- Hidden form that submits credentials to n8n login endpoint -->
-      <form id="login-form" method="post" action="${escapedLoginUrl}" style="display:none">
+      <!-- Hidden iframe and form for background login -->
+      <iframe name="n8n-login-iframe" style="display:none"></iframe>
+      <form id="login-form" method="post" action="${escapedLoginUrl}" target="n8n-login-iframe" style="display:none">
         <input type="hidden" name="emailOrLdapLoginId" value="${escapedEmail}" />
         <input type="hidden" name="password" value="${escapedPassword}" />
       </form>
@@ -131,23 +132,26 @@ export function buildManagedN8nWorkflowOpenPage(input: {
         credentials?.classList.remove('hidden');
       });
 
-      // Submit the login form in the current window so cookies are set,
-      // then redirect to the workflow after a short delay.
+      // Submit the login form into a hidden iframe so the page doesn't navigate
+      // to the JSON response. Cookies will be set in the iframe's context.
       try {
         if (!(loginForm instanceof HTMLFormElement)) {
           throw new Error('Login form is unavailable.');
         }
-        // Submit the form — n8n will respond with a redirect or set-cookie.
-        // We intercept the navigation by replacing after a delay.
         loginForm.submit();
+        status.textContent = 'Signing in…';
+
+        // After a delay, redirect the main page to the workflow.
+        // The iframe login should have set the session cookies by then.
         window.setTimeout(() => {
           status.textContent = 'Opening workflow…';
           window.location.replace(targetUrl);
-        }, 1200);
+        }, 1500);
+
         window.setTimeout(() => {
           status.textContent = 'If the workflow still asks for login, reveal the credentials below and sign in once.';
           credentials?.classList.remove('hidden');
-        }, 4000);
+        }, 5000);
       } catch (error) {
         status.textContent = error instanceof Error ? error.message : 'Automatic sign-in could not start.';
         credentials?.classList.remove('hidden');
