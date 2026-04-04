@@ -12,6 +12,7 @@ import {
   YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
 import type { ManagedN8nInstanceState } from '../n8n-local/state.js';
+import type { YagrLlmProxyConfig } from '../config/yagr-config-service.js';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: strin
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export interface SetupCallbacks {
-  getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string };
+  getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string; runtimeSource?: 'managed-local' | 'external' };
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
   saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string; runtimeSource: 'managed-local' | 'external' }): Promise<void>;
   installManagedLocalN8n(strategy: 'docker' | 'direct' | 'auto'): Promise<ManagedN8nInstanceState>;
@@ -82,6 +83,14 @@ export interface SetupCallbacks {
   getTelegramToken(): string | undefined;
   setupTelegram(token: string): Promise<{ username: string }>;
   saveSurfaces(p: { surfaces: GatewaySurface[]; telegram?: { token: string; username: string } }): void;
+  setupLlmProxy(runtimeSource: 'managed-local' | 'external', n8nUrl: string): Promise<{
+    mode: YagrLlmProxyConfig['mode'];
+    credentialBaseUrl: string;
+    dockerHostAddress?: string;
+    tunnelUrl?: string;
+  }>;
+  saveLlmProxyConfig(config: YagrLlmProxyConfig): void;
+  isLlmProxyEnabled(): boolean;
 }
 
 export interface SetupResult {
@@ -90,7 +99,7 @@ export interface SetupResult {
 }
 
 export interface SetupWizardOptions {
-  mode?: 'full' | 'llm-only';
+  mode?: 'full' | 'llm-only' | 'proxy-only';
 }
 
 export function runSetupWizard(callbacks: SetupCallbacks, options: SetupWizardOptions = {}): Promise<SetupResult> {
@@ -112,6 +121,7 @@ type Phase =
   | { kind: 'n8n-project'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; projects: IProject[]; cursor: number }
   | { kind: 'n8n-syncfolder'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; project: IProject; def: string; err?: string }
   | { kind: 'n8n-saving'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; project: IProject; syncFolder: string; log?: string }
+  | { kind: 'llm-proxy-setup'; url: string; runtimeSource: 'managed-local' | 'external'; status: 'detecting' | 'ready' | 'skipped' | 'failed'; mode?: YagrLlmProxyConfig['mode']; relayUrl?: string; err?: string; cursor: number }
   | { kind: 'n8n-local-installing'; startedAt: number; strategy: 'docker' | 'direct' | 'auto' }
   | { kind: 'n8n-local-ready'; url: string; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
@@ -197,7 +207,7 @@ function Rule(): JSX.Element {
   return <Text dimColor>{'─'.repeat(56)}</Text>;
 }
 
-function Header({ phase, mode }: { phase: Phase; mode: 'full' | 'llm-only' }): JSX.Element {
+function Header({ phase, mode }: { phase: Phase; mode: 'full' | 'llm-only' | 'proxy-only' }): JSX.Element {
   const section = sectionFor(phase);
   const idx = sectionIndex(phase);
   const isDone = phase.kind === 'done' || phase.kind === 'cancelled' || phase.kind === 'error';
@@ -502,6 +512,14 @@ function SetupWizard({ callbacks, options, onDone }: {
   const mode = options?.mode ?? 'full';
 
   const [phase, setPhase] = useState<Phase>(() => {
+    if (mode === 'proxy-only' || (mode === 'llm-only' && !callbacks.isLlmProxyEnabled() && n8nDef.projectId)) {
+      const n8nUrl = n8nDef.url;
+      // Default to managed-local for localhost URLs when runtimeSource not saved
+      const runtimeSource = n8nDef.runtimeSource
+        ?? (n8nUrl.includes('localhost') || n8nUrl.includes('127.0.0.1') ? 'managed-local' : 'external');
+      return { kind: 'llm-proxy-setup', url: n8nUrl, runtimeSource, status: 'detecting', cursor: 0 };
+    }
+
     if (mode === 'llm-only') {
       const llmProvider = llmDef.provider;
       if (llmProvider) {
@@ -620,16 +638,7 @@ function SetupWizard({ callbacks, options, onDone }: {
       try {
         await callbacks.saveN8nConfig({ url: phase.url, apiKey: phase.apiKey, project: phase.project, syncFolder: phase.syncFolder, runtimeSource: phase.runtimeSource });
         if (guard !== asyncGuard.current) return;
-        const llmProvider = llmDef.provider;
-        if (llmProvider) {
-          const existingApiKey = llmDef.getApiKey(llmProvider);
-          const existingModel = llmDef.getDefaultModel(llmProvider);
-          if (existingModel && (existingApiKey || !providerRequiresApiKey(llmProvider))) {
-            setPhase({ kind: 'llm-reuse-config', provider: llmProvider, apiKey: existingApiKey ?? '', model: existingModel, cursor: 0 });
-            return;
-          }
-        }
-        setPhase({ kind: 'llm-provider', initial: llmProvider, cursor: llmProvider ? VALID_PROVIDERS.indexOf(llmProvider) : 0 });
+        setPhase({ kind: 'llm-proxy-setup', url: phase.url, runtimeSource: phase.runtimeSource, status: 'detecting', cursor: 0 });
       } catch (err) {
         if (guard !== asyncGuard.current) return;
         setPhase({ kind: 'error', message: (err as Error).message });
@@ -637,6 +646,31 @@ function SetupWizard({ callbacks, options, onDone }: {
       }
     })();
   }, [phase.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── llm-proxy-setup: auto-detect and start the relay ──────────────────────
+  useEffect(() => {
+    if (phase.kind !== 'llm-proxy-setup' || phase.status !== 'detecting') return;
+    const guard = ++asyncGuard.current;
+    void (async () => {
+      try {
+        const result = await callbacks.setupLlmProxy(phase.runtimeSource, phase.url);
+        if (guard !== asyncGuard.current) return;
+        setPhase((p) => ({
+          ...(p as Extract<Phase, { kind: 'llm-proxy-setup' }>),
+          status: 'ready',
+          mode: result.mode,
+          relayUrl: result.credentialBaseUrl,
+        }));
+      } catch (err) {
+        if (guard !== asyncGuard.current) return;
+        setPhase((p) => ({
+          ...(p as Extract<Phase, { kind: 'llm-proxy-setup' }>),
+          status: 'failed',
+          err: (err as Error).message,
+        }));
+      }
+    })();
+  }, [phase.kind, (phase as Extract<Phase, { kind: 'llm-proxy-setup' }>).status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (phase.kind !== 'llm-models-loading') return;
@@ -1069,11 +1103,51 @@ function SetupWizard({ callbacks, options, onDone }: {
           setTextValue('');
         }
       } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'llm-proxy-setup' && (phase.status === 'ready' || phase.status === 'failed')) {
+      const maxCursor = 1; // 0=accept/continue, 1=skip
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(maxCursor, phase.cursor + 1) });
+      else if (key.return) {
+        const goToLlm = () => {
+          if (mode === 'proxy-only') {
+            setPhase({ kind: 'done', n8nHost: '', n8nProject: '', provider: '', model: '', surfaces: [] });
+            setTimeout(() => { onDone({ ok: true }); app.exit(); }, 500);
+            return;
+          }
+          const llmProvider = llmDef.provider;
+          if (llmProvider) {
+            const apiKey = llmDef.getApiKey(llmProvider);
+            const model = llmDef.getDefaultModel(llmProvider);
+            if (model && (apiKey || !providerRequiresApiKey(llmProvider))) {
+              setPhase({ kind: 'llm-reuse-config', provider: llmProvider, apiKey: apiKey ?? '', model, cursor: 0 });
+              return;
+            }
+          }
+          setPhase({ kind: 'llm-provider', initial: llmProvider, cursor: llmProvider ? VALID_PROVIDERS.indexOf(llmProvider) : 0 });
+        };
+        if (phase.cursor === 0 && phase.status === 'ready' && phase.mode && phase.relayUrl) {
+          // Accept: save llmProxy config then proceed
+          callbacks.saveLlmProxyConfig({
+            enabled: true,
+            mode: phase.mode,
+            credentialBaseUrl: phase.relayUrl,
+            dockerHostAddress: (phase.mode === 'docker') ? phase.relayUrl.replace(/^http:\/\//, '').replace(/:\d+.*/, '') : undefined,
+            tunnelUrl: (phase.mode === 'tunnel') ? phase.relayUrl.replace(/\/v1$/, '') : undefined,
+            consentVersion: '1',
+            consentAcceptedAt: new Date().toISOString(),
+          });
+          goToLlm();
+        } else {
+          // Skip
+          goToLlm();
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
   const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
-    || (phase.kind === 'llm-model' && phase.models.length > 0);
+    || (phase.kind === 'llm-model' && phase.models.length > 0)
+    || (phase.kind === 'llm-proxy-setup' && (phase.status === 'ready' || phase.status === 'failed'));
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') return;
@@ -1274,6 +1348,38 @@ function SetupWizard({ callbacks, options, onDone }: {
             <SpinnerDisplay message="Saving n8n configuration and refreshing workspace…" frame={spinnerFrame} />
           </Box>
         );
+
+      case 'llm-proxy-setup': {
+        const isDetecting = phase.status === 'detecting';
+        const modeLabel: Record<NonNullable<typeof phase.mode>, string> = { local: 'local loopback', docker: 'Docker host bridge', tunnel: 'Cloudflare Tunnel' };
+        return (
+          <Box flexDirection="column" gap={1}>
+            <FieldLabel label="Yagr LLM Proxy (optional)" />
+            {isDetecting
+              ? <SpinnerDisplay message="Detecting network mode…" frame={spinnerFrame} />
+              : phase.status === 'failed'
+                ? <>
+                    <Text color="yellow">  Relay setup failed: {phase.err}</Text>
+                    <SelectList options={['Skip']} cursor={0} getLabel={(v) => v} maxVisibleRows={2} maxLineWidth={listLineWidth} />
+                  </>
+                : <>
+                    <Text dimColor>  Yagr can run a local OpenAI-compatible relay so n8n Chat Model nodes use</Text>
+                    <Text dimColor>  your configured provider without requiring a separate API key in n8n.</Text>
+                    <Text dimColor>  Mode detected: <Text bold>{phase.mode ? modeLabel[phase.mode] : '?'}</Text>  ·  URL: <Text bold>{phase.relayUrl}</Text></Text>
+                    <Text dimColor>  Consent is stored in ~/.yagr/yagr-config.json and never shared.</Text>
+                    <SelectList
+                      options={['Enable Yagr LLM Proxy', 'Skip'] as const}
+                      cursor={phase.cursor}
+                      getLabel={(v) => v}
+                      maxVisibleRows={3}
+                      maxLineWidth={listLineWidth}
+                    />
+                  </>
+            }
+            {!isDetecting && <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />}
+          </Box>
+        );
+      }
 
       case 'llm-reuse-config':
         return (

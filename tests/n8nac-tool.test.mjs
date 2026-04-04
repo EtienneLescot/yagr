@@ -30,16 +30,12 @@ test('n8nac tool schema accepts Yagr-specific helper actions', () => {
     action: 'llm_provider_options',
     nodeName: 'Agent 1',
   });
-  const warningCheck = tool.parameters.safeParse({
-    action: 'yagr_proxy_warning_check',
-  });
-  const warningAccept = tool.parameters.safeParse({
-    action: 'yagr_proxy_warning_accept',
+  const relayStart = tool.parameters.safeParse({
+    action: 'yagr_proxy_relay_start',
   });
 
   assert.equal(providerOptions.success, true);
-  assert.equal(warningCheck.success, true);
-  assert.equal(warningAccept.success, true);
+  assert.equal(relayStart.success, true);
 });
 
 test('n8nac llm_provider_options exposes Yagr Proxy as available and frictionless', async () => {
@@ -222,26 +218,18 @@ test('n8nac command push recovers workflow metadata from local sync state when C
   }
 });
 
-test('n8nac warning consent actions persist one-time yagr proxy acceptance', async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nac-warning-'));
+test('n8nac llm_provider_options returns yagrProxyEnabled flag', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nac-proxy-'));
   const previousYagrHome = process.env.YAGR_HOME;
 
   try {
     process.env.YAGR_HOME = tempDir;
     const tool = createN8nAcTool();
 
-    const before = await tool.execute({ action: 'yagr_proxy_warning_check' });
-    assert.equal(before.accepted, false);
-    assert.equal(typeof before.warningMessage, 'string');
-    assert.equal(before.warningVersion, 'yagr-proxy-v1');
-
-    const accepted = await tool.execute({ action: 'yagr_proxy_warning_accept' });
-    assert.equal(accepted.accepted, true);
-    assert.equal(accepted.warningVersion, 'yagr-proxy-v1');
-
-    const after = await tool.execute({ action: 'yagr_proxy_warning_check' });
-    assert.equal(after.accepted, true);
-    assert.equal(typeof after.acceptedAt, 'string');
+    // By default proxy is disabled
+    const result = await tool.execute({ action: 'llm_provider_options', nodeName: null });
+    assert.equal(result.yagrProxyEnabled, false);
+    assert.equal(typeof result.next, 'string');
   } finally {
     if (previousYagrHome === undefined) {
       delete process.env.YAGR_HOME;

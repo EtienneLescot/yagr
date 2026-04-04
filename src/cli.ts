@@ -39,7 +39,7 @@ import {
 } from './n8n-local/managed-runtime.js';
 import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { readManagedN8nState } from './n8n-local/state.js';
-import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrLlmSetup, runYagrSetup } from './setup.js';
+import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrLlmSetup, runYagrLlmProxySetup, runYagrSetup } from './setup.js';
 import { YagrSetupApplicationService } from './setup/application-services.js';
 import { openExternalUrl } from './system/open-external.js';
 import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
@@ -49,7 +49,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open';
   startTarget?: 'webui' | 'tui';
   n8nLocalRuntime?: 'docker' | 'direct';
   prompt?: string;
@@ -137,11 +137,6 @@ function parseArgs(argv: string[]): ParsedArgs {
     startIndex = 1;
   }
 
-  if (argv[0] === 'llm' && argv[1] === 'setup') {
-    parsed.command = 'llm-setup';
-    startIndex = 2;
-  }
-
   if (argv[0] === 'llm-setup') {
     parsed.command = 'llm-setup';
     startIndex = 1;
@@ -165,6 +160,11 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (argv[0] === 'gateway' && argv[1] === 'status') {
     parsed.command = 'gateway-status';
     return parsed;
+  }
+
+  if (argv[0] === 'llm-proxy-setup') {
+    parsed.command = 'llm-proxy-setup';
+    startIndex = 1;
   }
 
   if (argv[0] === 'proxy' && argv[1] === 'start') {
@@ -635,7 +635,8 @@ Usage: yagr <command> [options]
 
 Commands:
   setup                        Run the setup wizard
-  llm setup                    Run only the LLM setup wizard
+  llm-setup                    Run only the LLM setup wizard
+  llm-proxy-setup              Configure the LLM proxy only
   start [tui|webui]            Start configured gateway(s), or a specific UI
   tui                          Open an interactive terminal chat session
   webui                        Open the web interface
@@ -790,6 +791,11 @@ async function main(): Promise<void> {
         process.env.YAGR_DEBUG_MODEL_DISCOVERY = '1';
       }
       await runYagrLlmSetup(configService);
+      return;
+    }
+
+    if (args.command === 'llm-proxy-setup') {
+      await runYagrLlmProxySetup(configService);
       return;
     }
 
