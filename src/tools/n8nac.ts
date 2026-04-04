@@ -8,6 +8,7 @@ import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { extractN8nacOperation, splitN8nacArgv } from './n8nac-command.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
+import { ensureN8nRelayServer, N8N_RELAY_CREDENTIAL_NAME, N8N_RELAY_FAKE_API_KEY } from '../llm/n8n-relay-server.js';
 import { relativeWorkspacePath, resolveWorkspacePath, truncateText, workspaceRoot } from './workspace-utils.js';
 
 type RunResult = {
@@ -36,6 +37,7 @@ const N8NAC_ACTIONS = [
   'llm_provider_options',
   'yagr_proxy_warning_check',
   'yagr_proxy_warning_accept',
+  'yagr_proxy_relay_start',
 ] as const;
 
 type N8nAcAction = typeof N8NAC_ACTIONS[number];
@@ -48,16 +50,25 @@ type LlmProviderOption = {
   label: string;
   credentialType: string;
   frictionless: boolean;
+  available: boolean;
+  note?: string;
 };
 
 function getLlmProviderCatalog(): LlmProviderOption[] {
   return [
-    { id: 'yagr', label: 'Yagr Proxy (no API key)', credentialType: 'openAiApi', frictionless: true },
-    { id: 'openai', label: 'OpenAI', credentialType: 'openAiApi', frictionless: false },
-    { id: 'anthropic', label: 'Anthropic', credentialType: 'anthropicApi', frictionless: false },
-    { id: 'google', label: 'Google Gemini', credentialType: 'googlePalmApi', frictionless: false },
-    { id: 'mistral', label: 'Mistral', credentialType: 'mistralCloudApi', frictionless: false },
-    { id: 'openrouter', label: 'OpenRouter', credentialType: 'openRouterApi', frictionless: false },
+    {
+      id: 'yagr',
+      label: 'Yagr Proxy',
+      credentialType: 'openAiApi',
+      frictionless: true,
+      available: true,
+      note: 'Yagr runs a local OpenAI-compatible relay server that forwards requests to the LLM provider configured in Yagr (any provider — Copilot, OpenAI OAuth, Anthropic, OpenRouter, etc.). No API key required in n8n; Yagr must be running during workflow execution.',
+    },
+    { id: 'openai', label: 'OpenAI', credentialType: 'openAiApi', frictionless: false, available: true },
+    { id: 'anthropic', label: 'Anthropic', credentialType: 'anthropicApi', frictionless: false, available: true },
+    { id: 'google', label: 'Google Gemini', credentialType: 'googlePalmApi', frictionless: false, available: true },
+    { id: 'mistral', label: 'Mistral', credentialType: 'mistralCloudApi', frictionless: false, available: true },
+    { id: 'openrouter', label: 'OpenRouter', credentialType: 'openRouterApi', frictionless: false, available: true },
   ];
 }
 
@@ -546,7 +557,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       commandArgv: nullify(obj.commandArgv),
     };
   }, z.object({
-    action: z.enum(N8NAC_ACTIONS).describe('Use action="command" for normal n8nac usage. The other actions are Yagr-specific helpers for provider menus and one-time warning state.'),
+    action: z.enum(N8NAC_ACTIONS).describe('Use action="command" for normal n8nac usage. The other actions are Yagr-specific helpers: llm_provider_options lists available LLM providers, yagr_proxy_warning_check/accept manage the one-time compliance warning, yagr_proxy_relay_start starts the local Yagr relay and returns connection info for creating the n8n credential.'),
     nodeName: z.string().nullable().describe('Optional workflow node name used for contextual provider-choice prompts.'),
     commandArgs: z.string().nullable().describe('Generic raw n8nac argument string for action="command", for example "workflow credential-required wf_123 --json".'),
     commandArgv: z.array(z.string()).nullable().describe('Generic raw n8nac argv for action="command", preferred over commandArgs when arguments contain spaces.'),
@@ -639,7 +650,19 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           },
           credentialListExitCode: credentialsResult.exitCode,
           credentialListStderr: truncateText(credentialsResult.stderr),
-          next: 'Ask the user which provider to use for this node. Prefer existing credentials; create a new one only if needed.',
+          next: 'Ask the user which provider to use for this node. Prefer existing credentials; create a new one only if needed. Only offer providers marked available=true. For Yagr Proxy (frictionless, no API key), call yagr_proxy_relay_start to get the relay URL before creating the credential.',
+        };
+      }
+
+      if (action === 'yagr_proxy_relay_start') {
+        const relay = await ensureN8nRelayServer();
+        return {
+          port: relay.port,
+          baseUrl: relay.baseUrl,
+          apiKey: N8N_RELAY_FAKE_API_KEY,
+          credentialName: N8N_RELAY_CREDENTIAL_NAME,
+          credentialType: 'openAiApi',
+          next: `Relay is running. Create an openAiApi credential named "${N8N_RELAY_CREDENTIAL_NAME}" with baseUrl=${relay.baseUrl} and apiKey=${N8N_RELAY_FAKE_API_KEY} using the n8nac command action, then assign it to the node.`,
         };
       }
 

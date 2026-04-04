@@ -54,6 +54,8 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
     assert.match(prompt, /llm_provider_options/i);
     assert.match(prompt, /yagr_proxy_warning_check/i);
     assert.match(prompt, /yagr_proxy_warning_accept/i);
+    assert.match(prompt, /only recommend providers whose metadata says available=true/i);
+    assert.match(prompt, /yagr_proxy_relay_start/i);
     assert.match(prompt, /Keep final user-facing summaries concise/i);
     // workspace instructions injected verbatim
     assert.match(prompt, /remote n8n instance, you MUST run n8nac pull/i);
