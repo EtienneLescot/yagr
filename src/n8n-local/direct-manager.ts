@@ -56,7 +56,9 @@ export async function installManagedDirectN8n(options: { port?: number } = {}): 
       N8N_HOST: '127.0.0.1',
       N8N_LISTEN_ADDRESS: '0.0.0.0',
       N8N_PROTOCOL: 'http',
-      N8N_EDITOR_BASE_URL: `http://127.0.0.1:${port}`,
+      // When a tunnel is active, set the editor base URL to the tunnel public URL
+      // so n8n doesn't require the Editor-Version header for IDE auth.
+      N8N_EDITOR_BASE_URL: getActiveTunnelState()?.publicUrl ?? `http://127.0.0.1:${port}`,
       N8N_SECURE_COOKIE: 'false',
       N8N_USER_FOLDER: paths.dataDir,
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'true',

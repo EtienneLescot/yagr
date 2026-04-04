@@ -1,6 +1,7 @@
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { buildManagedN8nWorkflowOpenDataUrl } from '../n8n-local/browser-auth.js';
 import { ManagedN8nOwnerCredentialService } from '../n8n-local/owner-credentials.js';
+import { buildLocalWorkflowOpenBridgeUrl, ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 
 export interface WorkflowOpenLink {
   openUrl: string;
@@ -46,17 +47,15 @@ export function resolveWorkflowOpenLink(
     ownerCredentialService.get(targetUrl.origin);
 
   // If we have credentials, generate the self-contained auth URL.
-  // The data: URI works via tunnels too — the browser POSTs through the tunnel to n8n.
+  // Use the local HTTP bridge (not data: URI) so the form POST works without
+  // CORS restrictions and the page can redirect after login.
   if (ownerCredentials) {
-    // Build the login URL using the resolved target origin (tunnel if active)
-    // so the POST request goes through the same origin as the workflow URL.
-    const loginUrl = new URL('/rest/login', resolvedTarget.origin).toString();
+    // Ensure the local bridge server is running
+    ensureLocalWorkflowOpenBridgeRunning().catch(() => {
+      // Bridge start failure is non-fatal — fall through to direct URL.
+    });
     return {
-      openUrl: buildManagedN8nWorkflowOpenDataUrl({
-        targetUrl: resolvedTarget.toString(),
-        loginUrl,
-        credentials: ownerCredentials,
-      }),
+      openUrl: buildLocalWorkflowOpenBridgeUrl(resolvedTarget.toString()),
       targetUrl: resolvedTarget.toString(),
       via: 'self-contained-auth',
     };
