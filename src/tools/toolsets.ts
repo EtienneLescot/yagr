@@ -47,11 +47,5 @@ export const SYNTHETIC_RUNTIME_TOOL_NAMES = [
   'n8nac',
 ] as const;
 
-export const POST_SYNC_RUNTIME_TOOL_NAMES = [
-  'reportProgress',
-  'requestRequiredAction',
-  'presentWorkflowResult',
-] as const;
-
 export type YagrToolName =
   | typeof FULL_RUNTIME_TOOL_NAMES[number];

@@ -290,14 +290,17 @@ function EmptyState(): JSX.Element {
 }
 
 function RequiredActionCard({ actions }: { actions: YagrRequiredAction[] }): JSX.Element {
+  const hasBlocking = actions.some((a) => a.blocking !== false);
   return (
     <Box flexDirection="column">
-      <Text color="red" bold>Run blocked</Text>
-      <Text dimColor>Yagr is waiting for a user action before it can continue cleanly.</Text>
+      {hasBlocking
+        ? <Text color="red" bold>Run blocked</Text>
+        : <Text color="yellow" bold>Follow-up actions</Text>}
+      <Text dimColor>{hasBlocking ? 'Yagr is waiting for a user action before it can continue cleanly.' : 'These actions are optional but recommended.'}</Text>
       <Box flexDirection="column" marginTop={1}>
         {actions.map((action) => (
           <Box key={action.id} flexDirection="column" marginBottom={1}>
-            <Text color={action.kind === 'permission' ? 'yellow' : 'red'} bold>{action.title}</Text>
+            <Text color={action.kind === 'permission' ? 'yellow' : action.blocking === false ? 'cyan' : 'red'} bold>{action.title}</Text>
             <Text>{formatRequiredAction(action)}</Text>
           </Box>
         ))}
@@ -803,13 +806,14 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     return truncateText(lastUserPrompt.replace(/\s+/g, ' ').trim(), Math.max(24, Math.floor(terminalWidth * 0.65)));
   }, [lastUserPrompt, terminalWidth]);
 
+  const hasBlockingActions = pendingRequiredActions.some((a) => a.blocking !== false);
   const idleIcon = currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
   const statusText = isRunning ? activeOperationText : phaseStatusText;
   const latestWorkflowTarget = workflowEmbeds.length > 0 ? (workflowEmbeds[workflowEmbeds.length - 1]?.targetUrl ?? workflowEmbeds[workflowEmbeds.length - 1]?.url) : undefined;
   const mainTitle = historyOpen
     ? 'Full history'
     : pendingRequiredActions.length > 0
-      ? 'Action required'
+      ? (hasBlockingActions ? 'Action required' : 'Follow-up actions')
       : liveAssistantText
         ? 'Response in progress'
         : latestAssistantText
@@ -818,7 +822,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   const mainSubtitle = historyOpen
     ? 'plain transcript, terminal selection and scroll'
     : pendingRequiredActions.length > 0
-      ? 'run blocked'
+      ? (hasBlockingActions ? 'run blocked' : 'non-blocking')
       : liveAssistantText
         ? 'generation in progress'
         : latestAssistantText
@@ -831,7 +835,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
         <Text color="cyan" bold>Yagr <Text dimColor>{workspaceLabel}</Text></Text>
       </Box>
 
-      <Panel title={mainTitle} subtitle={mainSubtitle} color={historyOpen ? 'yellow' : pendingRequiredActions.length > 0 ? 'red' : 'cyan'}>
+      <Panel title={mainTitle} subtitle={mainSubtitle} color={historyOpen ? 'yellow' : (pendingRequiredActions.length > 0 && hasBlockingActions) ? 'red' : pendingRequiredActions.length > 0 ? 'yellow' : 'cyan'}>
         {historyOpen ? (
           historyLines.length === 0 ? (
             <Text dimColor>No events.</Text>
