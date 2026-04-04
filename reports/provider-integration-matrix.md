@@ -1,7 +1,7 @@
 # Provider Integration Matrix
 
-- Generated at: 2026-04-01T13:05:25.439Z
-- Providers: `Gemini (google)`
+- Generated at: 2026-04-01T13:20:19.449Z
+- Providers: `Claude (anthropic)`
 - Timeouts: setup/model=60000ms, inference=75000ms
 - Advanced scenario: enabled (timeout=180000ms)
 
@@ -12,39 +12,31 @@
 | setup | 1 | 0 | 0 |
 | model-listing | 1 | 0 | 0 |
 | inference | 1 | 0 | 0 |
-| advanced-scenario | 1 | 0 | 0 |
+| advanced-scenario | 0 | 1 | 0 |
 
 ## Provider Overview
 
 | Provider | Model | Tooling | Setup | Model Listing | Inference | Advanced Scenario |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Gemini (google)` | `gemini-3-flash-preview` | `native` | **PASS**<br>API key detected in environment. | **PASS**<br>29 models: gemini-2.0-flash, gemini-2.0-flash-001, gemini-2.0-flash-lite, gemini-2.0-flash-lite-001, gemini-2.5-computer-use-preview-10-2025, gemini-2.5-flash, gemini-2.5-flash-image, gemini-2.5-flash-lite (+21 more) | **PASS**<br>Model gemini-3-flash-preview responded (2 chars). | **PASS**<br>CLI scenario succeeded with model gemini-3-flash-preview. checklist: n8nac=yes, actions=skills/skills/list/push/verify/list/push/list, push=yes, verify=yes, embed=yes, embedUrl=yes, embedDiagram=yes, workflowFile=yes, remoteCreated=1, blockingActions=0, followUps=0 |
+| `Claude (anthropic)` | `claude-haiku-4-5-20251001` | `native` | **PASS**<br>API key detected in environment. | **PASS**<br>9 models: claude-3-haiku-20240307, claude-haiku-4-5-20251001, claude-opus-4-1-20250805, claude-opus-4-20250514, claude-opus-4-5-20251101, claude-opus-4-6, claude-sonnet-4-20250514, claude-sonnet-4-5-20250929 (+1 more) | **PASS**<br>Model claude-haiku-4-5-20251001 responded (2 chars). | **FAIL**<br>Invalid authentication credentials (log: /home/etienne/repos/yagr/reports/provider-advanced-logs/anthropic-2026-04-01T13-20-18-684Z.log) checklist: n8nac=no, actions=none, push=no, verify=no, embed=no, embedUrl=no, embedDiagram=no, workflowFile=no, remoteCreated=0, blockingActions=0, followUps=0 |
 
 ## Detailed Results
 
-### Gemini (google)
+### Claude (anthropic)
 
-- Model: `gemini-3-flash-preview`
+- Model: `claude-haiku-4-5-20251001`
 - Tooling level: `native`
 - Setup: **PASS**
 - Model listing: **PASS**
 - Inference: **PASS**
-- Advanced scenario: **PASS**
+- Advanced scenario: **FAIL**
 
 **Notes**
 
 - Setup: API key detected in environment.
-- Model listing: 29 models: gemini-2.0-flash, gemini-2.0-flash-001, gemini-2.0-flash-lite, gemini-2.0-flash-lite-001, gemini-2.5-computer-use-preview-10-2025, gemini-2.5-flash, gemini-2.5-flash-image, gemini-2.5-flash-lite (+21 more)
-- Inference: Model gemini-3-flash-preview responded (2 chars).
-- Advanced scenario: CLI scenario succeeded with model gemini-3-flash-preview. checklist: n8nac=yes, actions=skills/skills/list/push/verify/list/push/list, push=yes, verify=yes, embed=yes, embedUrl=yes, embedDiagram=yes, workflowFile=yes, remoteCreated=1, blockingActions=0, followUps=0
+- Model listing: 9 models: claude-3-haiku-20240307, claude-haiku-4-5-20251001, claude-opus-4-1-20250805, claude-opus-4-20250514, claude-opus-4-5-20251101, claude-opus-4-6, claude-sonnet-4-20250514, claude-sonnet-4-5-20250929 (+1 more)
+- Inference: Model claude-haiku-4-5-20251001 responded (2 chars).
+- Advanced scenario: Invalid authentication credentials (log: /home/etienne/repos/yagr/reports/provider-advanced-logs/anthropic-2026-04-01T13-20-18-684Z.log) checklist: n8nac=no, actions=none, push=no, verify=no, embed=no, embedUrl=no, embedDiagram=no, workflowFile=no, remoteCreated=0, blockingActions=0, followUps=0
 - Advanced blocking actions: none
 - Advanced follow-ups: none
-
-**Advanced Final Response**
-
-```text
-Le workflow est prêt et a été enregistré puis poussé.
-Nom : yagr-it-google-1775048656975-final
-URL : http://localhost:5678/workflow/tCMYQelbvX2HPw3l
-```
 

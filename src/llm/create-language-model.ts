@@ -42,6 +42,10 @@ const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 const DEFAULT_RESERVED_OUTPUT_TOKENS = 8_192;
 const KNOWN_MODEL_PROVIDERS: YagrModelProvider[] = [...YAGR_MODEL_PROVIDERS];
 
+function preferEnvironmentCredentials(): boolean {
+  return /^(1|true|yes|on)$/i.test(String(process.env.YAGR_PREFER_ENV_CREDENTIALS || '').trim());
+}
+
 function inferContextWindowTokens(provider: YagrModelProvider, modelName: string): number {
   const normalized = modelName.toLowerCase();
 
@@ -172,11 +176,6 @@ function getApiKeyForProvider(
   provider: YagrModelProvider,
   configStore: YagrLanguageModelConfigStore,
 ): string | undefined {
-  const configured = configStore.getApiKey(provider);
-  if (configured) {
-    return configured;
-  }
-
   const byProvider: Partial<Record<YagrModelProvider, string[]>> = {
     openai: ['OPENAI_LLM_API_KEY', 'OPENAI_API_KEY'],
     anthropic: ['ANTHROPIC_LLM_API_KEY', 'ANTHROPIC_API_KEY'],
@@ -193,6 +192,15 @@ function getApiKeyForProvider(
     }
   }
 
+  if (preferEnvironmentCredentials()) {
+    return undefined;
+  }
+
+  const configured = configStore.getApiKey(provider);
+  if (configured) {
+    return configured;
+  }
+
   return undefined;
 }
 
@@ -201,6 +209,13 @@ function getBaseUrlForProvider(
   configStore: YagrLanguageModelConfigStore,
 ): string | undefined {
   const localConfig = configStore.getLocalConfig();
+  if (preferEnvironmentCredentials()) {
+    const envKey = `YAGR_${provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_BASE_URL`;
+    const envBaseUrl = process.env[envKey]?.trim();
+    if (envBaseUrl) {
+      return envBaseUrl;
+    }
+  }
   const configuredBaseUrl = localConfig.provider === provider ? localConfig.baseUrl : undefined;
   return configuredBaseUrl || getDefaultBaseUrlForProvider(provider);
 }

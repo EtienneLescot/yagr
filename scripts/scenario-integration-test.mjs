@@ -33,7 +33,7 @@ const { getYagrPaths } = await import('../dist/config/yagr-home.js');
 const { createN8nEngineFromWorkspace } = await import('../dist/config/load-n8n-engine-config.js');
 const { YagrAgent } = await import('../dist/agent.js');
 const { analyzeRunOutcome } = await import('../dist/runtime/outcome.js');
-const { YagrN8nConfigService } = await import('../dist/config/n8n-config-service.js');
+const { getDefaultBaseUrlForProvider } = await import('../dist/llm/provider-registry.js');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -298,12 +298,9 @@ function resolveTestN8nRuntime() {
   const configuredHost = String(process.env.N8N_HOST || process.env.YAGR_IT_N8N_HOST || '').trim();
   const configuredApiKey = String(process.env.N8N_API_KEY || process.env.YAGR_IT_N8N_API_KEY || '').trim();
   const configuredProjectId = String(process.env.N8N_PROJECT_ID || process.env.YAGR_IT_N8N_PROJECT_ID || '').trim();
-  const configService = new YagrN8nConfigService();
-  const localConfig = configService.getLocalConfig();
-  const fallbackHost = String(localConfig.host || '').trim();
-  const host = configuredHost || fallbackHost;
-  const apiKey = configuredApiKey || (host ? String(configService.getApiKey(host) || '').trim() : '');
-  const projectId = configuredProjectId || String(localConfig.projectId || '').trim();
+  const host = configuredHost;
+  const apiKey = configuredApiKey;
+  const projectId = configuredProjectId;
 
   return { host, apiKey, projectId, configured: Boolean(host && apiKey) };
 }
@@ -318,9 +315,7 @@ function createIsolatedHome(testN8nRuntime) {
   const tempHome = fs.mkdtempSync(path.join(baseDir, `${PROVIDER.replace(/[^a-z0-9]+/gi, '-')}-`));
   const sourcePaths = getYagrPaths();
 
-  copyIfExists(sourcePaths.yagrConfigPath, path.join(tempHome, 'yagr-config.json'));
-  copyIfExists(sourcePaths.yagrCredentialsPath, path.join(tempHome, 'credentials.json'));
-  copyIfExists(sourcePaths.n8nCredentialsPath, path.join(tempHome, 'n8n-credentials.json'));
+  writeIsolatedYagrConfig(tempHome);
   copyIfExists(sourcePaths.homeInstructionsPath, path.join(tempHome, 'AGENTS.md'));
   copyDirIfExists(sourcePaths.n8nWorkspaceDir, path.join(tempHome, 'n8n-workspace'));
 
@@ -334,22 +329,28 @@ function createIsolatedHome(testN8nRuntime) {
 
 function reconcileN8nRuntime(tempHome, { host, apiKey, projectId }) {
   const configPath = path.join(tempHome, 'n8n-workspace', 'n8nac-config.json');
-  const credentialsPath = path.join(tempHome, 'n8n-credentials.json');
   const localConfig = readJsonIfExists(configPath) || {};
-  const credentialStore = readJsonIfExists(credentialsPath) || {};
 
   if (host) localConfig.host = host;
   if (projectId) localConfig.projectId = projectId;
   if (!localConfig.syncFolder) localConfig.syncFolder = 'workflows';
 
-  const normalizedHost = host ? host.replace(/\/+$/, '').toLowerCase() : '';
-  const nextHosts = { ...(credentialStore.hosts || {}) };
-  if (host && apiKey) nextHosts[normalizedHost] = apiKey;
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, `${JSON.stringify(localConfig, null, 2)}\n`);
+}
+
+function writeIsolatedYagrConfig(tempHome) {
+  const configPath = path.join(tempHome, 'yagr-config.json');
+  const baseUrlEnvKey = `YAGR_${PROVIDER.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_BASE_URL`;
+  const baseUrl = String(process.env[baseUrlEnvKey] || '').trim() || getDefaultBaseUrlForProvider(PROVIDER);
+  const localConfig = {
+    provider: PROVIDER,
+    model: MODEL,
+    ...(baseUrl ? { baseUrl } : {}),
+  };
 
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify(localConfig, null, 2)}\n`);
-  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
-  fs.writeFileSync(credentialsPath, `${JSON.stringify({ ...credentialStore, hosts: nextHosts }, null, 2)}\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -363,6 +364,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
     YAGR_HOME: isolatedHome,
     YAGR_LAUNCH_CWD: process.cwd(),
     YAGR_ALLOW_N8N_ENV: '1',
+    YAGR_PREFER_ENV_CREDENTIALS: '1',
     ...(testN8nRuntime.host ? { N8N_HOST: testN8nRuntime.host } : {}),
     ...(testN8nRuntime.apiKey ? { N8N_API_KEY: testN8nRuntime.apiKey } : {}),
     ...(testN8nRuntime.projectId ? { N8N_PROJECT_ID: testN8nRuntime.projectId } : {}),
