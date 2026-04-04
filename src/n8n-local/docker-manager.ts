@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { promisify } from 'node:util';
 import { DEFAULT_N8N_PORT, inspectLocalN8nBootstrap } from './detect.js';
+import { getActiveTunnelState } from './n8n-tunnel.js';
 import {
   buildManagedN8nState,
   ensureManagedN8nDirs,
@@ -11,7 +12,6 @@ import {
   updateManagedN8nState,
   type ManagedN8nInstanceState,
 } from './state.js';
-import { getActiveTunnelState } from './n8n-tunnel.js';
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_N8N_IMAGE = 'docker.n8n.io/n8nio/n8n:stable';
@@ -149,6 +149,11 @@ export async function getManagedDockerN8nLogs(tail = 100): Promise<string> {
 }
 
 function buildEnvFile(input: { image: string; port: number; webhookUrl?: string }): string {
+  // When a tunnel is active, set the editor base URL to the tunnel public URL
+  // so n8n doesn't require the Editor-Version header for IDE auth.
+  const tunnelPublicUrl = getActiveTunnelState()?.publicUrl;
+  const editorBaseUrl = tunnelPublicUrl ?? `http://127.0.0.1:${input.port}`;
+
   const lines = [
     `N8N_IMAGE=${input.image}`,
     `YAGR_N8N_HOST_PORT=${input.port}`,
@@ -157,7 +162,7 @@ function buildEnvFile(input: { image: string; port: number; webhookUrl?: string 
     'N8N_HOST=127.0.0.1',
     'N8N_LISTEN_ADDRESS=0.0.0.0',
     'N8N_PROTOCOL=http',
-    `N8N_EDITOR_BASE_URL=http://127.0.0.1:${input.port}`,
+    `N8N_EDITOR_BASE_URL=${editorBaseUrl}`,
     'N8N_SECURE_COOKIE=false',
     'N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true',
     'QUEUE_HEALTH_CHECK_ACTIVE=true',
