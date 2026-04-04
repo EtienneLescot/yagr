@@ -963,6 +963,10 @@ function buildFinalAnswerFacts(
   if (outcome.successfulActions.length > 0) {
     lines.push(`successful_actions=${outcome.successfulActions.map(formatObservedAction).join(', ')}`);
   }
+  const testAction = outcome.successfulActions.find((a) => a.action === 'test');
+  if (testAction?.testOutput) {
+    lines.push(`test_output=${testAction.testOutput.slice(0, 2000)}`);
+  }
   if (outcome.blockingUnresolvedFailedActions.length > 0) {
     lines.push(`blocking_failed_actions=${outcome.blockingUnresolvedFailedActions.map(formatObservedAction).join(', ')}`);
   }
@@ -1019,6 +1023,7 @@ async function ensureFinalText(
   try {
     const result = await generateText({
       abortSignal: options.abortSignal,
+      temperature: 0,
       model: createLanguageModel(options),
       system: [
         'You are writing the final answer to the user after an agent run.',
@@ -1301,6 +1306,7 @@ async function executePhase(
   if (strategy.executionMode === 'generate') {
     const result = await generateText({
       abortSignal: options.abortSignal,
+      temperature: 0,
       model: createLanguageModel(options),
       system: systemPrompt,
       ...(modelInvocationTools ? { tools: modelInvocationTools as AllBuiltTools } : {}),
@@ -1343,6 +1349,7 @@ async function executePhase(
 
   const result = streamText({
     abortSignal: options.abortSignal,
+    temperature: 0,
     model: createLanguageModel(options),
     system: systemPrompt,
     ...(modelInvocationTools ? { tools: modelInvocationTools as AllBuiltTools } : {}),
@@ -1561,6 +1568,7 @@ export class YagrRunEngine {
       const inspectMaxSteps = Math.min(options.maxSteps ?? 8, runtimeStrategy.inspectMaxSteps);
       const inspectResult = await generateText({
         abortSignal: options.abortSignal,
+        temperature: 0,
         model: createLanguageModel(options),
         system: this.systemPrompt,
         ...(modelInvocationTools ? { tools: modelInvocationTools as AllBuiltTools } : {}),
@@ -1720,6 +1728,7 @@ export class YagrRunEngine {
             || finalOutcome.successfulValidate
             || finalOutcome.successfulPush
             || finalOutcome.successfulVerify
+            || finalOutcome.successfulTest
             || extractPresentedWorkflowFromJournal(state.journal)
             || finalOutcome.writtenFiles.length > 0
             || finalOutcome.updatedFiles.length > 0
