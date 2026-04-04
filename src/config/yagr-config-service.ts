@@ -63,6 +63,15 @@ export interface YagrLlmProxyConfig {
   consentAcceptedAt: string;
 }
 
+export type YagrShellCommandsMode = 'allow-all' | 'user-approved';
+
+export interface YagrShellCommandsConfig {
+  /** 'allow-all': every command is allowed. 'user-approved': only approved[] prefixes pass. */
+  mode: YagrShellCommandsMode;
+  /** Prefix list used when mode is 'user-approved'. Each entry is matched against the start of the command. */
+  approved?: string[];
+}
+
 export interface YagrLocalConfig {
   provider?: YagrModelProvider;
   model?: string;
@@ -71,6 +80,7 @@ export interface YagrLocalConfig {
   telegram?: YagrTelegramConfig;
   compliance?: YagrComplianceConfig;
   llmProxy?: YagrLlmProxyConfig;
+  shellCommands?: YagrShellCommandsConfig;
 }
 
 export interface YagrConfigStoreLike {
