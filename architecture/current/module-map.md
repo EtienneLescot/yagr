@@ -11,6 +11,7 @@ flowchart TD
     SRC --> RUNTIME[runtime/]
     SRC --> LLM[llm/]
     SRC --> TOOLS[tools/]
+    SRC --> MGR[manager-tooling/]
     SRC --> GATEWAY[gateway/]
     SRC --> SETUP[setup.ts and setup/]
     SRC --> CONFIG[config/]
@@ -22,9 +23,10 @@ flowchart TD
 
 Cette carte repond a la question "ou vit quoi ?" :
 
-- `runtime/` porte la boucle et les politiques d'execution
+- `runtime/` porte la boucle et les politiques d'execution (agnostique)
 - `llm/` porte les plugins providers, la metadata et la creation de modele
-- `tools/` porte les outils exposes au runtime
+- `tools/` porte les outils generalistes (FS, shell, HTTP)
+- `manager-tooling/` porte les outils yagr-manager (presentWorkflowResult, yagrProxy, YAGENTS.md)
 - `gateway/` porte les facades
 - `setup/` porte la couche applicative de configuration
 
@@ -146,34 +148,7 @@ Familles actuelles:
 
 - outils generalistes (FS, shell, HTTP) : `readFile`, `grep`, `listDir`, `writeFile`, `replaceInFile`, `moveFile`, `deleteFile`, `httpRequest`, `runScript`, `runShell`
 - outils de statut et interaction : `reportProgress`, `requestRequiredAction`
-- pont `n8nac` : `n8nac`
-- presentation : `presentWorkflowResult`
 - groupes normalises de surface outillage dans `toolsets.ts`
-
-La doctrine des trois couches (generaliste / n8nac / thin Yagr) est decrite dans `system-overview.md`.
-
-```mermaid
-flowchart LR
-    RT[Runtime]
-    POL[tool-runtime-strategy]
-    SETS[toolsets]
-    BT[buildTools]
-    GEN[Generaliste: FS, HTTP, shell]
-    UX[Progress and required actions]
-    CLI[n8nac bridge]
-    PRES[presentWorkflowResult]
-    ENG[Engine]
-
-    RT --> BT
-    RT --> POL
-    POL --> SETS
-    POL --> BT
-    BT --> GEN
-    BT --> UX
-    BT --> CLI
-    BT --> PRES
-    CLI --> ENG
-```
 
 Observation actuelle:
 
@@ -181,6 +156,22 @@ Observation actuelle:
 - `toolsets.ts` est le SSOT des groupes d'outils exposes au runtime
 - `build-tools.ts` applique la surface d'outils decidee par la strategie runtime au lieu de porter sa propre politique implicite
 - les noms d'outils sont generiques (`readFile`, `grep`, `listDir`…) et ne portent plus le prefixe workspace
+- les outils n8n-specific (`presentWorkflowResult`, `yagrProxy`) ont ete deplaces vers `src/manager-tooling/`
+
+### `src/manager-tooling/`
+
+Fichiers clefs:
+
+- `present-workflow.ts` — Tool `presentWorkflowResult` : presente un workflow n8n avec URL canonique resolue (host + workflowId, tunnel si actif)
+- `yagr-proxy.ts` — Tool `yagrProxy` : demarre le relay LLM et cree la credential n8n
+- `YAGENTS.md` — Instructions injectees dans le system prompt pour l'agent
+- `index.ts` — Barrel export
+
+Responsabilites:
+
+- outillage specifique yagr-manager, enregistre dynamiquement quand l'engine n8n est actif
+- resolution d'URL canonique depuis la config n8n persistee
+- l'agent reste agnostique : il utilise ces tools comme n'importe quels autres outils CLI
 
 ### `src/gateway/`
 
@@ -230,6 +221,7 @@ Note:
 
 - Boucle agentique: `src/agent.ts`, `src/runtime/*`
 - Providers: `src/llm/*`
-- Tooling: `src/tools/*`
+- Tooling generaliste: `src/tools/*`
+- Tooling manager: `src/manager-tooling/*`
 - Facades: `src/gateway/*`, `src/webui/*`
 - Setup: `src/setup.ts`, `src/setup/*`, `src/n8n-local/*`

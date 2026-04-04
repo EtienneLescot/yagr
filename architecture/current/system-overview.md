@@ -218,16 +218,24 @@ flowchart LR
 
 ### Tooling
 
+**Outils generalistes (`src/tools/`) :**
+
 - `src/tools/build-tools.ts`
 - `src/tools/toolsets.ts`
-- `src/tools/*.ts`
+- `src/tools/*.ts` (FS, shell, HTTP, status)
 - `src/runtime/tool-runtime-strategy.ts`
 - `src/runtime/policy-hooks.ts`
 
+**Tooling manager (`src/manager-tooling/`) :**
+
+- `src/manager-tooling/present-workflow.ts` — Tool `presentWorkflowResult`
+- `src/manager-tooling/yagr-proxy.ts` — Tool `yagrProxy`
+- `src/manager-tooling/YAGENTS.md` — Instructions injectees dans le system prompt
+
 Responsabilite actuelle:
 
-- construire la surface d'outils exposee au runtime
-- fournir des outils generalistes (FS, shell, HTTP) et des outils specifiques n8n (n8nac, presentWorkflowResult)
+- `src/tools/` : construire la surface d'outils generalistes exposee au runtime
+- `src/manager-tooling/` : outillage specifique yagr-manager, enregistre dynamiquement
 - normaliser les groupes d'outils et les contraintes post-sync
 - faire porter par la strategie runtime la selection de surface et le mode de tool calling
 
@@ -241,7 +249,7 @@ Les outils sont organises en trois couches :
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  COUCHE 1 — Capacites generalistes                              │
+│  COUCHE 1 — Capacites generalistes (src/tools/)                 │
 │                                                                 │
 │  readFile   grep   listDir                                      │
 │  ↳ absolute=true pour sortir du sandbox workspace              │
@@ -251,6 +259,7 @@ Les outils sont organises en trois couches :
 │  httpRequest   — appels HTTP arbitraires (API REST, relay…)    │
 │  runScript     — shell restraint (allowlist : build/test/git)  │
 │  runShell      — shell libre, opt-in via YAGR_ENABLE_SHELL=1   │
+│  reportProgress   requestRequiredAction                        │
 └─────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────┐
 │  COUCHE 2 — Orchestration n8n via n8nac (dependance externe)   │
@@ -259,11 +268,11 @@ Les outils sont organises en trois couches :
 │  n8nac action=yagr_proxy_relay_start — demarrage relay + cred  │
 └─────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────┐
-│  COUCHE 3 — Specificites Yagr (thin layer)                     │
+│  COUCHE 3 — Specificites Yagr (src/manager-tooling/)            │
 │                                                                 │
-│  presentWorkflowResult — URL + diagramme ASCII du workflow     │
-│  llm-relay-server.ts   — proxy LLM OpenAI-compatible           │
-│  n8n-tunnel.ts         — Cloudflare Tunnel exposure            │
+│  presentWorkflowResult — URL canonique + diagramme ASCII        │
+│  yagrProxy — proxy LLM + credential n8n                         │
+│  YAGENTS.md — instructions manager pour l'agent                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -292,6 +301,7 @@ Les outils d'ecriture restent intentionnellement sandboxes au workspace. Les out
 3. `runShell` reste opt-in, avec warning explicite dans sa description.
 4. `n8nac` reste une dependance externe, jamais reimplementee dans le core.
 5. `presentWorkflowResult` doit etre appele systematiquement quand l'agent manipule un workflow connu.
+6. Les outils n8n-specific vivent dans `src/manager-tooling/`, pas dans `src/tools/`.
 
 #### Observation actuelle
 
@@ -305,6 +315,7 @@ Les outils d'ecriture restent intentionnellement sandboxes au workspace. Les out
 - la resolution du runtime n8n est partagee entre guard runtime et bridge `n8nac`
 - `N8N_HOST` / `N8N_API_KEY` ne sont pris en compte que lorsque le harness active explicitement `YAGR_ALLOW_N8N_ENV=1`
 - les required actions non bloquantes ne forcent plus l'arret d'un run qui a deja un resultat concret
+- les outils n8n-specific (`presentWorkflowResult`, `yagrProxy`) ont ete extraits vers `src/manager-tooling/` pour que yagr-agent reste agnostique
 
 ### Gateway / facades
 

@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import type { YagrAgentState, YagrRunPhase, YagrRuntimeContext, YagrRuntimeHook } from '../types.js';
-import { resolveLocalWorkflowDiagram } from '../tools/present-workflow-result.js';
+import { resolveLocalWorkflowDiagram } from '../manager-tooling/present-workflow.js';
 import { resolveN8nRuntimeState, YagrN8nConfigService } from '../config/n8n-config-service.js';
 
 type ToolLike = {
