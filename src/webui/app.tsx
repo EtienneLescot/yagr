@@ -791,12 +791,12 @@ function HomePage({
                       />
                     </div>
                     <span className="contextStatusLabel">Context {Math.round(contextFillPercent)}%</span>
+                    {!runActive && (
+                      <button className="ghostButton compactButton" type="button" onClick={onCompactContext}>
+                        Compact
+                      </button>
+                    )}
                   </div>
-                  {!runActive && (
-                    <button className="ghostButton compactButton" type="button" onClick={onCompactContext}>
-                      Compact
-                    </button>
-                  )}
                 </div>
               )}
               <div className="composerActions">
