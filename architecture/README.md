@@ -47,9 +47,11 @@ architecture/
 ├── README.md
 ├── current/
 │   ├── README.md
-│   ├── system-overview.md
+│   ├── system-overview.md   ← vue d'ensemble + doctrine d'outillage
 │   ├── module-map.md
-│   └── runtime-flows.md
+│   ├── runtime-flows.md
+│   ├── n8n-local.md
+│   └── tui-ux.md
 └── target/
     └── backlog.md
 ```

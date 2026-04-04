@@ -143,11 +143,13 @@ flowchart LR
 
 Familles actuelles:
 
-- outils workflow/orchestrateur
-- outils workspace
-- outils de statut et interaction
-- pont `n8nac`
+- outils generalistes (FS, shell, HTTP) : `readFile`, `grep`, `listDir`, `writeFile`, `replaceInFile`, `moveFile`, `deleteFile`, `httpRequest`, `runScript`, `runShell`
+- outils de statut et interaction : `reportProgress`, `requestRequiredAction`
+- pont `n8nac` : `n8nac`
+- presentation : `presentWorkflowResult`
 - groupes normalises de surface outillage dans `toolsets.ts`
+
+La doctrine des trois couches (generaliste / n8nac / thin Yagr) est decrite dans `system-overview.md`.
 
 ```mermaid
 flowchart LR
@@ -155,8 +157,7 @@ flowchart LR
     POL[tool-runtime-strategy]
     SETS[toolsets]
     BT[buildTools]
-    WF[Workflow tools]
-    WS[Workspace tools]
+    GEN[Generaliste: FS, HTTP, shell]
     UX[Progress and required actions]
     CLI[n8nac bridge]
     PRES[presentWorkflowResult]
@@ -166,19 +167,19 @@ flowchart LR
     RT --> POL
     POL --> SETS
     POL --> BT
-    BT --> WF
-    BT --> WS
+    BT --> GEN
     BT --> UX
     BT --> CLI
     BT --> PRES
-    WF --> ENG
+    CLI --> ENG
 ```
 
 Observation actuelle:
 
-- les tools ne dependent plus du contrat `Engine` monolithique partout: ils consomment maintenant des ports cibles selon leur responsabilite
-- `toolsets.ts` est maintenant le SSOT des groupes d'outils exposes au runtime
+- les tools ne dependent plus du contrat `Engine` monolithique : ils consomment des ports cibles selon leur responsabilite
+- `toolsets.ts` est le SSOT des groupes d'outils exposes au runtime
 - `build-tools.ts` applique la surface d'outils decidee par la strategie runtime au lieu de porter sa propre politique implicite
+- les noms d'outils sont generiques (`readFile`, `grep`, `listDir`…) et ne portent plus le prefixe workspace
 
 ### `src/gateway/`
 
