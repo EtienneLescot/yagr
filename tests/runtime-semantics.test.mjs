@@ -263,7 +263,7 @@ test('later successful retry clears an earlier unresolved n8nac failure', () => 
         phase: 'validate',
         text: '',
         toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['skills', 'validate', 'demo.workflow.ts'] } }],
-        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1 } }],
+        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1, operation: 'validate' } }],
       },
     },
     {
@@ -280,7 +280,7 @@ test('later successful retry clears an earlier unresolved n8nac failure', () => 
         phase: 'validate',
         text: '',
         toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['skills', 'validate', 'demo.workflow.ts'] } }],
-        toolResults: [{ toolName: 'n8nac', result: { exitCode: 0 } }],
+        toolResults: [{ toolName: 'n8nac', result: { exitCode: 0, operation: 'validate' } }],
       },
     },
   ];
@@ -307,7 +307,7 @@ test('setup_check is ignored in observed n8nac failures', () => {
         phase: 'plan',
         text: '',
         toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['setup-check'] } }],
-        toolResults: [{ toolName: 'n8nac', result: { initialized: false } }],
+        toolResults: [{ toolName: 'n8nac', result: { initialized: false, operation: 'setup_check' } }],
       },
     },
   ];
@@ -334,7 +334,7 @@ test('push with built-in verify resolves prior verify failures and carries workf
         phase: 'verify',
         text: '',
         toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['verify', 'wf-1'] } }],
-        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1 } }],
+        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1, operation: 'verify' } }],
       },
     },
     {
@@ -355,6 +355,7 @@ test('push with built-in verify resolves prior verify failures and carries workf
           toolName: 'n8nac',
           result: {
             exitCode: 0,
+            operation: 'push',
             verified: true,
             workflowId: 'wf-1',
             workflowUrl: 'http://localhost:5678/workflow/wf-1',
@@ -388,7 +389,7 @@ test('exploratory setup failures stop being blocking once push and verify succee
         phase: 'plan',
         text: '',
         toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['init-auth'] } }],
-        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1 } }],
+        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1, operation: 'init_auth' } }],
       },
     },
     {
@@ -409,6 +410,7 @@ test('exploratory setup failures stop being blocking once push and verify succee
           toolName: 'n8nac',
           result: {
             exitCode: 0,
+            operation: 'push',
             verified: true,
             workflowId: 'wf-1',
             workflowUrl: 'http://localhost:5678/workflow/wf-1',
@@ -524,7 +526,7 @@ test('successful push counts as validate and verify evidence for completion gati
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', result: { exitCode: 0 } },
+          { toolName: 'n8nac', result: { exitCode: 0, operation: 'push' } },
         ],
       },
     },
@@ -572,7 +574,7 @@ test('grounded summary prefers a user-facing workflow completion message when a 
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', result: { exitCode: 0 } },
+          { toolName: 'n8nac', result: { exitCode: 0, operation: 'push' } },
         ],
       },
     },
@@ -627,7 +629,7 @@ test('grounded summary includes workflow URL from presentWorkflowResult when ava
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', result: { exitCode: 0 } },
+          { toolName: 'n8nac', result: { exitCode: 0, operation: 'push' } },
         ],
       },
     },

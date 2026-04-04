@@ -9,7 +9,6 @@ export type ObservedN8nacAction = {
   title?: string;
   validateFile?: string;
   exitCode?: number;
-  testOutput?: string;
 };
 
 export type RunOutcome = {
@@ -91,14 +90,14 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
 
           const observedAction: ObservedN8nacAction = {
             action,
-            success: (asNumber(result?.exitCode) ?? 1) === 0,
+            success: (asNumber(result?.exitCode) ?? 1) === 0
+              && (action !== 'test' || result?.asyncTrigger !== true || result?.executionConfirmed === true),
             filename: asString(result?.pushTarget),
             workflowId: asString(result?.workflowId),
             workflowUrl: asString(result?.workflowUrl),
             title: asString(result?.title),
             validateFile: asString(result?.validateFile),
-          testOutput: action === 'test' ? (asString(result?.stdout) ?? undefined) : undefined,
-        };
+          };
 
         n8nacActions.push(observedAction);
 
@@ -152,14 +151,7 @@ export function analyzeRunOutcome(journal: YagrRunJournalEntry[]): RunOutcome {
   const successfulPush = findSuccessfulAction(facts.n8nacActions, 'push');
   const successfulValidate = findSuccessfulAction(facts.n8nacActions, 'validate') ?? successfulPush;
   const successfulVerify = findSuccessfulAction(facts.n8nacActions, 'verify') ?? successfulPush;
-  // A test whose output is only {"message":"Workflow was started"} is an async webhook trigger:
-  // n8n accepted the HTTP request but the execution runs asynchronously and may have failed.
-  // Do not count it as a confirmed concrete result — the agent must follow up with execution list/get.
-  const successfulTestRaw = findSuccessfulAction(facts.n8nacActions, 'test');
-  const isUnconfirmedAsyncTrigger = successfulTestRaw?.testOutput
-    ? /workflow was started/i.test(successfulTestRaw.testOutput)
-    : false;
-  const successfulTest = isUnconfirmedAsyncTrigger ? undefined : successfulTestRaw;
+  const successfulTest = findSuccessfulAction(facts.n8nacActions, 'test');
   const blockingUnresolvedFailedActions = unresolvedFailedActions.filter((action) => {
     if (!(successfulPush && successfulVerify)) {
       return true;
