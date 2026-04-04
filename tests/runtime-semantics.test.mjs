@@ -667,6 +667,7 @@ test('grounded summary falls back to successful push metadata when no presentWor
             toolName: 'n8nac',
             result: {
               exitCode: 0,
+              operation: 'push',
               verified: true,
               workflowId: 'wf-3',
               workflowUrl: 'http://localhost:5678/workflow/wf-3',
@@ -711,6 +712,7 @@ test('final answer policy forces a grounded summary when a workflow URL is known
             toolName: 'n8nac',
             result: {
               exitCode: 0,
+              operation: 'push',
               verified: true,
               workflowId: 'wf-3',
               workflowUrl: 'http://localhost:5678/workflow/wf-3',
