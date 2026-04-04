@@ -48,6 +48,21 @@ export interface YagrComplianceConfig {
   yagrProxyCredentialWarning?: YagrComplianceConsentRecord;
 }
 
+export type YagrLlmProxyMode = 'local' | 'docker' | 'tunnel';
+
+export interface YagrLlmProxyConfig {
+  enabled: boolean;
+  mode: YagrLlmProxyMode;
+  /** URL to use when creating the n8n credential (may be docker host or tunnel) */
+  credentialBaseUrl: string;
+  /** docker bridge gateway address, only set when mode=docker */
+  dockerHostAddress?: string;
+  /** Cloudflare tunnel URL, only set when mode=tunnel */
+  tunnelUrl?: string;
+  consentVersion: string;
+  consentAcceptedAt: string;
+}
+
 export interface YagrLocalConfig {
   provider?: YagrModelProvider;
   model?: string;
@@ -55,6 +70,7 @@ export interface YagrLocalConfig {
   gateway?: YagrGatewayConfig;
   telegram?: YagrTelegramConfig;
   compliance?: YagrComplianceConfig;
+  llmProxy?: YagrLlmProxyConfig;
 }
 
 export interface YagrConfigStoreLike {
@@ -72,6 +88,9 @@ export interface YagrConfigStoreLike {
   clearTelegramBotToken(): void;
   getYagrProxyCredentialWarningConsent(): YagrComplianceConsentRecord | undefined;
   saveYagrProxyCredentialWarningConsent(record: YagrComplianceConsentRecord): YagrLocalConfig;
+  getLlmProxyConfig(): YagrLlmProxyConfig | undefined;
+  isLlmProxyEnabled(): boolean;
+  saveLlmProxyConfig(config: YagrLlmProxyConfig): YagrLocalConfig;
   clearLocalConfig?(): void;
   clearAllApiKeys?(): void;
 }
@@ -206,6 +225,18 @@ export class YagrConfigService {
         yagrProxyCredentialWarning: record,
       },
     }));
+  }
+
+  getLlmProxyConfig(): YagrLlmProxyConfig | undefined {
+    return this.getLocalConfig().llmProxy;
+  }
+
+  isLlmProxyEnabled(): boolean {
+    return this.getLocalConfig().llmProxy?.enabled === true;
+  }
+
+  saveLlmProxyConfig(config: YagrLlmProxyConfig): YagrLocalConfig {
+    return this.updateLocalConfig((localConfig) => ({ ...localConfig, llmProxy: config }));
   }
 
   private migrateLegacyCredentials(): void {
