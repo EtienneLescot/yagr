@@ -461,6 +461,14 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
       const mergedJournal = result.journal?.length ? result.journal : journal;
       const outcome = analyzeRunOutcome(mergedJournal);
       const assertion = await Promise.resolve(scenario.assert(result, outcome, toolEvents, testN8nRuntime));
+      const createdWorkflowIds = [
+        ...outcome.successfulActions
+          .filter((a) => a.workflowId)
+          .map((a) => a.workflowId),
+        ...outcome.failedActions
+          .filter((a) => a.workflowId)
+          .map((a) => a.workflowId),
+      ].filter((id, i, arr) => arr.indexOf(id) === i);
 
       return {
         status: assertion.pass ? 'PASS' : 'FAIL',
@@ -468,6 +476,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
         text: result.text || '',
         steps: result.steps || 0,
         timedOut: false,
+        createdWorkflowIds,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -517,7 +526,14 @@ for (const scenario of scenariosToRun) {
   process.stdout.write(`  → ${result.status} — ${result.note}\n`);
 }
 
-// Cleanup
+// Cleanup created workflows from n8n
+const createdWorkflowIds = results.flatMap((r) => r.createdWorkflowIds ?? []);
+if (createdWorkflowIds.length > 0 && testN8nRuntime.configured) {
+  process.stdout.write(`\nCleaning up ${createdWorkflowIds.length} workflow(s) created during tests…\n`);
+  await cleanupWorkflows(createdWorkflowIds, testN8nRuntime);
+}
+
+// Cleanup isolated home
 try { fs.rmSync(isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
 
 process.stdout.write('\n');
@@ -663,4 +679,25 @@ function truncate(text, max) {
 
 function escapeMd(text) {
   return String(text).replace(/\|/g, '\\|');
+}
+
+async function cleanupWorkflows(workflowIds, n8nRuntime) {
+  const { host, apiKey } = n8nRuntime;
+  const baseUrl = host.replace(/\/+$/, '');
+  const headers = { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' };
+
+  for (const id of workflowIds) {
+    try {
+      // Deactivate first (required before delete for active workflows)
+      await fetch(`${baseUrl}/api/v1/workflows/${id}/deactivate`, { method: 'POST', headers });
+      const res = await fetch(`${baseUrl}/api/v1/workflows/${id}`, { method: 'DELETE', headers });
+      if (res.ok) {
+        process.stdout.write(`  ✓ Deleted workflow ${id}\n`);
+      } else {
+        process.stdout.write(`  ✗ Could not delete workflow ${id} (HTTP ${res.status})\n`);
+      }
+    } catch (err) {
+      process.stdout.write(`  ✗ Error deleting workflow ${id}: ${err?.message ?? err}\n`);
+    }
+  }
 }
