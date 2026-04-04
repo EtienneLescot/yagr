@@ -34,11 +34,14 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
   //  (a) material work was attempted but produced no concrete result, OR
   //  (b) tooling was used only for read-only exploration and still produced neither
   //      a concrete result nor a structured blocker, OR
-  //  (c) the execute phase made zero tool calls — always requires a repair pass.
+  //  (c) the execute phase made zero tool calls AND produced no text — a blank
+  //      response with no tools always requires a repair pass, but a pure-text
+  //      reply (e.g. answering a conversational message) is a valid completion.
+  const hasTextReply = input.text.trim().length > 0;
   const needsContinuation =
     (input.attemptedMaterialWork && !input.hasConcreteResult && blockingRequiredActions.length === 0)
     || (usedOnlyReadOnlyTooling && !input.hasConcreteResult && blockingRequiredActions.length === 0)
-    || (input.executePhaseCalledNoTools && !input.hasConcreteResult && blockingRequiredActions.length === 0);
+    || (input.executePhaseCalledNoTools && !input.hasConcreteResult && !hasTextReply && blockingRequiredActions.length === 0);
 
   if (blockingRequiredActions.length > 0) {
     reasons.push('Required action is still open.');
