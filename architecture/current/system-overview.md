@@ -145,22 +145,85 @@ flowchart LR
 Responsabilite actuelle:
 
 - construire la surface d'outils exposee au runtime
-- fournir des outils workspace, n8nac, workflow et required action
+- fournir des outils generalistes (FS, shell, HTTP) et des outils specifiques n8n (n8nac, presentWorkflowResult)
 - normaliser les groupes d'outils et les contraintes post-sync
 - faire porter par la strategie runtime la selection de surface et le mode de tool calling
 
-Observation actuelle:
+#### Doctrine d'outillage
 
-- `src/tools/toolsets.ts` definit maintenant le SSOT des groupes d'outils runtime (`core`, `discovery`, `edit`, `workflow execution`)
-- `src/runtime/tool-runtime-strategy.ts` choisit maintenant explicitement la surface exposee, le mode `parallel / sequential / disabled` et les tools autorises apres un `push/verify`
+> Yagr est un agent generaliste de codage et d'orchestration, avec une fine surcouche d'outillage dediee a n8n.
+
+La regle est simple : **qui peut le plus peut le moins**. Un agent capable de lire n'importe quel fichier peut lire un fichier de workflow. Un outil de recherche generique peut chercher dans un workspace n8nac. L'outillage n8n-specifique ne doit couvrir que ce qu'un outil generaliste ne peut pas faire par construction.
+
+Les outils sont organises en trois couches :
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  COUCHE 1 — Capacites generalistes                              │
+│                                                                 │
+│  readFile   grep   listDir                                      │
+│  ↳ absolute=true pour sortir du sandbox workspace              │
+│                                                                 │
+│  writeFile  replaceInFile  moveFile  deleteFile                 │
+│                                                                 │
+│  httpRequest   — appels HTTP arbitraires (API REST, relay…)    │
+│  runScript     — shell restraint (allowlist : build/test/git)  │
+│  runShell      — shell libre, opt-in via YAGR_ENABLE_SHELL=1   │
+└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  COUCHE 2 — Orchestration n8n via n8nac (dependance externe)   │
+│                                                                 │
+│  n8nac action=command          — tout npx n8nac <args>         │
+│  n8nac action=yagr_proxy_relay_start — demarrage relay + cred  │
+│  n8nac action=llm_provider_options   — liste des providers     │
+└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  COUCHE 3 — Specificites Yagr (thin layer)                     │
+│                                                                 │
+│  presentWorkflowResult — URL + diagramme ASCII du workflow     │
+│  llm-relay-server.ts   — proxy LLM OpenAI-compatible           │
+│  llm-proxy-setup       — wizard de configuration credential    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Outils FS et leur scope :
+
+| Outil | Scope par defaut | Scope etendu |
+|---|---|---|
+| `readFile` | workspace n8nac | `absolute=true` → tout le FS |
+| `grep` | workspace n8nac | `absolute=true` → tout le FS |
+| `listDir` | workspace n8nac | `absolute=true` → tout le FS |
+| `writeFile` | workspace n8nac | — |
+| `replaceInFile` | workspace n8nac | — |
+| `moveFile` | workspace n8nac | — |
+| `deleteFile` | workspace n8nac | — |
+
+Les outils d'ecriture restent intentionnellement sandboxes au workspace. Les outils de lecture acceptent `absolute=true` pour sortir du sandbox.
+
+**runScript (allowlist)** : commandes autorisees : `npm run`, `npm test`, `npx tsc`, `node --test`, `git status/diff/log`, `node -e`, `cat`, `ls`, `find`. Toujours disponible.
+
+**runShell (opt-in)** : shell bash libre. Desactive par defaut. Activation : `YAGR_ENABLE_SHELL=1`. Ne jamais activer par defaut — permet des operations irreversibles.
+
+#### Regles d'evolution
+
+1. Avant d'ajouter un outil n8n-specifique, verifier si un outil generaliste (httpRequest, runScript, FS) ne suffit pas.
+2. Les outils d'ecriture FS restent sandboxes au workspace par defaut.
+3. `runShell` reste opt-in, avec warning explicite dans sa description.
+4. `n8nac` reste une dependance externe, jamais reimplementee dans le core.
+5. `presentWorkflowResult` doit etre appele systematiquement quand l'agent manipule un workflow connu.
+
+#### Observation actuelle
+
+- `src/tools/toolsets.ts` definit le SSOT des groupes d'outils runtime (`core`, `discovery`, `edit`, `workflow execution`)
+- `src/runtime/tool-runtime-strategy.ts` choisit explicitement la surface exposee, le mode `parallel / sequential / disabled` et les tools autorises apres un `push/verify`
 - `src/runtime/policy-hooks.ts` consomme cette politique runtime au lieu de porter sa propre allowlist implicite
-- la surface reste plate cote implementation, mais elle est maintenant filtree et contrainte de maniere coherente selon `native / compatible / weak / none`
-- le bridge `n8nac` privilegie desormais le repertoire de sync actif lors des retries `push`, ce qui evite une partie des divergences entre instances/scope locaux
-- le tool `presentWorkflowResult` et ses embeds workflow sont maintenant traites comme une sortie produit de premier plan: le harness `advanced` verifie explicitement la presence d'une banniere workflow complete avec URL et diagramme quand un workflow a ete cree/pousse
-- le diagramme workflow est maintenant valide via le parseur partage `src/gateway/workflow-diagram.ts` avant presentation; un diagramme non renduable n'est plus expose aux facades
-- la resolution du runtime n8n est maintenant partagee entre guard runtime et bridge `n8nac`
-- `N8N_HOST` / `N8N_API_KEY` ne sont pas une source de verite du runtime produit; ils ne sont pris en compte que lorsque le harness automatise active explicitement `YAGR_ALLOW_N8N_ENV=1`
-- les required actions non bloquantes restent visibles dans les surfaces comme prochaines etapes, mais elles ne doivent plus forcer l'arret d'un run qui a deja un resultat concret
+- la surface reste plate cote implementation, filtree et contrainte selon `native / compatible / weak / none`
+- le bridge `n8nac` privilegie le repertoire de sync actif lors des retries `push`
+- le tool `presentWorkflowResult` est traite comme une sortie produit de premier plan : le harness `advanced` verifie la presence d'une banniere workflow complete avec URL et diagramme
+- le diagramme workflow est valide via `src/gateway/workflow-diagram.ts` avant presentation
+- la resolution du runtime n8n est partagee entre guard runtime et bridge `n8nac`
+- `N8N_HOST` / `N8N_API_KEY` ne sont pris en compte que lorsque le harness active explicitement `YAGR_ALLOW_N8N_ENV=1`
+- les required actions non bloquantes ne forcent plus l'arret d'un run qui a deja un resultat concret
 
 ### Gateway / facades
 
