@@ -1,9 +1,15 @@
 import { spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import https from 'node:https';
+import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import { readManagedN8nState } from './state.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+
+const execFileAsync = promisify(execFile);
 
 export interface N8nTunnelState {
   publicUrl: string;
@@ -15,6 +21,155 @@ export interface N8nTunnelState {
 const TUNNEL_TIMEOUT_MS = 30_000;
 const CLOUDFLARE_URL_PATTERN = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
 const STATE_FILENAME = 'n8n-tunnel-state.json';
+
+// ---------------------------------------------------------------------------
+// cloudflared binary resolution and installation
+// ---------------------------------------------------------------------------
+
+function getCloudflaredBinDir(): string {
+  ensureYagrHomeDir();
+  return path.join(getYagrPaths().homeDir, 'bin');
+}
+
+function getLocalCloudflaredBinPath(): string {
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  return path.join(getCloudflaredBinDir(), `cloudflared${ext}`);
+}
+
+function resolveCloudflaredDownloadUrl(): string {
+  const platform = process.platform;
+  const arch = process.arch;
+
+  if (platform === 'linux') {
+    if (arch === 'arm64') return 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64';
+    if (arch === 'arm') return 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm';
+    return 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64';
+  }
+
+  if (platform === 'darwin') {
+    if (arch === 'arm64') return 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64';
+    return 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64';
+  }
+
+  if (platform === 'win32') {
+    return 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe';
+  }
+
+  throw new Error(`Unsupported platform for automatic cloudflared installation: ${platform}/${arch}. Install cloudflared manually from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/`);
+}
+
+/**
+ * Downloads a URL following redirects and writes the body to destPath.
+ */
+function downloadFile(url: string, destPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const follow = (currentUrl: string, depth: number) => {
+      if (depth > 10) {
+        reject(new Error('Too many redirects downloading cloudflared.'));
+        return;
+      }
+
+      https.get(currentUrl, (res) => {
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          follow(res.headers.location, depth + 1);
+          res.resume();
+          return;
+        }
+
+        if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`Failed to download cloudflared: HTTP ${res.statusCode ?? 'unknown'}`));
+          res.resume();
+          return;
+        }
+
+        const tmpPath = `${destPath}.tmp`;
+        const file = fs.createWriteStream(tmpPath);
+        res.pipe(file);
+        file.on('finish', () => {
+          file.close();
+          fs.renameSync(tmpPath, destPath);
+          resolve();
+        });
+        file.on('error', (err) => {
+          fs.unlink(tmpPath, () => undefined);
+          reject(err);
+        });
+        res.on('error', reject);
+      }).on('error', reject);
+    };
+
+    follow(url, 0);
+  });
+}
+
+/**
+ * Returns the path to the cloudflared binary, preferring PATH then YAGR_HOME/bin.
+ * Returns undefined if not found anywhere.
+ */
+async function findCloudflaredBinary(): Promise<string | undefined> {
+  // Check PATH first.
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const { stdout } = await execFileAsync(cmd, ['cloudflared']);
+    const found = stdout.trim().split('\n')[0].trim();
+    if (found) return found;
+  } catch {
+    // Not in PATH.
+  }
+
+  // Check YAGR_HOME/bin.
+  const localBin = getLocalCloudflaredBinPath();
+  if (fs.existsSync(localBin)) return localBin;
+
+  return undefined;
+}
+
+/**
+ * Ensures cloudflared is available. If not found in PATH or YAGR_HOME/bin,
+ * downloads the correct binary for this platform.
+ *
+ * Returns the path to use when spawning cloudflared.
+ */
+export async function installCloudflaredIfNeeded(
+  onProgress?: (message: string) => void,
+): Promise<string> {
+  const existing = await findCloudflaredBinary();
+  if (existing) {
+    return existing;
+  }
+
+  const binDir = getCloudflaredBinDir();
+  fs.mkdirSync(binDir, { recursive: true });
+
+  const destPath = getLocalCloudflaredBinPath();
+  const downloadUrl = resolveCloudflaredDownloadUrl();
+
+  onProgress?.(`Downloading cloudflared for ${process.platform}/${process.arch}…`);
+  await downloadFile(downloadUrl, destPath);
+
+  // Make executable on non-Windows.
+  if (process.platform !== 'win32') {
+    fs.chmodSync(destPath, 0o755);
+  }
+
+  // Verify it runs.
+  try {
+    await execFileAsync(destPath, ['--version']);
+  } catch (err) {
+    fs.unlinkSync(destPath);
+    throw new Error(`Downloaded cloudflared binary failed to run: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  onProgress?.(`cloudflared installed at ${destPath}`);
+  return destPath;
+}
+
+/**
+ * Returns true if cloudflared is already available (PATH or YAGR_HOME/bin).
+ */
+export async function isCloudflaredAvailable(): Promise<boolean> {
+  return (await findCloudflaredBinary()) !== undefined;
+}
 
 function getTunnelStatePath(): string {
   ensureYagrHomeDir();
@@ -78,13 +233,25 @@ export function getActiveTunnelState(): N8nTunnelState | null {
  * Starts a Cloudflare Tunnel exposing the given local n8n URL to the internet.
  * The cloudflared process is spawned detached and survives the Yagr session.
  * Any previously running tunnel is stopped first.
+ *
+ * If cloudflaredBin is not provided, it is resolved automatically via
+ * findCloudflaredBinary(). Call installCloudflaredIfNeeded() beforehand if
+ * you want auto-install; otherwise a missing binary produces a clear error.
  */
-export async function startN8nTunnel(targetUrl: string): Promise<N8nTunnelState> {
+export async function startN8nTunnel(targetUrl: string, cloudflaredBin?: string): Promise<N8nTunnelState> {
   await stopN8nTunnel();
+
+  const bin = cloudflaredBin ?? await findCloudflaredBinary();
+  if (!bin) {
+    throw new Error(
+      'cloudflared is not installed. Run `yagr n8n tunnel setup` to install it automatically, ' +
+      'or install manually from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/',
+    );
+  }
 
   return new Promise<N8nTunnelState>((resolve, reject) => {
     const child = spawn(
-      'cloudflared',
+      bin,
       ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', '/dev/null'],
       {
         detached: true,
@@ -140,8 +307,8 @@ export async function startN8nTunnel(targetUrl: string): Promise<N8nTunnelState>
 
       settled = true;
       reject(new Error(
-        `cloudflared not found or failed to start: ${err.message}. ` +
-        `Install from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/`,
+        `cloudflared failed to start: ${err.message}. ` +
+        `Run \`yagr n8n tunnel setup\` to install it automatically.`,
       ));
     });
 
@@ -153,7 +320,7 @@ export async function startN8nTunnel(targetUrl: string): Promise<N8nTunnelState>
       settled = true;
       reject(new Error(
         `cloudflared exited early with code ${code}. ` +
-        `Make sure cloudflared is installed: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/`,
+        `Run \`yagr n8n tunnel setup\` to re-install it.`,
       ));
     });
 
@@ -193,11 +360,10 @@ export async function stopN8nTunnel(): Promise<void> {
 /**
  * Stops the current tunnel and starts a new one, returning the fresh state.
  */
-export async function refreshN8nTunnel(targetUrl: string): Promise<N8nTunnelState> {
+export async function refreshN8nTunnel(targetUrl: string, cloudflaredBin?: string): Promise<N8nTunnelState> {
   await stopN8nTunnel();
-  return startN8nTunnel(targetUrl);
+  return startN8nTunnel(targetUrl, cloudflaredBin);
 }
-
 /**
  * Resolves the local n8n URL that should be used as the tunnel target.
  *

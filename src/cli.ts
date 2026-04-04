@@ -46,6 +46,8 @@ import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
 import {
   getActiveTunnelState,
+  installCloudflaredIfNeeded,
+  isCloudflaredAvailable,
   refreshN8nTunnel,
   resolveN8nTunnelTargetUrl,
   startN8nTunnel,
@@ -57,7 +59,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url';
   startTarget?: 'webui' | 'tui';
   n8nLocalRuntime?: 'docker' | 'direct';
   prompt?: string;
@@ -252,6 +254,11 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'start') {
     parsed.command = 'n8n-tunnel-start';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'setup') {
+    parsed.command = 'n8n-tunnel-setup';
     return parsed;
   }
 
@@ -487,6 +494,7 @@ async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigServi
   await ensureManagedN8nAtLaunch();
   await refreshN8nWorkspaceInstructionsAtLaunch();
   await ensureRelayAtLaunch();
+  await ensureTunnelAtLaunch();
   await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
     provider: args.provider,
     model: args.model,
@@ -668,6 +676,26 @@ async function ensureRelayAtLaunch(): Promise<void> {
   }
 }
 
+async function ensureTunnelAtLaunch(): Promise<void> {
+  const configService = new YagrConfigService();
+  const tunnelConfig = configService.getN8nTunnelConfig();
+  if (!tunnelConfig?.enabled) return;
+
+  // If already running, nothing to do.
+  const active = getActiveTunnelState();
+  if (active) return;
+
+  try {
+    const targetUrl = resolveN8nTunnelTargetUrl();
+    const bin = await installCloudflaredIfNeeded();
+    const state = await startN8nTunnel(targetUrl, bin);
+    configService.saveN8nTunnelConfig({ ...tunnelConfig, publicUrl: state.publicUrl, targetUrl });
+    process.stdout.write(`Cloudflare Tunnel started: ${state.publicUrl}\n`);
+  } catch (error) {
+    process.stderr.write(`Warning: n8n tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+}
+
 function getVersion(): string {
   const pkgPath = fileURLToPath(new URL('../package.json', import.meta.url));
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version: string };
@@ -706,7 +734,8 @@ Commands:
   n8n local status             Show status for the Yagr-managed local n8n runtime
   n8n local logs               Show recent logs for the Yagr-managed local n8n runtime
   n8n local open               Open the Yagr-managed local n8n runtime in the browser
-  n8n tunnel start             Expose n8n via Cloudflare Tunnel (spawns a persistent daemon)
+  n8n tunnel setup             Install cloudflared (if needed) and start the tunnel
+  n8n tunnel start             Start the tunnel (cloudflared must be installed)
   n8n tunnel stop              Stop the running n8n Cloudflare Tunnel
   n8n tunnel refresh           Renew the tunnel (stop + start, new public URL)
   n8n tunnel status            Show tunnel status (JSON)
@@ -991,11 +1020,39 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (args.command === 'n8n-tunnel-start') {
+    if (args.command === 'n8n-tunnel-setup') {
       const targetUrl = resolveN8nTunnelTargetUrl();
+      const alreadyAvailable = await isCloudflaredAvailable();
+      if (!alreadyAvailable) {
+        process.stdout.write('cloudflared not found. Downloading…\n');
+      }
+
+      const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
       const state = await runWithSpinner(
         `Starting Cloudflare Tunnel for ${targetUrl}…`,
-        () => startN8nTunnel(targetUrl),
+        () => startN8nTunnel(targetUrl, bin),
+        'Waiting for cloudflared to emit a public URL (up to 30s).',
+      );
+      const config = new YagrConfigService();
+      config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
+      process.stdout.write(`\nTunnel ready: ${state.publicUrl}\n`);
+      process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
+      process.stdout.write(`\nThe tunnel will restart automatically on next \`yagr start\` / \`yagr gateway start\`.\n`);
+      const managedState = readManagedN8nState();
+      if (managedState && managedState.status !== 'stopped') {
+        process.stdout.write(`\nTo expose correct webhook URLs in the n8n editor, restart n8n with N8N_WEBHOOK_URL set:\n`);
+        process.stdout.write(`  N8N_WEBHOOK_URL=${state.publicUrl} yagr n8n local start\n`);
+      }
+
+      return;
+    }
+
+    if (args.command === 'n8n-tunnel-start') {
+      const targetUrl = resolveN8nTunnelTargetUrl();
+      const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
+      const state = await runWithSpinner(
+        `Starting Cloudflare Tunnel for ${targetUrl}…`,
+        () => startN8nTunnel(targetUrl, bin),
         'Waiting for cloudflared to emit a public URL (up to 30s).',
       );
       const config = new YagrConfigService();
@@ -1015,9 +1072,10 @@ async function main(): Promise<void> {
 
     if (args.command === 'n8n-tunnel-refresh') {
       const targetUrl = resolveN8nTunnelTargetUrl();
+      const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
       const state = await runWithSpinner(
         `Refreshing Cloudflare Tunnel for ${targetUrl}…`,
-        () => refreshN8nTunnel(targetUrl),
+        () => refreshN8nTunnel(targetUrl, bin),
         'Stopping current tunnel and starting a new one.',
       );
       const config = new YagrConfigService();
