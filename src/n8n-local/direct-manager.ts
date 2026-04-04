@@ -11,6 +11,7 @@ import {
   updateManagedN8nState,
   type ManagedN8nInstanceState,
 } from './state.js';
+import { getActiveTunnelState } from './n8n-tunnel.js';
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 180_000;
 const DEFAULT_STARTUP_TIMEOUT_MS = 600_000;
@@ -63,6 +64,7 @@ export async function installManagedDirectN8n(options: { port?: number } = {}): 
       TZ: 'UTC',
       npm_config_cache: npmCacheDir,
       npm_config_update_notifier: 'false',
+      ...(getActiveTunnelState()?.publicUrl ? { N8N_WEBHOOK_URL: getActiveTunnelState()!.publicUrl } : {}),
     },
   });
   const startupWatch = waitForManagedN8nStartup(child, state.url, paths.logFile);
