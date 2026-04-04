@@ -21,6 +21,7 @@ import {
   markdownToTelegramHtml,
   escapeHtml,
 } from './format-message.js';
+import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
@@ -557,10 +558,11 @@ class TelegramGateway implements Gateway {
           await this.options.onStateChange?.(event);
         },
         onToolEvent: async (event) => {
-          const embed = extractWorkflowEmbed(event);
+          const enrichedEvent = enrichWorkflowEmbed(event);
+          const embed = extractWorkflowEmbed(enrichedEvent);
           if (embed) embeds.push(embed);
-          await sendProgressUpdate(mapToolEventToUserVisibleUpdate(event));
-          await this.options.onToolEvent?.(event);
+          await sendProgressUpdate(mapToolEventToUserVisibleUpdate(enrichedEvent));
+          await this.options.onToolEvent?.(enrichedEvent);
         },
         onContextUsage: async (event) => {
           if (event.fillPercent >= 80) {

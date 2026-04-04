@@ -4,7 +4,6 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { getYagrLaunchDir, getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { normalizeRenderableWorkflowDiagram } from '../gateway/workflow-diagram.js';
-import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import type { ToolExecutionObserver } from './observer.js';
 import { emitToolEvent } from './observer.js';
 import { resolveWorkspacePath } from './workspace-utils.js';
@@ -142,14 +141,13 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
     }),
     execute: async ({ workflowId, workflowUrl, title, diagram, executionResult }) => {
       const resolvedDiagram = resolveWorkflowDiagram(workflowId, diagram);
-      const workflowLink = resolveWorkflowOpenLink(workflowUrl);
       await emitToolEvent(observer, {
         type: 'embed',
         toolName: 'presentWorkflowResult',
         kind: 'workflow',
         workflowId,
-        url: workflowLink.openUrl,
-        targetUrl: workflowLink.targetUrl,
+        url: workflowUrl,
+        targetUrl: workflowUrl,
         title,
         diagram: resolvedDiagram,
         executionResult,
@@ -157,8 +155,8 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
       return {
         presented: true,
         workflowId,
-        workflowUrl: workflowLink.openUrl,
-        targetWorkflowUrl: workflowLink.targetUrl,
+        workflowUrl,
+        canonicalUrl: workflowUrl,
         title: title ?? null,
         executionResult: executionResult ?? null,
       };
