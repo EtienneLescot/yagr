@@ -64,6 +64,10 @@ function sanitizeRuntimeValue(value: string | undefined): string | undefined {
   return trimmed || undefined;
 }
 
+function preferEnvironmentCredentials(env: NodeJS.ProcessEnv): boolean {
+  return /^(1|true|yes|on)$/i.test(String(env.YAGR_PREFER_ENV_CREDENTIALS || '').trim());
+}
+
 export function resolveN8nRuntimeState(
   configService: Pick<YagrN8nConfigService, 'getLocalConfig' | 'getApiKey'>,
   env: NodeJS.ProcessEnv = process.env,
@@ -71,10 +75,11 @@ export function resolveN8nRuntimeState(
 ): YagrResolvedN8nRuntimeState {
   const localConfig = configService.getLocalConfig();
   const envHost = options.allowEnvironmentFallback ? sanitizeRuntimeValue(env.N8N_HOST) : undefined;
-  const host = sanitizeRuntimeValue(localConfig.host) ?? envHost;
-  const storedApiKey = host ? sanitizeRuntimeValue(configService.getApiKey(host)) : undefined;
+  const preferEnv = preferEnvironmentCredentials(env);
+  const host = preferEnv ? (envHost ?? sanitizeRuntimeValue(localConfig.host)) : (sanitizeRuntimeValue(localConfig.host) ?? envHost);
+  const storedApiKey = preferEnv ? undefined : (host ? sanitizeRuntimeValue(configService.getApiKey(host)) : undefined);
   const envApiKey = options.allowEnvironmentFallback ? sanitizeRuntimeValue(env.N8N_API_KEY) : undefined;
-  const apiKey = storedApiKey ?? envApiKey;
+  const apiKey = envApiKey ?? storedApiKey;
   const projectConfigured = Boolean(
     host
     && localConfig.syncFolder
