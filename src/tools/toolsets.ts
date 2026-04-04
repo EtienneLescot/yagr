@@ -12,8 +12,8 @@ export const DISCOVERY_TOOL_NAMES = [
 ] as const;
 
 export const EDIT_TOOL_NAMES = [
-  'writeFile',
   'replaceInFile',
+  'writeFile',
   'moveFile',
   'deleteFile',
 ] as const;
