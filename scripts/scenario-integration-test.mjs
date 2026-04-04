@@ -64,7 +64,7 @@ function readCliArg(flag) {
 const PROVIDER = readCliArg('--provider') || String(process.env.YAGR_SCN_PROVIDER || DEFAULT_PROVIDER).trim();
 const MODEL = readCliArg('--model') || String(process.env.YAGR_SCN_MODEL || DEFAULT_MODEL).trim();
 const DEFAULT_TIMEOUT_MS = toInt(process.env.YAGR_SCN_TIMEOUT_MS, 90_000);
-const CREATION_TIMEOUT_MS = toInt(process.env.YAGR_SCN_CREATION_TIMEOUT_MS, 180_000);
+const CREATION_TIMEOUT_MS = toInt(process.env.YAGR_SCN_CREATION_TIMEOUT_MS, 240_000);
 const markdownDisabled = process.argv.includes('--no-markdown');
 const markdownPath = process.env.YAGR_SCN_MARKDOWN_PATH
   || path.join(process.cwd(), 'reports', 'scenario-integration-report.md');
