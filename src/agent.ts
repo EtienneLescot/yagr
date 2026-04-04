@@ -124,3 +124,6 @@ export class YagrSessionAgent {
     this.promptSnapshot = nextSnapshot;
   }
 }
+
+/** @deprecated Use YagrSessionAgent. Alias kept for backward compatibility. */
+export { YagrSessionAgent as YagrAgent };

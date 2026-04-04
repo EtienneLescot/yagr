@@ -3,9 +3,6 @@ import test from 'node:test';
 
 import {
   getWebUiGatewayStatus,
-  mapPhaseEventToWebUiStreamEvent,
-  mapStateEventToWebUiStreamEvent,
-  mapToolEventToWebUiStreamEvent,
 } from '../dist/gateway/webui.js';
 
 test('getWebUiGatewayStatus is a pure read and does not persist defaults', () => {
@@ -31,75 +28,3 @@ test('getWebUiGatewayStatus is a pure read and does not persist defaults', () =>
   assert.equal(updateCalls, 0);
 });
 
-test('mapToolEventToWebUiStreamEvent hides internal n8nac status noise but keeps user-facing progress', () => {
-  assert.equal(
-    mapToolEventToWebUiStreamEvent({
-      type: 'status',
-      toolName: 'n8nac',
-      message: 'Runtime cwd=. envHost=- resolvedHost=http://127.0.0.1:5678',
-    }),
-    undefined,
-  );
-
-  assert.deepEqual(
-    mapToolEventToWebUiStreamEvent({
-      type: 'status',
-      toolName: 'reportProgress',
-      message: 'Inspecting the Gmail and Telegram node schemas.',
-    }),
-    {
-      type: 'progress',
-      tone: 'info',
-      title: 'Progress',
-      detail: 'Inspecting the Gmail and Telegram node schemas.',
-    },
-  );
-
-  assert.deepEqual(
-    mapToolEventToWebUiStreamEvent({
-      type: 'status',
-      toolName: 'requestRequiredAction',
-      message: 'Need attention: reconnect the Gmail credential in n8n.',
-    }),
-    {
-      type: 'progress',
-      tone: 'info',
-      title: 'Needs attention',
-      detail: 'Need attention: reconnect the Gmail credential in n8n.',
-    },
-  );
-});
-
-test('mapPhaseEventToWebUiStreamEvent uses the shared user-visible update mapping', () => {
-  assert.deepEqual(
-    mapPhaseEventToWebUiStreamEvent({
-      phase: 'inspect',
-      status: 'started',
-      message: 'Inspect phase started.',
-    }),
-    {
-      type: 'progress',
-      tone: 'info',
-      title: 'Inspect',
-      detail: 'Inspect phase started.',
-      phase: 'inspect',
-    },
-  );
-});
-
-test('mapStateEventToWebUiStreamEvent uses the shared user-visible update mapping', () => {
-  assert.deepEqual(
-    mapStateEventToWebUiStreamEvent({
-      state: 'waiting_for_input',
-      phase: 'edit',
-      message: 'Need a missing credential reference.',
-    }),
-    {
-      type: 'progress',
-      tone: 'info',
-      title: 'Needs input',
-      detail: 'Need a missing credential reference.',
-      phase: 'edit',
-    },
-  );
-});

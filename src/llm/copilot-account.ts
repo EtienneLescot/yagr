@@ -731,7 +731,7 @@ function toOpenAiTools(tools: LanguageModelV1FunctionTool[]): Array<Record<strin
     function: {
       name: tool.name,
       ...(tool.description ? { description: tool.description } : {}),
-      parameters: normalizeFunctionToolParametersSchema(tool.parameters, {
+      parameters: normalizeFunctionToolParametersSchema(tool.parameters as Record<string, unknown>, {
         forceRequiredObjectProperties: false,
       }),
     },
@@ -865,7 +865,7 @@ function toResponsesTools(tools: LanguageModelV1FunctionTool[]): Array<Record<st
     type: 'function',
     name: tool.name,
     ...(tool.description ? { description: tool.description } : {}),
-    parameters: normalizeFunctionToolParametersSchema(tool.parameters, {
+    parameters: normalizeFunctionToolParametersSchema(tool.parameters as Record<string, unknown>, {
       forceRequiredObjectProperties: true,
     }),
     strict: true,

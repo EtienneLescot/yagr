@@ -34,6 +34,7 @@ test('extractWorkflowEmbed returns embed from a workflow embed event', () => {
     targetUrl: undefined,
     title: 'My Workflow',
     diagram: '<workflow-map>\nStart --> Set\n</workflow-map>',
+    executionResult: undefined,
   });
 });
 
