@@ -50,7 +50,7 @@ test('resolveModelCapabilityProfile marks openai-proxy as compatible with reduce
 test('resolveModelCapabilityProfile marks anthropic-proxy as native and mistral as compatible', () => {
   const anthropicProfile = resolveModelCapabilityProfile({
     provider: 'anthropic-proxy',
-    model: 'claude-sonnet-4-5',
+    model: 'claude-haiku-4-5',
   });
   const mistralProfile = resolveModelCapabilityProfile({
     provider: 'mistral',
