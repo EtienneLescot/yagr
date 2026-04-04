@@ -454,7 +454,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
     );
 
     try {
-      const engine = await createN8nEngineFromWorkspace();
+      const engine = _engine;
       const agent = new YagrAgent(engine);
       const result = await agent.run(scenario.prompt, {
         provider: PROVIDER,
@@ -506,6 +506,7 @@ const scenariosToRun = SCENARIOS.filter((s) =>
 // Hoisted so writeMarkdownReport (a module-level function) can reference them.
 let _testN8nRuntime;
 let _isolatedHome;
+let _engine;
 
 describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1 }, () => {
   const results = [];
@@ -515,6 +516,7 @@ describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1
     _isolatedHome = createIsolatedHome(_testN8nRuntime);
     process.stdout.write(`n8n: ${_testN8nRuntime.configured ? _testN8nRuntime.host : 'not configured'}\n`);
     process.stdout.write(`Isolated home: ${_isolatedHome}\n\n`);
+    _engine = await createN8nEngineFromWorkspace();
   });
 
   after(async () => {
