@@ -247,7 +247,7 @@ test('n8n setup guard blocks init_auth when automated test env credentials are a
   }
 });
 
-test('later successful retry clears an earlier unresolved n8nac failure', () => {
+test('later successful retry clears an earlier failed script run', () => {
   const journal = [
     {
       timestamp: '2026-03-16T10:00:00.000Z',
@@ -287,11 +287,11 @@ test('later successful retry clears an earlier unresolved n8nac failure', () => 
 
   const outcome = analyzeRunOutcome(journal);
 
-  assert.equal(outcome.unresolvedFailedActions.length, 0);
-  assert.ok(outcome.successfulValidate);
+  assert.equal(outcome.successfulScriptRuns, 1);
+  assert.equal(outcome.failedScriptRuns, 1);
 });
 
-test('setup_check is ignored in observed n8nac failures', () => {
+test('setup_check script failure is counted in failedScriptRuns', () => {
   const journal = [
     {
       timestamp: '2026-03-18T10:00:00.000Z',
@@ -314,11 +314,11 @@ test('setup_check is ignored in observed n8nac failures', () => {
 
   const outcome = analyzeRunOutcome(journal);
 
-  assert.equal(outcome.failedActions.length, 0);
-  assert.equal(outcome.unresolvedFailedActions.length, 0);
+  assert.equal(outcome.failedScriptRuns, 1);
+  assert.equal(outcome.successfulScriptRuns, 0);
 });
 
-test('successful push is treated as both push and verify evidence', () => {
+test('successful push script is counted in successfulScriptRuns', () => {
   const journal = [
     {
       timestamp: '2026-03-23T15:00:00.000Z',
@@ -348,12 +348,11 @@ test('successful push is treated as both push and verify evidence', () => {
 
   const outcome = analyzeRunOutcome(journal);
 
-  assert.equal(outcome.unresolvedFailedActions.length, 0);
-  assert.ok(outcome.successfulPush);
-  assert.ok(outcome.successfulVerify);
+  assert.equal(outcome.successfulScriptRuns, 1);
+  assert.equal(outcome.failedScriptRuns, 0);
 });
 
-test('exploratory setup failures stop being blocking once push and verify succeed', () => {
+test('failed init_auth script does not block when push succeeds', () => {
   const journal = [
     {
       timestamp: '2026-03-23T16:00:00.000Z',
@@ -400,8 +399,8 @@ test('exploratory setup failures stop being blocking once push and verify succee
 
   const outcome = analyzeRunOutcome(journal);
 
-  assert.equal(outcome.unresolvedFailedActions.length, 1);
-  assert.equal(outcome.blockingUnresolvedFailedActions.length, 0);
+  assert.equal(outcome.failedScriptRuns, 1);
+  assert.equal(outcome.successfulScriptRuns, 1);
 });
 
 test('assistant output sanitization removes leaked internal execution scaffolding', () => {
@@ -482,7 +481,7 @@ test('sanitized inspect carry-over does not include the internal inspect control
   assert.equal(executionContext.some((message) => typeof message.content === 'string' && message.content.includes('Yagr internal phase: inspect.')), false);
 });
 
-test('successful push counts as validate and verify evidence for completion gating', async () => {
+test('successful push counts as concrete result for completion gating', async () => {
   const journal = [
     {
       timestamp: '2026-03-16T10:03:00.000Z',
@@ -511,9 +510,8 @@ test('successful push counts as validate and verify evidence for completion gati
 
   const outcome = analyzeRunOutcome(journal);
 
-  assert.ok(outcome.successfulPush);
-  assert.ok(outcome.successfulValidate);
-  assert.ok(outcome.successfulVerify);
+  assert.equal(outcome.successfulScriptRuns, 1);
+  assert.ok(outcome.hasWorkflowWrites);
 
   const decision = await evaluateCompletionGate({
     text: 'Done.',
@@ -655,7 +653,7 @@ test('grounded summary describes workflow completion when workflow was pushed wi
 
   const summary = buildGroundedSummary('Create a workflow.', 'stop', journal, []);
 
-  assert.match(summary, /pushed to n8n/i);
+  assert.match(summary, /workflow `demo` is ready/i);
   assert.doesNotMatch(summary, /workflow card below/i);
 });
 

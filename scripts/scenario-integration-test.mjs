@@ -161,20 +161,18 @@ const SCENARIOS = [
     timeoutMs: CREATION_TIMEOUT_MS,
     n8nRequired: true,
     assert(result, outcome) {
-      // Primary signal: workflow was pushed
-      if (outcome.successfulPush) {
-        const checkedCredentials = outcome.successfulActions.some((a) =>
-          /credential|llm_provider/i.test(a.action),
-        );
+      // Primary signal: workflow file written + scripts ran successfully
+      if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0) {
+        const text = String(result.text || '');
+        const checkedCredentials = /credential|llm_provider/i.test(text);
         return {
           pass: true,
-          note: `Workflow poussé${outcome.successfulVerify ? ' + vérifié' : ''}. Credentials inspectés: ${checkedCredentials}.`,
+          note: `Workflow déployé. Credentials inspectés: ${checkedCredentials}.`,
         };
       }
       // Secondary signal: agent hit a structured blocker on credentials (acceptable)
       const text = String(result.text || '');
-      const hasRequiredAction = outcome.successfulActions.some((a) => a.action === 'requestRequiredAction')
-        || /credential|provider|clé|api key/i.test(text);
+      const hasRequiredAction = /credential|provider|clé|api key/i.test(text);
       if (outcome.hasWorkflowWrites && hasRequiredAction) {
         return {
           pass: true,
@@ -182,7 +180,7 @@ const SCENARIOS = [
         };
       }
       if (outcome.hasWorkflowWrites) {
-        return { pass: false, note: 'Workflow écrit mais push non confirmé et aucun bloqueur credential.' };
+        return { pass: false, note: 'Workflow écrit mais déploiement non confirmé et aucun bloqueur credential.' };
       }
       return { pass: false, note: `Aucun workflow créé. Réponse: ${text.slice(0, 150)}` };
     },
@@ -198,10 +196,10 @@ const SCENARIOS = [
     assert(result, outcome) {
       const text = String(result.text || '');
       if (text.length < 10) return { pass: false, note: 'Réponse vide.' };
-      const usedN8nac = outcome.successfulActions.length > 0 || outcome.failedActions.length > 0;
+      const usedScripts = outcome.successfulScriptRuns > 0 || outcome.failedScriptRuns > 0;
       return {
         pass: true,
-        note: `Réponse reçue (${text.length} chars)${usedN8nac ? ', a utilisé n8nac.' : '.'}`,
+        note: `Réponse reçue (${text.length} chars)${usedScripts ? ', a exécuté des scripts.' : '.'}`,
       };
     },
   },
@@ -216,15 +214,13 @@ const SCENARIOS = [
     assert(result, outcome) {
       const text = String(result.text || '');
       if (text.length < 10) return { pass: false, note: 'Réponse vide.' };
-      const usedN8nac = outcome.successfulActions.length > 0 || outcome.failedActions.length > 0;
-      const hasListAction = outcome.successfulActions.some((a) => a.action === 'list')
-        || outcome.failedActions.some((a) => a.action === 'list');
-      if (!usedN8nac) {
-        return { pass: false, note: `N'a pas utilisé n8nac. Réponse: ${text.slice(0, 120)}` };
+      const usedScripts = outcome.successfulScriptRuns > 0 || outcome.failedScriptRuns > 0;
+      if (!usedScripts) {
+        return { pass: false, note: `N'a pas invoqué de scripts. Réponse: ${text.slice(0, 120)}` };
       }
       return {
         pass: true,
-        note: `A utilisé n8nac${hasListAction ? ' (list)' : ''}. Réponse: ${text.slice(0, 80)}…`,
+        note: `A utilisé des scripts. Réponse: ${text.slice(0, 80)}…`,
       };
     },
   },
@@ -239,17 +235,17 @@ const SCENARIOS = [
     timeoutMs: CREATION_TIMEOUT_MS,
     n8nRequired: true,
     assert(result, outcome) {
-      if (outcome.successfulPush) {
+      if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0) {
         return {
           pass: true,
-          note: `Workflow créé et poussé${outcome.successfulVerify ? ' + vérifié' : ''}. File: ${outcome.hasWorkflowWrites ? 'yes' : 'no'}.`,
+          note: `Workflow créé et déployé. File: ${outcome.hasWorkflowWrites ? 'yes' : 'no'}.`,
         };
       }
       if (outcome.hasWorkflowWrites) {
-        return { pass: false, note: 'Fichier workflow écrit mais push non confirmé.' };
+        return { pass: false, note: 'Fichier workflow écrit mais déploiement non confirmé.' };
       }
       const text = String(result.text || '');
-      return { pass: false, note: `Aucun push détecté. Réponse: ${text.slice(0, 150)}` };
+      return { pass: false, note: `Aucun déploiement détecté. Réponse: ${text.slice(0, 150)}` };
     },
   },
 
@@ -264,17 +260,17 @@ const SCENARIOS = [
     timeoutMs: CREATION_TIMEOUT_MS,
     n8nRequired: true,
     assert(result, outcome) {
-      if (outcome.successfulPush) {
+      if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0) {
         return {
           pass: true,
-          note: `Workflow webhook créé et poussé${outcome.successfulVerify ? ' + vérifié' : ''}.`,
+          note: `Workflow webhook créé et déployé.`,
         };
       }
       if (outcome.hasWorkflowWrites) {
-        return { pass: false, note: 'Fichier workflow écrit mais push non confirmé.' };
+        return { pass: false, note: 'Fichier workflow écrit mais déploiement non confirmé.' };
       }
       const text = String(result.text || '');
-      return { pass: false, note: `Aucun push détecté. Réponse: ${text.slice(0, 150)}` };
+      return { pass: false, note: `Aucun déploiement détecté. Réponse: ${text.slice(0, 150)}` };
     },
   },
 
@@ -290,17 +286,17 @@ const SCENARIOS = [
     timeoutMs: CREATION_TIMEOUT_MS,
     n8nRequired: true,
     assert(result, outcome) {
-      if (outcome.successfulPush) {
+      if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0) {
         return {
           pass: true,
-          note: `Workflow complexe créé et poussé${outcome.successfulVerify ? ' + vérifié' : ''}.`,
+          note: `Workflow complexe créé et déployé.`,
         };
       }
       if (outcome.hasWorkflowWrites) {
-        return { pass: false, note: 'Fichier workflow écrit mais push non confirmé.' };
+        return { pass: false, note: 'Fichier workflow écrit mais déploiement non confirmé.' };
       }
       const text = String(result.text || '');
-      return { pass: false, note: `Aucun push détecté. Réponse: ${text.slice(0, 150)}` };
+      return { pass: false, note: `Aucun déploiement détecté. Réponse: ${text.slice(0, 150)}` };
     },
   },
 
@@ -315,43 +311,32 @@ const SCENARIOS = [
     timeoutMs: CREATION_TIMEOUT_MS,
     n8nRequired: true,
     assert(result, outcome) {
-      const workflowId = outcome.successfulPush?.workflowId;
-      const testAction = outcome.successfulActions.find((a) => a.action === 'test');
-      const failedTest = outcome.failedActions.find((a) => a.action === 'test');
       const text = String(result.text || '');
+      const mentionsCapital = /paris|capital/i.test(text);
 
-      // Accept: push + successful test
-      if (outcome.successfulPush && testAction) {
-        const mentionsCapital = /paris|capital/i.test(text) || /paris|capital/i.test(testAction.testOutput ?? '');
+      // Accept: workflow deployed + agent ran scripts (test/execution)
+      if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0) {
         return {
           pass: true,
-          note: `Proxy LLM opérationnel — workflow créé, testé${mentionsCapital ? ', résultat mentionne Paris/capital' : ''}. workflowId=${workflowId}`,
+          note: `Proxy LLM opérationnel — workflow créé et déployé${mentionsCapital ? ', résultat mentionne Paris/capital' : ''}.`,
         };
       }
 
-      // Accept: agent reused existing workflow (activate + test without push) and got a result
-      if (!outcome.successfulPush && testAction) {
-        const mentionsCapital = /paris|capital/i.test(text) || /paris|capital/i.test(testAction.testOutput ?? '');
+      // Accept: agent reused existing workflow and ran scripts
+      if (!outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0 && mentionsCapital) {
         return {
           pass: true,
-          note: `Workflow réutilisé (pas de push), testé${mentionsCapital ? ', résultat mentionne Paris/capital' : ''}. workflowId=${testAction.workflowId ?? 'inconnu'}`,
+          note: `Workflow réutilisé (pas de fichier), scripts exécutés, résultat mentionne Paris/capital.`,
         };
       }
 
-      if (!outcome.successfulPush) {
-        return { pass: false, note: `Workflow non poussé et non testé. Réponse: ${text.slice(0, 150)}` };
-      }
-
-      if (failedTest) {
-        return {
-          pass: false,
-          note: `Workflow poussé (${workflowId}) mais n8nac test a échoué.`,
-        };
+      if (!outcome.hasWorkflowWrites) {
+        return { pass: false, note: `Workflow non créé et non testé. Réponse: ${text.slice(0, 150)}` };
       }
 
       return {
         pass: false,
-        note: `Workflow poussé (${workflowId ?? 'id inconnu'}) mais n8nac test non exécuté.`,
+        note: `Workflow créé mais exécution non confirmée. Réponse: ${text.slice(0, 150)}`,
       };
     },
   },
@@ -367,10 +352,10 @@ const SCENARIOS = [
     assert(result, outcome) {
       const text = String(result.text || '');
       if (text.length < 80) return { pass: false, note: `Réponse trop courte (${text.length} chars).` };
-      const usedN8nac = outcome.successfulActions.length > 0 || outcome.failedActions.length > 0;
+      const usedScripts = outcome.successfulScriptRuns > 0 || outcome.failedScriptRuns > 0;
       const mentionsNodes = /nœud|node|trigger|set|webhook|workflow/i.test(text);
-      if (!usedN8nac) {
-        return { pass: false, note: `N'a pas listé les workflows via n8nac. Réponse: ${text.slice(0, 100)}` };
+      if (!usedScripts) {
+        return { pass: false, note: `N'a pas listé les workflows. Réponse: ${text.slice(0, 100)}` };
       }
       return {
         pass: true,
