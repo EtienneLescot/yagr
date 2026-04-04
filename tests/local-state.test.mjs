@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { resetYagrLocalState, buildYagrCleanupPlan } from '../dist/config/local-state.js';
-import { YagrN8nConfigService } from '../dist/config/n8n-config-service.js';
+import { YagrN8nConfigService, resolveN8nRuntimeState } from '../dist/config/n8n-config-service.js';
 import { YagrConfigService } from '../dist/config/yagr-config-service.js';
 import { getYagrPaths } from '../dist/config/yagr-home.js';
 
@@ -156,5 +156,52 @@ test('resetYagrLocalState removes active and legacy config stores for config+cre
     assert.equal(fs.existsSync(paths.n8nCredentialsPath), false);
     assert.equal(fs.existsSync(paths.legacyYagrCredentialsDir), false);
     assert.equal(fs.existsSync(homeDir), true);
+  });
+});
+
+test('resolveN8nRuntimeState prefers env credentials in env-first mode', async () => {
+  await withTempYagrEnv(async () => {
+    const n8nConfigService = new YagrN8nConfigService();
+    n8nConfigService.saveLocalConfig({
+      host: 'https://stored.example.com',
+      syncFolder: 'workflows',
+      projectId: 'stored-project',
+      projectName: 'Stored',
+    });
+    n8nConfigService.saveApiKey('https://stored.example.com', 'stored-key');
+
+    const resolved = resolveN8nRuntimeState(n8nConfigService, {
+      ...process.env,
+      YAGR_PREFER_ENV_CREDENTIALS: '1',
+      N8N_HOST: 'https://env.example.com',
+      N8N_API_KEY: 'env-key',
+    }, { allowEnvironmentFallback: true });
+
+    assert.equal(resolved.host, 'https://env.example.com');
+    assert.equal(resolved.apiKey, 'env-key');
+  });
+});
+
+test('resolveN8nRuntimeState does not fall back to stored api key in env-first mode', async () => {
+  await withTempYagrEnv(async () => {
+    const n8nConfigService = new YagrN8nConfigService();
+    n8nConfigService.saveLocalConfig({
+      host: 'https://stored.example.com',
+      syncFolder: 'workflows',
+      projectId: 'stored-project',
+      projectName: 'Stored',
+    });
+    n8nConfigService.saveApiKey('https://stored.example.com', 'stored-key');
+
+    const resolved = resolveN8nRuntimeState(n8nConfigService, {
+      ...process.env,
+      YAGR_PREFER_ENV_CREDENTIALS: '1',
+      N8N_HOST: 'https://stored.example.com',
+      N8N_API_KEY: '',
+    }, { allowEnvironmentFallback: true });
+
+    assert.equal(resolved.host, 'https://stored.example.com');
+    assert.equal(resolved.apiKey, undefined);
+    assert.equal(resolved.credentialsAvailable, false);
   });
 });

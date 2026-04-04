@@ -350,12 +350,9 @@ function resolveTestN8nRuntime() {
   const configuredHost = String(process.env.N8N_HOST || process.env.YAGR_IT_N8N_HOST || '').trim();
   const configuredApiKey = String(process.env.N8N_API_KEY || process.env.YAGR_IT_N8N_API_KEY || '').trim();
   const configuredProjectId = String(process.env.N8N_PROJECT_ID || process.env.YAGR_IT_N8N_PROJECT_ID || '').trim();
-  const configService = new YagrN8nConfigService();
-  const localConfig = configService.getLocalConfig();
-  const fallbackHost = String(localConfig.host || '').trim();
-  const host = configuredHost || fallbackHost;
-  const apiKey = configuredApiKey || (host ? String(configService.getApiKey(host) || '').trim() : '');
-  const projectId = configuredProjectId || String(localConfig.projectId || '').trim();
+  const host = configuredHost;
+  const apiKey = configuredApiKey;
+  const projectId = configuredProjectId;
 
   return {
     host,
@@ -650,7 +647,7 @@ async function runYagrAdvancedScenarioAttempt({
   timeoutMs,
 }) {
   const testN8nRuntime = resolveTestN8nRuntime();
-  const isolatedHome = createAdvancedScenarioHome(provider, testN8nRuntime);
+  const isolatedHome = createAdvancedScenarioHome(provider, model, testN8nRuntime);
   const workflowDir = resolveActiveWorkflowDir(isolatedHome);
   const beforeSnapshot = snapshotWorkflowFiles(workflowDir);
   const beforeRemoteSnapshot = await listRemoteWorkflows();
@@ -825,6 +822,7 @@ async function runAdvancedAgentInProcess({
     YAGR_HOME: isolatedHome,
     YAGR_LAUNCH_CWD: process.cwd(),
     YAGR_ALLOW_N8N_ENV: '1',
+    YAGR_PREFER_ENV_CREDENTIALS: '1',
     ...(testN8nRuntime.host ? { N8N_HOST: testN8nRuntime.host } : {}),
     ...(testN8nRuntime.apiKey ? { N8N_API_KEY: testN8nRuntime.apiKey } : {}),
     ...(testN8nRuntime.projectId ? { N8N_PROJECT_ID: testN8nRuntime.projectId } : {}),
@@ -983,15 +981,13 @@ function buildAdvancedScenarioPrompt(prompt, provider) {
   return `${prompt}\n\nContraintes de test:\n- Cree un nouveau workflow.\n- Donne-lui un nom unique qui commence par "${marker}".\n- N'update pas un workflow existant.\n- Ne pose aucune question et n'attends aucune confirmation.\n- Termine seulement quand le workflow est enregistre et pousse.`;
 }
 
-function createAdvancedScenarioHome(provider, testN8nRuntime = {}) {
+function createAdvancedScenarioHome(provider, model, testN8nRuntime = {}) {
   const baseDir = path.join(os.tmpdir(), 'yagr-provider-advanced');
   fs.mkdirSync(baseDir, { recursive: true });
   const tempHome = fs.mkdtempSync(path.join(baseDir, `${provider.replace(/[^a-z0-9]+/gi, '-')}-`));
   const sourcePaths = getYagrPaths();
 
-  copyIfExists(sourcePaths.yagrConfigPath, path.join(tempHome, 'yagr-config.json'));
-  copyIfExists(sourcePaths.yagrCredentialsPath, path.join(tempHome, 'credentials.json'));
-  copyIfExists(sourcePaths.n8nCredentialsPath, path.join(tempHome, 'n8n-credentials.json'));
+  writeIsolatedYagrConfig(tempHome, provider, model);
   copyIfExists(sourcePaths.homeInstructionsPath, path.join(tempHome, 'AGENTS.md'));
   copyDirIfExists(sourcePaths.n8nWorkspaceDir, path.join(tempHome, 'n8n-workspace'));
   reconcileAdvancedScenarioN8nRuntime(tempHome, testN8nRuntime);
@@ -1043,13 +1039,8 @@ function reconcileAdvancedScenarioN8nRuntime(tempHome, testN8nRuntime = {}) {
   }
 
   const configPath = path.join(tempHome, 'n8n-workspace', 'n8nac-config.json');
-  const credentialsPath = path.join(tempHome, 'n8n-credentials.json');
   const normalizedHost = normalizeHostForStore(host);
   const localConfig = readJsonIfExists(configPath) || {};
-  const credentialStore = readJsonIfExists(credentialsPath) || {};
-  const nextHosts = {
-    ...((credentialStore && typeof credentialStore.hosts === 'object' && credentialStore.hosts) || {}),
-  };
   const previousHost = String(localConfig.host || '').trim();
   const previousProjectId = String(localConfig.projectId || '').trim();
   const hostChanged = Boolean(host && normalizeHostForStore(previousHost) !== normalizedHost);
@@ -1075,15 +1066,21 @@ function reconcileAdvancedScenarioN8nRuntime(tempHome, testN8nRuntime = {}) {
     localConfig.projectName = 'Personal';
   }
 
-  if (host && apiKey) {
-    nextHosts[normalizedHost] = apiKey;
-  }
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, `${JSON.stringify(localConfig, null, 2)}\n`);
+}
+
+function writeIsolatedYagrConfig(tempHome, provider, model) {
+  const configPath = path.join(tempHome, 'yagr-config.json');
+  const baseUrl = getProviderBaseUrl(provider);
+  const localConfig = {
+    provider,
+    model,
+    ...(baseUrl ? { baseUrl } : {}),
+  };
 
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify(localConfig, null, 2)}\n`);
-
-  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
-  fs.writeFileSync(credentialsPath, `${JSON.stringify({ ...credentialStore, hosts: nextHosts }, null, 2)}\n`);
 }
 
 function readJsonIfExists(filePath) {

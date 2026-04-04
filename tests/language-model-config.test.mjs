@@ -18,6 +18,30 @@ function createConfigStore(localConfig = {}, apiKeys = {}) {
   };
 }
 
+async function withEnv(overrides, run) {
+  const previous = new Map();
+  for (const [key, value] of Object.entries(overrides)) {
+    previous.set(key, process.env[key]);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = String(value);
+    }
+  }
+
+  try {
+    await run();
+  } finally {
+    for (const [key, value] of previous.entries()) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 test('resolveModelProvider uses persisted provider from setup', () => {
   const configStore = createConfigStore({ provider: 'openrouter' }, {});
 
@@ -89,5 +113,37 @@ test('resolveLanguageModelConfig supports GitHub Copilot OAuth provider without 
     model: 'gpt-4.1',
     apiKey: undefined,
     baseUrl: 'https://api.individual.githubcopilot.com',
+  });
+});
+
+test('resolveLanguageModelConfig prefers env credentials in env-first mode', async () => {
+  const configStore = createConfigStore(
+    { provider: 'anthropic', model: 'claude-haiku-4-5' },
+    { anthropic: 'stored-key' },
+  );
+
+  await withEnv({ YAGR_PREFER_ENV_CREDENTIALS: '1', ANTHROPIC_API_KEY: 'env-key' }, async () => {
+    assert.deepEqual(resolveLanguageModelConfig({}, configStore), {
+      provider: 'anthropic',
+      model: 'claude-haiku-4-5',
+      apiKey: 'env-key',
+      baseUrl: undefined,
+    });
+  });
+});
+
+test('resolveLanguageModelConfig skips stored credentials when env-first mode has no env key', async () => {
+  const configStore = createConfigStore(
+    { provider: 'anthropic', model: 'claude-haiku-4-5' },
+    { anthropic: 'stored-key' },
+  );
+
+  await withEnv({ YAGR_PREFER_ENV_CREDENTIALS: '1', ANTHROPIC_API_KEY: undefined }, async () => {
+    assert.deepEqual(resolveLanguageModelConfig({}, configStore), {
+      provider: 'anthropic',
+      model: 'claude-haiku-4-5',
+      apiKey: undefined,
+      baseUrl: undefined,
+    });
   });
 });
