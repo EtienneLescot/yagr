@@ -18,10 +18,7 @@ maintenance significative alors que des solutions tiers matures existent.
 "agent harness" : boucle agentique complète, planification, sous-agents,
 gestion de contexte — sans imposer d'UI ni de backend métier.
 
-**Principe directeur de cette migration** : Yagr délègue la boucle
-agentique à deepagentsjs et se concentre sur ce qui lui est propre —
-façades, infrastructure n8n, proxy LLM, sessions, mémoire et tooling
-métier.
+**Principe directeur de cette migration** : deepagentsjs est le **backend agentique**. Les façades Yagr (WebUI, TUI, Telegram, CLI) le consomment. Yagr se concentre sur ce qui lui est propre — façades, infrastructure n8n, relay LLM, mémoire cross-session et tooling métier.
 
 ---
 
@@ -31,7 +28,7 @@ métier.
 flowchart TD
     subgraph RESTE["Yagr — périmètre conservé"]
         GW[Gateways\nWebUI · Telegram · TUI · CLI]
-        SESS[Session Store\nMemory Store]
+        MEM[Memory Store\nrésumés cross-session]
         SETUP[Setup / Onboarding\nn8n-local · tunnel · config]
         RELAY[Relay LLM n8n\nOpenAI-compatible endpoint\nlocalhost:11437]
         MT[Manager Tooling\npresentWorkflowResult · yagrProxy]
@@ -54,7 +51,7 @@ flowchart TD
     MT --> ENGINE
     ENGINE --> N8NAC
     DA -->|BaseChatModel LangChain| ACC
-    SESS --> GW
+    MEM --> GW
     SETUP -.->|configure| RELAY
     SETUP -.->|configure| ENGINE
 ```
@@ -88,7 +85,7 @@ responsabilités qu'il portait sont redistribuées :
 
 | Responsabilité actuelle | Destination |
 |---|---|
-| Historique `CoreMessage[]` | LangGraph checkpointer (par thread/session) |
+| Historique `CoreMessage[]` + registre sessions | LangGraph checkpointer + thread metadata (titre, date, compteur) |
 | `run(prompt, options)` | `agent.stream({ messages })` LangGraph |
 | `compactHistory()` | Auto-summarization deepagentsjs |
 | `clearConversation()` | Reset du thread LangGraph |
@@ -184,31 +181,37 @@ L'invalidation de session sur changement d'instructions workspace (logique
 actuelle dans `YagrSessionAgent.run`) devient un hook dans l'adaptateur
 Gateway (voir section 4.3).
 
-### 3.7 `src/session/` — Conservé intégralement
+### 3.7 `src/session/` — **Supprimé**
 
-`SessionStore` et `session-types.ts` restent. Les sessions Yagr sont des
-entités persistées sur disque (`YAGR_HOME/sessions/`), indépendantes du
-mécanisme de thread LangGraph. La continuité de conversation est assurée
-par le rechargement de l'historique sérialisé dans le thread LangGraph
-au démarrage d'une session existante.
+`SessionStore` et `session-types.ts` sont **supprimés**. Le LangGraph checkpointer devient l'unique source de vérité pour les sessions.
 
-**Articulation session Yagr ↔ thread LangGraph :**
+Le `thread_id` LangGraph est l'identifiant de session. Les métadonnées nécessaires aux façades (titre, `updatedAt`, `messageCount`) sont stockées dans le **thread metadata** du checkpointer — un dictionnaire arbitraire attaché à chaque thread, écrit par le backend Yagr à la fin de chaque run.
+
+**Toutes les façades** (WebUI sidebar, TUI `--list-sessions`, Telegram historique) lisent la liste des sessions en interrogeant le checkpointer LangGraph, pas un store local.
 
 ```
-SessionStore (Yagr)            LangGraph Checkpointer
-─────────────────────          ──────────────────────
-PersistedSession.id  ───────►  thread_id
-SerializedChatMessages  ────►  messages reloaded on resume
+LangGraph Checkpointer
+──────────────────────────────────────────────
+thread_id           → identifiant de session
+thread.metadata     → { title, updatedAt, messageCount }
+thread.checkpoint   → état du graphe (messages, variables)
 ```
 
-### 3.8 `src/memory/` — Conservé intégralement
+`session-types.ts` est conservé uniquement pour ses types partagés avec les façades (`SerializedChatMessage`, etc.) jusqu'à ce qu'ils soient remplacés par les types LangGraph.
+
+### 3.8 `src/memory/` — Conservé, migration future possible
 
 `MemoryStore` et `memory-types.ts` restent. La mémoire cross-session
-(résumés de sessions passées) continue d'être injectée dans le system
-prompt via `loadRecentMemory()` dans `build-system-prompt.ts`.
+(résumés de sessions passées) est injectée dans le system prompt via
+`loadRecentMemory()` dans `build-system-prompt.ts`.
 
-À terme, deepagentsjs supporte la `long-term memory` via LangGraph Store.
-C'est une évolution optionnelle, pas un prérequis de migration.
+Contrairement à `SessionStore` (supprimé, remplacé par le checkpointer),
+`MemoryStore` répond à un besoin distinct : construire un contexte
+long-terme *synthétique* entre sessions, pas stocker l'état brut d'un
+thread. Il n'y a pas de duplication avec le checkpointer.
+
+LangGraph Store (long-term memory native) est une évolution possible qui
+unifierait la persistance. C'est hors scope de cette migration.
 
 ---
 
@@ -244,8 +247,7 @@ Changements ciblés :
   thread LangGraph via `checkpointer`.
 - **Streaming SSE** : remplacer la consommation des events `YagrRunEngine`
   par `agent.streamEvents(...)` LangGraph, passé dans l'adaptateur ci-dessus.
-- **Session persistence** : à la fin de chaque run, sérialiser les nouveaux
-  messages dans `SessionStore` (idem aujourd'hui).
+- **Session persistence** : à la fin de chaque run, écrire les métadonnées de session (titre, `updatedAt`, `messageCount`) dans le thread metadata LangGraph.
 - **Extraction de mémoire** : `extractSessionMemory` reste appelé
   post-run, identique.
 - **`YagrSessionAgent`** supprimé des imports.
@@ -459,8 +461,7 @@ flowchart TD
         MGR[manager.ts\nGatewaySupervisor]
     end
 
-    subgraph Sessions["src/session/ + src/memory/"]
-        SS[SessionStore\ndisque YAGR_HOME/sessions/]
+    subgraph Sessions["src/memory/"]
         MS[MemoryStore\ndisque YAGR_HOME/memories/]
     end
 
@@ -523,7 +524,6 @@ flowchart TD
     DA -->|ChatOpenAI baseURL| PX
     PX --> ACC
     Gateway --> Sessions
-    Sessions --> SS
     Infra --> CFG
     SETUP --> PX
     SETUP --> Engine
@@ -546,6 +546,196 @@ flowchart TD
 
 ---
 
+## 11. Évolution des interfaces UI
+
+Cette section recense les modifications nécessaires sur la TUI (`interactive-ui.tsx`) et la WebUI (`app.tsx` / `store.ts`) pour exposer les capacités nouvelles apportées par deepagentsjs : planification dynamique (`write_todos`), continuité de session par checkpoint, compactage de contexte natif, sous-agents, et interruption HITL.
+
+Le principe directeur est de **ne pas remplacer les abstractions existantes** — les lanes de la TUI, les `ChatMessage` de la WebUI, le `ChatProgressEntry` — mais de les alimenter avec de nouveaux événements issus du bridge `langgraph-events.ts`. Ce qui existe déjà et n'a besoin que d'un nouveau câblage est distingué de ce qui représente un travail UI nouveau.
+
+---
+
+### 11.1 Inventaire des slots UI existants
+
+#### TUI (`interactive-ui.tsx`)
+
+Les abstractions actuelles couvrent déjà un large spectre de cas :
+
+| Élément existant | Utilisé pour | Potentiel nouveau usage |
+|---|---|---|
+| Lane `narrative` | Réflexion interne, phases | Pensée des sous-agents |
+| Lane `action` | Commandes shell | Outil `task` (sub-agent) |
+| Lane `result` | Résultats d'outils | Résumé compaction, résultat sub-agent |
+| Lane `interrupt` | `required_actions` | HITL LangGraph (`waiting_for_permission`) |
+| State `compacting` | Déjà câblé | Rewire vers event LangGraph |
+| State `waiting_for_permission` | Déjà câblé | HITL `interruptOn` natif |
+| State `resumable` | Déjà câblé | Résumé après checkpoint restore |
+| Phase dots (inspect/plan/edit/summarize) | Barre de progression | Rewire vers `on_chain_start` LangGraph |
+| `contextFillPercent` bar | Jaugeage du contexte | Rewire vers `context-usage` event |
+
+**Conclusion TUI** : tous les états d'affichage nécessaires existent déjà. Le travail se limite à :
+1. Rewirer les événements sources (depuis l'adaptateur `langgraph-events.ts` au lieu de `run-engine.ts`).
+2. Ajouter un affichage du plan `write_todos` (nouveau, voir §11.2).
+3. Ajouter un affichage de la délégation sub-agent (nouveau, voir §11.2).
+
+#### WebUI (`app.tsx` + `store.ts`)
+
+| Élément existant | Potentiel nouveau usage |
+|---|---|
+| `sessionHistory` + `SessionSidebar` | Déjà utilisé — enrichi avec nb de checkpoints |
+| `switchSession` / `browseSession` / `returnToActiveSession` | Rewire sur `thread_id` LangGraph pour vraie reprise par checkpoint |
+| `contextFillPercent` + bouton "Compact" | Rewire vers `context-usage` LangGraph + déclenchement programmatique |
+| `ChatProgressEntry` (tone: info/success/error) | Délégation sub-agent, todo updates |
+| Phase badge sur `ChatMessage` | Write_todos phase label |
+| `busyLabel` dans `WebUiState` | Phase LangGraph courante |
+| Streaming `ChatStreamEvent` | Type union à étendre (voir §11.3) |
+
+---
+
+### 11.2 Nouvelles capacités à rendre visibles
+
+#### A. Plans `write_todos` (TodoListMiddleware)
+
+**Ce que deepagentsjs apporte** : chaque appel à `write_todos` publie une liste de tâches (texte libre + statut `pending`/`done`/`in_progress`). Cela matérialise la planification de l'agent avant exécution.
+
+**TUI** :
+- Ajouter une fonction `renderTodoList` qui pousse une entrée dans la lane `narrative` avec titre "Plan" et le contenu de la liste (items avec préfixe `☐` / `☑`).
+- Chaque mise à jour `write_todos` écrase le dernier todo-entry dans le feed (comparaison par ID).
+- Optionnel : un panneau latéral dédié `<TodoPanel>` si l'espace terminal le permet.
+
+**WebUI** :
+- Ajouter un `ChatProgressEntry` de type `info` à chaque appel `write_todos`, affiché dans le `progressTicker` du message assistant en cours.
+- Alternatively : un composant `<TodoCard>` embarqué dans le message, montrant les items avec cases à cocher visuelles, mis à jour par `patchMessage`.
+- **Recommandation** : commencer par `ChatProgressEntry` (changement minimal), évoluer vers `TodoCard` dans une itération suivante.
+
+**Nouveau `ChatStreamEvent`** à ajouter dans le type union de `app.tsx` :
+```typescript
+| { type: 'todos'; items: Array<{ text: string; status: 'pending' | 'in_progress' | 'done' }> }
+```
+
+**Nouveau `WebUiState`** : ajouter `currentTodos: TodoItem[]` dans le store pour maintenir la liste courante séparément des messages, permettant un affichage persistant.
+
+---
+
+#### B. Délégation à des sous-agents (SubAgentMiddleware)
+
+**Ce que deepagentsjs apporte** : le tool `task` lance un sous-agent avec son propre contexte. La durée peut être longue.
+
+**TUI** :
+- Mapper `task` tool call sur une entrée lane `action`, titre "Sub-task" avec le texte de la délégation.
+- Mapper le retour du sous-agent sur lane `result`, titre "Sub-task completed".
+- Pendant l'exécution : state `running` avec `activeOperationText` = texte de la tâche déléguée.
+
+**WebUI** :
+- Deux `ChatProgressEntry` : une `info` au démarrage ("Delegating: [description]"), une `success` à la fin.
+- Si le sous-agent produit lui-même de la sortie streamée, l'afficher dans un bloc `<details>` rétractable à l'intérieur du message — cette UI est nouvelle.
+
+**Nouveau `ChatStreamEvent`** :
+```typescript
+| { type: 'sub-agent-start'; description: string }
+| { type: 'sub-agent-end'; summary: string }
+```
+
+---
+
+#### C. Sessions et reprise par checkpoint LangGraph
+
+**Ce que deepagentsjs apporte** : chaque session est un `thread_id` LangGraph. Un checkpoint persistant (mémorisé par le checkpointer LangGraph) permet de reprendre une conversation **à l'état exact** où elle s'était arrêtée, non pas en rejouant les messages mais en restaurant le graphe.
+
+**Distinction clé par rapport à l'état actuel** :
+- Aujourd'hui : `browseSession()` réaffiche les messages sérialisés dans `SessionStore` (lecture seule, replay UI).
+- Après migration : `switchSession(id)` charge le thread LangGraph via le checkpointer. Le prochain message repart de l'état réel du graphe.
+
+**Source de vérité unique** : le LangGraph checkpointer remplace `SessionStore`. La liste des sessions pour toutes les façades (WebUI sidebar, TUI `--list-sessions`, Telegram historique) est lue depuis le checkpointer via le thread metadata (`title`, `updatedAt`, `messageCount`).
+
+**TUI** :
+- Ajouter le `thread_id` dans le header (ex : `· session abc123`) et une commande `--list-sessions` au démarrage qui interroge le checkpointer.
+- State `resumable` re-câblé : affiché quand le thread metadata indique une interruption HITL en attente.
+
+**WebUI** :
+- `SessionSidebar` est déjà en place. `SessionHistoryEntry` est alimentée par le checkpointer au lieu de `SessionStore` — la forme reste identique.
+- Un badge visuel "Resumable" sur les sessions dont le thread metadata indique une interruption HITL (`interruptValue !== null`).
+- La mécanique `switchSession` → `setMessages([])` reste identique côté UI. Le gateway backend récupère les messages depuis le checkpoint LangGraph.
+
+---
+
+#### D. Compactage de contexte
+
+**Ce que deepagentsjs apporte** : le compactage vient soit d'un seuil LangGraph natif (summarization node), soit d'un déclenchement explicite par Yagr (`/api/compact`).
+
+**TUI** — déjà presque complet :
+- `compactSummary(event)` est déjà écrit et produit un texte lisible (nb messages foldés, source LLM vs fallback).
+- `handleCompaction()` pousse déjà une entrée lane `result`.
+- **Seul changement** : rewirer `YagrContextCompactionEvent` depuis l'event LangGraph `on_chain_end` du nœud de summarization plutôt que depuis `run-engine.ts`.
+
+**WebUI** — déjà presque complet :
+- `contextFillPercent` + barre de remplissage + bouton "Compact" existent.
+- Ajouter un `ChatProgressEntry` `info` dans le message assistant courant à la réception de l'event de compaction : "Context compacted — [N] messages folded." pour traçabilité dans le fil.
+- Le bouton "Compact" déclenche un appel `POST /api/compact` → le gateway invoque `agent.invoke({ type: 'compact' })` — **travail backend**, l'UI ne change pas.
+
+---
+
+#### E. Interruption HITL (`waiting_for_permission`)
+
+**Ce que deepagentsjs apporte** : le mécanisme `interruptOn` de LangGraph natif, distinct de l'actuel `requestRequiredAction` tool.
+
+> Voir §5.2 du document : `requestRequiredAction` est conservé comme tool custom injecté pour ne pas bloquer la migration. L'adoption de `interruptOn` natif est une montée en version future.
+
+**TUI** : state `waiting_for_permission` + `RequiredActionCard` déjà en place — aucun changement UI requis en phase 1.
+
+**WebUI** : les `requiredActions` dans l'event `final` sont déjà consommés et affichés. Aucun changement UI requis en phase 1.
+
+En phase 2 (adoption `interruptOn` natif) :
+- **TUI** : l'interruption arrive via un event stream, pas en fin de run. Ajouter un handler `on_chain_interrupt` dans `langgraph-events.ts` qui émet `YagrStateEvent { state: 'waiting_for_permission' }`.
+- **WebUI** : `ChatStreamEvent` étendu avec `| { type: 'interrupt'; actions: RequiredAction[] }` pour permettre l'affichage intermédiaire sans attendre l'event `final`.
+
+---
+
+### 11.3 Récapitulatif des changements par fichier
+
+#### `src/gateway/interactive-ui.tsx`
+
+| Changement | Nature |
+|---|---|
+| Rewire événements source vers `langgraph-events.ts` | Câblage (sans nouvelle UI) |
+| Affichage `write_todos` comme lane `narrative` | Nouveau (minimal) |
+| Affichage délégation `task` comme lane `action`/`result` | Nouveau (minimal) |
+| Affichage `sessionId` dans le header | Nouveau (1 ligne) |
+| Rewire `compacting` → event LangGraph summarization | Câblage |
+
+#### `src/webui/app.tsx`
+
+| Changement | Nature |
+|---|---|
+| Étendre `ChatStreamEvent` union | Nouveau (types) |
+| Afficher `write_todos` dans `progressTicker` | Nouveau (minimal) |
+| Afficher "Delegating…" progress entry pour `task` | Nouveau (minimal) |
+| Badge "Resumable" sur sessions interrompues | Nouveau (conditionnel) |
+| `ChatProgressEntry` à la réception de compaction | Nouveau (1 ligne de logique) |
+
+#### `src/webui/store.ts`
+
+| Changement | Nature |
+|---|---|
+| `currentTodos: TodoItem[]` dans `WebUiState` | Nouveau (état) |
+| Action `setTodos` | Nouveau (action Zustand) |
+| `checkpointId?: string` dans `SessionHistoryEntry` | Nouveau (type) |
+
+#### `src/gateway/langgraph-events.ts` (nouveau fichier — §4.1)
+
+Ce fichier est **le point d'entrée unique** de toutes les nouvelles informations deepagentsjs vers les UIs. Les changements UI ci-dessus sont tous déclenchés par de nouveaux events issus de ce fichier, jamais directement depuis LangGraph.
+
+---
+
+### 11.4 Ce qui n'est PAS dans le scope UI de la migration
+
+- Refonte visuelle du chat WebUI
+- Rendu markdown avancé des réponses
+- Visualisation du graphe LangGraph (interne à l'agent, pas exposé)
+- Replay audio / TTS
+- Notifications push / webhook sortant
+
+---
+
 ## 10. Glossaire
 
 | Terme | Définition |
@@ -563,5 +753,5 @@ flowchart TD
 | **n8nac** | CLI externe pour la manipulation de workflows n8n (`@n8n-as-code/skills`, `@n8n-as-code/transformer`) |
 | **Proxy LLM** | Serveur HTTP OpenAI-compatible local (`llm-relay-server.ts`) qui proxifie vers le provider actif |
 | **Engine Ports** | Interfaces TypeScript définissant les contrats entre Yagr et les backends n8n |
-| **Session Store** | Persistance file-based des sessions Yagr (`YAGR_HOME/sessions/`) |
+| **Thread metadata** | Dictionnaire arbitraire attaché à chaque thread LangGraph — stocke titre, date, compteur de messages pour les façades |
 | **Memory Store** | Persistance file-based de la mémoire cross-session (`YAGR_HOME/memories/`) |

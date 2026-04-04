@@ -26,52 +26,47 @@ export function resolveWorkflowOpenLink(
     };
   }
 
-  // When a tunnel is active, expose the public URL directly.
-  // The self-contained auth bridge is a local data: URI — not useful externally.
-  if (options.n8nTunnelPublicUrl) {
-    const tunnelOrigin = normalizeUrl(options.n8nTunnelPublicUrl)?.origin;
-    if (tunnelOrigin) {
-      const publicUrl = targetUrl.toString().replace(targetUrl.origin, tunnelOrigin);
-      return {
-        openUrl: publicUrl,
-        targetUrl: targetUrl.toString(),
-        via: 'direct',
-      };
-    }
+  // Resolve the target origin — substitute tunnel origin if active.
+  let resolvedTargetUrl = targetUrl.toString();
+  const tunnelOrigin = options.n8nTunnelPublicUrl
+    ? normalizeUrl(options.n8nTunnelPublicUrl)?.origin
+    : undefined;
+  if (tunnelOrigin && targetUrl.origin !== tunnelOrigin) {
+    resolvedTargetUrl = targetUrl.toString().replace(targetUrl.origin, tunnelOrigin);
   }
 
-  const n8nConfigService = options.n8nConfigService ?? new YagrN8nConfigService();
-  const configuredHost = n8nConfigService.getLocalConfig().host;
-  if (configuredHost) {
-    const configuredOrigin = normalizeUrl(configuredHost)?.origin;
-    if (configuredOrigin && configuredOrigin !== targetUrl.origin) {
-      return {
-        openUrl: targetUrl.toString(),
-        targetUrl: targetUrl.toString(),
-        via: 'direct',
-      };
-    }
-  }
+  const resolvedTarget = normalizeUrl(resolvedTargetUrl)!;
 
   const ownerCredentialService = options.ownerCredentialService ?? new ManagedN8nOwnerCredentialService();
-  const ownerCredentials = ownerCredentialService.get(targetUrl.origin);
-  if (!ownerCredentials) {
+
+  // Look up owner credentials: try the resolved origin first (tunnel), then fall back
+  // to the original origin (local n8n) since credentials are stored against the local URL.
+  const ownerCredentials =
+    ownerCredentialService.get(resolvedTarget.origin) ??
+    ownerCredentialService.get(targetUrl.origin);
+
+  // If we have credentials, generate the self-contained auth URL.
+  // The data: URI works via tunnels too — the browser POSTs through the tunnel to n8n.
+  if (ownerCredentials) {
+    // Build the login URL using the resolved target origin (tunnel if active)
+    // so the POST request goes through the same origin as the workflow URL.
+    const loginUrl = new URL('/rest/login', resolvedTarget.origin).toString();
     return {
-      openUrl: targetUrl.toString(),
-      targetUrl: targetUrl.toString(),
-      via: 'direct',
+      openUrl: buildManagedN8nWorkflowOpenDataUrl({
+        targetUrl: resolvedTarget.toString(),
+        loginUrl,
+        credentials: ownerCredentials,
+      }),
+      targetUrl: resolvedTarget.toString(),
+      via: 'self-contained-auth',
     };
   }
 
-  const loginUrl = new URL('/rest/login', targetUrl.origin).toString();
+  // No credentials available — fall back to direct URL.
   return {
-    openUrl: buildManagedN8nWorkflowOpenDataUrl({
-      targetUrl: targetUrl.toString(),
-      loginUrl,
-      credentials: ownerCredentials,
-    }),
-    targetUrl: targetUrl.toString(),
-    via: 'self-contained-auth',
+    openUrl: resolvedTarget.toString(),
+    targetUrl: resolvedTarget.toString(),
+    via: 'direct',
   };
 }
 

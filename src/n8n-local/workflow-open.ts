@@ -1,6 +1,7 @@
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { buildManagedN8nWorkflowOpenPage } from './browser-auth.js';
 import { ManagedN8nOwnerCredentialService, type ManagedN8nOwnerCredentials } from './owner-credentials.js';
+import { getActiveTunnelState } from './n8n-tunnel.js';
 
 export type ManagedWorkflowOpenPayload =
   | { mode: 'direct'; targetUrl: string }
@@ -35,10 +36,17 @@ export function resolveManagedN8nWorkflowOpen(target: string): ManagedWorkflowOp
     return { ok: false, statusCode: 400, error: 'Workflow target URL is invalid.' };
   }
 
-  if (targetUrl.origin !== configuredHost.origin) {
+  // Check if the target URL matches the configured n8n host or the active tunnel.
+  const tunnelPublicUrl = getActiveTunnelState()?.publicUrl;
+  const tunnelOrigin = tunnelPublicUrl ? new URL(tunnelPublicUrl).origin : null;
+  const isLocalTarget = targetUrl.origin === configuredHost.origin;
+  const isTunnelTarget = tunnelOrigin && targetUrl.origin === tunnelOrigin;
+
+  if (!isLocalTarget && !isTunnelTarget) {
     return { ok: false, statusCode: 400, error: 'Workflow target URL does not match the configured n8n host.' };
   }
 
+  // Look up owner credentials for the local n8n instance (credentials are always stored against the local URL).
   const ownerCredentials = new ManagedN8nOwnerCredentialService().get(configuredHost.origin);
   if (!ownerCredentials) {
     return {
@@ -50,7 +58,10 @@ export function resolveManagedN8nWorkflowOpen(target: string): ManagedWorkflowOp
     };
   }
 
-  const loginUrl = new URL('/rest/login', configuredHost.origin).toString();
+  // Build the login URL using the target's origin (tunnel or local) so the POST
+  // goes through the same origin as the workflow page.
+  const loginOrigin = isTunnelTarget ? targetUrl.origin : configuredHost.origin;
+  const loginUrl = new URL('/rest/login', loginOrigin).toString();
   return {
     ok: true,
     payload: {
