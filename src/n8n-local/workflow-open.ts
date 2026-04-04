@@ -59,7 +59,8 @@ export function resolveManagedN8nWorkflowOpen(target: string): ManagedWorkflowOp
   }
 
   // Build the login URL using the target's origin (tunnel or local) so the POST
-  // goes through the same origin as the workflow page.
+  // goes to the same domain as the workflow page — the browser then stores the
+  // session cookie for that origin.
   const loginOrigin = isTunnelTarget ? targetUrl.origin : configuredHost.origin;
   const loginUrl = new URL('/rest/login', loginOrigin).toString();
   return {
