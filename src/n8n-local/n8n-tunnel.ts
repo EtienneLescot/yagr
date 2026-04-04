@@ -366,6 +366,78 @@ export async function refreshN8nTunnel(targetUrl: string, cloudflaredBin?: strin
   await stopN8nTunnel();
   return startN8nTunnel(targetUrl, cloudflaredBin);
 }
+
+/**
+ * Starts a detached cloudflared tunnel for an arbitrary target URL and returns
+ * the public trycloudflare.com URL. Unlike startN8nTunnel, this does NOT
+ * persist tunnel state — it is intended for ephemeral use-cases such as
+ * exposing the LLM relay server during setup.
+ */
+export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: string): Promise<string> {
+  const bin = cloudflaredBin ?? await findCloudflaredBinary();
+  if (!bin) {
+    throw new Error(
+      'cloudflared is not installed. Run `yagr n8n tunnel setup` to install it automatically.',
+    );
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const logFile = path.join(os.tmpdir(), `cloudflared-proxy-${Date.now()}.log`);
+
+    const child = spawn(bin, ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', logFile], {
+      detached: true,
+      stdio: 'ignore',
+    });
+
+    if (!child.pid) {
+      reject(new Error('cloudflared failed to start (no PID assigned).'));
+      return;
+    }
+
+    child.unref();
+
+    let settled = false;
+    const cleanup = () => { try { fs.unlinkSync(logFile); } catch { /* ignore */ } };
+
+    const pollInterval = setInterval(() => {
+      if (settled) { clearInterval(pollInterval); return; }
+      try {
+        const text = fs.readFileSync(logFile, 'utf8');
+        const match = text.match(CLOUDFLARE_URL_PATTERN);
+        if (match) {
+          settled = true;
+          clearInterval(pollInterval);
+          cleanup();
+          resolve(match[0]);
+        }
+      } catch { /* log file not yet created */ }
+    }, 500);
+
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(pollInterval);
+      cleanup();
+      reject(new Error(`cloudflared failed to start: ${err.message}`));
+    });
+
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(pollInterval);
+      cleanup();
+      reject(new Error(`cloudflared exited early with code ${code}.`));
+    });
+
+    setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      clearInterval(pollInterval);
+      cleanup();
+      reject(new Error('cloudflared did not emit a trycloudflare.com URL within 30s.'));
+    }, TUNNEL_TIMEOUT_MS);
+  });
+}
 /**
  * Resolves the local n8n URL that should be used as the tunnel target.
  *
