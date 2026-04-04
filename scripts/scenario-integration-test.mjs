@@ -6,13 +6,15 @@
  * simple workflow creation, complex workflow creation, workflow explanation, etc.
  *
  * Usage:
- *   node scripts/scenario-integration-test.mjs [options]
+ *   node --test scripts/scenario-integration-test.mjs [options]
+ *
+ * Run a single scenario:
+ *   node --test scripts/scenario-integration-test.mjs --scenarios setup-check
  *
  * Options (CLI args override env vars):
  *   --provider <name>       Provider to use (default: DEFAULT_PROVIDER)
  *   --model <name>          Model to use (default: DEFAULT_MODEL)
  *   --scenarios <ids>       Comma-separated scenario IDs to run (default: all)
- *   --strict                Fail the process on any scenario failure
  *   --no-markdown           Skip writing the markdown report
  *
  * Environment variables (used when CLI args are not provided):
@@ -31,6 +33,8 @@ import process from 'node:process';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import assert from 'node:assert';
+import { describe, it, before, after } from 'node:test';
 import { config as dotenvConfig } from 'dotenv';
 
 dotenvConfig({ path: '.env', quiet: true, override: true });
@@ -62,7 +66,6 @@ const PROVIDER = readCliArg('--provider') || String(process.env.YAGR_SCN_PROVIDE
 const MODEL = readCliArg('--model') || String(process.env.YAGR_SCN_MODEL || DEFAULT_MODEL).trim();
 const DEFAULT_TIMEOUT_MS = toInt(process.env.YAGR_SCN_TIMEOUT_MS, 60_000);
 const CREATION_TIMEOUT_MS = toInt(process.env.YAGR_SCN_CREATION_TIMEOUT_MS, 180_000);
-const strict = process.argv.includes('--strict');
 const markdownDisabled = process.argv.includes('--no-markdown');
 const markdownPath = process.env.YAGR_SCN_MARKDOWN_PATH
   || path.join(process.cwd(), 'reports', 'scenario-integration-report.md');
@@ -516,91 +519,56 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
 }
 
 // ---------------------------------------------------------------------------
-// Main
+// Test suite
 // ---------------------------------------------------------------------------
-
-const testN8nRuntime = resolveTestN8nRuntime();
-const isolatedHome = createIsolatedHome(testN8nRuntime);
-
-process.stdout.write(`Scenario integration test\n`);
-process.stdout.write(`Provider: ${PROVIDER}  Model: ${MODEL}\n`);
-process.stdout.write(`n8n: ${testN8nRuntime.configured ? testN8nRuntime.host : 'not configured'}\n`);
-process.stdout.write(`Isolated home: ${isolatedHome}\n\n`);
 
 const scenariosToRun = SCENARIOS.filter((s) =>
   requestedScenarioIds.length === 0 || requestedScenarioIds.includes(s.id));
 
-const results = [];
+describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1 }, () => {
+  let testN8nRuntime;
+  let isolatedHome;
+  const results = [];
 
-for (const scenario of scenariosToRun) {
-  const skipped = scenario.n8nRequired && !testN8nRuntime.configured;
-  process.stdout.write(`Running [${scenario.id}] ${scenario.name}…\n`);
+  before(async () => {
+    testN8nRuntime = resolveTestN8nRuntime();
+    isolatedHome = createIsolatedHome(testN8nRuntime);
+    process.stdout.write(`n8n: ${testN8nRuntime.configured ? testN8nRuntime.host : 'not configured'}\n`);
+    process.stdout.write(`Isolated home: ${isolatedHome}\n\n`);
+  });
 
-  if (skipped) {
-    results.push({ scenario, status: 'SKIP', note: 'n8n non configuré.', steps: 0, timedOut: false });
-    process.stdout.write(`  → SKIP (n8n not configured)\n`);
-    continue;
+  after(async () => {
+    const createdWorkflowIds = results.flatMap((r) => r.createdWorkflowIds ?? []);
+    if (createdWorkflowIds.length > 0) {
+      process.stdout.write(`\nCleaning up ${createdWorkflowIds.length} workflow(s) created during tests…\n`);
+      await cleanupWorkflows(createdWorkflowIds, isolatedHome, testN8nRuntime);
+    }
+    try { fs.rmSync(isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
+
+    if (!markdownDisabled) {
+      writeMarkdownReport(results);
+      process.stdout.write(`\nMarkdown report: ${markdownPath}\n`);
+    }
+  });
+
+  for (const scenario of scenariosToRun) {
+    it(`[${scenario.id}] ${scenario.name}`, { timeout: scenario.timeoutMs + 10_000 }, async (t) => {
+      if (scenario.n8nRequired && !testN8nRuntime.configured) {
+        t.skip('n8n non configuré');
+        return;
+      }
+
+      const result = await runScenario(scenario, isolatedHome, testN8nRuntime);
+      results.push({ scenario, ...result });
+
+      assert.ok(result.status === 'PASS', `${result.status}: ${result.note}`);
+    });
   }
-
-  const result = await runScenario(scenario, isolatedHome, testN8nRuntime);
-  results.push({ scenario, ...result });
-  process.stdout.write(`  → ${result.status} — ${result.note}\n`);
-}
-
-// Cleanup created workflows from n8n
-const createdWorkflowIds = results.flatMap((r) => r.createdWorkflowIds ?? []);
-if (createdWorkflowIds.length > 0) {
-  process.stdout.write(`\nCleaning up ${createdWorkflowIds.length} workflow(s) created during tests…\n`);
-  await cleanupWorkflows(createdWorkflowIds, isolatedHome, testN8nRuntime);
-}
-
-// Cleanup isolated home
-try { fs.rmSync(isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
-
-process.stdout.write('\n');
-printTable(results);
-
-if (!markdownDisabled) {
-  writeMarkdownReport(results);
-  process.stdout.write(`\nMarkdown report: ${markdownPath}\n`);
-}
-
-const failed = results.filter((r) => r.status === 'FAIL');
-if (strict && failed.length > 0) {
-  process.exitCode = 1;
-}
+});
 
 // ---------------------------------------------------------------------------
 // Reporting
 // ---------------------------------------------------------------------------
-
-function printTable(rows) {
-  const headers = ['ID', 'Nom', 'Status', 'Steps', 'Note'];
-  const data = rows.map((r) => [
-    r.scenario.id,
-    r.scenario.name,
-    r.status,
-    String(r.steps || 0),
-    truncate(r.note || '', 80),
-  ]);
-
-  const widths = headers.map((h, i) =>
-    Math.max(h.length, ...data.map((row) => row[i].length)));
-
-  const sep = `+-${widths.map((w) => '-'.repeat(w)).join('-+-')}-+`;
-  process.stdout.write(`${sep}\n`);
-  process.stdout.write(`| ${headers.map((h, i) => h.padEnd(widths[i])).join(' | ')} |\n`);
-  process.stdout.write(`${sep}\n`);
-  for (const row of data) {
-    process.stdout.write(`| ${row.map((cell, i) => cell.padEnd(widths[i])).join(' | ')} |\n`);
-  }
-  process.stdout.write(`${sep}\n`);
-
-  const pass = rows.filter((r) => r.status === 'PASS').length;
-  const fail = rows.filter((r) => r.status === 'FAIL').length;
-  const skip = rows.filter((r) => r.status === 'SKIP').length;
-  process.stdout.write(`\nSummary: ${pass} PASS, ${fail} FAIL, ${skip} SKIP\n`);
-}
 
 function writeMarkdownReport(rows) {
   const pass = rows.filter((r) => r.status === 'PASS').length;

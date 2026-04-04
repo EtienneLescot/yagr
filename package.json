@@ -14,7 +14,7 @@
     "clean:yagr:all": "node scripts/clean-yagr-local.mjs",
     "test": "npm run test:unit",
     "test:unit": "npm run build && node --test tests/*.test.mjs",
-    "test:integration": "npm run build && node scripts/scenario-integration-test.mjs",
+    "test:integration": "npm run build && node --test scripts/scenario-integration-test.mjs",
     "test:providers": "npm run build && YAGR_IT_ADVANCED=1 node scripts/provider-integration-matrix.mjs --strict",
     "typecheck": "tsc --noEmit",
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
