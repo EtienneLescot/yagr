@@ -371,19 +371,24 @@ async function pollExecutionResult(
   const status = String((detail as Record<string, unknown>)?.status ?? 'unknown');
   const success = status === 'success';
 
-  // Best-effort: try to extract the last node output as a readable value
+  // Best-effort: extract a readable output from the last node's execution data
   let output: string | null = null;
   try {
     const data = (detail as Record<string, unknown>)?.data as Record<string, unknown>;
     const resultData = data?.resultData as Record<string, unknown>;
-    const runData = resultData?.runData as Record<string, Record<string, unknown>[]>;
+    const runData = resultData?.runData as Record<string, unknown[]>;
     if (runData) {
-      // Take the last node's first item output
       const lastNodeData = Object.values(runData).at(-1);
-      const firstExec = Array.isArray(lastNodeData) ? lastNodeData[0] : undefined;
-      const json = (firstExec?.data as Record<string, unknown>)?.main;
+      const firstExec = Array.isArray(lastNodeData) ? lastNodeData[0] as Record<string, unknown> : undefined;
+      // main is an array of item arrays: [[{json:{...}}], ...]
+      const main = (firstExec?.data as Record<string, unknown>)?.main;
+      const firstBranch = Array.isArray(main) ? main[0] : undefined;
+      const firstItem = Array.isArray(firstBranch) ? firstBranch[0] as Record<string, unknown> : undefined;
+      const json = firstItem?.json as Record<string, unknown> | undefined;
       if (json) {
-        output = JSON.stringify(json);
+        // AI agent nodes typically put the response in json.output
+        const text = json.output ?? json.text ?? json.response ?? json.answer ?? json.result;
+        output = typeof text === 'string' ? text : JSON.stringify(json);
       }
     }
   } catch {
@@ -391,7 +396,7 @@ async function pollExecutionResult(
   }
 
   const summary = success
-    ? `Async execution confirmed: executionId=${executionId} status=${status}${output ? ` output=${output}` : ''}`
+    ? `Async execution confirmed: executionId=${executionId} status=success${output ? `\nAgent output: ${output}` : ''}`
     : `Async execution finished with status=${status} executionId=${executionId}. Check execution details for error.`;
 
   return { executionId, status, output, summary };
