@@ -8,13 +8,12 @@
  * Usage:
  *   node --test scripts/scenario-integration-test.mjs [options]
  *
- * Run a single scenario:
- *   node --test scripts/scenario-integration-test.mjs --scenarios setup-check
+ * Run specific scenarios (env var, because node --test isolates argv in workers):
+ *   YAGR_SCN_SCENARIOS=setup-check node --test scripts/scenario-integration-test.mjs
  *
- * Options (CLI args override env vars):
+ * Options (CLI args override env vars where applicable):
  *   --provider <name>       Provider to use (default: DEFAULT_PROVIDER)
  *   --model <name>          Model to use (default: DEFAULT_MODEL)
- *   --scenarios <ids>       Comma-separated scenario IDs to run (default: all)
  *   --no-markdown           Skip writing the markdown report
  *
  * Environment variables (used when CLI args are not provided):
@@ -70,8 +69,7 @@ const markdownDisabled = process.argv.includes('--no-markdown');
 const markdownPath = process.env.YAGR_SCN_MARKDOWN_PATH
   || path.join(process.cwd(), 'reports', 'scenario-integration-report.md');
 
-const scenariosFromCli = readCliArg('--scenarios');
-const requestedScenarioIds = (scenariosFromCli || process.env.YAGR_SCN_SCENARIOS || '')
+const requestedScenarioIds = (process.env.YAGR_SCN_SCENARIOS || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
@@ -525,25 +523,27 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
 const scenariosToRun = SCENARIOS.filter((s) =>
   requestedScenarioIds.length === 0 || requestedScenarioIds.includes(s.id));
 
+// Hoisted so writeMarkdownReport (a module-level function) can reference them.
+let _testN8nRuntime;
+let _isolatedHome;
+
 describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1 }, () => {
-  let testN8nRuntime;
-  let isolatedHome;
   const results = [];
 
   before(async () => {
-    testN8nRuntime = resolveTestN8nRuntime();
-    isolatedHome = createIsolatedHome(testN8nRuntime);
-    process.stdout.write(`n8n: ${testN8nRuntime.configured ? testN8nRuntime.host : 'not configured'}\n`);
-    process.stdout.write(`Isolated home: ${isolatedHome}\n\n`);
+    _testN8nRuntime = resolveTestN8nRuntime();
+    _isolatedHome = createIsolatedHome(_testN8nRuntime);
+    process.stdout.write(`n8n: ${_testN8nRuntime.configured ? _testN8nRuntime.host : 'not configured'}\n`);
+    process.stdout.write(`Isolated home: ${_isolatedHome}\n\n`);
   });
 
   after(async () => {
     const createdWorkflowIds = results.flatMap((r) => r.createdWorkflowIds ?? []);
     if (createdWorkflowIds.length > 0) {
       process.stdout.write(`\nCleaning up ${createdWorkflowIds.length} workflow(s) created during tests…\n`);
-      await cleanupWorkflows(createdWorkflowIds, isolatedHome, testN8nRuntime);
+      await cleanupWorkflows(createdWorkflowIds, _isolatedHome, _testN8nRuntime);
     }
-    try { fs.rmSync(isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
+    try { fs.rmSync(_isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
 
     if (!markdownDisabled) {
       writeMarkdownReport(results);
@@ -553,12 +553,12 @@ describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1
 
   for (const scenario of scenariosToRun) {
     it(`[${scenario.id}] ${scenario.name}`, { timeout: scenario.timeoutMs + 10_000 }, async (t) => {
-      if (scenario.n8nRequired && !testN8nRuntime.configured) {
+      if (scenario.n8nRequired && !_testN8nRuntime.configured) {
         t.skip('n8n non configuré');
         return;
       }
 
-      const result = await runScenario(scenario, isolatedHome, testN8nRuntime);
+      const result = await runScenario(scenario, _isolatedHome, _testN8nRuntime);
       results.push({ scenario, ...result });
 
       assert.ok(result.status === 'PASS', `${result.status}: ${result.note}`);
@@ -581,7 +581,7 @@ function writeMarkdownReport(rows) {
     `- Generated at: ${new Date().toISOString()}`,
     `- Provider: \`${PROVIDER}\``,
     `- Model: \`${MODEL}\``,
-    `- n8n: \`${testN8nRuntime.configured ? testN8nRuntime.host : 'not configured'}\``,
+    `- n8n: \`${_testN8nRuntime?.configured ? _testN8nRuntime.host : 'not configured'}\``,
     '',
     '## Summary',
     '',
