@@ -5,7 +5,7 @@ import { createListDirTool } from './list-directory.js';
 import { createRunScriptTool } from './run-script.js';
 import { createRunShellTool } from './run-shell.js';
 import { createMoveFileTool } from './move-workspace-file.js';
-import { createN8nAcTool } from './n8nac.js';
+import { createYagrProxyTool } from './yagr-proxy-tool.js';
 import { createReadFileTool } from './read-workspace-file.js';
 import { createReplaceInFileTool } from './replace-in-workspace-file.js';
 import { createReportProgressTool } from './report-progress.js';
@@ -19,7 +19,7 @@ function createAllTools(observer?: ToolExecutionObserver) {
   return {
     reportProgress: createReportProgressTool(observer),
     requestRequiredAction: createRequestRequiredActionTool(observer),
-    n8nac: createN8nAcTool(observer),
+    yagrProxy: createYagrProxyTool(observer),
     httpRequest: createHttpRequestTool(observer),
     runScript: createRunScriptTool(observer),
     runShell: createRunShellTool(observer),

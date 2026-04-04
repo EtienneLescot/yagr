@@ -127,6 +127,25 @@ export interface YagrToolResultTrace {
   result: unknown;
 }
 
+/**
+ * Generic structured action signal embedded in any tool result.
+ * Tools that represent discrete operations (e.g. CLI wrappers) can include
+ * this in their result so the outcome layer can observe them without coupling
+ * to a specific tool name.
+ */
+export interface YagrActionSignal {
+  operation: string;
+  success: boolean;
+  exitCode?: number;
+  filename?: string;
+  workflowId?: string;
+  workflowUrl?: string;
+  title?: string;
+  validateFile?: string;
+  asyncTrigger?: boolean;
+  executionConfirmed?: boolean;
+}
+
 export type YagrToolEvent =
   | {
       type: 'status';

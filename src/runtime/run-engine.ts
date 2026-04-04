@@ -325,19 +325,27 @@ async function maybeExecuteSyntheticToolIntents(
       continue;
     }
 
-    const args = {
-      ...intent,
-      validateFile: intent.validateFile || (intent.action === 'validate' ? intent.filename : undefined),
-    };
-    const n8nacTool = tools.n8nac as unknown as {
+    // Convert the structured n8nac intent into a runScript command.
+    let argv: string[];
+    if (intent.action === 'command' && Array.isArray(intent.commandArgv) && intent.commandArgv.length > 0) {
+      argv = intent.commandArgv;
+    } else if (intent.action === 'push' || intent.action === 'validate' || intent.action === 'verify') {
+      const target = intent.filename ?? intent.validateFile ?? intent.workflowId ?? '';
+      argv = target ? [intent.action, target] : [intent.action];
+    } else {
+      continue;
+    }
+
+    const n8nacCommand = ['npx', '--yes', 'n8nac', ...argv].join(' ');
+    const runScriptTool = tools.runScript as unknown as {
       execute: (toolArgs: Record<string, unknown>, toolOptions?: unknown) => Promise<unknown>;
     };
-    const result = await n8nacTool.execute(args, undefined);
+    const result = await runScriptTool.execute({ command: n8nacCommand, timeoutMs: 60_000 }, undefined);
     await recordStep(state, options, {
       stepType: 'tool-result',
       finishReason: 'tool-calls',
-      toolCalls: [{ toolName: 'n8nac', args }],
-      toolResults: [{ toolName: 'n8nac', result }],
+      toolCalls: [{ toolName: 'runScript', args: { command: n8nacCommand, timeoutMs: 60_000 } }],
+      toolResults: [{ toolName: 'runScript', result }],
       text: '',
     });
   }
@@ -542,11 +550,14 @@ function inferPhaseFromStep(step: {
   toolCalls: Array<{ toolName: string; args: unknown }>;
   toolResults: Array<{ toolName: string; result: unknown }>;
 }): YagrRunPhase {
-  const n8nacActions = step.toolResults
-    .filter((toolResult) => toolResult.toolName === 'n8nac')
-    .map((toolResult) => {
-      const result = toolResult.result as Record<string, unknown> | undefined;
-      return typeof result?.operation === 'string' ? result.operation : undefined;
+  const n8nacActions = step.toolCalls
+    .filter((toolCall) => toolCall.toolName === 'runScript')
+    .map((toolCall) => {
+      const command = typeof (toolCall.args as Record<string, unknown> | undefined)?.command === 'string'
+        ? (toolCall.args as Record<string, unknown>).command as string
+        : '';
+      const match = /\bn8nac\s+(\S+)/.exec(command);
+      return match ? match[1] : undefined;
     })
     .filter((action): action is string => Boolean(action));
 
@@ -635,16 +646,8 @@ function hasObservedToolCall(journal: YagrRunJournalEntry[], toolNames: readonly
 
 /**
  * Returns true when the journal contains a tool call that represents material
- * (mutating / write-path) work.  Read-only n8nac actions such as `list`,
- * `setup_check`, `pull`, `skills`, `init_auth`, and `init_project` are
- * intentionally excluded so that informational queries do not trigger the
- * completion-gate's continuation logic.
+ * (mutating / write-path) work.
  */
-const N8NAC_READONLY_ACTIONS = new Set([
-  'list', 'setup_check', 'skills',
-  'pull', 'init_auth', 'init_project',
-]);
-
 function hasMaterialToolCall(journal: YagrRunJournalEntry[], toolNames: readonly string[]): boolean {
   const wanted = new Set(toolNames);
 
@@ -656,17 +659,6 @@ function hasMaterialToolCall(journal: YagrRunJournalEntry[], toolNames: readonly
     for (const toolCall of entry.step.toolCalls) {
       if (!wanted.has(toolCall.toolName)) {
         continue;
-      }
-
-      // For n8nac, only count write/mutating actions as material work.
-      if (toolCall.toolName === 'n8nac') {
-        const toolResult = entry.step.toolResults.find((r) => r.toolName === 'n8nac');
-        const operation = typeof (toolResult?.result as Record<string, unknown> | undefined)?.operation === 'string'
-          ? (toolResult!.result as Record<string, unknown>).operation as string
-          : undefined;
-        if (operation && N8NAC_READONLY_ACTIONS.has(operation)) {
-          continue;
-        }
       }
 
       return true;
@@ -1220,7 +1212,7 @@ function buildRecoveryPrompt(outcome: RunOutcome, attemptNumber: number): string
     return [
       `The workflow file${fileNote} was written successfully.`,
       `The following deployment steps are still needed: ${missingChecks.join(', ')}.`,
-      'Use the n8nac tool to complete them now. Do not stop until push succeeds.',
+      'Use runScript to run npx n8nac commands to complete them now. Do not stop until push succeeds.',
     ].join(' ');
   }
 
@@ -1957,26 +1949,19 @@ function hasSuccessfulWorkspaceInstructionsRefresh(journal: readonly YagrRunJour
       return false;
     }
 
-    const n8nacActions = entry.step.toolCalls
-      .filter((toolCall) => toolCall.toolName === 'n8nac' && toolCall.args && typeof toolCall.args === 'object')
+    const n8nacCommands = entry.step.toolCalls
+      .filter((toolCall) => toolCall.toolName === 'runScript' && toolCall.args && typeof toolCall.args === 'object')
       .map((toolCall) => {
-        const action = (toolCall.args as { action?: unknown }).action;
-        return typeof action === 'string' ? action : undefined;
-      })
-      .filter((action): action is string => Boolean(action));
+        const command = (toolCall.args as { command?: unknown }).command;
+        return typeof command === 'string' ? command : '';
+      });
 
-    if (n8nacActions.includes('init_project')) {
-      return entry.step.toolResults.some((toolResult) => (
-        toolResult.toolName === 'n8nac'
-        && toolResult.result
-        && typeof toolResult.result === 'object'
-        && (toolResult.result as { aiContextRefreshed?: unknown }).aiContextRefreshed === true
-      ));
-    }
+    const hasInitProject = n8nacCommands.some((cmd) => /\bn8nac\s+init_project\b/.test(cmd));
+    const hasUpdateAi = n8nacCommands.some((cmd) => /\bn8nac\s+update_ai\b/.test(cmd));
 
-    if (n8nacActions.includes('update_ai')) {
+    if (hasInitProject || hasUpdateAi) {
       return entry.step.toolResults.some((toolResult) => (
-        toolResult.toolName === 'n8nac'
+        toolResult.toolName === 'runScript'
         && toolResult.result
         && typeof toolResult.result === 'object'
         && (toolResult.result as { exitCode?: unknown }).exitCode === 0

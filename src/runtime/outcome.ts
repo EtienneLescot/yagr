@@ -38,6 +38,25 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+function detectN8nacOperationFromCommand(command: string): string | undefined {
+  const match = /\bn8nac\s+(\S+)(?:\s+(\S+))?/.exec(command);
+  if (!match) {
+    return undefined;
+  }
+  const op = match[1];
+  const sub = match[2];
+  // 'credential' is a subcommand group (credential list, credential create, ...) used for
+  // manager-side lifecycle ops; not a workflow operation we want to track here.
+  if (op === 'credential') {
+    return undefined;
+  }
+  // 'skills validate' maps to the validate operation.
+  if (op === 'skills' && sub === 'validate') {
+    return 'validate';
+  }
+  return op;
+}
+
 function extractObservedFacts(journal: YagrRunJournalEntry[]) {
   const writtenFiles = new Set<string>();
   const updatedFiles = new Set<string>();
@@ -82,40 +101,32 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
         continue;
       }
 
-      if (toolCall.toolName === 'n8nac') {
-          const action = asString(result?.operation) ?? 'unknown';
-          if (action === 'setup_check') {
-            continue;
-          }
+      if (toolCall.toolName === 'runScript') {
+        const command = asString(args?.command);
+        if (!command) {
+          continue;
+        }
 
-          const observedAction: ObservedN8nacAction = {
-            action,
-            success: (asNumber(result?.exitCode) ?? 1) === 0
-              && (action !== 'test' || result?.asyncTrigger !== true || result?.executionConfirmed === true),
-            filename: asString(result?.pushTarget),
-            workflowId: asString(result?.workflowId),
-            workflowUrl: asString(result?.workflowUrl),
-            title: asString(result?.title),
-            validateFile: asString(result?.validateFile),
-          };
+        const action = detectN8nacOperationFromCommand(command);
+        if (!action || action === 'setup_check') {
+          continue;
+        }
+
+        const exitCode = asNumber(result?.exitCode) ?? 1;
+        const stdout = asString(result?.stdout) ?? '';
+        const asyncTrigger = action === 'test' && /workflow was started/i.test(stdout);
+        const pushTargetMatch = action === 'push' && exitCode === 0
+          ? /✔ Pushed workflow (.+?)\.?\s*$/.exec(stdout.trim())
+          : null;
+
+        const observedAction: ObservedN8nacAction = {
+          action,
+          success: exitCode === 0 && (!asyncTrigger || false),
+          filename: pushTargetMatch ? pushTargetMatch[1].trim() : undefined,
+          exitCode,
+        };
 
         n8nacActions.push(observedAction);
-
-        if (
-          action === 'push'
-          && observedAction.success
-          && observedAction.workflowId
-          && result?.verified === true
-        ) {
-          n8nacActions.push({
-            action: 'verify',
-            success: true,
-            workflowId: observedAction.workflowId,
-            workflowUrl: observedAction.workflowUrl,
-            title: observedAction.title,
-            exitCode: observedAction.exitCode,
-          });
-        }
       }
     }
   }

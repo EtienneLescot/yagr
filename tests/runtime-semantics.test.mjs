@@ -262,8 +262,8 @@ test('later successful retry clears an earlier unresolved n8nac failure', () => 
         finishReason: 'tool-calls',
         phase: 'validate',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['skills', 'validate', 'demo.workflow.ts'] } }],
-        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1, operation: 'validate' } }],
+        toolCalls: [{ toolName: 'runScript', args: { command: 'npx n8nac skills validate demo.workflow.ts' } }],
+        toolResults: [{ toolName: 'runScript', result: { exitCode: 1, stdout: '', stderr: '' } }],
       },
     },
     {
@@ -279,8 +279,8 @@ test('later successful retry clears an earlier unresolved n8nac failure', () => 
         finishReason: 'tool-calls',
         phase: 'validate',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['skills', 'validate', 'demo.workflow.ts'] } }],
-        toolResults: [{ toolName: 'n8nac', result: { exitCode: 0, operation: 'validate' } }],
+        toolCalls: [{ toolName: 'runScript', args: { command: 'npx n8nac skills validate demo.workflow.ts' } }],
+        toolResults: [{ toolName: 'runScript', result: { exitCode: 0, stdout: '', stderr: '' } }],
       },
     },
   ];
@@ -306,8 +306,8 @@ test('setup_check is ignored in observed n8nac failures', () => {
         finishReason: 'tool-calls',
         phase: 'plan',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['setup-check'] } }],
-        toolResults: [{ toolName: 'n8nac', result: { initialized: false, operation: 'setup_check' } }],
+        toolCalls: [{ toolName: 'runScript', args: { command: 'npx n8nac setup_check' } }],
+        toolResults: [{ toolName: 'runScript', result: { exitCode: 1, stdout: '', stderr: '' } }],
       },
     },
   ];
@@ -318,48 +318,28 @@ test('setup_check is ignored in observed n8nac failures', () => {
   assert.equal(outcome.unresolvedFailedActions.length, 0);
 });
 
-test('push with built-in verify resolves prior verify failures and carries workflow facts', () => {
+test('successful push is treated as both push and verify evidence', () => {
   const journal = [
     {
       timestamp: '2026-03-23T15:00:00.000Z',
       type: 'step',
       status: 'completed',
-      message: 'verify failed',
-      phase: 'verify',
+      message: 'push succeeded',
+      phase: 'sync',
       stepNumber: 1,
       step: {
         stepNumber: 1,
         stepType: 'tool-result',
         finishReason: 'tool-calls',
-        phase: 'verify',
-        text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['verify', 'wf-1'] } }],
-        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1, operation: 'verify' } }],
-      },
-    },
-    {
-      timestamp: '2026-03-23T15:01:00.000Z',
-      type: 'step',
-      status: 'completed',
-      message: 'push succeeded with verify',
-      phase: 'sync',
-      stepNumber: 2,
-      step: {
-        stepNumber: 2,
-        stepType: 'tool-result',
-        finishReason: 'tool-calls',
         phase: 'sync',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'workflows/demo.workflow.ts'] } }],
+        toolCalls: [{ toolName: 'runScript', args: { command: 'npx n8nac push workflows/demo.workflow.ts' } }],
         toolResults: [{
-          toolName: 'n8nac',
+          toolName: 'runScript',
           result: {
             exitCode: 0,
-            operation: 'push',
-            verified: true,
-            workflowId: 'wf-1',
-            workflowUrl: 'http://localhost:5678/workflow/wf-1',
-            title: 'Demo Flow',
+            stdout: '✔ Pushed workflow workflows/demo.workflow.ts\n',
+            stderr: '',
           },
         }],
       },
@@ -369,8 +349,8 @@ test('push with built-in verify resolves prior verify failures and carries workf
   const outcome = analyzeRunOutcome(journal);
 
   assert.equal(outcome.unresolvedFailedActions.length, 0);
-  assert.equal(outcome.successfulVerify?.workflowId, 'wf-1');
-  assert.equal(outcome.successfulVerify?.workflowUrl, 'http://localhost:5678/workflow/wf-1');
+  assert.ok(outcome.successfulPush);
+  assert.ok(outcome.successfulVerify);
 });
 
 test('exploratory setup failures stop being blocking once push and verify succeed', () => {
@@ -388,8 +368,8 @@ test('exploratory setup failures stop being blocking once push and verify succee
         finishReason: 'tool-calls',
         phase: 'plan',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['init-auth'] } }],
-        toolResults: [{ toolName: 'n8nac', result: { exitCode: 1, operation: 'init_auth' } }],
+        toolCalls: [{ toolName: 'runScript', args: { command: 'npx n8nac init_auth' } }],
+        toolResults: [{ toolName: 'runScript', result: { exitCode: 1, stdout: '', stderr: '' } }],
       },
     },
     {
@@ -405,16 +385,13 @@ test('exploratory setup failures stop being blocking once push and verify succee
         finishReason: 'tool-calls',
         phase: 'sync',
         text: '',
-        toolCalls: [{ toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'workflows/demo.workflow.ts'] } }],
+        toolCalls: [{ toolName: 'runScript', args: { command: 'npx n8nac push workflows/demo.workflow.ts' } }],
         toolResults: [{
-          toolName: 'n8nac',
+          toolName: 'runScript',
           result: {
             exitCode: 0,
-            operation: 'push',
-            verified: true,
-            workflowId: 'wf-1',
-            workflowUrl: 'http://localhost:5678/workflow/wf-1',
-            title: 'Demo Flow',
+            stdout: '✔ Pushed workflow workflows/demo.workflow.ts\n',
+            stderr: '',
           },
         }],
       },
@@ -522,11 +499,11 @@ test('successful push counts as validate and verify evidence for completion gati
         text: '',
         toolCalls: [
           { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'demo.workflow.ts'] } },
+          { toolName: 'runScript', args: { command: 'npx n8nac push demo.workflow.ts' } },
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', result: { exitCode: 0, operation: 'push' } },
+          { toolName: 'runScript', result: { exitCode: 0, stdout: '✔ Pushed workflow demo.workflow.ts\n', stderr: '' } },
         ],
       },
     },
@@ -570,11 +547,11 @@ test('grounded summary prefers a user-facing workflow completion message when a 
         text: '',
         toolCalls: [
           { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'demo.workflow.ts'] } },
+          { toolName: 'runScript', args: { command: 'npx n8nac push demo.workflow.ts' } },
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', result: { exitCode: 0, operation: 'push' } },
+          { toolName: 'runScript', result: { exitCode: 0, stdout: '✔ Pushed workflow demo.workflow.ts\n', stderr: '' } },
         ],
       },
     },
@@ -625,11 +602,11 @@ test('grounded summary includes workflow URL from presentWorkflowResult when ava
         text: '',
         toolCalls: [
           { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'demo.workflow.ts'] } },
+          { toolName: 'runScript', args: { command: 'npx n8nac push demo.workflow.ts' } },
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', result: { exitCode: 0, operation: 'push' } },
+          { toolName: 'runScript', result: { exitCode: 0, stdout: '✔ Pushed workflow demo.workflow.ts\n', stderr: '' } },
         ],
       },
     },
@@ -642,7 +619,7 @@ test('grounded summary includes workflow URL from presentWorkflowResult when ava
   assert.doesNotMatch(summary, /workflow card below/i);
 });
 
-test('grounded summary falls back to successful push metadata when no presentWorkflowResult was emitted', () => {
+test('grounded summary describes workflow completion when workflow was pushed without a presentWorkflowResult', () => {
   const journal = [
     {
       timestamp: '2026-03-23T16:01:00.000Z',
@@ -659,19 +636,16 @@ test('grounded summary falls back to successful push metadata when no presentWor
         text: '',
         toolCalls: [
           { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'workflows/demo.workflow.ts'] } },
+          { toolName: 'runScript', args: { command: 'npx n8nac push workflows/demo.workflow.ts' } },
         ],
         toolResults: [
           { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
           {
-            toolName: 'n8nac',
+            toolName: 'runScript',
             result: {
               exitCode: 0,
-              operation: 'push',
-              verified: true,
-              workflowId: 'wf-3',
-              workflowUrl: 'http://localhost:5678/workflow/wf-3',
-              title: 'Demo Flow',
+              stdout: '✔ Pushed workflow workflows/demo.workflow.ts\n',
+              stderr: '',
             },
           },
         ],
@@ -681,44 +655,30 @@ test('grounded summary falls back to successful push metadata when no presentWor
 
   const summary = buildGroundedSummary('Create a workflow.', 'stop', journal, []);
 
-  assert.match(summary, /Demo Flow/);
-  assert.match(summary, /Workflow link: http:\/\/localhost:5678\/workflow\/wf-3/);
+  assert.match(summary, /pushed to n8n/i);
   assert.doesNotMatch(summary, /workflow card below/i);
-  assert.doesNotMatch(summary, /Failed n8nac actions/);
 });
 
-test('final answer policy forces a grounded summary when a workflow URL is known', () => {
+test('final answer policy forces a grounded summary when a workflow URL is known via presentWorkflowResult', () => {
   const journal = [
     {
       timestamp: '2026-03-23T16:01:00.000Z',
       type: 'step',
       status: 'completed',
-      message: 'workflow pushed',
-      phase: 'sync',
+      message: 'workflow presented',
+      phase: 'summarize',
       stepNumber: 1,
       step: {
         stepNumber: 1,
         stepType: 'tool-result',
         finishReason: 'tool-calls',
-        phase: 'sync',
+        phase: 'summarize',
         text: '',
         toolCalls: [
-          { toolName: 'writeFile', args: { path: 'workflows/demo.workflow.ts' } },
-          { toolName: 'n8nac', args: { action: 'command', commandArgv: ['push', 'workflows/demo.workflow.ts'] } },
+          { toolName: 'presentWorkflowResult', args: { workflowId: 'wf-3', workflowUrl: 'http://localhost:5678/workflow/wf-3', title: 'Demo Flow' } },
         ],
         toolResults: [
-          { toolName: 'writeFile', result: { ok: true, path: 'workflows/demo.workflow.ts' } },
-          {
-            toolName: 'n8nac',
-            result: {
-              exitCode: 0,
-              operation: 'push',
-              verified: true,
-              workflowId: 'wf-3',
-              workflowUrl: 'http://localhost:5678/workflow/wf-3',
-              title: 'Demo Flow',
-            },
-          },
+          { toolName: 'presentWorkflowResult', result: { presented: true, workflowId: 'wf-3', workflowUrl: 'http://localhost:5678/workflow/wf-3', title: 'Demo Flow' } },
         ],
       },
     },

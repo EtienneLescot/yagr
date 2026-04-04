@@ -49,5 +49,16 @@ export async function createN8nEngineFromWorkspace(
   configService = new YagrN8nConfigService(),
 ): Promise<N8nEngine> {
   const config = await loadN8nEngineConfig(configService);
+
+  // Inject n8n credentials into process.env so generic tools (runScript, runShell)
+  // pass them to child processes without any n8nac-specific wiring.
+  if (!process.env.N8N_HOST && config.host) {
+    process.env.N8N_HOST = config.host;
+  }
+
+  if (!process.env.N8N_API_KEY && config.apiKey) {
+    process.env.N8N_API_KEY = config.apiKey;
+  }
+
   return new N8nEngine(config);
 }

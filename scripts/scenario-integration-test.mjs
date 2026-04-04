@@ -386,6 +386,7 @@ function createIsolatedHome(testN8nRuntime) {
 
   writeIsolatedYagrConfig(tempHome);
   copyIfExists(sourcePaths.homeInstructionsPath, path.join(tempHome, 'AGENTS.md'));
+  copyIfExists(sourcePaths.n8nCredentialsPath, path.join(tempHome, 'n8n-credentials.json'));
   copyDirIfExists(sourcePaths.n8nWorkspaceDir, path.join(tempHome, 'n8n-workspace'));
 
   const { host, apiKey, projectId } = testN8nRuntime;
