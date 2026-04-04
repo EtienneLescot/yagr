@@ -45,8 +45,7 @@ export async function evaluateCompletionGate(input: CompletionGateInput): Promis
   //      a concrete result nor a structured blocker, OR
   //  (c) a workflow file exists locally but sync has not yet been confirmed and no
   //      structured blocker explains why, OR
-  //  (d) the execute phase violated the "must call at least one tool" contract by
-  //      responding with plain text only — always requires a repair pass.
+  //  (d) the execute phase made zero tool calls — always requires a repair pass.
   const needsContinuation =
     (input.attemptedMaterialWork && !input.hasConcreteResult && blockingRequiredActions.length === 0)
     || (usedOnlyReadOnlyTooling && !input.hasConcreteResult && blockingRequiredActions.length === 0)
