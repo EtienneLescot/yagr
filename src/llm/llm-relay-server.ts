@@ -487,7 +487,7 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
     return;
   }
 
-  const { baseUrl, apiKey, provider } = result.runtime;
+  const { baseUrl, apiKey, provider, extraHeaders } = result.runtime;
 
   // Anthropic is not OpenAI-compatible — use the dedicated translation layer.
   if (provider === 'anthropic-proxy') {
@@ -515,6 +515,11 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
 
   if (apiKey) {
     forwardHeaders['Authorization'] = `Bearer ${apiKey}`;
+  }
+
+  // Add provider-specific required headers (e.g. Editor-Version for Copilot).
+  if (extraHeaders) {
+    Object.assign(forwardHeaders, extraHeaders);
   }
 
   for (const [key, value] of Object.entries(req.headers)) {

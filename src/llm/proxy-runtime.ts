@@ -38,6 +38,8 @@ export interface PreparedProviderRuntime {
   provider: YagrModelProvider;
   baseUrl: string;
   apiKey?: string;
+  /** Provider-specific headers to add to every upstream request (e.g. Editor-Version for Copilot). */
+  extraHeaders?: Record<string, string>;
   models: string[];
   notes: string[];
   logPath?: string;
@@ -250,6 +252,12 @@ export async function prepareProviderRuntime(
         provider,
         baseUrl: runtimeAuth.baseUrl,
         apiKey: runtimeAuth.token,
+        extraHeaders: {
+          'Editor-Version': 'vscode/1.96.2',
+          'Editor-Plugin-Version': 'copilot-chat/0.26.7',
+          'User-Agent': 'GitHubCopilotChat/0.26.7',
+          'Copilot-Integration-Id': 'vscode-chat',
+        },
         models,
         notes: copilotNotes,
         autoStarted: false,
