@@ -50,12 +50,11 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
     assert.match(prompt, /Favor first-pass correctness over speed/i);
     assert.match(prompt, /verify them with the most relevant available checks/i);
     assert.match(prompt, /requestRequiredAction tool/i);
-    assert.match(prompt, /\["credential","list","--json"\]/i);
-    assert.match(prompt, /llm_provider_options/i);
-    assert.match(prompt, /only recommend providers whose metadata says available=true/i);
-    assert.match(prompt, /yagr_proxy_relay_start/i);
-    assert.match(prompt, /yagrProxyEnabled/i);
     assert.match(prompt, /Keep final user-facing summaries concise/i);
+    // yagr manager instructions (proxy, LLM credentials, n8n node wiring)
+    assert.match(prompt, /responsesApiEnabled/i);
+    assert.match(prompt, /yagr_proxy_relay_start/i);
+    assert.match(prompt, /custom baseURL/i);
     // workspace instructions injected verbatim
     assert.match(prompt, /remote n8n instance, you MUST run n8nac pull/i);
     assert.match(prompt, /Do not present remote-only workflows from memory/i);

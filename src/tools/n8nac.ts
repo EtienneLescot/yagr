@@ -1,14 +1,12 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { YagrN8nConfigService, resolveN8nRuntimeState, resolveWorkflowDir, type YagrN8nLocalConfig } from '../config/n8n-config-service.js';
+import { YagrN8nConfigService, resolveN8nRuntimeState, resolveWorkflowDir } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { ensureN8nRelayServer, N8N_RELAY_CREDENTIAL_NAME, N8N_RELAY_FAKE_API_KEY } from '../llm/llm-relay-server.js';
-import { findFileInWorkspace, parseJsonPayload, relativeWorkspacePath, resolveWorkspacePath, splitShellArgv, truncateText, workspaceRoot } from './workspace-utils.js';
+import { parseJsonPayload, relativeWorkspacePath, resolveWorkspacePath, splitShellArgv, truncateText, workspaceRoot } from './workspace-utils.js';
 
 type RunResult = {
   stdout: string;
@@ -19,40 +17,10 @@ type RunResult = {
 
 const N8NAC_ACTIONS = [
   'command',
-  'llm_provider_options',
   'yagr_proxy_relay_start',
 ] as const;
 
 type N8nAcAction = typeof N8NAC_ACTIONS[number];
-
-type LlmProviderOption = {
-  id: string;
-  label: string;
-  credentialType: string;
-  frictionless: boolean;
-  available: boolean;
-  note?: string;
-};
-
-function getLlmProviderCatalog(): LlmProviderOption[] {
-  return [
-    {
-      id: 'yagr',
-      label: 'Yagr Proxy',
-      credentialType: 'openAiApi',
-      frictionless: true,
-      available: true,
-      note: 'Yagr runs a local OpenAI-compatible relay server that forwards requests to the LLM provider configured in Yagr (any provider — Copilot, OpenAI OAuth, Anthropic, OpenRouter, etc.). No API key required in n8n; Yagr must be running during workflow execution.',
-    },
-    { id: 'openai', label: 'OpenAI', credentialType: 'openAiApi', frictionless: false, available: true },
-    { id: 'anthropic', label: 'Anthropic', credentialType: 'anthropicApi', frictionless: false, available: true },
-    { id: 'google', label: 'Google Gemini', credentialType: 'googlePalmApi', frictionless: false, available: true },
-    { id: 'mistral', label: 'Mistral', credentialType: 'mistralCloudApi', frictionless: false, available: true },
-    { id: 'openrouter', label: 'OpenRouter', credentialType: 'openRouterApi', frictionless: false, available: true },
-  ];
-}
-
-
 
 function runN8nac(
   args: string[],
@@ -146,151 +114,6 @@ function sanitizeEnvValue(value: string | undefined): string {
   return String(value || '').trim().replace(/^['"]|['"]$/g, '');
 }
 
-export interface WorkflowNodeMisconfiguration {
-  nodeType: string;
-  issue: string;
-  fix: string;
-}
-
-/**
- * Scans a .workflow.ts source file for known node misconfigurations that cause
- * silent runtime failures. Currently detects:
- *
- * - lmChatOpenAi with a custom baseURL but without responsesApiEnabled: false.
- *   When responsesApiEnabled is true (the v1.3 default), n8n sends the request
- *   to https://api.openai.com/v1/responses, bypassing the custom baseURL entirely
- *   and failing with "Input required: specify prompt or messages" on any proxy.
- */
-export function detectWorkflowNodeMisconfigurations(filePath: string): WorkflowNodeMisconfiguration[] {
-  let source: string;
-  try {
-    source = fs.readFileSync(filePath, 'utf-8');
-  } catch {
-    return [];
-  }
-
-  const issues: WorkflowNodeMisconfiguration[] = [];
-
-  // Find every occurrence of the lmChatOpenAi type string in the source.
-  // For each occurrence, extract the enclosing object literal and check
-  // whether a custom baseURL is present alongside responsesApiEnabled: false.
-  const typePattern = /lmChatOpenAi/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = typePattern.exec(source)) !== null) {
-    // Walk backwards from the match to find the start of the enclosing @node
-    // or object literal (the nearest '{' that begins the parameters block).
-    // Strategy: find the nearest '{' scanning backwards, then locate the
-    // balanced closing '}' scanning forwards.
-    const before = source.slice(0, match.index);
-    const after = source.slice(match.index);
-
-    // Find the opening brace of the outermost surrounding object by scanning
-    // forward from here until we either find a parameters: { ... } block
-    // or the next occurrence of lmChatOpenAi ends the search.
-    // Simpler approach: take the surrounding 2 KB window and scan it.
-    const window = source.slice(Math.max(0, match.index - 500), match.index + 1500);
-
-    const hasCustomBaseUrl = /baseURL\s*:|baseUrl\s*:/i.test(window);
-    const hasResponsesApiDisabled = /responsesApiEnabled\s*:\s*false/.test(window);
-
-    if (hasCustomBaseUrl && !hasResponsesApiDisabled) {
-      issues.push({
-        nodeType: 'lmChatOpenAi',
-        issue:
-          'Node uses a custom baseURL (proxy/relay) but responsesApiEnabled is not set to false. ' +
-          'n8n v1.3+ defaults responsesApiEnabled to true, which makes n8n send requests to ' +
-          'https://api.openai.com/v1/responses instead of the custom baseURL, causing ' +
-          '"Input required: specify prompt or messages" at runtime.',
-        fix: 'Add responsesApiEnabled: false to the node parameters alongside the options.baseURL.',
-      });
-    }
-  }
-
-  return issues;
-}
-
-
-function rankWorkspaceWorkflowCandidate(candidatePath: string, workflowDir: string | undefined): number {
-  if (!workflowDir) {
-    return 1;
-  }
-
-  const normalizedCandidate = path.resolve(candidatePath);
-  const normalizedWorkflowDir = path.resolve(workflowDir);
-  if (normalizedCandidate.startsWith(`${normalizedWorkflowDir}${path.sep}`)) {
-    return 0;
-  }
-
-  return 1;
-}
-
-export function pickPreferredWorkspaceWorkflowCandidate(
-  filename: string,
-  configService = new YagrN8nConfigService(),
-): string | undefined {
-  const localConfig = configService.getLocalConfig();
-  const workflowDir = resolveWorkflowDir(localConfig);
-  const candidates = findFileInWorkspace(filename);
-  if (candidates.length === 0) {
-    return undefined;
-  }
-
-  return [...candidates].sort((left, right) => {
-    const rankDelta = rankWorkspaceWorkflowCandidate(left, workflowDir) - rankWorkspaceWorkflowCandidate(right, workflowDir);
-    if (rankDelta !== 0) {
-      return rankDelta;
-    }
-
-    return left.localeCompare(right);
-  })[0];
-}
-
-function normalizeWorkspaceRelativePath(candidatePath: string): string {
-  const relativePath = relativeWorkspacePath(candidatePath);
-  return relativePath || candidatePath;
-}
-
-function resolveCommandFileTarget(target: string | undefined, configService = new YagrN8nConfigService()): string | undefined {
-  const normalizedTarget = String(target || '').trim();
-  if (!normalizedTarget) {
-    return undefined;
-  }
-
-  if (path.isAbsolute(normalizedTarget) && fs.existsSync(normalizedTarget)) {
-    return normalizeWorkspaceRelativePath(normalizedTarget);
-  }
-
-  const workspaceTarget = path.resolve(workspaceRoot(), normalizedTarget);
-  if (fs.existsSync(workspaceTarget)) {
-    return normalizedTarget;
-  }
-
-  const preferredCandidate = pickPreferredWorkspaceWorkflowCandidate(normalizedTarget, configService)
-    || pickPreferredWorkspaceWorkflowCandidate(path.basename(normalizedTarget), configService);
-
-  return preferredCandidate ? normalizeWorkspaceRelativePath(preferredCandidate) : normalizedTarget;
-}
-
-function normalizeCommandArgv(argv: string[], configService = new YagrN8nConfigService()): string[] {
-  if (argv.length === 0) {
-    return argv;
-  }
-
-  const normalizedArgv = [...argv];
-  if (argv[0] === 'push' && argv[1]) {
-    normalizedArgv[1] = resolveCommandFileTarget(argv[1], configService) ?? argv[1];
-    return normalizedArgv;
-  }
-
-  if (argv[0] === 'skills' && argv[1] === 'validate' && argv[2]) {
-    normalizedArgv[2] = resolveCommandFileTarget(argv[2], configService) ?? argv[2];
-    return normalizedArgv;
-  }
-
-  return normalizedArgv;
-}
-
 function summarizeN8nacRuntime(cwd: string, env: NodeJS.ProcessEnv = {}, configService = new YagrN8nConfigService()): string {
   const localConfig = configService.getLocalConfig();
   const allowEnvironmentFallback = (env.YAGR_ALLOW_N8N_ENV ?? process.env.YAGR_ALLOW_N8N_ENV) === '1';
@@ -357,40 +180,6 @@ async function runObservedN8nac(
   return result;
 }
 
-function isWorkspaceInitialized(configService = new YagrN8nConfigService()): {
-  initialized: boolean;
-  credentialsAvailable: boolean;
-  projectConfigured: boolean;
-  host?: string;
-  configPath: string;
-  workflowDir?: string;
-} {
-  const configPath = resolveWorkspacePath('n8nac-config.json');
-  const resolved = resolveN8nRuntimeState(configService, process.env, {
-    allowEnvironmentFallback: process.env.YAGR_ALLOW_N8N_ENV === '1',
-  });
-
-  if (!fs.existsSync(configPath)) {
-    return {
-      initialized: resolved.initialized,
-      credentialsAvailable: resolved.credentialsAvailable,
-      projectConfigured: resolved.projectConfigured,
-      host: resolved.host,
-      configPath: relativeWorkspacePath(configPath),
-      workflowDir: resolved.workflowDir ? relativeWorkspacePath(resolved.workflowDir) : undefined,
-    };
-  }
-
-  return {
-    initialized: resolved.initialized,
-    credentialsAvailable: resolved.credentialsAvailable,
-    projectConfigured: resolved.projectConfigured,
-    host: resolved.host,
-    configPath: relativeWorkspacePath(configPath),
-    workflowDir: resolved.workflowDir ? relativeWorkspacePath(resolved.workflowDir) : undefined,
-  };
-}
-
 export function createN8nAcTool(observer?: ToolExecutionObserver) {
   const strictCompatibleParameters = z.preprocess((input) => {
     if (!input || typeof input !== 'object') {
@@ -408,14 +197,14 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       commandArgv: nullify(obj.commandArgv),
     };
   }, z.object({
-    action: z.enum(N8NAC_ACTIONS).describe('Use action="command" for normal n8nac usage. action="llm_provider_options" lists available LLM providers. action="yagr_proxy_relay_start" starts the local Yagr relay AND automatically creates the openAiApi credential in n8n (idempotent) — returns credentialId ready to assign.'),
+    action: z.enum(N8NAC_ACTIONS).describe('Use action="command" for normal n8nac usage. action="yagr_proxy_relay_start" starts the local Yagr relay AND automatically creates the openAiApi credential in n8n (idempotent) — returns credentialId ready to assign.'),
     nodeName: z.string().nullable().describe('Optional workflow node name used for contextual provider-choice prompts.'),
     commandArgs: z.string().nullable().describe('Generic raw n8nac argument string for action="command", for example "workflow credential-required wf_123 --json".'),
     commandArgv: z.array(z.string()).nullable().describe('Generic raw n8nac argv for action="command", preferred over commandArgs when arguments contain spaces.'),
   }));
 
   return tool({
-    description: 'Run n8n-as-code operations from the active workspace. Use action="command" for normal n8nac usage; action="llm_provider_options" lists available LLM providers; action="yagr_proxy_relay_start" starts the Yagr relay and creates the openAiApi credential (idempotent).',
+    description: 'Run n8n-as-code operations from the active workspace. Use action="command" for normal n8nac usage; action="yagr_proxy_relay_start" starts the Yagr relay and creates the openAiApi credential (idempotent).',
     parameters: strictCompatibleParameters,
     execute: async ({
       action: rawAction,
@@ -437,82 +226,23 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           throw new Error('command requires commandArgv or commandArgs');
         }
 
-        const configService = new YagrN8nConfigService();
-        const normalizedArgv = normalizeCommandArgv(argv, configService);
-
-        // Pre-push validation: detect node misconfigurations that cause silent runtime failures.
-        if (normalizedArgv[0] === 'push' && normalizedArgv[1]) {
-          const targetPath = path.isAbsolute(normalizedArgv[1])
-            ? normalizedArgv[1]
-            : path.resolve(cwd, normalizedArgv[1]);
-          const misconfigurations = detectWorkflowNodeMisconfigurations(targetPath);
-          if (misconfigurations.length > 0) {
-            const details = misconfigurations
-              .map((m, i) => `[${i + 1}] ${m.nodeType}: ${m.issue} Fix: ${m.fix}`)
-              .join('\n');
-            return {
-              exitCode: 1,
-              stdout: '',
-              stderr: `Pre-push validation failed — fix the following before pushing:\n${details}`,
-              timedOut: false,
-              operation: 'push',
-              pushTarget: normalizedArgv[1],
-              workflowId: null,
-              workflowUrl: null,
-              title: null,
-              verified: false,
-              misconfigurations,
-            };
-          }
-        }
-
-        const result = await runObservedN8nac(observer, normalizedArgv, cwd);
+        const result = await runObservedN8nac(observer, argv, cwd);
         const response: Record<string, unknown> = {
           exitCode: result.exitCode,
           timedOut: result.timedOut,
           stdout: result.stdout,
           stderr: result.stderr,
-          argv: normalizedArgv,
+          argv,
         };
 
         // Signal async webhook trigger so the agent knows to poll execution list/get itself.
-        if (normalizedArgv[0] === 'test' && /workflow was started/i.test(result.stdout)) {
+        if (argv[0] === 'test' && /workflow was started/i.test(result.stdout)) {
           response.asyncTrigger = true;
-          response.workflowId = normalizedArgv[1] ?? null;
+          response.workflowId = argv[1] ?? null;
           response.note = 'Workflow accepted asynchronously. Use "execution list --workflow-id <id>" then "execution get <id> --include-data --json" to retrieve the result.';
         }
 
         return response;
-      }
-
-      if (action === 'llm_provider_options') {
-        const options = getLlmProviderCatalog();
-        const proxyEnabled = new YagrConfigService().isLlmProxyEnabled();
-        const credentialsResult = await runObservedN8nac(observer, ['credential', 'list', '--json'], cwd);
-        const parsed = parseJsonPayload(credentialsResult.stdout);
-        const credentials = Array.isArray(parsed)
-          ? parsed as Array<{ id?: string; name?: string; type?: string }>
-          : [];
-
-        return {
-          nodeName: nodeName ?? null,
-          yagrProxyEnabled: proxyEnabled,
-          providers: options.map((provider) => ({
-            ...provider,
-            credentials: credentials
-              .filter((entry) => (entry.type || '').trim() === provider.credentialType)
-              .map((entry) => ({
-                id: entry.id || null,
-                name: entry.name || null,
-                type: entry.type || null,
-              })),
-          })),
-          credentialListExitCode: credentialsResult.exitCode,
-          credentialListStderr: truncateText(credentialsResult.stderr),
-          next: proxyEnabled
-            ? 'Yagr Proxy is globally configured (user already consented at setup). It is the preferred provider — call yagr_proxy_relay_start directly, no warning needed.'
-            : 'Ask the user which provider to use for this node. Prefer existing credentials; create a new one only if needed. Only offer providers marked available=true. For Yagr Proxy (frictionless, no API key), call yagr_proxy_relay_start.',
-        };
       }
 
       if (action === 'yagr_proxy_relay_start') {
