@@ -374,6 +374,19 @@ function buildStructuredCommandResult(
     return response;
   }
 
+  if (operation === 'test') {
+    // Detect async webhook trigger: n8n responds with {"message":"Workflow was started"}
+    // which confirms HTTP acceptance only — the execution runs asynchronously and may fail.
+    // Surface this as a structured signal so the agent knows to follow up with execution list/get.
+    const isAsyncTrigger = /workflow was started/i.test(result.stdout);
+    if (isAsyncTrigger) {
+      response.asyncTrigger = true;
+      response.executionConfirmed = false;
+      response.note = 'The webhook accepted the request asynchronously. The execution status is unconfirmed. Use execution list --workflow-id <id> --limit 1 --json then execution get <executionId> --include-data --json to confirm success or diagnose failure.';
+    }
+    return response;
+  }
+
   return response;
 }
 
