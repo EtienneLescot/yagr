@@ -11,6 +11,8 @@ import {
   createDefaultRuntimeHooks,
   createN8nCredentialQuestionFlowHook,
   createN8nSetupGuardHook,
+  createRequiredActionEvidenceGuardHook,
+  createReadOnlyExplorationGuardHook,
   createWorkflowSyncCompletionGuardHook,
   createWorkflowPresentationGuardHook,
   wrapToolsWithRuntimeHooks,
@@ -75,6 +77,86 @@ test('requestRequiredAction defaults resumable to true and accepts omitted detai
   assert.equal(result.kind, 'input');
   assert.equal(result.detail, undefined);
   assert.equal(result.resumable, true);
+});
+
+test('blocking external required actions are rejected until execution or a concrete blocker is observed', async () => {
+  const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
+  const wrappedTools = wrapToolsWithRuntimeHooks(
+    {
+      listDirectory: {
+        description: 'list directory',
+        parameters: undefined,
+        execute: async () => ({ ok: true, entries: [] }),
+      },
+      requestRequiredAction: createRequestRequiredActionToolFactory(),
+    },
+    [createRequiredActionEvidenceGuardHook(strategy)],
+    () => ({ runId: 'run-ra-1', phase: 'plan', state: 'running' }),
+  );
+
+  await wrappedTools.listDirectory.execute({ path: '.' });
+  const result = await wrappedTools.requestRequiredAction.execute({
+    kind: 'external',
+    title: 'Need remote setup',
+    message: 'Complete remote setup first.',
+    blocking: true,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.match(result.error, /before a tool has either attempted execution-critical work or surfaced a concrete blocker/i);
+});
+
+test('blocking external required actions are allowed after execution-critical work was attempted', async () => {
+  const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
+  const wrappedTools = wrapToolsWithRuntimeHooks(
+    {
+      writeWorkspaceFile: {
+        description: 'write file',
+        parameters: undefined,
+        execute: async () => ({ ok: true, path: 'workflows/demo.workflow.ts' }),
+      },
+      requestRequiredAction: createRequestRequiredActionToolFactory(),
+    },
+    [createRequiredActionEvidenceGuardHook(strategy)],
+    () => ({ runId: 'run-ra-2', phase: 'edit', state: 'running' }),
+  );
+
+  await wrappedTools.writeWorkspaceFile.execute({ path: 'workflows/demo.workflow.ts', content: 'demo' });
+  const result = await wrappedTools.requestRequiredAction.execute({
+    kind: 'external',
+    title: 'Need remote setup',
+    message: 'Complete remote setup first.',
+    blocking: true,
+  });
+
+  assert.equal(result.kind, 'external');
+  assert.equal(result.blocking, true);
+});
+
+test('read-only exploration is blocked after the pre-execution budget is exhausted', async () => {
+  const strategy = resolveToolRuntimeStrategy('openai-proxy', 'gpt-5.1-codex-mini');
+  const wrappedTools = wrapToolsWithRuntimeHooks(
+    {
+      listDirectory: {
+        description: 'list directory',
+        parameters: undefined,
+        execute: async () => ({ ok: true }),
+      },
+    },
+    [createReadOnlyExplorationGuardHook(strategy)],
+    () => ({ runId: 'run-ro-1', phase: 'plan', state: 'running' }),
+  );
+
+  assert.equal((await wrappedTools.listDirectory.execute({ path: '.' })).ok, true);
+  assert.equal((await wrappedTools.listDirectory.execute({ path: '.' })).ok, true);
+  assert.equal((await wrappedTools.listDirectory.execute({ path: '.' })).ok, true);
+
+  const blocked = await wrappedTools.listDirectory.execute({ path: '.' });
+
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.blocked, true);
+  assert.match(blocked.error, /read-only exploration is complete/i);
 });
 
 test('workflow presentation is blocked until the workflow exists locally', async () => {
@@ -668,6 +750,7 @@ test('successful push counts as validate and verify evidence for completion gati
     text: 'Done.',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedAnyToolCalls: true,
     attemptedMaterialWork: true,
     executePhaseCalledNoTools: false,
     hasConcreteResult: true,
@@ -922,6 +1005,7 @@ test('completion gate stays blocked when a required action is still open', async
     text: 'Done.',
     finishReason: 'stop',
     requiredActions,
+    attemptedAnyToolCalls: true,
     attemptedMaterialWork: false,
     executePhaseCalledNoTools: false,
     hasConcreteResult: false,
@@ -952,6 +1036,7 @@ test('completion gate accepts non-blocking follow-up actions after a concrete re
         blocking: false,
       },
     ],
+    attemptedAnyToolCalls: true,
     attemptedMaterialWork: true,
     executePhaseCalledNoTools: false,
     hasConcreteResult: true,
@@ -974,6 +1059,7 @@ test('beforeCompletion hook can inject a permission blocker', async () => {
     text: 'Done.',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedAnyToolCalls: false,
     attemptedMaterialWork: false,
     executePhaseCalledNoTools: false,
     hasConcreteResult: true,
@@ -1075,6 +1161,7 @@ test('approved required action bypasses completion blocker', async () => {
     finishReason: 'stop',
     requiredActions: [],
     satisfiedRequiredActionIds: ['approval-4'],
+    attemptedAnyToolCalls: false,
     attemptedMaterialWork: false,
     executePhaseCalledNoTools: false,
     hasConcreteResult: true,
@@ -1111,6 +1198,7 @@ test('completion gate does not fail terminally on exploratory n8nac failures wit
     text: 'Je peux quand meme repondre sans n8n pour cette question.',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedAnyToolCalls: false,
     attemptedMaterialWork: false,
     executePhaseCalledNoTools: false,
     hasConcreteResult: false,
@@ -1132,6 +1220,7 @@ test('completion gate still fails terminally on unresolved n8nac failures after 
     text: 'Done.',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedAnyToolCalls: true,
     attemptedMaterialWork: true,
     executePhaseCalledNoTools: false,
     hasConcreteResult: false,
@@ -1147,11 +1236,35 @@ test('completion gate still fails terminally on unresolved n8nac failures after 
   assert.equal(decision.state, 'failed_terminal');
 });
 
+test('completion gate requests continuation when workflow writes exist but push is still missing', async () => {
+  const decision = await evaluateCompletionGate({
+    text: 'The workflow file is ready locally.',
+    finishReason: 'stop',
+    requiredActions: [],
+    attemptedAnyToolCalls: true,
+    attemptedMaterialWork: true,
+    executePhaseCalledNoTools: false,
+    hasConcreteResult: true,
+    hasWorkflowWrites: true,
+    successfulValidate: true,
+    successfulPush: false,
+    successfulVerify: false,
+    unresolvedFailureCount: 0,
+    context: { runId: 'run-7b', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, false);
+  assert.equal(decision.state, 'resumable');
+  assert.equal(decision.needsContinuation, true);
+  assert.match(decision.reasons.join('\n'), /push has not been confirmed|remote verification has not been confirmed/i);
+});
+
 test('completion gate requests continuation when material work ended without result or blocker', async () => {
   const decision = await evaluateCompletionGate({
     text: 'I was not able to finish yet.',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedAnyToolCalls: true,
     attemptedMaterialWork: true,
     executePhaseCalledNoTools: false,
     hasConcreteResult: false,
@@ -1174,6 +1287,7 @@ test('completion gate requests continuation when execute phase called no tools a
     text: 'Je vais m\'en occuper maintenant.',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedAnyToolCalls: false,
     attemptedMaterialWork: false,
     executePhaseCalledNoTools: true,
     hasConcreteResult: false,
@@ -1191,11 +1305,35 @@ test('completion gate requests continuation when execute phase called no tools a
   assert.match(decision.reasons[0], /concrete result or a structured blocker/i);
 });
 
+test('completion gate requests continuation after read-only tooling with no concrete result or blocker', async () => {
+  const decision = await evaluateCompletionGate({
+    text: 'I only inspected the workspace so far.',
+    finishReason: 'stop',
+    requiredActions: [],
+    attemptedAnyToolCalls: true,
+    attemptedMaterialWork: false,
+    executePhaseCalledNoTools: false,
+    hasConcreteResult: false,
+    hasWorkflowWrites: false,
+    successfulValidate: false,
+    successfulPush: false,
+    successfulVerify: false,
+    unresolvedFailureCount: 0,
+    context: { runId: 'run-9b', phase: 'summarize', state: 'running' },
+  });
+
+  assert.equal(decision.accepted, false);
+  assert.equal(decision.state, 'resumable');
+  assert.equal(decision.needsContinuation, true);
+  assert.match(decision.reasons[0], /concrete result or a structured blocker/i);
+});
+
 test('completion gate accepts an informational text-only response that has a concrete result', async () => {
   const decision = await evaluateCompletionGate({
     text: 'Here is the list of your workflows: ...',
     finishReason: 'stop',
     requiredActions: [],
+    attemptedAnyToolCalls: false,
     attemptedMaterialWork: false,
     executePhaseCalledNoTools: true,
     hasConcreteResult: true,

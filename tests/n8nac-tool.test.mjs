@@ -334,3 +334,67 @@ test('n8nac push candidate selection prefers the active workflow directory', () 
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('n8nac command push rewrites a bare filename to the active workflow path when needed', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nac-push-path-'));
+  const fakeNpxPath = path.join(tempDir, 'npx');
+  const capturePath = path.join(tempDir, 'captured-argv.txt');
+  const previousPath = process.env.PATH;
+  const previousHome = process.env.YAGR_HOME;
+  const previousHost = process.env.N8N_HOST;
+  const previousApiKey = process.env.N8N_API_KEY;
+  const previousAllow = process.env.YAGR_ALLOW_N8N_ENV;
+
+  try {
+    fs.writeFileSync(fakeNpxPath, [
+      '#!/bin/sh',
+      `printf "%s\n" "$@" > "${capturePath}"`,
+      'exit 0',
+    ].join('\n'));
+    fs.chmodSync(fakeNpxPath, 0o755);
+
+    const workspaceDir = path.join(tempDir, 'n8n-workspace');
+    const workflowDir = path.join(workspaceDir, 'workflows', 'local_5678_etienne_l', 'personal');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workspaceDir, 'n8nac-config.json'), JSON.stringify({
+      host: 'http://localhost:5678',
+      syncFolder: 'workflows',
+      instanceIdentifier: 'local_5678_etienne_l',
+      projectName: 'Personal',
+    }, null, 2));
+    fs.writeFileSync(path.join(workflowDir, 'demo.workflow.ts'), '// demo');
+
+    process.env.PATH = `${tempDir}:${previousPath || ''}`;
+    process.env.YAGR_HOME = tempDir;
+    process.env.N8N_HOST = 'http://localhost:5678';
+    process.env.N8N_API_KEY = 'test-key';
+    process.env.YAGR_ALLOW_N8N_ENV = '1';
+
+    const tool = createN8nAcTool();
+    await tool.execute({
+      action: 'command',
+      commandArgv: ['push', 'demo.workflow.ts', '--verify'],
+    });
+
+    const capturedArgv = fs.readFileSync(capturePath, 'utf-8').trim().split('\n');
+    assert.deepEqual(capturedArgv, [
+      '--yes',
+      'n8nac',
+      'push',
+      'workflows/local_5678_etienne_l/personal/demo.workflow.ts',
+      '--verify',
+    ]);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    if (previousHost === undefined) delete process.env.N8N_HOST;
+    else process.env.N8N_HOST = previousHost;
+    if (previousApiKey === undefined) delete process.env.N8N_API_KEY;
+    else process.env.N8N_API_KEY = previousApiKey;
+    if (previousAllow === undefined) delete process.env.YAGR_ALLOW_N8N_ENV;
+    else process.env.YAGR_ALLOW_N8N_ENV = previousAllow;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
