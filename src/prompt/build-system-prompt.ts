@@ -55,7 +55,9 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
       // --- Yagr proxy and LLM credential policy (Yagr-specific, not in AGENT.md) ---
       'For LLM credential setup on AI Agent / LangChain nodes: use n8nac action llm_provider_options to get the provider menu, yagr_proxy_warning_check to check whether the Yagr proxy warning has been shown, and yagr_proxy_warning_accept to record consent. Show the Yagr proxy usage warning only once (at first Yagr credential creation); do not repeat it for later nodes in the same environment.',
       'Before asking for new LLM secrets, call n8nac with argv ["credential","list","--json"] to inspect existing credentials and prefer reuse. If a compatible credential already exists, ask whether to reuse it.',
-      'When configuring an LLM credential on an AI/LangChain node, always offer the Yagr proxy as the first and recommended option before listing other providers.',
+      'When configuring an LLM credential on an AI/LangChain node, trust llm_provider_options as the source of truth. Only recommend providers whose metadata says available=true. For Yagr Proxy (frictionless, no API key needed): call yagr_proxy_relay_start to start the local relay and get the baseUrl, then create an openAiApi credential pointing to that URL using the n8nac command action.',
+      // --- n8n operations must go through n8nac ---
+      'Every n8n operation (activate, deactivate, push, test, list, credential management, etc.) MUST be executed by calling the n8nac tool. Never claim an n8n action was performed without a corresponding n8nac tool call. A plain-text statement that a workflow was activated, deployed, or tested is never acceptable — always execute it.',
       // --- Workspace instructions (n8nac AGENT.md and home memory) ---
       'The active workspace AGENT.md or AGENTS.md content is already loaded into startup context. Treat it as a foundational instruction source for automation and workflow work. Do not reinvent rules it already defines.',
       workflowDir ? `The active n8n workflow directory is ${workflowDir}.` : '',

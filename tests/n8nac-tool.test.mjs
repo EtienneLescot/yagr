@@ -42,6 +42,32 @@ test('n8nac tool schema accepts Yagr-specific helper actions', () => {
   assert.equal(warningAccept.success, true);
 });
 
+test('n8nac llm_provider_options exposes Yagr Proxy as available and frictionless', async () => {
+  const tool = createN8nAcTool();
+
+  const result = await tool.execute({
+    action: 'llm_provider_options',
+    nodeName: 'Agent 1',
+  });
+
+  const yagr = result.providers.find((provider) => provider.id === 'yagr');
+  assert.ok(yagr);
+  assert.equal(yagr.available, true);
+  assert.equal(yagr.frictionless, true);
+  assert.match(String(yagr.note || ''), /local.*relay|relay.*local/i);
+  assert.match(String(result.next || ''), /yagr_proxy_relay_start/i);
+});
+
+test('n8nac tool schema accepts yagr_proxy_relay_start action', () => {
+  const tool = createN8nAcTool();
+
+  const relayStart = tool.parameters.safeParse({
+    action: 'yagr_proxy_relay_start',
+  });
+
+  assert.equal(relayStart.success, true);
+});
+
 test('n8nac tool schema no longer accepts legacy specialized action names', () => {
   const tool = createN8nAcTool();
 
