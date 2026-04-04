@@ -304,3 +304,31 @@ function enrichWorkflowEmbedPayload(embed: WorkflowEmbedPayload): WorkflowEmbedP
 function truncate(value: string, maxLen: number): string {
   return value.length > maxLen ? `${value.slice(0, maxLen)}…` : value;
 }
+
+/**
+ * Extract the text content from the last AI message in a LangGraph invoke result.
+ */
+export function extractLastAiMessage(result: Record<string, unknown>): string {
+  const messages = result?.messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return '';
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as Record<string, unknown>;
+    if (msg && (msg['_getType']?.toString().includes('ai') || msg['role'] === 'assistant')) {
+      const content = msg['content'];
+      if (typeof content === 'string') {
+        return content;
+      }
+      if (Array.isArray(content)) {
+        return content
+          .filter((p): p is { type: string; text: string } => p?.type === 'text')
+          .map((p) => p.text)
+          .join('');
+      }
+    }
+  }
+
+  return '';
+}

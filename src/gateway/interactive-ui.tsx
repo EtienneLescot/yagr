@@ -1,35 +1,26 @@
+import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
-import type { YagrSessionAgent } from '../agent.js';
+import type { YagrDeepAgentHandle } from '../agent-factory.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
-import {
-  mapPhaseEventToUserVisibleUpdate,
-  mapStateEventToUserVisibleUpdate,
-  mapToolEventToUserVisibleUpdate,
-} from '../runtime/user-visible-updates.js';
+import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import {
   type WorkflowEmbed,
   buildWorkflowBannerTerminal,
-  extractWorkflowEmbed,
   resolveTerminalWorkflowOpenUrl,
   workflowEmbedKey,
 } from './format-message.js';
-import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 import type {
   YagrAgentState,
-  YagrContextCompactionEvent,
-  YagrContextUsageEvent,
   YagrDisplayOptions,
   YagrPhaseEvent,
   YagrRequiredAction,
   YagrRunOptions,
-  YagrStateEvent,
-  YagrToolEvent,
 } from '../types.js';
 
 type FeedLane = 'user' | 'narrative' | 'action' | 'result' | 'interrupt';
@@ -51,7 +42,8 @@ type HistoryLine = {
 };
 
 type InteractiveAppProps = {
-  agent: YagrSessionAgent;
+  agent: YagrDeepAgentHandle['agent'];
+  threadIdRef: { current: string };
   options: YagrRunOptions;
 };
 
@@ -157,13 +149,6 @@ function truncateText(text: string, maxLength: number): string {
   }
 
   return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
-}
-
-function compactSummary(event: YagrContextCompactionEvent): string {
-  const preserved = `${event.preservedRecentMessages} kept recent`;
-  const folded = `${event.messagesCompacted} folded`;
-  const source = event.source === 'llm' ? 'LLM' : 'fallback';
-  return `Context compacted via ${source}: ${folded}, ${preserved}.`;
 }
 
 function buildContextBar(fillPercent: number): string {
@@ -421,7 +406,7 @@ function WorkflowBanner({ embeds }: { embeds: WorkflowEmbed[] }): JSX.Element | 
   );
 }
 
-function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
+function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps) {
   const app = useApp();
   const { stdout } = useStdout();
   const [inputVersion, setInputVersion] = useState(0);
@@ -434,7 +419,6 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   const [liveAssistantText, setLiveAssistantText] = useState('');
   const [latestAssistantText, setLatestAssistantText] = useState('');
   const [pendingRequiredActions, setPendingRequiredActions] = useState<YagrRequiredAction[]>([]);
-  const [approvedRequiredActionIds, setApprovedRequiredActionIds] = useState<string[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [lastUserPrompt, setLastUserPrompt] = useState('');
   const [statusPulse, setStatusPulse] = useState(0);
@@ -442,7 +426,6 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   const [workflowEmbeds, setWorkflowEmbeds] = useState<WorkflowEmbed[]>([]);
   const [contextFillPercent, setContextFillPercent] = useState<number | null>(null);
   const nextEntryIdRef = useRef(1);
-  const commandBuffersRef = useRef({ stdout: '', stderr: '', command: '', toolName: '' });
   const workspaceLabel = useMemo(() => basename(getYagrN8nWorkspaceDir()), []);
 
   useEffect(() => {
@@ -489,79 +472,9 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
   }, [display.showResponses, pushEntry]);
 
-  const handleToolEvent = useCallback((event: YagrToolEvent) => {
-    const enrichedEvent = enrichWorkflowEmbed(event);
-    const userFacingStatus = mapToolEventToUserVisibleUpdate(enrichedEvent);
-    if (userFacingStatus) {
-      if (display.showThinking) {
-        pushEntry('narrative', userFacingStatus.title, userFacingStatus.detail ?? userFacingStatus.title);
-      }
-      setActiveOperationText(userFacingStatus.detail ?? userFacingStatus.title);
-      return;
-    }
-
-    if (event.type === 'command-start') {
-      commandBuffersRef.current = {
-        stdout: '',
-        stderr: '',
-        command: event.command,
-        toolName: event.toolName,
-      };
-      setActiveOperationText(event.message ?? `Running ${event.toolName}`);
-      return;
-    }
-
-    if (event.type === 'command-output') {
-      const normalized = normalizeCommandChunk(event.chunk);
-      commandBuffersRef.current[event.stream] = `${commandBuffersRef.current[event.stream]}${normalized}`;
-      return;
-    }
-
-    if (event.type === 'command-end') {
-      const stdoutText = commandBuffersRef.current.stdout;
-      const stderrText = commandBuffersRef.current.stderr;
-      const command = commandBuffersRef.current.command || event.toolName;
-      pushEntry(
-        'action',
-        `Command ${event.toolName}`,
-        buildCommandHistoryText(command, stdoutText, stderrText, event.exitCode, event.message),
-      );
-      setActiveOperationText(event.message ?? `Command ${event.toolName} completed.`);
-      commandBuffersRef.current = { stdout: '', stderr: '', command: '', toolName: '' };
-      return;
-    }
-
-    if (event.type === 'result') {
-      pushEntry('result', `Result ${event.toolName}`, event.message);
-      setActiveOperationText(event.message);
-      return;
-    }
-
-    if (event.type === 'embed' && event.kind === 'workflow') {
-      const embed = extractWorkflowEmbed(event);
-      if (embed) {
-        setWorkflowEmbeds((prev) => (
-          prev.some((entry) => workflowEmbedKey(entry) === workflowEmbedKey(embed))
-            ? prev
-            : [...prev, embed]
-        ));
-        const label = embed.title ? `${embed.title} — ${embed.url}` : embed.url;
-        pushEntry('result', 'Workflow available', label, 'strong');
-        setActiveOperationText(`Workflow ready: ${embed.url}`);
-      }
-    }
-  }, [display.showThinking, pushEntry]);
-
-  const handleCompaction = useCallback(async (event: YagrContextCompactionEvent) => {
-    pushEntry('result', 'Compaction', compactSummary(event));
-    setActiveOperationText('Context compacted to keep the run smooth.');
-    await options.onCompaction?.(event);
-  }, [options, pushEntry]);
-
-  const handleContextUsage = useCallback(async (event: YagrContextUsageEvent) => {
-    setContextFillPercent(event.fillPercent);
-    await options.onContextUsage?.(event);
-  }, [options]);
+  const handleCompact = useCallback(() => {
+    pushEntry('narrative', 'Compact', 'Conversation compaction is handled automatically by Yagr.');
+  }, [pushEntry]);
 
   const runPrompt = useCallback(async (prompt: string) => {
     setLastUserPrompt(prompt);
@@ -579,72 +492,68 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     setWorkflowEmbeds([]);
     setContextFillPercent(null);
 
+    const accumulator = createRunAccumulator();
+
     try {
-      const result = await agent.run(prompt, {
-        ...options,
-        satisfiedRequiredActionIds: approvedRequiredActionIds,
-        onCompaction: handleCompaction,
-        onContextUsage: handleContextUsage,
-        onPhaseChange: async (event) => {
-          const update = mapPhaseEventToUserVisibleUpdate(event);
-          if (event.status === 'started') {
-            setCurrentPhase(event.phase);
-            setPhaseStatusText(event.message);
+      const stream = agent.streamEvents(
+        { messages: [{ role: 'user', content: prompt }] },
+        { configurable: { thread_id: threadIdRef.current }, version: 'v2' },
+      );
 
-            if (display.showThinking && update) {
-              pushEntry('narrative', update.title, update.detail ?? event.message);
+      for await (const event of stream) {
+        await processStreamEvent(event, accumulator, {
+          onTextDelta: async (delta) => {
+            if (display.showResponses) {
+              setLiveAssistantText((previous) => `${previous}${delta}`);
             }
-            setActiveOperationText(update?.detail ?? event.message);
-          } else if (event.phase === 'summarize') {
-            setPhaseStatusText('Response ready.');
-            setActiveOperationText('Preparing the final response.');
-          }
+            await options.onTextDelta?.(delta);
+          },
+          onUserVisibleUpdate: async (update) => {
+            if (display.showThinking) {
+              pushEntry(
+                update.tone === 'error' ? 'interrupt' : 'narrative',
+                update.title,
+                update.detail ?? update.title,
+                update.tone === 'error' ? 'strong' : 'normal',
+              );
+            }
+            setPhaseStatusText(update.title);
+            setActiveOperationText(update.detail ?? update.title);
+          },
+          onWorkflowEmbed: async (embed) => {
+            const w: WorkflowEmbed = {
+              workflowId: embed.workflowId,
+              url: embed.url,
+              targetUrl: embed.targetUrl,
+              title: embed.title,
+              diagram: embed.diagram,
+              executionResult: embed.executionResult,
+            };
+            setWorkflowEmbeds((prev) => (
+              prev.some((entry) => workflowEmbedKey(entry) === workflowEmbedKey(w))
+                ? prev
+                : [...prev, w]
+            ));
+            const label = w.title ? `${w.title} — ${w.url}` : w.url;
+            pushEntry('result', 'Workflow available', label, 'strong');
+            setActiveOperationText(`Workflow ready: ${w.url}`);
+          },
+        });
+      }
 
-          await options.onPhaseChange?.(event);
-        },
-        onStateChange: async (event: YagrStateEvent) => {
-          const update = mapStateEventToUserVisibleUpdate(event);
-          setCurrentState(event.state);
-          setPhaseStatusText(event.message);
-
-          if (update) {
-            pushEntry(
-              update.tone === 'error' ? 'interrupt' : 'narrative',
-              update.title,
-              update.detail ?? event.message,
-              update.tone === 'error' ? 'strong' : 'normal',
-            );
-          }
-          setActiveOperationText(update?.detail ?? event.message);
-
-          await options.onStateChange?.(event);
-        },
-        onTextDelta: async (textDelta) => {
-          if (display.showResponses) {
-            setLiveAssistantText((previous) => `${previous}${textDelta}`);
-          }
-          await options.onTextDelta?.(textDelta);
-        },
-        onToolEvent: async (event) => {
-          const enrichedEvent = enrichWorkflowEmbed(event);
-          handleToolEvent(enrichedEvent);
-          await options.onToolEvent?.(enrichedEvent);
-        },
-      });
-
-      finalizeAssistantEntry(result.text);
-      setCurrentState(result.finalState);
+      finalizeAssistantEntry(accumulator.responseText);
+      const finalState: YagrAgentState = accumulator.requiredActions.length > 0 ? 'waiting_for_input' : 'completed';
+      setCurrentState(finalState);
       setCurrentPhase(null);
-      setPendingRequiredActions(result.requiredActions);
+      setPendingRequiredActions(accumulator.requiredActions);
 
-      if (result.requiredActions.length > 0) {
-        for (const action of result.requiredActions) {
+      if (accumulator.requiredActions.length > 0) {
+        for (const action of accumulator.requiredActions) {
           pushEntry('interrupt', 'Action required', formatRequiredAction(action));
         }
-        setPhaseStatusText(result.requiredActions[0].message);
-        setActiveOperationText(result.requiredActions[0].message);
+        setPhaseStatusText(accumulator.requiredActions[0].message);
+        setActiveOperationText(accumulator.requiredActions[0].message);
       } else {
-        setApprovedRequiredActionIds([]);
         setPhaseStatusText('Ready.');
         setActiveOperationText('Run finished. Ready for the next request.');
       }
@@ -659,7 +568,7 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     } finally {
       setIsRunning(false);
     }
-  }, [agent, approvedRequiredActionIds, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, handleCompaction, handleContextUsage, handleToolEvent, options, pushEntry]);
+  }, [agent, threadIdRef, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, options, pushEntry]);
 
   const submitPrompt = useCallback(async (rawPrompt: string) => {
     const prompt = rawPrompt.trim();
@@ -675,10 +584,9 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
 
     if (prompt === '/reset') {
-      agent.clearConversation();
+      threadIdRef.current = randomUUID();
       setFeed([]);
       setPendingRequiredActions([]);
-      setApprovedRequiredActionIds([]);
       setCurrentState('idle');
       setCurrentPhase(null);
       setPhaseStatusText('Conversation reset.');
@@ -687,7 +595,6 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
       setLastUserPrompt('');
       setActiveOperationText('Ready for a request.');
       setWorkflowEmbeds([]);
-      commandBuffersRef.current = { stdout: '', stderr: '', command: '', toolName: '' };
       return;
     }
 
@@ -743,8 +650,6 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
         return;
       }
 
-      const approvedIds = permissionActions.map((action) => action.id);
-      setApprovedRequiredActionIds((previous) => [...new Set([...previous, ...approvedIds])]);
       setPendingRequiredActions((previous) => previous.filter((action) => action.kind !== 'permission'));
       pushEntry('result', 'Permissions', `Permission granted for ${permissionActions.length} action(s).`);
       await runPrompt('Permission granted. Continue the current task and execute the previously blocked step now.');
@@ -752,23 +657,12 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
     }
 
     if (prompt === '/compact') {
-      pushEntry('narrative', 'Compact', 'Compacting conversation context…');
-      try {
-        const event = await agent.compactHistory(options);
-        if (event) {
-          setContextFillPercent(null);
-          pushEntry('result', 'Compact', `Context compacted: ${event.messagesCompacted} messages folded, ${event.preservedRecentMessages} recent kept.`);
-        } else {
-          pushEntry('narrative', 'Compact', 'Nothing to compact — conversation is too short.');
-        }
-      } catch (error) {
-        pushEntry('interrupt', 'Compact failed', error instanceof Error ? error.message : String(error));
-      }
+      handleCompact();
       return;
     }
 
     await runPrompt(prompt);
-  }, [agent, app, isRunning, options, pendingRequiredActions, pushEntry, runPrompt, workflowEmbeds]);
+  }, [agent, app, handleCompact, isRunning, pendingRequiredActions, pushEntry, runPrompt, workflowEmbeds]);
 
   useInput((inputKey, key) => {
     if (key.ctrl && inputKey === 'c') {
@@ -913,9 +807,10 @@ function YagrInteractiveApp({ agent, options }: InteractiveAppProps) {
   );
 }
 
-export async function runInteractiveGateway(agent: YagrSessionAgent, options: YagrRunOptions): Promise<void> {
+export async function runInteractiveGateway(handle: YagrDeepAgentHandle, options: YagrRunOptions): Promise<void> {
   await ensureLocalWorkflowOpenBridgeRunning();
-  const ink = render(<YagrInteractiveApp agent={agent} options={options} />, {
+  const threadIdRef = { current: randomUUID() };
+  const ink = render(<YagrInteractiveApp agent={handle.agent} threadIdRef={threadIdRef} options={options} />, {
     exitOnCtrlC: false,
   });
 
