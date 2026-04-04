@@ -11,6 +11,7 @@ import {
   updateManagedN8nState,
   type ManagedN8nInstanceState,
 } from './state.js';
+import { getActiveTunnelState } from './n8n-tunnel.js';
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_N8N_IMAGE = 'docker.n8n.io/n8nio/n8n:stable';
@@ -66,7 +67,8 @@ export async function installManagedDockerN8n(options: InstallManagedDockerN8nOp
   }));
 
   function writeDockerComposeFiles(input: { image: string; port: number }): void {
-    fs.writeFileSync(paths.envFile, buildEnvFile(input));
+    const tunnelState = getActiveTunnelState();
+    fs.writeFileSync(paths.envFile, buildEnvFile({ ...input, webhookUrl: tunnelState?.publicUrl }));
     fs.writeFileSync(paths.composeFile, buildComposeFile());
   }
 }
@@ -76,6 +78,15 @@ export async function startManagedDockerN8n(): Promise<ManagedN8nInstanceState> 
   if (!state) {
     throw new Error('No Yagr-managed local n8n instance is installed yet. Run `yagr n8n local install` first.');
   }
+
+  // Rewrite .env so N8N_WEBHOOK_URL reflects the currently active tunnel (if any).
+  const paths = ensureManagedN8nDirs();
+  const tunnelState = getActiveTunnelState();
+  fs.writeFileSync(paths.envFile, buildEnvFile({
+    image: state.image ?? 'docker.n8n.io/n8nio/n8n:stable',
+    port: state.port,
+    webhookUrl: tunnelState?.publicUrl,
+  }));
 
   updateManagedN8nState((current) => ({
     ...(current ?? state),
@@ -137,8 +148,8 @@ export async function getManagedDockerN8nLogs(tail = 100): Promise<string> {
   return [stdout, stderr].filter(Boolean).join('\n').trim();
 }
 
-function buildEnvFile(input: { image: string; port: number }): string {
-  return [
+function buildEnvFile(input: { image: string; port: number; webhookUrl?: string }): string {
+  const lines = [
     `N8N_IMAGE=${input.image}`,
     `YAGR_N8N_HOST_PORT=${input.port}`,
     'GENERIC_TIMEZONE=UTC',
@@ -150,8 +161,12 @@ function buildEnvFile(input: { image: string; port: number }): string {
     'N8N_SECURE_COOKIE=false',
     'N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true',
     'QUEUE_HEALTH_CHECK_ACTIVE=true',
-    '',
-  ].join('\n');
+  ];
+  if (input.webhookUrl) {
+    lines.push(`N8N_WEBHOOK_URL=${input.webhookUrl}`);
+  }
+  lines.push('');
+  return lines.join('\n');
 }
 
 function buildComposeFile(): string {
