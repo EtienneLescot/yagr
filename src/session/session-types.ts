@@ -29,6 +29,12 @@ export interface SerializedChatMessage {
     targetUrl?: string;
     title?: string;
     diagram?: string;
+    executionResult?: {
+      status: 'success' | 'error' | 'waiting';
+      executionId?: string;
+      summary?: string;
+      data?: string;
+    };
   };
 }
 

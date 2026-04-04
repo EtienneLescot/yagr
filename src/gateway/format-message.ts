@@ -20,6 +20,12 @@ export interface WorkflowEmbed {
   targetUrl?: string;
   title?: string;
   diagram?: string;
+  executionResult?: {
+    status: 'success' | 'error' | 'waiting';
+    executionId?: string;
+    summary?: string;
+    data?: string;
+  };
 }
 
 export function workflowEmbedKey(embed: WorkflowEmbed): string {
@@ -34,6 +40,7 @@ export function extractWorkflowEmbed(event: YagrToolEvent): WorkflowEmbed | unde
       targetUrl: event.targetUrl,
       title: event.title,
       diagram: event.diagram,
+      executionResult: event.executionResult,
     };
   }
   return undefined;

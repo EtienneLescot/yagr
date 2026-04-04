@@ -403,9 +403,22 @@ function TerminalMarkdown({ text }: { text: string }): JSX.Element {
 function WorkflowBanner({ embeds }: { embeds: WorkflowEmbed[] }): JSX.Element | null {
   if (embeds.length === 0) return null;
 
+  const execEmbed = embeds.find(e => e.executionResult);
+  const exec = execEmbed?.executionResult;
+
   return (
     <Box flexDirection="column" marginTop={1}>
       <Text>{buildWorkflowBannerTerminal(embeds)}</Text>
+      {exec ? (
+        <Box flexDirection="column" marginTop={1} paddingLeft={1} borderLeft={true} borderStyle="single" borderColor={exec.status === 'success' ? 'green' : exec.status === 'error' ? 'red' : 'yellow'}>
+          <Text bold color={exec.status === 'success' ? 'green' : exec.status === 'error' ? 'red' : 'yellow'}>
+            {exec.status === 'success' ? '✓ Exécution réussie' : exec.status === 'error' ? '✗ Erreur d\'exécution' : '⧗ En attente'}
+            {exec.executionId ? ` · #${exec.executionId}` : ''}
+          </Text>
+          {exec.summary ? <Text>{exec.summary}</Text> : null}
+          {exec.data ? <Text dimColor>{exec.data}</Text> : null}
+        </Box>
+      ) : null}
     </Box>
   );
 }

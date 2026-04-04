@@ -123,8 +123,9 @@ export function resolveWorkflowDiagram(workflowId: string, fallbackDiagram?: str
 export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver) {
   return tool({
     description:
-      'Present an n8n workflow to the user as a workflow banner in the current surface. ' +
+      'Present an n8n workflow to the user. ' +
       'You MUST call this tool every time you reference, show, deploy, push, pull, or discuss a specific n8n workflow and you know its ID. ' +
+      'If you have just run or tested a workflow, pass the execution result in the executionResult parameter so the user sees real output data — not just a deployment banner. ' +
       'If you do not have the full URL, construct it as {n8nHost}/workflow/{workflowId}. ' +
       'Always include the diagram parameter with the ASCII header from the n8nac TypeScript output so rich surfaces can show the workflow graph at a glance.',
     parameters: z.object({
@@ -132,8 +133,14 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
       workflowUrl: z.string().describe('The full URL to the workflow in n8n (e.g. http://localhost:5678/workflow/abc123).'),
       title: z.string().optional().describe('Human-readable workflow name for the banner.'),
       diagram: z.string().optional().describe('ASCII art diagram of the workflow graph, typically the header block from the n8nac TypeScript output.'),
+      executionResult: z.object({
+        status: z.enum(['success', 'error', 'waiting']).describe('Final execution status.'),
+        executionId: z.string().optional().describe('The n8n execution ID.'),
+        summary: z.string().optional().describe('One-sentence plain-text summary of what the execution produced.'),
+        data: z.string().optional().describe('Key output data from the execution — paste the relevant node output JSON or text here verbatim from the tool result.'),
+      }).optional().describe('Include this whenever you have run or tested a workflow and received execution output. Pass the actual data from the tool result, do not summarize from memory.'),
     }),
-    execute: async ({ workflowId, workflowUrl, title, diagram }) => {
+    execute: async ({ workflowId, workflowUrl, title, diagram, executionResult }) => {
       const resolvedDiagram = resolveWorkflowDiagram(workflowId, diagram);
       const workflowLink = resolveWorkflowOpenLink(workflowUrl);
       await emitToolEvent(observer, {
@@ -145,6 +152,7 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
         targetUrl: workflowLink.targetUrl,
         title,
         diagram: resolvedDiagram,
+        executionResult,
       });
       return {
         presented: true,
@@ -152,6 +160,7 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
         workflowUrl: workflowLink.openUrl,
         targetWorkflowUrl: workflowLink.targetUrl,
         title: title ?? null,
+        executionResult: executionResult ?? null,
       };
     },
   });

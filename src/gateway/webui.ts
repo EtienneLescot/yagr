@@ -82,7 +82,7 @@ type WebUiChatStreamEvent =
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
-  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string };
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
 
 export function mapToolEventToWebUiStreamEvent(event: YagrToolEvent): WebUiChatStreamEvent | undefined {
   const userFacingStatus = mapToolEventToUserVisibleUpdate(event);
@@ -105,6 +105,7 @@ export function mapToolEventToWebUiStreamEvent(event: YagrToolEvent): WebUiChatS
       targetUrl: event.targetUrl,
       title: event.title,
       diagram: event.diagram,
+      executionResult: event.executionResult,
     };
   }
 
