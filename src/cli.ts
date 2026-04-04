@@ -48,6 +48,7 @@ import {
   getActiveTunnelState,
   installCloudflaredIfNeeded,
   isCloudflaredAvailable,
+  isLocalUrl,
   refreshN8nTunnel,
   resolveN8nTunnelTargetUrl,
   startN8nTunnel,
@@ -147,9 +148,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     startIndex = 1;
   }
 
-  if (argv[0] === 'llm-setup') {
+  if (argv[0] === 'llm' && argv[1] === 'setup') {
     parsed.command = 'llm-setup';
-    startIndex = 1;
+    startIndex = 2;
   }
 
   if (argv[0] === 'start') {
@@ -172,9 +173,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     return parsed;
   }
 
-  if (argv[0] === 'llm-proxy-setup') {
+  if (argv[0] === 'llm' && argv[1] === 'proxy' && argv[2] === 'setup') {
     parsed.command = 'llm-proxy-setup';
-    startIndex = 1;
+    startIndex = 3;
   }
 
   if (argv[0] === 'proxy' && argv[1] === 'start') {
@@ -709,8 +710,8 @@ Usage: yagr <command> [options]
 
 Commands:
   setup                        Run the setup wizard
-  llm-setup                    Run only the LLM setup wizard
-  llm-proxy-setup              Configure the LLM proxy only
+  llm setup                    Run only the LLM setup wizard
+  llm proxy setup              Configure the LLM proxy only
   start [tui|webui]            Start configured gateway(s), or a specific UI
   tui                          Open an interactive terminal chat session
   webui                        Open the web interface
@@ -861,6 +862,31 @@ async function main(): Promise<void> {
       const completed = await runYagrSetup(configService);
       if (!completed) {
         return;
+      }
+      // After onboarding, if n8n is local and no tunnel is configured yet, offer tunnel setup.
+      const n8nCfg = new YagrN8nConfigService();
+      const n8nHost = n8nCfg.getLocalConfig().host;
+      const tunnelCfg = configService.getN8nTunnelConfig();
+      if (n8nHost && isLocalUrl(n8nHost) && !tunnelCfg?.enabled) {
+        process.stdout.write('\n──────────────────────────────────────────────────\n');
+        process.stdout.write('Your n8n instance is local. Setting up a Cloudflare Tunnel\n');
+        process.stdout.write('so it is reachable for webhooks and Telegram triggers…\n\n');
+        try {
+          const targetUrl = resolveN8nTunnelTargetUrl();
+          const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
+          const tunnelState = await runWithSpinner(
+            `Starting Cloudflare Tunnel for ${targetUrl}…`,
+            () => startN8nTunnel(targetUrl, bin),
+            'Waiting for cloudflared to emit a public URL (up to 30s).',
+          );
+          configService.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: tunnelState.publicUrl });
+          process.stdout.write(`\nTunnel ready: ${tunnelState.publicUrl}\n`);
+          process.stdout.write(`The tunnel will restart automatically on next \`yagr start\`.\n`);
+        } catch (err) {
+          process.stdout.write(`Tunnel setup skipped: ${(err as Error).message}\n`);
+          process.stdout.write('You can run it later with `yagr n8n tunnel setup`.\n');
+        }
+        process.stdout.write('──────────────────────────────────────────────────\n\n');
       }
       await runGatewayOrFallback(args, configService);
       return;
