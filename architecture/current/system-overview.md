@@ -90,6 +90,9 @@ Observation actuelle:
 - `src/llm/provider-metadata.ts`
 - `src/llm/capability-resolver.ts`
 - `src/llm/proxy-runtime.ts`
+- `src/llm/llm-relay-server.ts`
+- `src/llm/llm-relay-entrypoint.ts`
+- `src/llm/anthropic-relay.ts`
 - `src/llm/*-account.ts`
 
 Responsabilite actuelle:
@@ -112,6 +115,41 @@ Observation actuelle:
 - la migration n'est pas terminee, mais la direction `metadata -> normalisation -> runtime strategy` existe maintenant dans le code
 - les providers OpenAI-compatible faibles ne sont plus artificiellement limites au premier tool visible
 - la strategie runtime commune pilote maintenant le mode `stream` vs `generate`, les directives inspect/execute/recovery et la reduction de surface d'outils pour le niveau `none`
+- tous les appels `generateText`/`streamText` utilisent `temperature: 0` pour le determinisme de la boucle agentique
+
+### LLM Relay Proxy (Yagr → n8n)
+
+Yagr expose un serveur HTTP OpenAI-compatible local (`llm-relay-server.ts`) qui proxifie vers le provider actif de Yagr. Les noeuds Chat Model n8n (ex: `lmChatOpenAi`) peuvent pointer sur ce relay via une credential `openAiApi` avec `baseUrl` custom — sans necessiter de cle API separee.
+
+**Composants implementes**
+
+| Fichier | Role |
+|---|---|
+| `src/llm/llm-relay-server.ts` | Cycle de vie du relay : demarrage, detection de port libre, health-check, arret |
+| `src/llm/llm-relay-entrypoint.ts` | Point d'entree du processus relay detache |
+| `src/llm/anthropic-relay.ts` | Adaptation de format Anthropic → OpenAI pour le relay |
+| `src/llm/proxy-runtime.ts` | Preparation du runtime provider pour le relay |
+
+**Flux operationnel**
+
+```
+n8nac action=yagr_proxy_relay_start
+  → ensureN8nRelayServer()            // demarre le relay si mort, idempotent
+  → cree/reuse la credential openAiApi dans n8n (nom fixe "Yagr LLM Proxy")
+  → retourne { port, baseUrl, credentialId }
+  → l'agent assigne credentialId au noeud lmChatOpenAi
+
+n8n execute le workflow
+  → lmChatOpenAi appelle http://host.docker.internal:PORT/v1/chat/completions
+  → relay proxifie vers le provider actif Yagr (Copilot, Anthropic, OpenAI, etc.)
+  → rotation de token transparente (le relay fait l'intermediaire en temps reel)
+```
+
+**Points d'attention**
+
+- Le relay tourne como processus detache qui survit a la session agent ; il est redemarre automatiquement au prochain lancement de `ensureRelayAtLaunch()` si mort
+- Le noeud `lmChatOpenAi` v1.3 exige `responsesApiEnabled: false` quand une `baseURL` custom est configuree — sinon n8n envoie la requete a `api.openai.com/v1/responses` en ignorant la `baseURL`
+- Quand n8nac test retourne `asyncTrigger=true` (`{"message":"Workflow was started"}`), l'execution est asynchrone ; l'agent doit enchaîner avec `execution list/get` pour confirmer le statut reel
 
 ```mermaid
 flowchart LR
