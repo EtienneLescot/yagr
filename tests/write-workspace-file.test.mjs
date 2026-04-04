@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createWriteWorkspaceFileTool } from '../dist/tools/write-workspace-file.js';
+import { createWriteFileTool } from '../dist/tools/write-workspace-file.js';
 
-test('writeWorkspaceFile returns a recoverable error when content is missing', async () => {
-  const tool = createWriteWorkspaceFileTool();
+test('writeFile returns a recoverable error when content is missing', async () => {
+  const tool = createWriteFileTool();
   const result = await tool.execute({
     path: 'workflows/demo.workflow.ts',
     mode: 'create',

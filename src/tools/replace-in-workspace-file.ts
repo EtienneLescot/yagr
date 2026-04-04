@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { ToolExecutionObserver } from './observer.js';
 import { countOccurrences, readTextFile, relativeWorkspacePath, resolveWorkspacePath } from './workspace-utils.js';
 
-export function createReplaceInWorkspaceFileTool(_observer?: ToolExecutionObserver) {
+export function createReplaceInFileTool(_observer?: ToolExecutionObserver) {
   return tool({
     description: 'Replace exact text in a workspace file. Prefer this for focused edits to existing workflow TypeScript files.',
     parameters: z.object({

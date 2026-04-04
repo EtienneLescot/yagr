@@ -108,7 +108,7 @@ type SyntheticN8nacIntent = {
 };
 
 type SyntheticWriteWorkspaceFileIntent = {
-  tool: 'writeWorkspaceFile';
+  tool: 'writeFile';
   path: string;
   content: string;
   mode?: 'create' | 'overwrite' | 'append';
@@ -117,11 +117,11 @@ type SyntheticWriteWorkspaceFileIntent = {
 type SyntheticToolIntent = SyntheticN8nacIntent | SyntheticWriteWorkspaceFileIntent;
 
 function isSyntheticWriteWorkspaceFileIntent(intent: SyntheticToolIntent): intent is SyntheticWriteWorkspaceFileIntent {
-  return intent.tool === 'writeWorkspaceFile';
+  return intent.tool === 'writeFile';
 }
 
 function isSyntheticN8nacIntent(intent: SyntheticToolIntent): intent is SyntheticN8nacIntent {
-  return intent.tool !== 'writeWorkspaceFile';
+  return intent.tool !== 'writeFile';
 }
 
 function createAbortError(message = 'Yagr run stopped by user.'): Error {
@@ -164,7 +164,7 @@ function looksLikeRawToolIntentText(text: string): boolean {
   return blocks.join('') === trimmed && blocks.every((block) => {
     try {
       const parsed = JSON.parse(block) as Record<string, unknown>;
-      return typeof parsed.action === 'string' || parsed.tool === 'writeWorkspaceFile';
+      return typeof parsed.action === 'string' || parsed.tool === 'writeFile';
     } catch {
       return false;
     }
@@ -225,12 +225,12 @@ function parseSyntheticToolIntents(text: string): SyntheticToolIntent[] {
   for (const block of extractJsonObjectBlocks(text)) {
     try {
       const parsed = JSON.parse(block) as Record<string, unknown>;
-      if (parsed.tool === 'writeWorkspaceFile') {
+      if (parsed.tool === 'writeFile') {
         if (typeof parsed.path !== 'string' || typeof parsed.content !== 'string') {
           continue;
         }
         intents.push({
-          tool: 'writeWorkspaceFile',
+          tool: 'writeFile',
           path: parsed.path,
           content: parsed.content,
           mode: parsed.mode === 'create' || parsed.mode === 'append' ? parsed.mode : 'overwrite',
@@ -303,7 +303,7 @@ async function maybeExecuteSyntheticToolIntents(
 
   for (const intent of intents) {
     if (isSyntheticWriteWorkspaceFileIntent(intent)) {
-      const writeTool = tools.writeWorkspaceFile as unknown as {
+      const writeTool = tools.writeFile as unknown as {
         execute: (toolArgs: Record<string, unknown>, toolOptions?: unknown) => Promise<unknown>;
       };
       const args = {
@@ -315,8 +315,8 @@ async function maybeExecuteSyntheticToolIntents(
       await recordStep(state, options, {
         stepType: 'tool-result',
         finishReason: 'tool-calls',
-        toolCalls: [{ toolName: 'writeWorkspaceFile', args }],
-        toolResults: [{ toolName: 'writeWorkspaceFile', result }],
+        toolCalls: [{ toolName: 'writeFile', args }],
+        toolResults: [{ toolName: 'writeFile', result }],
         text: '',
       });
       continue;
@@ -566,11 +566,11 @@ function inferPhaseFromStep(step: {
     return 'plan';
   }
 
-  if (step.toolCalls.some((toolCall) => toolCall.toolName === 'writeWorkspaceFile' || toolCall.toolName === 'replaceInWorkspaceFile')) {
+  if (step.toolCalls.some((toolCall) => toolCall.toolName === 'writeFile' || toolCall.toolName === 'replaceInFile')) {
     return 'edit';
   }
 
-  if (step.toolCalls.some((toolCall) => toolCall.toolName === 'readWorkspaceFile' || toolCall.toolName === 'searchWorkspace' || toolCall.toolName === 'listDirectory')) {
+  if (step.toolCalls.some((toolCall) => toolCall.toolName === 'readFile' || toolCall.toolName === 'grep' || toolCall.toolName === 'listDir')) {
     return 'inspect';
   }
 
@@ -1236,14 +1236,14 @@ function buildRecoveryPrompt(outcome: RunOutcome, attemptNumber: number): string
 
 /**
  * Attempt to repair a malformed tool call where the model emitted an unquoted string value.
- * This primarily handles `writeWorkspaceFile` when a model writes raw TypeScript code as the
+ * This primarily handles `writeFile` when a model writes raw TypeScript code as the
  * `content` field without JSON-string-encoding it. The closing `}` of the JSON object is always
  * the last character in the args string, so `lastIndexOf('}')` reliably isolates it.
  *
  * Returns a corrected JSON args string, or `null` if the pattern is not recognised.
  */
 function tryRepairToolArgs(toolName: string, rawArgs: string): string | null {
-  if (toolName !== 'writeWorkspaceFile') return null;
+  if (toolName !== 'writeFile') return null;
 
   const pathMatch = /"path"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(rawArgs);
   if (!pathMatch) return null;

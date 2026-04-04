@@ -5,20 +5,23 @@ export const CORE_TOOL_NAMES = [
 ] as const;
 
 export const DISCOVERY_TOOL_NAMES = [
-  'listDirectory',
-  'readWorkspaceFile',
-  'searchWorkspace',
+  'listDir',
+  'readFile',
+  'grep',
+  'httpRequest',
 ] as const;
 
 export const EDIT_TOOL_NAMES = [
-  'writeWorkspaceFile',
-  'replaceInWorkspaceFile',
-  'moveWorkspaceFile',
-  'deleteWorkspaceFile',
+  'writeFile',
+  'replaceInFile',
+  'moveFile',
+  'deleteFile',
 ] as const;
 
 export const WORKFLOW_EXECUTION_TOOL_NAMES = [
   'n8nac',
+  'runScript',
+  'runShell',
 ] as const;
 
 export const MATERIAL_RUNTIME_TOOL_NAMES = [
@@ -40,7 +43,7 @@ export const MINIMAL_RUNTIME_TOOL_NAMES = [
 
 export const SYNTHETIC_RUNTIME_TOOL_NAMES = [
   ...CORE_TOOL_NAMES,
-  'writeWorkspaceFile',
+  'writeFile',
   'n8nac',
 ] as const;
 

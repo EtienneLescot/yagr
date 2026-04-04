@@ -9,10 +9,10 @@ test('runtime tool surface includes core and filesystem tools', () => {
   assert.ok(tools.reportProgress);
   assert.ok(tools.requestRequiredAction);
   assert.ok(tools.n8nac);
-  assert.ok(tools.listDirectory);
-  assert.ok(tools.readWorkspaceFile);
-  assert.ok(tools.searchWorkspace);
-  assert.ok(tools.writeWorkspaceFile);
+  assert.ok(tools.listDir);
+  assert.ok(tools.readFile);
+  assert.ok(tools.grep);
+  assert.ok(tools.writeFile);
   assert.ok(tools.presentWorkflowResult);
 });
 
