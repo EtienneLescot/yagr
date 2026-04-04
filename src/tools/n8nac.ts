@@ -13,30 +13,6 @@ import { pollUntil } from '../system/async-poll.js';
 
 // ─── N8n credential REST helpers ─────────────────────────────────────────────
 
-/**
- * Patches the stored data of an existing n8n credential via the public REST API.
- * Used to update the relay URL in "Yagr LLM Proxy" without changing the credential ID
- * (which would break all workflows that reference it).
- */
-async function patchN8nCredential(
-  host: string,
-  apiKey: string,
-  credentialId: string,
-  data: Record<string, string>,
-): Promise<boolean> {
-  try {
-    const url = `${host.replace(/\/+$/, '')}/api/v1/credentials/${credentialId}`;
-    const res = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data }),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 function resolveN8nacOperation(argv: string[]): string {
   const [head, second] = argv;
   if (head === 'workflow' && second === 'activate') return 'workflow_activate';
@@ -836,6 +812,14 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       if (action === 'yagr_proxy_relay_start') {
         const relay = await ensureN8nRelayServer();
 
+        // `relay.baseUrl` is the correct URL for the current yagr-config (set at onboard time):
+        //   mode=tunnel  → Cloudflare tunnel URL  (for cloud/external n8n)
+        //   mode=docker  → http://host.docker.internal:port/v1
+        //   mode=local   → http://127.0.0.1:port/v1
+        // We trust this value; stale credentials are detected by comparing against the last
+        // persisted `credentialBaseUrl` and auto-recreated when they differ.
+        const effectiveRelayBaseUrl = relay.baseUrl;
+
         // Check whether the Yagr relay credential already exists.
         const listResult = await runObservedN8nac(observer, ['credential', 'list', '--json'], cwd);
         const existingList = parseJsonPayload(listResult.stdout);
@@ -847,39 +831,33 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         );
 
         if (existing?.id) {
-          // Credential exists — check if the relay URL has rotated (e.g. tunnel restarted).
-          // The credential ID must stay the same to avoid breaking existing workflow node refs,
-          // so we PATCH the data in-place when the URL changed.
-          const n8nRuntime = resolveN8nRuntimeState(new YagrN8nConfigService(), process.env, { allowEnvironmentFallback: true });
-          const storedRelayUrl = (new YagrConfigService()).getLocalConfig().llmProxy?.credentialBaseUrl;
+          // Compare the URL we last confirmed in the n8n credential against the current relay URL.
+          // `confirmedCredentialBaseUrl` is only written by yagr_proxy_relay_start after a
+          // successful credential create — never by onboard — so it reliably tracks what's
+          // actually stored in n8n. Any mismatch (mode change, port change, tunnel rotation)
+          // means the credential is stale and must be recreated.
+          const confirmedUrl = (new YagrConfigService()).getLocalConfig().llmProxy?.confirmedCredentialBaseUrl;
+          const urlIsStale = confirmedUrl !== effectiveRelayBaseUrl;
 
-          let urlUpdated = false;
-          if (storedRelayUrl !== relay.baseUrl && n8nRuntime.host && n8nRuntime.apiKey) {
-            const patched = await patchN8nCredential(
-              n8nRuntime.host,
-              n8nRuntime.apiKey,
-              existing.id,
-              { apiKey: N8N_RELAY_FAKE_API_KEY, url: relay.baseUrl },
-            );
-            urlUpdated = patched;
+          if (!urlIsStale) {
+            return {
+              port: relay.port,
+              baseUrl: effectiveRelayBaseUrl,
+              credentialId: existing.id,
+              credentialName: N8N_RELAY_CREDENTIAL_NAME,
+              credentialType: 'openAiApi',
+              created: false,
+              reused: true,
+              next: `Relay is running. Reusing existing credential "${N8N_RELAY_CREDENTIAL_NAME}" (id: ${existing.id}). Assign it to the node.`,
+            };
           }
 
-          const urlNote = urlUpdated ? ` URL rotated and updated to ${relay.baseUrl}.` : '';
-          return {
-            port: relay.port,
-            baseUrl: relay.baseUrl,
-            credentialId: existing.id,
-            credentialName: N8N_RELAY_CREDENTIAL_NAME,
-            credentialType: 'openAiApi',
-            created: false,
-            reused: true,
-            urlUpdated,
-            next: `Relay is running.${urlNote} Reusing existing credential "${N8N_RELAY_CREDENTIAL_NAME}" (id: ${existing.id}). Assign it to the node.`,
-          };
+          // Stale URL — delete old credential so it will be recreated below.
+          await runObservedN8nac(observer, ['credential', 'delete', existing.id], cwd);
         }
 
         // Create the openAiApi credential with the correct field name ("url", not "baseUrl").
-        const credData = JSON.stringify({ apiKey: N8N_RELAY_FAKE_API_KEY, url: relay.baseUrl });
+        const credData = JSON.stringify({ apiKey: N8N_RELAY_FAKE_API_KEY, url: effectiveRelayBaseUrl });
         const createResult = await runObservedN8nac(
           observer,
           ['credential', 'create', '--type', 'openAiApi', '--name', N8N_RELAY_CREDENTIAL_NAME, '--data', credData, '--json'],
@@ -887,9 +865,14 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         );
         const created = parseJsonPayload(createResult.stdout) as Record<string, unknown> | undefined;
 
+        // Persist the effective URL so future calls can detect port/URL rotation.
+        if (createResult.exitCode === 0) {
+          (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
+        }
+
         return {
           port: relay.port,
-          baseUrl: relay.baseUrl,
+          baseUrl: effectiveRelayBaseUrl,
           credentialId: (created?.id as string | undefined) ?? null,
           credentialName: N8N_RELAY_CREDENTIAL_NAME,
           credentialType: 'openAiApi',
