@@ -16,6 +16,7 @@ export interface YagrPaths {
   yagrConfigPath: string;
   yagrCredentialsPath: string;
   proxyRuntimeStatePath: string;
+  n8nRelayStatePath: string;
   n8nConfigPath: string;
   n8nCredentialsPath: string;
   legacyYagrCredentialsDir: string;
@@ -128,6 +129,7 @@ export function getYagrPaths(): YagrPaths {
     yagrConfigPath: path.join(homeDir, 'yagr-config.json'),
     yagrCredentialsPath: path.join(homeDir, 'credentials.json'),
     proxyRuntimeStatePath: path.join(proxyRuntimeDir, 'state.json'),
+    n8nRelayStatePath: path.join(proxyRuntimeDir, 'n8n-relay.json'),
     n8nConfigPath: path.join(n8nWorkspaceDir, 'n8nac-config.json'),
     n8nCredentialsPath: path.join(homeDir, 'n8n-credentials.json'),
     legacyYagrCredentialsDir: path.dirname(legacyYagrCredentialsPath),
