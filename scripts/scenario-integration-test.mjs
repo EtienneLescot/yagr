@@ -6,15 +6,22 @@
  * simple workflow creation, complex workflow creation, workflow explanation, etc.
  *
  * Usage:
- *   node scripts/scenario-integration-test.mjs [--strict] [--no-markdown]
+ *   node scripts/scenario-integration-test.mjs [options]
  *
- * Environment variables:
- *   YAGR_SCN_PROVIDER          Provider to use (default: openrouter)
- *   YAGR_SCN_MODEL             Model to use (default: google/gemini-3-flash-preview)
- *   YAGR_SCN_TIMEOUT_MS        Timeout for Q&A scenarios (default: 60000)
- *   YAGR_SCN_CREATION_TIMEOUT_MS  Timeout for creation scenarios (default: 180000)
- *   YAGR_SCN_MARKDOWN_PATH     Markdown report output path
- *   YAGR_SCN_SCENARIOS         Comma-separated list of scenario IDs to run (default: all)
+ * Options (CLI args override env vars):
+ *   --provider <name>       Provider to use (default: DEFAULT_PROVIDER)
+ *   --model <name>          Model to use (default: DEFAULT_MODEL)
+ *   --scenarios <ids>       Comma-separated scenario IDs to run (default: all)
+ *   --strict                Fail the process on any scenario failure
+ *   --no-markdown           Skip writing the markdown report
+ *
+ * Environment variables (used when CLI args are not provided):
+ *   YAGR_SCN_PROVIDER                    Provider to use
+ *   YAGR_SCN_MODEL                       Model to use
+ *   YAGR_SCN_SCENARIOS                   Comma-separated scenario IDs to run
+ *   YAGR_SCN_TIMEOUT_MS                  Timeout for Q&A scenarios (default: 60000)
+ *   YAGR_SCN_CREATION_TIMEOUT_MS         Timeout for creation scenarios (default: 180000)
+ *   YAGR_SCN_MARKDOWN_PATH               Markdown report output path
  *   N8N_HOST / YAGR_IT_N8N_HOST          n8n host for workflow tests
  *   N8N_API_KEY / YAGR_IT_N8N_API_KEY    n8n API key for workflow tests
  *   N8N_PROJECT_ID / YAGR_IT_N8N_PROJECT_ID  n8n project ID
@@ -36,11 +43,23 @@ const { analyzeRunOutcome } = await import('../dist/runtime/outcome.js');
 const { getDefaultBaseUrlForProvider } = await import('../dist/llm/provider-registry.js');
 
 // ---------------------------------------------------------------------------
+// Defaults (edit here to change the baseline provider / model)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_PROVIDER = 'openrouter';
+const DEFAULT_MODEL = 'google/gemini-3-flash-preview';
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
-const PROVIDER = String(process.env.YAGR_SCN_PROVIDER || 'openrouter').trim();
-const MODEL = String(process.env.YAGR_SCN_MODEL || 'google/gemini-3-flash-preview').trim();
+function readCliArg(flag) {
+  const index = process.argv.indexOf(flag);
+  return index !== -1 && index + 1 < process.argv.length ? String(process.argv[index + 1]).trim() : undefined;
+}
+
+const PROVIDER = readCliArg('--provider') || String(process.env.YAGR_SCN_PROVIDER || DEFAULT_PROVIDER).trim();
+const MODEL = readCliArg('--model') || String(process.env.YAGR_SCN_MODEL || DEFAULT_MODEL).trim();
 const DEFAULT_TIMEOUT_MS = toInt(process.env.YAGR_SCN_TIMEOUT_MS, 60_000);
 const CREATION_TIMEOUT_MS = toInt(process.env.YAGR_SCN_CREATION_TIMEOUT_MS, 180_000);
 const strict = process.argv.includes('--strict');
@@ -48,7 +67,8 @@ const markdownDisabled = process.argv.includes('--no-markdown');
 const markdownPath = process.env.YAGR_SCN_MARKDOWN_PATH
   || path.join(process.cwd(), 'reports', 'scenario-integration-report.md');
 
-const requestedScenarioIds = (process.env.YAGR_SCN_SCENARIOS || '')
+const scenariosFromCli = readCliArg('--scenarios');
+const requestedScenarioIds = (scenariosFromCli || process.env.YAGR_SCN_SCENARIOS || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
