@@ -6,7 +6,7 @@ import { ensureParentDirectory, fileExists, relativeWorkspacePath, resolveWorksp
 
 export function createWriteFileTool(_observer?: ToolExecutionObserver) {
   return tool({
-    description: 'Write a workspace file. Use ONLY for creating brand-new files that do not exist yet. To modify an existing file use replaceInFile — never overwrite an existing file with writeFile, as this discards metadata (e.g. workflow IDs) written by external tools.',
+    description: 'Write a workspace file. Use ONLY for creating brand-new files that do not exist yet. To modify an existing file use replaceInFile — never overwrite an existing file with writeFile, as this discards metadata written by external tools.',
     parameters: z.preprocess((input) => {
       if (!input || typeof input !== 'object') {
         return input;
@@ -47,6 +47,17 @@ export function createWriteFileTool(_observer?: ToolExecutionObserver) {
           ok: false,
           path: relativeWorkspacePath(targetPath),
           error: `File already exists: ${inputPath}`,
+        };
+      }
+
+      // Guard: overwriting an existing file with writeFile discards any metadata
+      // (IDs, generated content) that external tools may have written into it.
+      // Require the caller to use replaceInFile for targeted edits instead.
+      if (mode === 'overwrite' && exists) {
+        return {
+          ok: false,
+          path: relativeWorkspacePath(targetPath),
+          error: `Cannot overwrite existing file ${inputPath} with writeFile. Use replaceInFile to make targeted edits that preserve metadata written by external tools (e.g. IDs, generated fields). Only use writeFile for brand-new files.`,
         };
       }
 
