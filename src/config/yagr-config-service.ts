@@ -39,12 +39,22 @@ export interface YagrGatewayConfig {
   };
 }
 
+export interface YagrComplianceConsentRecord {
+  warningVersion: string;
+  acceptedAt: string;
+}
+
+export interface YagrComplianceConfig {
+  yagrProxyCredentialWarning?: YagrComplianceConsentRecord;
+}
+
 export interface YagrLocalConfig {
   provider?: YagrModelProvider;
   model?: string;
   baseUrl?: string;
   gateway?: YagrGatewayConfig;
   telegram?: YagrTelegramConfig;
+  compliance?: YagrComplianceConfig;
 }
 
 export interface YagrConfigStoreLike {
@@ -60,6 +70,8 @@ export interface YagrConfigStoreLike {
   getTelegramBotToken(): string | undefined;
   saveTelegramBotToken(botToken: string): void;
   clearTelegramBotToken(): void;
+  getYagrProxyCredentialWarningConsent(): YagrComplianceConsentRecord | undefined;
+  saveYagrProxyCredentialWarningConsent(record: YagrComplianceConsentRecord): YagrLocalConfig;
   clearLocalConfig?(): void;
   clearAllApiKeys?(): void;
 }
@@ -180,6 +192,20 @@ export class YagrConfigService {
 
   clearTelegramBotToken(): void {
     this.globalStore.delete('telegram.botToken');
+  }
+
+  getYagrProxyCredentialWarningConsent(): YagrComplianceConsentRecord | undefined {
+    return this.getLocalConfig().compliance?.yagrProxyCredentialWarning;
+  }
+
+  saveYagrProxyCredentialWarningConsent(record: YagrComplianceConsentRecord): YagrLocalConfig {
+    return this.updateLocalConfig((localConfig) => ({
+      ...localConfig,
+      compliance: {
+        ...localConfig.compliance,
+        yagrProxyCredentialWarning: record,
+      },
+    }));
   }
 
   private migrateLegacyCredentials(): void {
