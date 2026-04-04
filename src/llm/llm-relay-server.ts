@@ -22,6 +22,7 @@ import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import { prepareProviderRuntime } from './proxy-runtime.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import type { YagrModelProvider } from './provider-registry.js';
+import { handleAnthropicRelay } from './anthropic-relay.js';
 
 export const YAGR_LLM_RELAY_HOST_ENV = 'YAGR_LLM_RELAY_HOST';
 
@@ -449,7 +450,15 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
     return;
   }
 
-  const { baseUrl, apiKey } = result.runtime;
+  const { baseUrl, apiKey, provider } = result.runtime;
+
+  // Anthropic is not OpenAI-compatible — use the dedicated translation layer.
+  if (provider === 'anthropic-proxy') {
+    const body = await readBody(req);
+    const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
+    await handleAnthropicRelay(req, res, normalizedBody, apiKey ?? '');
+    return;
+  }
 
   if (!baseUrl) {
     sendJson(res, 503, {

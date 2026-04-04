@@ -186,6 +186,70 @@ function sanitizeEnvValue(value: string | undefined): string {
   return String(value || '').trim().replace(/^['"]|['"]$/g, '');
 }
 
+export interface WorkflowNodeMisconfiguration {
+  nodeType: string;
+  issue: string;
+  fix: string;
+}
+
+/**
+ * Scans a .workflow.ts source file for known node misconfigurations that cause
+ * silent runtime failures. Currently detects:
+ *
+ * - lmChatOpenAi with a custom baseURL but without responsesApiEnabled: false.
+ *   When responsesApiEnabled is true (the v1.3 default), n8n sends the request
+ *   to https://api.openai.com/v1/responses, bypassing the custom baseURL entirely
+ *   and failing with "Input required: specify prompt or messages" on any proxy.
+ */
+export function detectWorkflowNodeMisconfigurations(filePath: string): WorkflowNodeMisconfiguration[] {
+  let source: string;
+  try {
+    source = fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return [];
+  }
+
+  const issues: WorkflowNodeMisconfiguration[] = [];
+
+  // Find every occurrence of the lmChatOpenAi type string in the source.
+  // For each occurrence, extract the enclosing object literal and check
+  // whether a custom baseURL is present alongside responsesApiEnabled: false.
+  const typePattern = /lmChatOpenAi/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = typePattern.exec(source)) !== null) {
+    // Walk backwards from the match to find the start of the enclosing @node
+    // or object literal (the nearest '{' that begins the parameters block).
+    // Strategy: find the nearest '{' scanning backwards, then locate the
+    // balanced closing '}' scanning forwards.
+    const before = source.slice(0, match.index);
+    const after = source.slice(match.index);
+
+    // Find the opening brace of the outermost surrounding object by scanning
+    // forward from here until we either find a parameters: { ... } block
+    // or the next occurrence of lmChatOpenAi ends the search.
+    // Simpler approach: take the surrounding 2 KB window and scan it.
+    const window = source.slice(Math.max(0, match.index - 500), match.index + 1500);
+
+    const hasCustomBaseUrl = /baseURL\s*:|baseUrl\s*:/i.test(window);
+    const hasResponsesApiDisabled = /responsesApiEnabled\s*:\s*false/.test(window);
+
+    if (hasCustomBaseUrl && !hasResponsesApiDisabled) {
+      issues.push({
+        nodeType: 'lmChatOpenAi',
+        issue:
+          'Node uses a custom baseURL (proxy/relay) but responsesApiEnabled is not set to false. ' +
+          'n8n v1.3+ defaults responsesApiEnabled to true, which makes n8n send requests to ' +
+          'https://api.openai.com/v1/responses instead of the custom baseURL, causing ' +
+          '"Input required: specify prompt or messages" at runtime.',
+        fix: 'Add responsesApiEnabled: false to the node parameters alongside the options.baseURL.',
+      });
+    }
+  }
+
+  return issues;
+}
+
 function parseWorkflowSyncFacts(stdout: string, stderr: string, host: string | undefined): WorkflowSyncFacts {
   const combined = `${stdout}\n${stderr}`;
   const workflowId = combined.match(/Fetching workflow ([A-Za-z0-9_-]+) from n8n for verification/i)?.[1]
@@ -583,6 +647,33 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
 
         const configService = new YagrN8nConfigService();
         const normalizedArgv = normalizeCommandArgv(argv, configService);
+
+        // Pre-push validation: detect node misconfigurations that cause silent runtime failures.
+        if (normalizedArgv[0] === 'push' && normalizedArgv[1]) {
+          const targetPath = path.isAbsolute(normalizedArgv[1])
+            ? normalizedArgv[1]
+            : path.resolve(cwd, normalizedArgv[1]);
+          const misconfigurations = detectWorkflowNodeMisconfigurations(targetPath);
+          if (misconfigurations.length > 0) {
+            const details = misconfigurations
+              .map((m, i) => `[${i + 1}] ${m.nodeType}: ${m.issue} Fix: ${m.fix}`)
+              .join('\n');
+            return {
+              exitCode: 1,
+              stdout: '',
+              stderr: `Pre-push validation failed — fix the following before pushing:\n${details}`,
+              timedOut: false,
+              operation: 'push',
+              pushTarget: normalizedArgv[1],
+              workflowId: null,
+              workflowUrl: null,
+              title: null,
+              verified: false,
+              misconfigurations,
+            };
+          }
+        }
+
         const result = await runObservedN8nac(observer, normalizedArgv, cwd);
         return buildStructuredCommandResult(normalizedArgv, result, configService);
       }
