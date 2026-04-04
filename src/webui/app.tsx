@@ -64,9 +64,6 @@ function phaseLabel(phase: string | undefined): string {
     case 'inspect': return 'Inspecting';
     case 'plan': return 'Planning';
     case 'edit': return 'Editing';
-    case 'validate': return 'Validating';
-    case 'sync': return 'Syncing';
-    case 'verify': return 'Verifying';
     case 'summarize': return 'Summarizing';
     default: return 'Working';
   }

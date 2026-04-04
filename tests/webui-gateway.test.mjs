@@ -73,16 +73,16 @@ test('mapToolEventToWebUiStreamEvent hides internal n8nac status noise but keeps
 test('mapPhaseEventToWebUiStreamEvent uses the shared user-visible update mapping', () => {
   assert.deepEqual(
     mapPhaseEventToWebUiStreamEvent({
-      phase: 'validate',
+      phase: 'inspect',
       status: 'started',
-      message: 'Validate phase started.',
+      message: 'Inspect phase started.',
     }),
     {
       type: 'progress',
       tone: 'info',
-      title: 'Validate',
-      detail: 'Validate phase started.',
-      phase: 'validate',
+      title: 'Inspect',
+      detail: 'Inspect phase started.',
+      phase: 'inspect',
     },
   );
 });
