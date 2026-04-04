@@ -1,5 +1,4 @@
 import { tool } from 'ai';
-import type { YagrToolRuntimeStrategy } from './tool-runtime-strategy.js';
 import type { YagrAgentState, YagrRunPhase, YagrRuntimeContext, YagrRuntimeHook } from '../types.js';
 import { resolveLocalWorkflowDiagram } from '../tools/present-workflow-result.js';
 import { extractN8nacOperation } from '../tools/n8nac-command.js';
@@ -13,34 +12,6 @@ type ToolLike = {
 };
 
 type ToolMap = Record<string, ToolLike>;
-
-function createFallbackRuntimeStrategy(): YagrToolRuntimeStrategy {
-  return {
-    capabilityProfile: {
-      provider: 'openai',
-      model: 'fallback',
-      toolCalling: 'native',
-      supportsParallelToolCalls: true,
-      supportsStructuredOutputs: true,
-      supportsStreamingToolCalls: true,
-      supportsForcedToolChoice: true,
-      prefersStrictToolSchemas: false,
-    },
-    tooling: {
-      availableToolNames: [],
-      toolCallMode: 'parallel',
-      executionCriticalToolNames: [],
-    },
-    executionMode: 'stream',
-    toolCallStreaming: true,
-    inspectMaxSteps: 0,
-    executeMaxSteps: 0,
-    recoveryMaxSteps: 0,
-    inspectDirectives: [],
-    executeDirectives: [],
-    recoveryDirectives: [],
-  };
-}
 
 function buildWorkflowPresentationRequiredAction(workflowId: string) {
   return {
@@ -91,103 +62,6 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' ? value : undefined;
-}
-
-function asBoolean(value: unknown): boolean | undefined {
-  return typeof value === 'boolean' ? value : undefined;
-}
-
-const N8NAC_READONLY_ACTIONS = new Set([
-  'list',
-  'setup_check',
-  'skills',
-  'pull',
-  'init_auth',
-  'init_project',
-]);
-
-function isMaterialExecutionAttempt(toolName: string, args: unknown, strategy: YagrToolRuntimeStrategy): boolean {
-  if (!strategy.tooling.executionCriticalToolNames.includes(toolName)) {
-    return false;
-  }
-
-  if (toolName !== 'n8nac') {
-    return true;
-  }
-
-  const action = extractN8nacOperation(asRecord(args));
-  return !(typeof action === 'string' && N8NAC_READONLY_ACTIONS.has(action));
-}
-
-function hasStructuredRequiredAction(value: unknown): boolean {
-  const record = asRecord(value);
-  return Boolean(record && asString(record.id) && asString(record.kind) && asString(record.title) && asString(record.message));
-}
-
-function isBlockingExternalRequiredActionRequest(args: unknown): boolean {
-  const record = asRecord(args);
-  if (!record) {
-    return false;
-  }
-
-  return asString(record.kind) === 'external' && (asBoolean(record.blocking) ?? true);
-}
-
-function isReadOnlyExplorationTool(toolName: string, args: unknown, strategy: YagrToolRuntimeStrategy): boolean {
-  if (toolName === 'reportProgress' || toolName === 'requestRequiredAction' || toolName === 'presentWorkflowResult') {
-    return false;
-  }
-
-  if (isMaterialExecutionAttempt(toolName, args, strategy)) {
-    return false;
-  }
-
-  if (toolName === 'n8nac') {
-    const action = extractN8nacOperation(asRecord(args));
-    return typeof action !== 'string' || N8NAC_READONLY_ACTIONS.has(action);
-  }
-
-  return true;
-}
-
-export function createRequiredActionEvidenceGuardHook(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook {
-  let materialExecutionAttempted = false;
-  let concreteExternalBlockerObserved = false;
-
-  return {
-    beforeTool: async ({ toolName, args }) => {
-      if (toolName !== 'requestRequiredAction' || !isBlockingExternalRequiredActionRequest(args)) {
-        return;
-      }
-
-      if (materialExecutionAttempted || concreteExternalBlockerObserved || strategy.tooling.executionCriticalToolNames.length === 0) {
-        return;
-      }
-
-      return {
-        allowed: false,
-        message: 'Do not raise a blocking external required action before a tool has either attempted execution-critical work or surfaced a concrete blocker. Continue by using an available execution tool first.',
-      };
-    },
-    afterTool: async ({ toolName, args, result }) => {
-      if (toolName === 'requestRequiredAction') {
-        return;
-      }
-
-      if (isMaterialExecutionAttempt(toolName, args, strategy)) {
-        materialExecutionAttempted = true;
-      }
-
-      const normalizedResult = asRecord(result);
-      if (normalizedResult?.blocked === true || hasStructuredRequiredAction(normalizedResult?.requiredAction)) {
-        concreteExternalBlockerObserved = true;
-      }
-    },
-  };
 }
 
 function isConfiguredWorkspaceAvailable(configService = new YagrN8nConfigService()): boolean {
@@ -255,91 +129,13 @@ export function createN8nSetupGuardHook(): YagrRuntimeHook {
   };
 }
 
-function resultText(result: unknown): string {
-  const record = asRecord(result);
-  if (!record) {
-    return '';
-  }
-
-  const stdout = asString(record.stdout) ?? '';
-  const stderr = asString(record.stderr) ?? '';
-  return `${stdout}\n${stderr}`.trim();
-}
-
-function looksLikeMissingCredentialSignal(text: string): boolean {
-  if (!text) {
-    return false;
-  }
-
-  return /(missing credentials?|missing credential|missing model|credentials? (are|is) required|configure (your )?credentials?|configuration des identifiants requise)/i.test(text);
-}
-
-function isCredentialOrchestrationAction(action: string | undefined): boolean {
-  if (!action) {
-    return false;
-  }
-
-  return [
-    'llm_provider_options',
-    'yagr_proxy_warning_check',
-    'yagr_proxy_warning_accept',
-    'workflow_credential_required',
-    'credential_schema',
-    'credential_list',
-    'credential_get',
-    'credential_create',
-    'credential_delete',
-  ].includes(action);
-}
-
-export function createN8nCredentialQuestionFlowHook(): YagrRuntimeHook {
-  let missingCredentialSignalSeen = false;
-  let credentialFlowStarted = false;
-
-  return {
-    afterTool: async ({ toolName, args, result }) => {
-      if (toolName !== 'n8nac') {
-        return;
-      }
-
-      const normalizedArgs = asRecord(args);
-        const action = extractN8nacOperation(normalizedArgs);
-      if (isCredentialOrchestrationAction(action)) {
-        credentialFlowStarted = true;
-        return;
-      }
-
-      if (action !== 'test') {
-        return;
-      }
-
-      const text = resultText(result);
-      if (looksLikeMissingCredentialSignal(text)) {
-        missingCredentialSignalSeen = true;
-      }
-    },
-    beforeCompletion: async () => {
-      if (!missingCredentialSignalSeen || credentialFlowStarted) {
-        return;
-      }
-
-      return {
-        accepted: false,
-        message: 'n8n test reported missing credentials. Continue by asking provider-choice questions per LLM node and running deterministic credential orchestration (llm_provider_options, credential_list/create, warning check/accept) before finishing.',
-      };
-    },
-  };
-}
-
 export function createDefaultRuntimeHooks(): YagrRuntimeHook[] {
-  return createDefaultRuntimeHooksForStrategy(createFallbackRuntimeStrategy());
+  return createDefaultRuntimeHooksForStrategy();
 }
 
-export function createDefaultRuntimeHooksForStrategy(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook[] {
+export function createDefaultRuntimeHooksForStrategy(_strategy?: unknown): YagrRuntimeHook[] {
   return [
     createN8nSetupGuardHook(),
-    createN8nCredentialQuestionFlowHook(),
-    createRequiredActionEvidenceGuardHook(strategy),
     createWorkflowPresentationGuardHook(),
   ];
 }

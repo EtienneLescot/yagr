@@ -3,44 +3,33 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { emitToolEvent, type ToolExecutionObserver } from './observer.js';
 import { workspaceRoot } from './workspace-utils.js';
+import type { YagrShellCommandsConfig } from '../config/yagr-config-service.js';
 
 const MAX_OUTPUT_SIZE = 20_000; // characters
 
-/**
- * Commands allowed to run via runScript.
- * Each entry is matched against the start of the resolved command string.
- * This is an allowlist — anything not matching is rejected.
- */
-const ALLOWED_COMMANDS: readonly string[] = [
-  // Build & type-check
-  'npm run',
-  'npm test',
-  'npm install',
-  'npx tsc',
-  'tsc',
-  // Test runners
-  'node --test',
-  'vitest',
-  'jest',
-  // Git read-only ops
-  'git status',
-  'git diff',
-  'git log',
-  'git show',
-  'git branch',
-  'git remote',
-  // Inspection utilities
-  'node --version',
-  'node -e',
-  'cat',
-  'ls',
-  'find',
-  'which',
-];
-
-function isAllowedCommand(command: string): boolean {
+function matchesApprovedPrefix(command: string, approved: string[]): boolean {
   const trimmed = command.trim();
-  return ALLOWED_COMMANDS.some((allowed) => trimmed === allowed || trimmed.startsWith(`${allowed} `) || trimmed.startsWith(`${allowed}\t`));
+  return approved.some((prefix) => trimmed === prefix || trimmed.startsWith(`${prefix} `) || trimmed.startsWith(`${prefix}\t`));
+}
+
+function isCommandAllowed(command: string, config: YagrShellCommandsConfig | undefined): { allowed: boolean; reason?: string } {
+  const mode = config?.mode ?? 'allow-all';
+
+  if (mode === 'allow-all') {
+    return { allowed: true };
+  }
+
+  // user-approved: check against approved prefixes
+  const approved = config?.approved ?? [];
+  if (approved.length === 0) {
+    return { allowed: false, reason: 'No approved commands configured. Add command prefixes to shellCommands.approved in your Yagr config, or switch to allow-all mode.' };
+  }
+
+  if (!matchesApprovedPrefix(command, approved)) {
+    return { allowed: false, reason: `Command not in approved list. Approved prefixes: ${approved.join(', ')}` };
+  }
+
+  return { allowed: true };
 }
 
 function truncateOutput(output: string): string {
@@ -51,25 +40,30 @@ function truncateOutput(output: string): string {
   return `${output.slice(0, MAX_OUTPUT_SIZE)}\n[... truncated, ${output.length - MAX_OUTPUT_SIZE} chars omitted]`;
 }
 
-export function createRunScriptTool(observer?: ToolExecutionObserver) {
+export function createRunScriptTool(observer?: ToolExecutionObserver, shellCommandsConfig?: YagrShellCommandsConfig) {
+  const mode = shellCommandsConfig?.mode ?? 'allow-all';
+  const modeDescription = mode === 'allow-all'
+    ? 'All shell commands are allowed (allow-all mode).'
+    : `Only user-approved command prefixes are allowed (user-approved mode). Approved: ${(shellCommandsConfig?.approved ?? []).join(', ') || 'none configured'}.`;
+
   return tool({
     description:
-      'Run a shell command from an allowlist of safe, read-oriented operations. ' +
-      'Use this to build the project (npm run build), run tests (npm test, node --test), ' +
-      'type-check (npx tsc --noEmit), or inspect git state (git diff, git status). ' +
-      'Only commands from the approved allowlist are executed; anything else is rejected. ' +
-      'Runs in the active workspace directory by default.',
+      'Run a shell command in the active workspace. ' +
+      'Use this to build the project, run tests, inspect files, manage git, or execute any necessary tool. ' +
+      modeDescription +
+      ' Runs in the active workspace directory by default.',
     parameters: z.object({
-      command: z.string().min(1).describe('Shell command to run. Must start with an allowlisted prefix.'),
+      command: z.string().min(1).describe('Shell command to run.'),
       cwd: z.string().optional().describe('Working directory. Defaults to the active workspace root.'),
       timeoutMs: z.number().int().min(1_000).max(120_000).default(30_000).describe('Timeout in milliseconds (max 120s).'),
     }),
     execute: async ({ command, cwd, timeoutMs }) => {
-      if (!isAllowedCommand(command)) {
+      const check = isCommandAllowed(command, shellCommandsConfig);
+      if (!check.allowed) {
         return {
           ok: false,
           command,
-          error: `Command not in allowlist. Allowed prefixes: ${ALLOWED_COMMANDS.join(', ')}`,
+          error: check.reason ?? 'Command not allowed.',
         };
       }
 

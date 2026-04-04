@@ -1725,11 +1725,6 @@ export class YagrRunEngine {
             || finalOutcome.updatedFiles.length > 0
             || finalOutcome.deletedFiles.length > 0
           ),
-          hasWorkflowWrites: finalOutcome.hasWorkflowWrites,
-          successfulValidate: Boolean(finalOutcome.successfulValidate),
-          successfulPush: Boolean(finalOutcome.successfulPush),
-          successfulVerify: Boolean(finalOutcome.successfulVerify),
-          unresolvedFailureCount: finalOutcome.blockingUnresolvedFailedActions.length,
           hooks: runtimeHooks,
           context: buildRuntimeContext(state),
         });
