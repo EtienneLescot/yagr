@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { ToolExecutionObserver } from './observer.js';
 import { ensureParentDirectory, fileExists, relativeWorkspacePath, resolveWorkspacePath } from './workspace-utils.js';
 
-export function createWriteWorkspaceFileTool(_observer?: ToolExecutionObserver) {
+export function createWriteFileTool(_observer?: ToolExecutionObserver) {
   return tool({
     description: 'Create or overwrite a workspace file. Use this for new .workflow.ts files or deliberate full-file rewrites.',
     parameters: z.preprocess((input) => {
@@ -27,7 +27,7 @@ export function createWriteWorkspaceFileTool(_observer?: ToolExecutionObserver) 
       if (!inputPath || typeof inputPath !== 'string') {
         return {
           ok: false,
-          error: 'writeWorkspaceFile requires a workspace-relative path.',
+          error: 'writeFile requires a workspace-relative path.',
         };
       }
 
@@ -35,7 +35,7 @@ export function createWriteWorkspaceFileTool(_observer?: ToolExecutionObserver) 
         return {
           ok: false,
           path: inputPath,
-          error: 'writeWorkspaceFile requires full file content before the file can be written.',
+          error: 'writeFile requires full file content before the file can be written.',
         };
       }
 

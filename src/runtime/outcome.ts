@@ -57,7 +57,7 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
       const args = asRecord(toolCall.args);
       const result = asRecord(toolResult?.result);
 
-      if (toolCall.toolName === 'writeWorkspaceFile') {
+      if (toolCall.toolName === 'writeFile') {
         const filePath = asString(result?.path) ?? asString(args?.path);
         if (filePath) {
           writtenFiles.add(filePath);
@@ -65,7 +65,7 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
         continue;
       }
 
-      if (toolCall.toolName === 'replaceInWorkspaceFile') {
+      if (toolCall.toolName === 'replaceInFile') {
         const filePath = asString(result?.path) ?? asString(args?.path);
         if (filePath) {
           updatedFiles.add(filePath);
@@ -73,7 +73,7 @@ function extractObservedFacts(journal: YagrRunJournalEntry[]) {
         continue;
       }
 
-      if (toolCall.toolName === 'deleteWorkspaceFile') {
+      if (toolCall.toolName === 'deleteFile') {
         const deleted = result?.deleted === true;
         const filePath = asString(result?.path) ?? asString(args?.path);
         if (deleted && filePath) {

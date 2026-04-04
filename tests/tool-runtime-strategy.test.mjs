@@ -29,7 +29,7 @@ test('mistral uses compatible strategy with generate mode due to simulated strea
   assert.equal(strategy.capabilityProfile.toolCalling, 'compatible');
   assert.equal(strategy.executionMode, 'generate');
   assert.equal(strategy.tooling.toolCallMode, 'sequential');
-  assert.ok(strategy.tooling.availableToolNames.includes('searchWorkspace'));
+  assert.ok(strategy.tooling.availableToolNames.includes('grep'));
   assert.ok(strategy.executeDirectives.some((line) => /one tool at a time/i.test(line)));
 });
 
@@ -37,7 +37,7 @@ test('none strategy keeps a synthetic runtime tool subset while disabling model 
   const strategy = resolveToolRuntimeStrategy('openrouter', 'text-embedding-3-small');
 
   assert.equal(strategy.capabilityProfile.toolCalling, 'none');
-  assert.ok(strategy.tooling.availableToolNames.includes('writeWorkspaceFile'));
+  assert.ok(strategy.tooling.availableToolNames.includes('writeFile'));
   assert.ok(strategy.tooling.availableToolNames.includes('n8nac'));
   assert.equal(strategy.tooling.toolCallMode, 'disabled');
   assert.ok(strategy.executeDirectives.some((line) => /json objects only/i.test(line)));

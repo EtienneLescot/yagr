@@ -27,17 +27,18 @@ function visitFiles(targetPath: string, results: string[]): void {
   }
 }
 
-export function createSearchWorkspaceTool(_observer?: ToolExecutionObserver) {
+export function createGrepTool(_observer?: ToolExecutionObserver) {
   return tool({
-    description: 'Search text across workspace files. Use this to find workflow names, maps, node properties, or n8nac config entries.',
+    description: 'Search text across files. Accepts workspace-relative paths by default. Set absolute=true to search in any directory on the filesystem by its absolute path.',
     parameters: z.object({
       query: z.string().min(1).describe('Plain-text or regular-expression search query.'),
-      path: z.string().default('.').describe('Workspace-relative root path to search in.'),
+      path: z.string().default('.').describe('Workspace-relative root path to search in, or an absolute path when absolute=true.'),
       isRegexp: z.boolean().default(false).describe('Interpret query as a JavaScript regular expression.'),
       maxResults: z.number().int().min(1).max(200).default(50).describe('Maximum number of matches to return.'),
+      absolute: z.boolean().default(false).describe('When true, treat path as an absolute filesystem path instead of workspace-relative.'),
     }),
-    execute: async ({ query, path: inputPath, isRegexp, maxResults }) => {
-      const targetPath = resolveWorkspacePath(inputPath);
+    execute: async ({ query, path: inputPath, isRegexp, maxResults, absolute }) => {
+      const targetPath = absolute ? path.resolve(inputPath) : resolveWorkspacePath(inputPath);
       try {
         fs.statSync(targetPath);
       } catch (error) {
@@ -94,7 +95,7 @@ export function createSearchWorkspaceTool(_observer?: ToolExecutionObserver) {
 
       return {
         ok: true,
-        path: relativeWorkspacePath(targetPath),
+        path: absolute ? targetPath : relativeWorkspacePath(targetPath),
         query,
         matches,
       };
