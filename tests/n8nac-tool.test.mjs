@@ -34,6 +34,78 @@ test('n8nac tool schema still accepts the canonical skills action', () => {
   assert.equal(parsed.success, true);
 });
 
+test('n8nac tool schema accepts credential and execution actions', () => {
+  const tool = createN8nAcTool();
+
+  const credentialList = tool.parameters.safeParse({
+    action: 'credential_list',
+  });
+  const credentialCreate = tool.parameters.safeParse({
+    action: 'credential_create',
+    credentialType: 'openAiApi',
+    credentialName: 'OpenAI Primary',
+    credentialData: '{"apiKey":"sk-demo"}',
+    outputJson: true,
+  });
+  const workflowCredentialRequired = tool.parameters.safeParse({
+    action: 'workflow_credential_required',
+    workflowId: 'wf_123',
+  });
+  const executionGet = tool.parameters.safeParse({
+    action: 'execution_get',
+    executionId: 'exec_123',
+    includeData: true,
+  });
+  const providerOptions = tool.parameters.safeParse({
+    action: 'llm_provider_options',
+    nodeName: 'Agent 1',
+  });
+  const warningCheck = tool.parameters.safeParse({
+    action: 'yagr_proxy_warning_check',
+  });
+  const warningAccept = tool.parameters.safeParse({
+    action: 'yagr_proxy_warning_accept',
+  });
+
+  assert.equal(credentialList.success, true);
+  assert.equal(credentialCreate.success, true);
+  assert.equal(workflowCredentialRequired.success, true);
+  assert.equal(executionGet.success, true);
+  assert.equal(providerOptions.success, true);
+  assert.equal(warningCheck.success, true);
+  assert.equal(warningAccept.success, true);
+});
+
+test('n8nac warning consent actions persist one-time yagr proxy acceptance', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nac-warning-'));
+  const previousYagrHome = process.env.YAGR_HOME;
+
+  try {
+    process.env.YAGR_HOME = tempDir;
+    const tool = createN8nAcTool();
+
+    const before = await tool.execute({ action: 'yagr_proxy_warning_check' });
+    assert.equal(before.accepted, false);
+    assert.equal(typeof before.warningMessage, 'string');
+    assert.equal(before.warningVersion, 'yagr-proxy-v1');
+
+    const accepted = await tool.execute({ action: 'yagr_proxy_warning_accept' });
+    assert.equal(accepted.accepted, true);
+    assert.equal(accepted.warningVersion, 'yagr-proxy-v1');
+
+    const after = await tool.execute({ action: 'yagr_proxy_warning_check' });
+    assert.equal(after.accepted, true);
+    assert.equal(typeof after.acceptedAt, 'string');
+  } finally {
+    if (previousYagrHome === undefined) {
+      delete process.env.YAGR_HOME;
+    } else {
+      process.env.YAGR_HOME = previousYagrHome;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('n8nac tool injects centralized host and api key into CLI environment', () => {
   const env = getN8nacProcessEnv({}, {
     getLocalConfig: () => ({ host: 'https://n8n.example.com' }),
