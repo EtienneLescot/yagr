@@ -6,15 +6,15 @@ Elle doit toujours refleter le code tel qu'il existe maintenant.
 
 ## Contenu
 
-- `system-overview.md`: vue d'ensemble des grands blocs logiques
+- `system-overview.md`: vue d'ensemble des grands blocs logiques, incluant la doctrine d'outillage (trois couches)
 - `module-map.md`: cartographie plus fine par dossier et responsabilites
 - `runtime-flows.md`: flux transverses importants
 - `n8n-local.md`: architecture actuelle du bootstrap n8n local et de sa strategie de test
 - `tui-ux.md`: principes durables de l'UX agentique TUI
 
-Les trois pages doivent rester coherentes entre elles:
+Les trois pages principales doivent rester coherentes entre elles:
 
-- `system-overview.md` montre les couches et les frontieres
+- `system-overview.md` montre les couches, les frontieres et les principes directeurs (dont la doctrine d'outillage)
 - `module-map.md` montre ou vivent concretement les modules
 - `runtime-flows.md` montre comment les appels traversent ces couches
 
