@@ -6,7 +6,7 @@ import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { emitToolEvent, quoteShellArg, type ToolExecutionObserver } from './observer.js';
 import { ensureN8nRelayServer, N8N_RELAY_CREDENTIAL_NAME, N8N_RELAY_FAKE_API_KEY } from '../llm/llm-relay-server.js';
-import { parseJsonPayload, relativeWorkspacePath, resolveWorkspacePath, splitShellArgv, truncateText, workspaceRoot } from './workspace-utils.js';
+import { parseJsonPayload, relativeWorkspacePath, splitShellArgv, workspaceRoot } from './workspace-utils.js';
 
 type RunResult = {
   stdout: string;
