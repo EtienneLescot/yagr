@@ -2,20 +2,30 @@
 
 ## Objectif
 
-Permettre d'exposer n'importe quelle instance N8N (locale ou externe à Yagr, avec ou sans Docker) via un tunnel Cloudflare, de façon à ce que les triggers — notamment les webhooks — soient accessibles depuis l'extérieur (ex. façade Telegram, autres machines).
+Permettre d'exposer toute instance N8N **locale** — qu'elle soit gérée par Yagr ou non, avec ou sans Docker — via un tunnel Cloudflare, de façon à ce que les triggers — notamment les webhooks — soient accessibles depuis l'extérieur (ex. façade Telegram, autres machines).
+
+**Le tunnel ne s'applique qu'aux instances atteignables depuis la machine hôte Yagr.** Une instance N8N cloud ou hébergée à distance est déjà accessible publiquement par définition : tunneler depuis Yagr n'aurait aucun sens.
 
 Le système doit être résilient : les URL de tunnel ne sont pas stables, il faut pouvoir les rafraîchir sans reconfigurer tout le système.
 
 ---
 
+## Distinction Managed vs Non-Managed
+
+**Managed** : Yagr a installé et démarre l'instance N8N lui-même. Il en contrôle les credentials, la clé d'API, les variables d'environnement et le cycle de vie (start/stop). L'instance est toujours locale.
+
+**Non-Managed** : l'utilisateur saisit une URL et une clé d'API. Yagr n'a aucun contrôle sur le cycle de vie de l'instance. Cette URL peut pointer vers :
+- une instance **locale** (ex. `http://localhost:5678`) — le tunnel s'applique
+- une instance **cloud ou distante** (ex. `https://mon-n8n.example.com`) — le tunnel **ne s'applique pas**, l'instance est déjà publique
+
 ## Périmètre des configurations couvertes
 
-| Configuration | Description |
-|---|---|
-| Yagr-Managed, sans Docker | n8n lancé en `direct` par Yagr, process local |
-| Yagr-Managed, avec Docker | n8n lancé dans un conteneur Docker géré par Yagr |
-| Non Yagr-Managed, sans Docker | n8n déjà en cours sur la machine, Yagr s'y connecte |
-| Non Yagr-Managed, avec Docker | n8n dans un conteneur externe, Yagr s'y connecte via URL |
+| Configuration | Tunnel applicable ? | Description |
+|---|---|---|
+| Yagr-Managed, sans Docker | ✅ | n8n lancé en `direct` par Yagr, process local |
+| Yagr-Managed, avec Docker | ✅ | n8n lancé dans un conteneur Docker géré par Yagr |
+| Non Yagr-Managed, instance locale | ✅ | n8n déjà en cours sur la machine, URL `localhost` ou IP privée |
+| Non Yagr-Managed, instance cloud | ❌ | URL publique déjà accessible, tunneler depuis Yagr n'a pas de sens |
 
 ---
 
@@ -47,14 +57,16 @@ Ces deux tunnels sont gérés indépendamment.
 
 ### Résolution de l'adresse n8n à tunneler
 
-| Cas | Adresse n8n à tunneler |
-|---|---|
-| Managed direct | `localhost:<n8n-port>` (ex. `localhost:5678`) |
-| Managed Docker | `localhost:<port-mappé-docker>` depuis l'hôte |
-| Non-managed sans Docker | URL configurée par l'utilisateur (ex. `http://localhost:5678`) |
-| Non-managed avec Docker | URL configurée par l'utilisateur |
+| Cas | Adresse n8n à tunneler | Remarque |
+|---|---|---|
+| Managed direct | `localhost:<n8n-port>` (ex. `localhost:5678`) | Port connu de Yagr |
+| Managed Docker | `localhost:<port-mappé-docker>` depuis l'hôte | Port exposé par Docker |
+| Non-Managed local | URL fournie par l'utilisateur (ex. `http://localhost:5678`) | Yagr vérifie que l'URL est locale avant d'accepter |
+| Non-Managed cloud | — (refus explicite) | Instance déjà publique, tunnel sans objet |
 
-Dans tous les cas, la cible du tunnel est **l'adresse depuis l'hôte Yagr** vers laquelle n8n répond.
+Dans les cas applicables, la cible du tunnel est toujours **l'adresse joignable depuis l'hôte Yagr**.
+
+Pour les instances Non-Managed, Yagr détecte si l'URL est locale (host = `localhost`, `127.x`, `192.168.x`, `10.x`, `[::1]`, etc.) et refuse silencieusement de proposer le tunnel si elle est distante/publique, en l'indiquant clairement à l'utilisateur.
 
 ---
 
@@ -147,17 +159,31 @@ Pour les instances **Yagr-Managed** :
 - Au `start`, si le tunnel est actif, passer `N8N_WEBHOOK_URL=<publicUrl>` à n8n (via env Docker ou process).
 - Au `refresh`, proposer un redémarrage n8n pour prendre en compte la nouvelle URL.
 
-Pour les instances **non Yagr-Managed** :
-- L'utilisateur est responsable de configurer `N8N_WEBHOOK_URL` manuellement.
-- Yagr informe l'URL via `tunnel status` / `tunnel url`.
+Pour les instances **Non-Managed locales** :
+- Yagr ne contrôle pas le process n8n, il ne peut pas lui passer de variable d'environnement.
+- L'utilisateur est responsable de configurer `N8N_WEBHOOK_URL` manuellement dans son instance.
+- Yagr informe l'URL via `tunnel status` / `tunnel url` et affiche un message explicite invitant l'utilisateur à mettre à jour sa configuration n8n.
+
+Les instances **Non-Managed cloud** ne sont pas concernées par cette section.
 
 ---
+
+## Portée de l'exposition publique
+
+Le tunnel n'est pas limité à la façade Telegram. Il exposé le port n8n de façon générale : toute machine atteignant l'URL publique peut interagir avec n8n.
+
+Usages principaux :
+- **Façade Telegram** : consommateur principal, seule surface Yagr externe à la machine. L'URL publique est utilisée pour déclencher des webhooks depuis des messages Telegram.
+- **Accès utilisateur hors Yagr** : l'utilisateur peut partager ou intégrer l'URL publique dans n'importe quel contexte externe (emails, scripts, autres services web, Zapier, etc.) sans passer par une session Yagr.
+- **UI n8n depuis une autre machine** : le tunnel expose également l'interface n8n elle-même (port 5678 par défaut), accessible en navigateur depuis n'importe où.
+
+Conséquence : **l'URL publique est une surface d'exposition non authentifiée par défaut pour les webhooks.** Les webhooks n8n peuvent être publics ou sécurisés selon leur configuration propre dans n8n. Yagr n'ajoute pas de couche d'authentification supplémentaire sur le tunnel.
 
 ## Compatibilité avec les surfaces existantes
 
 ### Telegram Gateway
 
-La façade Telegram est le déclencheur principal de la fonctionnalité. Elle peut envoyer des requêtes HTTP vers des webhooks n8n. Quand le tunnel est actif, l'URL publique remplace l'URL locale dans les références de workflow présentées à l'utilisateur Telegram.
+Consommateur principal du tunnel. Quand le tunnel est actif, l'URL publique remplace l'URL locale dans les références de workflow présentées à l'utilisateur Telegram, de façon à ce que les liens soient cliquables et les webhooks déclenchables depuis l'extérieur.
 
 ### LLM Proxy Yagr
 
@@ -170,6 +196,41 @@ Quand le tunnel n8n est actif, `resolveWorkflowOpenLink` substitue le host de l'
 ### Setup Wizard
 
 Ajouter une étape optionnelle "Exposer N8N via tunnel" dans l'assistant de configuration, pour les cas où l'utilisateur veut un accès externe.
+
+---
+
+## Gestion des credentials pour les instances Yagr-Managed
+
+Pour les instances Yagr-Managed, Yagr opère un système de credentials transparent : l'utilisateur ne saisit jamais de login, mot de passe ou clé d'API. Au bootstrap, Yagr :
+1. Crée le compte owner (email + password générés, stockés dans `YAGR_HOME/n8n-local-owner-credentials.json`)
+2. Obtient un cookie de session via `browser-auth.ts`
+3. Crée une clé d'API programmatiquement et la stocke dans le config service, indexée par l'URL locale
+
+Ce mécanisme fonctionne identiquement avec Docker et sans Docker.
+
+### Interaction avec le tunnel
+
+Le tunnel n'affecte pas la façon dont **Yagr s'authentifie auprès de n8n**. Yagr continue d'appeler n8n via l'URL locale (`localhost:<port>`). Le tunnel est un canal entrant (externe → n8n), pas un canal sortant (Yagr → n8n).
+
+En revanche, deux points d'attention :
+
+**1. L'URL de référence des credentials est l'URL locale, pas l'URL tunnel.**
+
+`ManagedN8nOwnerCredentialService` indexe les credentials par `origin` de l'URL. L'URL locale (`http://localhost:5678`) reste la clé. Cela ne doit pas changer. Le module de tunnel n'introduit pas de nouvelle entrée credentials.
+
+**2. `N8N_WEBHOOK_URL` détermine les URL exposées par n8n dans ses webhooks.**
+
+Quand n8n génère une URL de webhook (ex. dans l'UI ou dans les sorties d'exécution), il utilise `N8N_WEBHOOK_URL` comme base. Pour qu'un utilisateur externe puisse déclencher ce webhook, cette variable doit pointer vers l'URL tunnel publique.
+
+Pour les instances Managed :
+- Au `start` du tunnel, Yagr a connaissance de l'URL publique et peut la passer à n8n via `N8N_WEBHOOK_URL` **au prochain démarrage** de n8n.
+- Si n8n est déjà en cours, Yagr propose un redémarrage explicite pour prendre en compte la nouvelle variable.
+- Après un `refresh` tunnel (nouvelle URL publique), même comportement : redémarrage proposé, jamais silencieux.
+- Le cookie de session et la clé d'API restent valides après redémarrage n8n — aucune ré-authentification nécessaire. Le système transparent est préservé.
+
+Pour les instances Non-Managed locales :
+- Yagr ne contrôle pas le démarrage de n8n, il informe uniquement l'URL via `tunnel status` / `tunnel url`.
+- L'utilisateur est responsable de mettre à jour `N8N_WEBHOOK_URL` dans sa propre configuration n8n.
 
 ---
 
@@ -193,6 +254,7 @@ Ajouter une étape optionnelle "Exposer N8N via tunnel" dans l'assistant de conf
 | Unit | `resolveWorkflowOpenLink` avec substitution tunnel active / inactive |
 | Integration | Tunnel réel spawné sur Linux CI, URL obtenue, webhook atteignable |
 | Manual | Validation Telegram → webhook n8n via tunnel |
+| Manual | Validation accès UI n8n via URL tunnel depuis navigateur distant |
 
 ---
 
@@ -200,7 +262,7 @@ Ajouter une étape optionnelle "Exposer N8N via tunnel" dans l'assistant de conf
 
 ```mermaid
 flowchart TD
-    User[Utilisateur / Telegram]
+    User[Utilisateur externe - Telegram / email / navigateur / autre]
     Yagr[Yagr Agent]
     TunnelMgr[N8nTunnelManager]
     CF[cloudflared process]

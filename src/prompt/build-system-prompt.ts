@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getYagrLaunchDir, getYagrMemoriesDir, getYagrPaths } from '../config/yagr-home.js';
 import { resolveWorkflowDir, YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { getActiveTunnelState } from '../n8n-local/n8n-tunnel.js';
 import { MemoryStore } from '../memory/memory-store.js';
 import type { EngineIdentityPort } from '../engine/engine.js';
 
@@ -27,6 +28,7 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
   const workspaceInstructions = loadWorkspaceInstructions();
   const workflowDir = resolveActiveWorkflowDir();
   const n8nHost = resolveActiveN8nHost();
+  const n8nTunnelPublicUrl = resolveActiveTunnelPublicUrl();
 
   return {
     systemPrompt: [
@@ -64,6 +66,7 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
       'The active workspace AGENT.md or AGENTS.md content is already loaded into startup context. Treat it as a foundational instruction source for automation and workflow work. Do not reinvent rules it already defines.',
       workflowDir ? `The active n8n workflow directory is ${workflowDir}.` : '',
       n8nHost ? `The active n8n instance URL is ${n8nHost}.` : '',
+      n8nTunnelPublicUrl ? `The n8n instance is publicly reachable via Cloudflare Tunnel at ${n8nTunnelPublicUrl}. Use this URL for webhooks and externally-triggered workflows (e.g. Telegram, email, third-party services).` : '',
       homeInstructions ? `Yagr home instructions and memory: ${homeInstructions.content}` : '',
       workspaceInstructions ? `Follow these workspace instructions when relevant: ${workspaceInstructions.content}` : '',
       loadRecentMemory(),
@@ -89,6 +92,14 @@ function resolveActiveWorkflowDir(): string | undefined {
 function resolveActiveN8nHost(): string | undefined {
   try {
     return new YagrN8nConfigService().getLocalConfig().host ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveActiveTunnelPublicUrl(): string | undefined {
+  try {
+    return getActiveTunnelState()?.publicUrl;
   } catch {
     return undefined;
   }
