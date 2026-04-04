@@ -14,13 +14,6 @@ type ToolLike = {
 
 type ToolMap = Record<string, ToolLike>;
 
-const DEFAULT_POST_SYNC_ALLOWED_TOOL_NAMES = [
-  'presentWorkflowResult',
-  'reportProgress',
-  'requestRequiredAction',
-];
-const MAX_READONLY_PRE_EXECUTION_CALLS = 3;
-
 function createFallbackRuntimeStrategy(): YagrToolRuntimeStrategy {
   return {
     capabilityProfile: {
@@ -34,7 +27,6 @@ function createFallbackRuntimeStrategy(): YagrToolRuntimeStrategy {
       prefersStrictToolSchemas: false,
     },
     tooling: {
-      allowedToolNamesAfterWorkflowSync: DEFAULT_POST_SYNC_ALLOWED_TOOL_NAMES,
       availableToolNames: [],
       toolCallMode: 'parallel',
       executionCriticalToolNames: [],
@@ -162,46 +154,6 @@ function isReadOnlyExplorationTool(toolName: string, args: unknown, strategy: Ya
   return true;
 }
 
-export function createWorkflowSyncCompletionGuardHook(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook {
-  let workflowSyncSettled = false;
-  const toolsAllowedAfterSuccessfulSync = new Set(strategy.tooling.allowedToolNamesAfterWorkflowSync);
-
-  return {
-    beforeTool: async ({ toolName }) => {
-      if (!workflowSyncSettled) {
-        return;
-      }
-
-      if (toolsAllowedAfterSuccessfulSync.has(toolName)) {
-        return;
-      }
-
-      return {
-        allowed: false,
-        message: 'Workflow already pushed and verified. Stop using tools now and return the final user-facing response.',
-      };
-    },
-    afterTool: async ({ toolName, args, result }) => {
-      if (toolName !== 'n8nac') {
-        return;
-      }
-
-      const normalizedArgs = asRecord(args);
-      const normalizedResult = asRecord(result);
-      const action = extractN8nacOperation(normalizedArgs);
-      const exitCode = asNumber(normalizedResult?.exitCode);
-
-      if (exitCode !== 0) {
-        return;
-      }
-
-      if (action === 'push' || action === 'verify') {
-        workflowSyncSettled = true;
-      }
-    },
-  };
-}
-
 export function createRequiredActionEvidenceGuardHook(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook {
   let materialExecutionAttempted = false;
   let concreteExternalBlockerObserved = false;
@@ -233,38 +185,6 @@ export function createRequiredActionEvidenceGuardHook(strategy: YagrToolRuntimeS
       const normalizedResult = asRecord(result);
       if (normalizedResult?.blocked === true || hasStructuredRequiredAction(normalizedResult?.requiredAction)) {
         concreteExternalBlockerObserved = true;
-      }
-    },
-  };
-}
-
-export function createReadOnlyExplorationGuardHook(strategy: YagrToolRuntimeStrategy): YagrRuntimeHook {
-  let materialExecutionAttempted = false;
-  let readOnlyCallCount = 0;
-
-  return {
-    beforeTool: async ({ toolName, args }) => {
-      if (materialExecutionAttempted || !isReadOnlyExplorationTool(toolName, args, strategy)) {
-        return;
-      }
-
-      if (readOnlyCallCount < MAX_READONLY_PRE_EXECUTION_CALLS) {
-        return;
-      }
-
-      return {
-        allowed: false,
-        message: 'Read-only exploration is complete. Stop listing, searching, or inspecting. Use an execution-critical tool now to write, validate, push, or verify the workflow.',
-      };
-    },
-    afterTool: async ({ toolName, args }) => {
-      if (isMaterialExecutionAttempt(toolName, args, strategy)) {
-        materialExecutionAttempted = true;
-        return;
-      }
-
-      if (isReadOnlyExplorationTool(toolName, args, strategy)) {
-        readOnlyCallCount += 1;
       }
     },
   };
@@ -419,10 +339,8 @@ export function createDefaultRuntimeHooksForStrategy(strategy: YagrToolRuntimeSt
   return [
     createN8nSetupGuardHook(),
     createN8nCredentialQuestionFlowHook(),
-    createReadOnlyExplorationGuardHook(strategy),
     createRequiredActionEvidenceGuardHook(strategy),
     createWorkflowPresentationGuardHook(),
-    createWorkflowSyncCompletionGuardHook(strategy),
   ];
 }
 
