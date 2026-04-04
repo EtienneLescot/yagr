@@ -120,7 +120,7 @@ export function resolveToolRuntimeStrategy(
           'Tool calling is unavailable in this mode.',
           'Respond with JSON objects only, no markdown and no prose.',
           'Supported JSON intents are limited to:',
-          '{"tool":"writeWorkspaceFile","path":"<workspace-relative .workflow.ts path>","content":"<full file content>","mode":"overwrite"}',
+          '{"tool":"writeFile","path":"<workspace-relative .workflow.ts path>","content":"<full file content>","mode":"overwrite"}',
           '{"tool":"n8nac","action":"command","commandArgv":["skills","validate","<same .workflow.ts path>"]}',
           '{"tool":"n8nac","action":"command","commandArgv":["push","<same .workflow.ts path>","--verify"]}',
           'Use the smallest sequence needed to complete the task. Prefer one workflow file write, then validate, then push.',

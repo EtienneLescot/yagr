@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { ToolExecutionObserver } from './observer.js';
 import { ensureParentDirectory, fileExists, relativeWorkspacePath, resolveWorkspacePath } from './workspace-utils.js';
 
-export function createMoveWorkspaceFileTool(_observer?: ToolExecutionObserver) {
+export function createMoveFileTool(_observer?: ToolExecutionObserver) {
   return tool({
     description: 'Move or rename a workspace file to a canonical path. Use this to consolidate provisional artifacts into the correct location before completion.',
     parameters: z.object({

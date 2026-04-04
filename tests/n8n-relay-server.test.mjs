@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { translateResponsesRequestToChatCompletionsBody } from '../dist/llm/n8n-relay-server.js';
+import { translateResponsesRequestToChatCompletionsBody } from '../dist/llm/llm-relay-server.js';
 
 test('translateResponsesRequestToChatCompletionsBody converts responses input to chat messages', () => {
   const body = Buffer.from(JSON.stringify({

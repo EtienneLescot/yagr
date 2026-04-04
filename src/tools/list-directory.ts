@@ -29,16 +29,17 @@ function collectEntries(targetPath: string, recursive: boolean, maxDepth: number
   return results;
 }
 
-export function createListDirectoryTool(_observer?: ToolExecutionObserver) {
+export function createListDirTool(_observer?: ToolExecutionObserver) {
   return tool({
-    description: 'List files and directories in the active workspace. Use this to discover workflow folders before editing files.',
+    description: 'List files and directories. Accepts workspace-relative paths by default. Set absolute=true to list any directory on the filesystem by its absolute path.',
     parameters: z.object({
-      path: z.string().default('.').describe('Workspace-relative directory path to inspect.'),
+      path: z.string().default('.').describe('Workspace-relative directory path to inspect, or an absolute path when absolute=true.'),
       recursive: z.boolean().default(false).describe('Whether to walk subdirectories.'),
       maxDepth: z.number().int().min(0).max(6).default(2).describe('Maximum recursion depth when recursive is true.'),
+      absolute: z.boolean().default(false).describe('When true, treat path as an absolute filesystem path instead of workspace-relative.'),
     }),
-    execute: async ({ path: inputPath, recursive, maxDepth }) => {
-      const targetPath = resolveWorkspacePath(inputPath);
+    execute: async ({ path: inputPath, recursive, maxDepth, absolute }) => {
+      const targetPath = absolute ? path.resolve(inputPath) : resolveWorkspacePath(inputPath);
       let stats: fs.Stats;
       try {
         stats = fs.statSync(targetPath);
@@ -53,14 +54,16 @@ export function createListDirectoryTool(_observer?: ToolExecutionObserver) {
       if (!stats.isDirectory()) {
         return {
           ok: false,
-          path: relativeWorkspacePath(targetPath),
+          path: absolute ? targetPath : relativeWorkspacePath(targetPath),
           error: `Path is not a directory: ${inputPath}`,
         };
       }
 
+      const displayPath = absolute ? targetPath : relativeWorkspacePath(targetPath);
+
       return {
         ok: true,
-        path: relativeWorkspacePath(targetPath),
+        path: displayPath,
         entries: collectEntries(targetPath, recursive, maxDepth),
       };
     },
