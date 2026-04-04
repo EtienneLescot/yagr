@@ -287,17 +287,9 @@ const SCENARIOS = [
     id: 'yagr-proxy-workflow',
     name: 'Workflow AI Agent via Yagr LLM Proxy (création + exécution)',
     prompt:
-      'Crée un workflow n8n qui répond à des questions de géographie. '
-      + 'Structure exacte : (1) Webhook POST sur /capital-test, (2) AI Agent qui lit `={{ $json.body.country }}` '
-      + 'avec system prompt "Tu es un assistant géographie. Donne uniquement le nom de la capitale du pays fourni.", '
-      + '(3) lmChatOpenAi v1.3 avec Yagr LLM Proxy — lance yagr_proxy_relay_start d\'abord pour obtenir credentialId et baseURL, '
-      + 'puis configure : model { mode: "id", value: "gpt-4o-mini" }, responsesApiEnabled: false, options.baseURL depuis le relay. '
-      + 'Séquence OBLIGATOIRE après push : '
-      + '(A) active avec n8nac commandArgv=["workflow","activate","<workflowId>"], '
-      + '(B) teste OBLIGATOIREMENT avec --prod : n8nac commandArgv=["test","<workflowId>","--prod","--data",\'{"country":"France"}\'] — '
-      + 'IMPORTANT: n8nac test sans --prod utilise /webhook-test/ qui nécessite un arm manuel dans le browser et retournera toujours 404. '
-      + 'Seul --prod utilise la vraie URL de production /webhook/ qui fonctionne quand le workflow est actif. '
-      + 'Ne termine pas avant d\'avoir exécuté ces deux commandes et rapporté le résultat du test.',
+      'Est-ce que tu pourrais créer un workflow tout simple avec un agent géographique IA qui donne la capitale des pays ? '
+      + 'Il faudrait un webhook trigger qui passe la variable country à cet agent. '
+      + 'Est-ce que tu peux créer ce workflow et l\'exécuter en passant par exemple le payload France et me donner la réponse de l\'agent ?',
     maxSteps: 40,
     timeoutMs: CREATION_TIMEOUT_MS,
     n8nRequired: true,
@@ -309,29 +301,25 @@ const SCENARIOS = [
 
       const workflowId = outcome.successfulPush.workflowId;
 
-      // Check if n8nac test was executed
       const testAction = outcome.successfulActions.find((a) => a.action === 'test');
       const failedTest = outcome.failedActions.find((a) => a.action === 'test');
 
       if (testAction) {
-        // n8nac test succeeded (exit 0 — includes Class A config gaps which are non-blocking)
         const text = String(result.text || '');
-        const mentionsCapital = /paris|capital/i.test(text);
+        const mentionsCapital = /paris|capital/i.test(text) || /paris|capital/i.test(testAction.testOutput ?? '');
         return {
           pass: true,
-          note: `Proxy LLM opérationnel — n8nac test passé${mentionsCapital ? ', mentionne Paris/capital' : ''}. workflowId=${workflowId}`,
+          note: `Proxy LLM opérationnel — workflow créé, testé${mentionsCapital ? ', résultat mentionne Paris/capital' : ''}. workflowId=${workflowId}`,
         };
       }
 
       if (failedTest) {
-        // n8nac test returned exit 1 → Class B wiring error
         return {
           pass: false,
-          note: `n8nac test a échoué (Class B). workflowId=${workflowId}`,
+          note: `Workflow poussé (${workflowId}) mais n8nac test a échoué.`,
         };
       }
 
-      // push succeeded but test not run — FAIL, not a partial pass
       return {
         pass: false,
         note: `Workflow poussé (${workflowId ?? 'id inconnu'}) mais n8nac test non exécuté.`,
