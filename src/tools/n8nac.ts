@@ -23,6 +23,14 @@ type WorkflowSyncFacts = {
   workflowUrl?: string;
 };
 
+type WorkflowSyncState = {
+  workflows?: Record<string, {
+    filename?: string;
+    lastSyncedHash?: string;
+    lastSyncedAt?: string;
+  }>;
+};
+
 const N8NAC_ACTIONS = [
   'command',
   'llm_provider_options',
@@ -189,6 +197,70 @@ function parseWorkflowSyncFacts(stdout: string, stderr: string, host: string | u
   };
 }
 
+function readWorkflowSyncState(statePath: string): WorkflowSyncState | undefined {
+  if (!statePath || !fs.existsSync(statePath)) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(statePath, 'utf-8')) as WorkflowSyncState;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseWorkflowNameFromFile(filePath: string): string | undefined {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return undefined;
+  }
+
+  try {
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const match = source.match(/@workflow\(\{[\s\S]*?name:\s*['"]([^'"]+)['"]/);
+    return match?.[1]?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveWorkflowSyncFactsFromLocalState(
+  pushTarget: string | undefined,
+  host: string | undefined,
+  configService = new YagrN8nConfigService(),
+): WorkflowSyncFacts {
+  const normalizedTarget = path.basename(String(pushTarget || '').trim());
+  if (!normalizedTarget) {
+    return {};
+  }
+
+  const workflowDir = resolveWorkflowDir(configService.getLocalConfig());
+  if (!workflowDir) {
+    return {};
+  }
+
+  const state = readWorkflowSyncState(path.join(workflowDir, '.n8n-state.json'));
+  const workflowEntries = Object.entries(state?.workflows || {});
+  const match = workflowEntries.find(([, entry]) => path.basename(String(entry?.filename || '')) === normalizedTarget);
+  if (!match) {
+    return {};
+  }
+
+  const [workflowId, entry] = match;
+  const normalizedHost = sanitizeEnvValue(host);
+  const workflowUrl = normalizedHost
+    ? `${normalizedHost.replace(/\/+$/g, '')}/workflow/${workflowId}`
+    : undefined;
+  const candidatePath = path.join(workflowDir, String(entry?.filename || normalizedTarget));
+  const workflowName = parseWorkflowNameFromFile(candidatePath)
+    || path.basename(String(entry?.filename || normalizedTarget), '.workflow.ts');
+
+  return {
+    workflowId,
+    workflowName,
+    workflowUrl,
+  };
+}
+
 function buildStructuredCommandResult(
   argv: string[],
   result: RunResult,
@@ -213,10 +285,14 @@ function buildStructuredCommandResult(
   const syncFacts = parseWorkflowSyncFacts(result.stdout, result.stderr, resolved.host);
 
   if (operation === 'push') {
+    const pushTarget = argv[1] ?? undefined;
+    const fallbackFacts = (!syncFacts.workflowId || !syncFacts.workflowUrl)
+      ? resolveWorkflowSyncFactsFromLocalState(pushTarget, resolved.host, configService)
+      : {};
     response.pushTarget = argv[1] ?? null;
-    response.workflowId = syncFacts.workflowId ?? null;
-    response.workflowUrl = syncFacts.workflowUrl ?? null;
-    response.title = syncFacts.workflowName ?? null;
+    response.workflowId = syncFacts.workflowId ?? fallbackFacts.workflowId ?? null;
+    response.workflowUrl = syncFacts.workflowUrl ?? fallbackFacts.workflowUrl ?? null;
+    response.title = syncFacts.workflowName ?? fallbackFacts.workflowName ?? null;
     response.verified = result.exitCode === 0 && Boolean(syncFacts.workflowId);
     return response;
   }
