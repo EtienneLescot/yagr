@@ -117,6 +117,50 @@ Observation actuelle:
 - la strategie runtime commune pilote maintenant le mode `stream` vs `generate`, les directives inspect/execute/recovery et la reduction de surface d'outils pour le niveau `none`
 - tous les appels `generateText`/`streamText` utilisent `temperature: 0` pour le determinisme de la boucle agentique
 
+### N8N Cloudflare Tunnel Exposure
+
+Yagr peut exposer toute instance n8n **locale** via un tunnel Cloudflare, rendant les webhooks accessibles depuis l'exterieur (Telegram, machines distantes, services tiers).
+
+**Composants implementes**
+
+| Fichier | Role |
+|---|---|
+| `src/n8n-local/n8n-tunnel.ts` | Module `N8nTunnelManager` : start/stop/refresh/status, persistance dans `YAGR_HOME/n8n-tunnel-state.json`, auto-install de `cloudflared` |
+| `src/config/yagr-config-service.ts` | `N8nTunnelConfig` : `enabled`, `publicUrl`, `targetUrl` |
+| `src/gateway/workflow-links.ts` | Substitution de l'URL locale par l'URL tunnel publique quand active |
+| `src/prompt/build-system-prompt.ts` | Injection de l'URL tunnel publique dans le system prompt |
+
+**Flux operationnel**
+
+```
+yagr n8n tunnel start
+  → resolveN8nTunnelTargetUrl()        → URL locale n8n (managed uniquement)
+  → installCloudflaredIfNeeded()       → telecharge cloudflared si absent
+  → startN8nTunnel(targetUrl)          → spawn cloudflared tunnel --url <targetUrl>
+  → detecte URL trycloudflare.com      → parse le log file
+  → persiste N8nTunnelState            → YAGR_HOME/n8n-tunnel-state.json
+  → restartManagedN8nForTunnel()       → redemarre n8n avec N8N_WEBHOOK_URL
+```
+
+**Portee et limitations**
+
+- Le tunnel ne s'applique qu'aux instances **locales** (Yagr-managed direct). Les instances cloud/distante sont deja publiques.
+- Deux tunnels distincts coexistent : Tunnel A (LLM Proxy) et Tunnel B (N8N Webhook Exposure).
+- Les URL `trycloudflare.com` changent a chaque restart — le systeme supporte `refresh` manuel.
+- `N8N_WEBHOOK_URL` est positionne au demarrage n8n ; un refresh tunnel propose un redemarrage explicite.
+- Le tunnel expose une surface **non authentifiee** par defaut pour les webhooks.
+
+**Commandes CLI**
+
+| Commande | Description |
+|---|---|
+| `yagr n8n tunnel setup` | Installe cloudflared automatiquement |
+| `yagr n8n tunnel start` | Demarre le tunnel |
+| `yagr n8n tunnel stop` | Arrete le tunnel |
+| `yagr n8n tunnel refresh` | Renouvelle l'URL |
+| `yagr n8n tunnel status` | Affiche l'etat courant |
+| `yagr n8n tunnel url` | Retourne l'URL publique seule |
+
 ### LLM Relay Proxy (Yagr → n8n)
 
 Yagr expose un serveur HTTP OpenAI-compatible local (`llm-relay-server.ts`) qui proxifie vers le provider actif de Yagr. Les noeuds Chat Model n8n (ex: `lmChatOpenAi`) peuvent pointer sur ce relay via une credential `openAiApi` avec `baseUrl` custom — sans necessiter de cle API separee.
@@ -213,14 +257,13 @@ Les outils sont organises en trois couches :
 │                                                                 │
 │  n8nac action=command          — tout npx n8nac <args>         │
 │  n8nac action=yagr_proxy_relay_start — demarrage relay + cred  │
-│  n8nac action=llm_provider_options   — liste des providers     │
 └─────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────┐
 │  COUCHE 3 — Specificites Yagr (thin layer)                     │
 │                                                                 │
 │  presentWorkflowResult — URL + diagramme ASCII du workflow     │
 │  llm-relay-server.ts   — proxy LLM OpenAI-compatible           │
-│  llm-proxy-setup       — wizard de configuration credential    │
+│  n8n-tunnel.ts         — Cloudflare Tunnel exposure            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
