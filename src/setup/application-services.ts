@@ -195,10 +195,10 @@ export class YagrSetupApplicationService {
     }
 
     if (provider === 'copilot-proxy') {
-      const session = await ensureGitHubCopilotSession();
-      if (session) {
-        return { kind: 'none' as const };
-      }
+      // Always start a fresh device flow when explicitly reaching the auth screen.
+      // The hasAccountSession check (used earlier in the wizard) decides whether to
+      // show the reuse screen. Once the user is on the auth screen — either because
+      // no session exists or because they chose "Renew" — we always start fresh.
       const challenge = await beginGitHubCopilotAuth();
       return {
         kind: 'input' as const,
