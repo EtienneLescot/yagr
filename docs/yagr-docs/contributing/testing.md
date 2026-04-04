@@ -32,7 +32,6 @@ Runs a multi-scenario integration test against a **single** LLM provider. Each s
 | `--provider <name>` | `YAGR_SCN_PROVIDER` | `DEFAULT_PROVIDER` | Provider to use |
 | `--model <name>` | `YAGR_SCN_MODEL` | `DEFAULT_MODEL` | Model to use |
 | `--scenarios <ids>` | `YAGR_SCN_SCENARIOS` | *(all)* | Comma-separated scenario IDs to run |
-| `--strict` | — | off | Fail on any non-pass result |
 | `--no-markdown` | — | off | Skip writing the markdown report |
 
 Also reads `N8N_HOST` / `YAGR_IT_N8N_HOST` and `N8N_API_KEY` / `YAGR_IT_N8N_API_KEY` from the environment.
