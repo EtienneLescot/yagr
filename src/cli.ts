@@ -692,8 +692,34 @@ async function ensureTunnelAtLaunch(): Promise<void> {
     const state = await startN8nTunnel(targetUrl, bin);
     configService.saveN8nTunnelConfig({ ...tunnelConfig, publicUrl: state.publicUrl, targetUrl });
     process.stdout.write(`Cloudflare Tunnel started: ${state.publicUrl}\n`);
+    await restartManagedN8nForTunnel(state.publicUrl);
   } catch (error) {
     process.stderr.write(`Warning: n8n tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+}
+
+/**
+ * If a Yagr-managed n8n instance is currently running, restart it so it picks
+ * up the new N8N_WEBHOOK_URL. The managers inject the URL from the active
+ * tunnel state, so we just need to trigger a stop → start cycle.
+ */
+async function restartManagedN8nForTunnel(publicUrl: string): Promise<void> {
+  const managedState = readManagedN8nState();
+  if (!managedState || managedState.status === 'stopped') return;
+
+  process.stdout.write(`\nRestarting managed n8n so it picks up N8N_WEBHOOK_URL=${publicUrl}…\n`);
+  try {
+    if (managedState.strategy === 'docker') {
+      await stopManagedDockerN8n();
+      await startManagedDockerN8n();
+    } else {
+      await stopManagedDirectN8n();
+      await startManagedDirectN8n();
+    }
+    process.stdout.write(`n8n restarted. Webhook URLs in the editor now show the public URL.\n`);
+  } catch (err) {
+    process.stderr.write(`Warning: could not restart managed n8n: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(`Run \`yagr n8n local start\` manually to apply the new webhook URL.\n`);
   }
 }
 
@@ -1064,12 +1090,7 @@ async function main(): Promise<void> {
       process.stdout.write(`\nTunnel ready: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
       process.stdout.write(`\nThe tunnel will restart automatically on next \`yagr start\` / \`yagr gateway start\`.\n`);
-      const managedState = readManagedN8nState();
-      if (managedState && managedState.status !== 'stopped') {
-        process.stdout.write(`\nTo expose correct webhook URLs in the n8n editor, restart n8n with N8N_WEBHOOK_URL set:\n`);
-        process.stdout.write(`  N8N_WEBHOOK_URL=${state.publicUrl} yagr n8n local start\n`);
-      }
-
+      await restartManagedN8nForTunnel(state.publicUrl);
       return;
     }
 
@@ -1085,6 +1106,7 @@ async function main(): Promise<void> {
       config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
       process.stdout.write(`Tunnel started: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
+      await restartManagedN8nForTunnel(state.publicUrl);
       return;
     }
 
@@ -1108,12 +1130,7 @@ async function main(): Promise<void> {
       config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
       process.stdout.write(`Tunnel refreshed: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
-      const managedState = readManagedN8nState();
-      if (managedState && managedState.status !== 'stopped') {
-        process.stdout.write(`\nIMPORTANT: Restart the managed n8n instance so it picks up the new N8N_WEBHOOK_URL.\n`);
-        process.stdout.write(`New webhook base URL: ${state.publicUrl}\n`);
-      }
-
+      await restartManagedN8nForTunnel(state.publicUrl);
       return;
     }
 
