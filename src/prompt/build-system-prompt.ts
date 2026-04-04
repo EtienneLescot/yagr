@@ -52,6 +52,7 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
       'For non-Yagr providers, offer two explicit paths: create credential now (prompt for secret) or defer secure entry in n8n UI. If deferred, mark it as a follow-up required action instead of blocking workflow delivery when possible.',
       'Use n8nac credential, workflow credential-required, and execution commands as the source of truth for credential presence and runtime diagnosis.',
       'For Yagr proxy warning state and per-node provider menus, use n8nac actions llm_provider_options, yagr_proxy_warning_check, and yagr_proxy_warning_accept to keep behavior deterministic.',
+      'When webhook test mode returns a manual-arm runtime-state hint, prefer activating/publishing the workflow and retrying via production webhook test path (n8nac workflow activate + n8nac test --prod) instead of stopping prematurely.',
       'Use node and template discovery tools to find real examples before inventing structural patterns, especially when multiple components must be wired together.',
       'Do not generate workflow JSON for the user or rely on JSON workflow specs as your main working format. Your default implementation format is local TypeScript workflow files such as *.workflow.ts.',
       'Workflow continuity: if you have already started working on a workflow during this session, always continue editing that same workflow unless the user explicitly asks you to create a new one. Never silently spin up a duplicate.',

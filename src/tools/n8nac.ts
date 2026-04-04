@@ -30,6 +30,8 @@ const N8NAC_ACTIONS = [
   'pull',
   'push',
   'verify',
+  'workflow_activate',
+  'workflow_deactivate',
   'workflow_credential_required',
   'credential_schema',
   'credential_list',
@@ -38,6 +40,9 @@ const N8NAC_ACTIONS = [
   'credential_delete',
   'execution_list',
   'execution_get',
+  'test',
+  'test_plan',
+  'test-plan',
   'llm_provider_options',
   'yagr_proxy_warning_check',
   'yagr_proxy_warning_accept',
@@ -95,9 +100,13 @@ function parseJsonPayload(raw: string): unknown {
   }
 }
 
-function normalizeN8nAcAction(action: N8nAcAction): Exclude<N8nAcAction, 'skillsArgs' | 'skillsArgv'> {
+function normalizeN8nAcAction(action: N8nAcAction): Exclude<N8nAcAction, 'skillsArgs' | 'skillsArgv' | 'test-plan'> {
   if (action === 'skillsArgs' || action === 'skillsArgv') {
     return 'skills';
+  }
+
+  if (action === 'test-plan') {
+    return 'test_plan';
   }
 
   return action;
@@ -457,13 +466,47 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
     // Some weaker models pass the string "null" instead of JSON null for
     // optional fields. Normalise before Zod validates typed constraints.
     const nullify = (v: unknown) => (v === 'null' || v === undefined ? null : v);
+    const parseOptionalInt = (v: unknown): unknown => {
+      const normalized = nullify(v);
+      if (typeof normalized !== 'string') {
+        return normalized;
+      }
+
+      const trimmed = normalized.trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      if (!/^[-+]?\d+$/.test(trimmed)) {
+        return normalized;
+      }
+
+      const numeric = Number.parseInt(trimmed, 10);
+      return Number.isNaN(numeric) ? normalized : numeric;
+    };
+    const parseOptionalBoolean = (v: unknown): unknown => {
+      const normalized = nullify(v);
+      if (typeof normalized !== 'string') {
+        return normalized;
+      }
+
+      const lowered = normalized.trim().toLowerCase();
+      if (lowered === 'true' || lowered === '1') {
+        return true;
+      }
+      if (lowered === 'false' || lowered === '0') {
+        return false;
+      }
+
+      return normalized;
+    };
     return {
       ...obj,
       n8nHost: nullify(obj.n8nHost),
       n8nApiKey: nullify(obj.n8nApiKey),
       projectId: nullify(obj.projectId),
       projectName: nullify(obj.projectName),
-      projectIndex: nullify(obj.projectIndex),
+      projectIndex: parseOptionalInt(obj.projectIndex),
       listScope: nullify(obj.listScope),
       workflowId: nullify(obj.workflowId),
       filename: nullify(obj.filename),
@@ -477,13 +520,16 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       credentialName: nullify(obj.credentialName),
       credentialData: nullify(obj.credentialData),
       credentialFile: nullify(obj.credentialFile),
-      outputJson: nullify(obj.outputJson),
+      outputJson: parseOptionalBoolean(obj.outputJson),
       executionId: nullify(obj.executionId),
       executionStatus: nullify(obj.executionStatus),
-      executionLimit: nullify(obj.executionLimit),
+      executionLimit: parseOptionalInt(obj.executionLimit),
       executionCursor: nullify(obj.executionCursor),
-      includeData: nullify(obj.includeData),
+      includeData: parseOptionalBoolean(obj.includeData),
       nodeName: nullify(obj.nodeName),
+      testData: nullify(obj.testData),
+      testQuery: nullify(obj.testQuery),
+      testProd: parseOptionalBoolean(obj.testProd),
     };
   }, z.object({
     action: z.enum(N8NAC_ACTIONS).describe('Primary n8nac action. Use skills for any n8nac skills subcommand; skillsArgs and skillsArgv are accepted as legacy aliases and normalize to skills.'),
@@ -512,6 +558,9 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
     executionCursor: z.string().nullable().describe('Pagination cursor for execution_list.'),
     includeData: z.boolean().nullable().describe('Include detailed run data for execution_list or execution_get.'),
     nodeName: z.string().nullable().describe('Optional workflow node name used for contextual provider-choice prompts.'),
+    testData: z.string().nullable().describe('Inline JSON payload for n8nac test --data.'),
+    testQuery: z.string().nullable().describe('Inline JSON query payload for n8nac test --query.'),
+    testProd: z.boolean().nullable().describe('When true, use production webhook URL for n8nac test (--prod).'),
   }));
 
   return tool({
@@ -544,6 +593,9 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
       executionCursor,
       includeData,
       nodeName,
+      testData,
+      testQuery,
+      testProd,
     }) => {
       action = normalizeN8nAcAction(action);
       const cwd = workspaceRoot();
@@ -763,6 +815,36 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         };
       }
 
+      if (action === 'workflow_activate') {
+        if (!workflowId) {
+          throw new Error('workflow_activate requires workflowId');
+        }
+
+        const result = await runObservedN8nac(observer, ['workflow', 'activate', workflowId], cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+          workflowId,
+        };
+      }
+
+      if (action === 'workflow_deactivate') {
+        if (!workflowId) {
+          throw new Error('workflow_deactivate requires workflowId');
+        }
+
+        const result = await runObservedN8nac(observer, ['workflow', 'deactivate', workflowId], cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+          workflowId,
+        };
+      }
+
       if (action === 'workflow_credential_required') {
         if (!workflowId) {
           throw new Error('workflow_credential_required requires workflowId');
@@ -932,6 +1014,50 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           stdout: truncateText(result.stdout),
           stderr: truncateText(result.stderr),
           executionId,
+        };
+      }
+
+      if (action === 'test_plan') {
+        if (!workflowId) {
+          throw new Error('test_plan requires workflowId');
+        }
+
+        const args = ['test-plan', workflowId];
+        if (outputJson !== false) {
+          args.push('--json');
+        }
+        const result = await runObservedN8nac(observer, args, cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+          workflowId,
+        };
+      }
+
+      if (action === 'test') {
+        if (!workflowId) {
+          throw new Error('test requires workflowId');
+        }
+
+        const args = ['test', workflowId];
+        if (testProd) {
+          args.push('--prod');
+        }
+        if (testData) {
+          args.push('--data', testData);
+        }
+        if (testQuery) {
+          args.push('--query', testQuery);
+        }
+        const result = await runObservedN8nac(observer, args, cwd);
+        return {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          stdout: truncateText(result.stdout),
+          stderr: truncateText(result.stderr),
+          workflowId,
         };
       }
 
