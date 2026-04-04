@@ -44,6 +44,7 @@ import { YagrSetupApplicationService } from './setup/application-services.js';
 import { openExternalUrl } from './system/open-external.js';
 import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
+import { ensureN8nRelayServer } from './llm/llm-relay-server.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -453,6 +454,7 @@ export function getGatewayRestartDelayMs(failureCount: number): number {
 async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
   await ensureManagedN8nAtLaunch();
   await refreshN8nWorkspaceInstructionsAtLaunch();
+  await ensureRelayAtLaunch();
   await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
     provider: args.provider,
     model: args.model,
@@ -533,6 +535,7 @@ async function runGatewaySupervisorProcess(args: ParsedArgs, configService: Yagr
 async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
   await ensureManagedN8nAtLaunch();
   await refreshN8nWorkspaceInstructionsAtLaunch();
+  await ensureRelayAtLaunch();
   const supervisorStatus = getGatewaySupervisorStatus(configService);
 
   if (supervisorStatus.startableSurfaces.length === 0) {
@@ -619,6 +622,17 @@ async function refreshN8nWorkspaceInstructionsAtLaunch(): Promise<void> {
     await refreshN8nWorkspaceInstructionsFromSavedConfig();
   } catch (error) {
     process.stderr.write(`Warning: n8n workspace instructions refresh failed during launch: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+}
+
+async function ensureRelayAtLaunch(): Promise<void> {
+  const configService = new YagrConfigService();
+  const llmProxy = configService.getLocalConfig().llmProxy;
+  if (!llmProxy?.enabled) return;
+  try {
+    await ensureN8nRelayServer();
+  } catch (error) {
+    process.stderr.write(`Warning: LLM relay server failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
   }
 }
 
@@ -979,6 +993,7 @@ async function main(): Promise<void> {
     if (args.startTarget === 'tui') {
       await ensureManagedN8nAtLaunch();
       await refreshN8nWorkspaceInstructionsAtLaunch();
+      await ensureRelayAtLaunch();
       await runTui(args);
       return;
     }
@@ -986,6 +1001,7 @@ async function main(): Promise<void> {
     if (args.startTarget === 'webui') {
       await ensureManagedN8nAtLaunch();
       await refreshN8nWorkspaceInstructionsAtLaunch();
+      await ensureRelayAtLaunch();
       await runWebUi(args, configService);
       return;
     }
@@ -1005,6 +1021,7 @@ async function main(): Promise<void> {
     }
     await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
+    await ensureRelayAtLaunch();
     await runTui(args);
     return;
   }
@@ -1019,6 +1036,7 @@ async function main(): Promise<void> {
     }
     await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
+    await ensureRelayAtLaunch();
     await runWebUi(args, configService);
     return;
   }
@@ -1026,6 +1044,7 @@ async function main(): Promise<void> {
   if (args.command === 'telegram-start') {
     await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
+    await ensureRelayAtLaunch();
     await runTelegramGateway(async () => await createN8nEngineFromWorkspace(), {
       provider: args.provider,
       model: args.model,
@@ -1036,6 +1055,7 @@ async function main(): Promise<void> {
 
   await ensureManagedN8nAtLaunch();
   await refreshN8nWorkspaceInstructionsAtLaunch();
+  await ensureRelayAtLaunch();
   const engine = await createN8nEngineFromWorkspace();
 
   const agent = new YagrAgent(engine);
