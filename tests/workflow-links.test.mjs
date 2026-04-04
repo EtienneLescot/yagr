@@ -99,3 +99,43 @@ test('resolveWorkflowOpenLink falls back to direct when the workflow origin does
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
 });
+
+test('resolveWorkflowOpenLink uses self-contained auth when tunnel is active with local credentials', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-workflow-link-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const n8nConfigService = new YagrN8nConfigService();
+    n8nConfigService.saveLocalConfig({});
+
+    const ownerCredentialService = new ManagedN8nOwnerCredentialService();
+    ownerCredentialService.save({
+      url: 'http://127.0.0.1:5678',
+      email: 'owner@local.yagr',
+      password: 'Password1A',
+      firstName: 'Yagr',
+      lastName: 'Local',
+      createdAt: new Date().toISOString(),
+    });
+
+    // Simulate a workflow URL from local n8n with an active tunnel
+    const result = resolveWorkflowOpenLink('http://127.0.0.1:5678/workflow/abc', {
+      n8nConfigService,
+      ownerCredentialService,
+      n8nTunnelPublicUrl: 'https://example-tunnel.trycloudflare.com',
+    });
+
+    assert.equal(result.via, 'self-contained-auth');
+    assert.equal(result.targetUrl, 'https://example-tunnel.trycloudflare.com/workflow/abc');
+    assert.match(result.openUrl, /^data:text\/html;charset=utf-8,/);
+    // The target URL in the data URI should be the tunnel URL
+    assert.match(decodeURIComponent(result.openUrl), /https:\/\/example-tunnel\.trycloudflare\.com\/workflow\/abc/);
+    // The login URL should also use the tunnel origin
+    assert.match(decodeURIComponent(result.openUrl), /https:\/\/example-tunnel\.trycloudflare\.com\/rest\/login/);
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
