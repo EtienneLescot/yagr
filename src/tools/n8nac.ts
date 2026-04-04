@@ -722,8 +722,20 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
         );
 
         if (existing?.id) {
-          // Delete and recreate to ensure the URL is always up-to-date (e.g. docker host changed).
-          await runObservedN8nac(observer, ['credential', 'delete', existing.id], cwd);
+          // Credential already exists — reuse it. The relay URL is deterministic
+          // (same port within the same Yagr session), so the stored value is still
+          // correct. Deleting and recreating would change the credential ID and
+          // invalidate any workflow already referencing the old ID.
+          return {
+            port: relay.port,
+            baseUrl: relay.baseUrl,
+            credentialId: existing.id,
+            credentialName: N8N_RELAY_CREDENTIAL_NAME,
+            credentialType: 'openAiApi',
+            created: false,
+            reused: true,
+            next: `Relay is running. Reusing existing credential "${N8N_RELAY_CREDENTIAL_NAME}" (id: ${existing.id}). Assign it to the node.`,
+          };
         }
 
         // Create the openAiApi credential with the correct field name ("url", not "baseUrl").
@@ -742,6 +754,7 @@ export function createN8nAcTool(observer?: ToolExecutionObserver) {
           credentialName: N8N_RELAY_CREDENTIAL_NAME,
           credentialType: 'openAiApi',
           created: createResult.exitCode === 0,
+          reused: false,
           createExitCode: createResult.exitCode,
           createStderr: createResult.stderr || null,
           next: createResult.exitCode === 0
