@@ -22,7 +22,7 @@ type ChatStreamEvent =
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
-  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string };
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -563,6 +563,11 @@ function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
     ? `/open/n8n-workflow?target=${encodeURIComponent(embed.targetUrl)}`
     : embed.url;
 
+  const exec = embed.executionResult;
+  const execStatusClass = exec
+    ? exec.status === 'success' ? 'execSuccess' : exec.status === 'error' ? 'execError' : 'execWaiting'
+    : '';
+
   return (
     <div className="workflowCard">
       <div className="workflowHeader">
@@ -579,6 +584,20 @@ function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
           Open in n8n
         </a>
       </div>
+      {exec ? (
+        <div className={`executionResult ${execStatusClass}`}>
+          <div className="executionResultHeader">
+            <span className={`executionBadge ${execStatusClass}`}>
+              {exec.status === 'success' ? '✓ Success' : exec.status === 'error' ? '✗ Error' : '⧗ Waiting'}
+              {exec.executionId ? ` · #${exec.executionId}` : ''}
+            </span>
+            {exec.summary ? <span className="executionSummary">{exec.summary}</span> : null}
+          </div>
+          {exec.data ? (
+            <pre className="executionData">{exec.data}</pre>
+          ) : null}
+        </div>
+      ) : null}
       {embed.diagram ? (
         <div className="workflowGraphWrap">
           <WorkflowGraph diagram={embed.diagram} />
@@ -1525,6 +1544,7 @@ function App() {
               targetUrl: streamEvent.targetUrl,
               title: streamEvent.title,
               diagram: streamEvent.diagram,
+              executionResult: streamEvent.executionResult,
             },
           });
           return;
