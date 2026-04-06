@@ -84,6 +84,14 @@ export async function processStreamEvent(
   switch (event.event) {
     case 'on_chat_model_stream': {
       const { textDelta, thinkingDelta } = extractDeltas(event.data?.chunk);
+      // DEBUG — remove after diagnosis
+      const c = (event.data?.chunk as Record<string,unknown>)?.content;
+      if (Array.isArray(c) && c.length > 0) {
+        const nonText = c.filter((p: unknown) => (p as Record<string,unknown>)?.type !== 'text');
+        if (nonText.length > 0) {
+          process.stderr.write(`[DBG stream nontext] ${JSON.stringify(nonText).slice(0, 400)}\n`);
+        }
+      }
 
       if (thinkingDelta) {
         const isFirst = accumulator.thinkingText.length === 0;
@@ -141,13 +149,21 @@ export async function processStreamEvent(
     }
 
     case 'on_tool_start': {
-      // LangChain wraps the actual tool input as { input: realInput } in run.inputs.
-      // event.data.input === run.inputs === { input: { command: '...', file_path: '...', ... } }
+      // LangChain packages tool args as: event.data.input = { input: '{"command":"..."}' }
+      // i.e. the real args are JSON-stringified under the key "input".
       const rawEventInput = event.data?.input as Record<string, unknown> | undefined;
-      const input = (rawEventInput?.input != null && typeof rawEventInput.input === 'object'
-        ? rawEventInput.input
-        : rawEventInput) as Record<string, unknown> | undefined;
+      let input: Record<string, unknown> | undefined;
+      const inner = rawEventInput?.input;
+      if (typeof inner === 'string') {
+        try { input = JSON.parse(inner) as Record<string, unknown>; } catch { input = rawEventInput; }
+      } else if (inner != null && typeof inner === 'object') {
+        input = inner as Record<string, unknown>;
+      } else {
+        input = rawEventInput;
+      }
       const toolName = event.name;
+      // DEBUG — remove after diagnosis
+      process.stderr.write(`[DBG tool_start] name=${toolName} rawKeys=${JSON.stringify(Object.keys(rawEventInput ?? {}))} inputKeys=${JSON.stringify(Object.keys(input ?? {}))} sample=${JSON.stringify(input).slice(0, 200)}\n`);
 
       // Legacy update (still used by surfaces that don't handle operations).
       const update = mapToolStartToUpdate(toolName, input);
