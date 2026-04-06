@@ -16,6 +16,15 @@ export function createMoveFileTool(_observer?: ToolExecutionObserver) {
       const sourcePath = resolveWorkspacePath(fromPath);
       const targetPath = resolveWorkspacePath(toPath);
 
+      if (sourcePath === targetPath) {
+        return {
+          ok: true,
+          fromPath: relativeWorkspacePath(sourcePath),
+          toPath: relativeWorkspacePath(targetPath),
+          note: 'Source and destination are the same path — no-op.',
+        };
+      }
+
       if (!fileExists(sourcePath)) {
         return {
           ok: false,
