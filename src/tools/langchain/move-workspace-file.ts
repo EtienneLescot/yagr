@@ -14,6 +14,15 @@ export const moveFileTool = tool(
     const sourcePath = resolveWorkspacePath(fromPath);
     const targetPath = resolveWorkspacePath(toPath);
 
+    if (sourcePath === targetPath) {
+      return JSON.stringify({
+        ok: true,
+        fromPath: relativeWorkspacePath(sourcePath),
+        toPath: relativeWorkspacePath(targetPath),
+        note: 'Source and destination are the same path — no-op.',
+      });
+    }
+
     if (!fileExists(sourcePath)) {
       return JSON.stringify({
         ok: false,
