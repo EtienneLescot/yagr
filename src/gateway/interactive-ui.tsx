@@ -18,12 +18,13 @@ import {
 import type {
   YagrAgentState,
   YagrDisplayOptions,
+  YagrOperationEvent,
   YagrPhaseEvent,
   YagrRequiredAction,
   YagrRunOptions,
 } from '../types.js';
 
-type FeedLane = 'user' | 'narrative' | 'action' | 'result' | 'interrupt';
+type FeedLane = 'user' | 'result' | 'interrupt';
 
 type FeedEntry = {
   id: number;
@@ -97,22 +98,16 @@ function stateColor(state: YagrAgentState): string {
 function laneColor(lane: FeedLane): string {
   switch (lane) {
     case 'user': return 'cyan';
-    case 'narrative': return 'white';
-    case 'action': return 'yellow';
     case 'result': return 'green';
     case 'interrupt': return 'red';
-    default: return 'white';
   }
 }
 
 function laneLabel(lane: FeedLane): string {
   switch (lane) {
     case 'user': return 'You';
-    case 'narrative': return 'Agent';
-    case 'action': return 'Command';
     case 'result': return 'Result';
     case 'interrupt': return 'Blocked';
-    default: return 'Log';
   }
 }
 
@@ -172,30 +167,120 @@ function buildCommandHistoryText(command: string, stdout: string, stderr: string
   return sections.join('\n\n');
 }
 
-function flattenFeedToHistoryLines(entries: FeedEntry[]): HistoryLine[] {
+// ---------------------------------------------------------------------------
+// Operation-to-history flattening (for Ctrl+Y view)
+// ---------------------------------------------------------------------------
+
+function flattenOperationsToHistoryLines(
+  operations: YagrOperationEvent[],
+  feedEntries: FeedEntry[],
+): HistoryLine[] {
   const lines: HistoryLine[] = [];
 
-  for (const entry of entries) {
+  // First emit feed entries (user prompts, final responses, interrupts)
+  for (const entry of feedEntries) {
     lines.push({
-      id: `${entry.id}:header`,
+      id: `feed:${entry.id}:header`,
       text: `[${entry.timestamp}] ${laneLabel(entry.lane)} · ${entry.title}`,
       color: laneColor(entry.lane),
     });
-
     const bodyLines = entry.text.split('\n');
-    for (let index = 0; index < bodyLines.length; index += 1) {
+    for (let i = 0; i < bodyLines.length; i++) {
       lines.push({
-        id: `${entry.id}:body:${index}`,
-        text: bodyLines[index].length > 0 ? `  ${bodyLines[index]}` : ' ',
+        id: `feed:${entry.id}:body:${i}`,
+        text: bodyLines[i].length > 0 ? `  ${bodyLines[i]}` : ' ',
         color: entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined,
-        dimColor: entry.lane === 'narrative',
+        dimColor: entry.lane !== 'result',
       });
     }
+    lines.push({ id: `feed:${entry.id}:spacer`, text: ' ', dimColor: true });
+  }
 
-    lines.push({ id: `${entry.id}:spacer`, text: ' ', dimColor: true });
+  // Then emit each operation in order
+  for (const op of operations) {
+    const elapsed = op.endedAt ? ` · ${((op.endedAt - op.startedAt) / 1000).toFixed(1)}s` : '';
+    const statusIcon = op.status === 'done' ? '●' : op.status === 'error' ? '✕' : '◐';
+    lines.push({
+      id: `op:${op.operationId}:header`,
+      text: `${statusIcon} ${op.label}${elapsed}`,
+      color: opColor(op),
+    });
+    if (op.body) {
+      const bodyLines = op.body.split('\n');
+      for (let i = 0; i < bodyLines.length; i++) {
+        lines.push({
+          id: `op:${op.operationId}:body:${i}`,
+          text: `  ${bodyLines[i]}`,
+          dimColor: op.category === 'thinking',
+        });
+      }
+    }
+    lines.push({ id: `op:${op.operationId}:spacer`, text: ' ', dimColor: true });
   }
 
   return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Operation card helpers
+// ---------------------------------------------------------------------------
+
+function opCategoryPrefix(category: YagrOperationEvent['category']): string {
+  switch (category) {
+    case 'shell': return 'Shell ';
+    case 'file-read': return 'Read ';
+    case 'file-write': return 'Write ';
+    case 'web': return 'Web ';
+    case 'agent': return 'Agent ';
+    case 'phase': return '';
+    case 'thinking': return '';
+    default: return '';
+  }
+}
+
+function opColor(op: YagrOperationEvent): string {
+  if (op.status === 'error') return 'red';
+  if (op.category === 'thinking') return 'magenta';
+  if (op.category === 'phase') return 'cyan';
+  if (op.category === 'shell') return op.status === 'running' ? 'yellow' : 'green';
+  if (op.category === 'file-read' || op.category === 'file-write') return op.status === 'running' ? 'yellow' : 'blue';
+  if (op.category === 'web') return op.status === 'running' ? 'yellow' : 'cyan';
+  return op.status === 'running' ? 'yellow' : 'white';
+}
+
+function OperationCard({ op }: { op: YagrOperationEvent }): JSX.Element {
+  const icon = op.status === 'done' ? '●' : op.status === 'error' ? '✕' : '◐';
+  const color = opColor(op);
+  const elapsed = op.endedAt ? `  ${((op.endedAt - op.startedAt) / 1000).toFixed(1)}s` : '';
+
+  return (
+    <Box flexDirection="column" marginBottom={0}>
+      <Box>
+        <Text color={color}>{icon} </Text>
+        <Text bold={op.status === 'running'} color={color}>{truncateText(op.label, 80)}</Text>
+        {elapsed ? <Text dimColor>{elapsed}</Text> : null}
+      </Box>
+      {op.summary && op.status !== 'running' ? (
+        <Box paddingLeft={2}>
+          <Text dimColor>{truncateText(op.summary, 100)}</Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
+function OperationList({ operations }: { operations: YagrOperationEvent[] }): JSX.Element {
+  if (operations.length === 0) {
+    return <Text dimColor>Yagr is working…</Text>;
+  }
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      {operations.map((op) => (
+        <OperationCard key={op.operationId} op={op} />
+      ))}
+    </Box>
+  );
 }
 
 function Panel({
@@ -288,23 +373,6 @@ function RequiredActionCard({ actions }: { actions: YagrRequiredAction[] }): JSX
           </Box>
         ))}
       </Box>
-    </Box>
-  );
-}
-
-function IntermediateMessages({ entries }: { entries: FeedEntry[] }): JSX.Element {
-  if (entries.length === 0) {
-    return <Text dimColor>Yagr is working…</Text>;
-  }
-
-  return (
-    <Box flexDirection="column" marginBottom={1}>
-      {entries.map((entry) => (
-        <Box key={entry.id} flexDirection="column" marginBottom={1}>
-          <Text color={laneColor(entry.lane)}>{entry.title}</Text>
-          <Text dimColor={entry.lane === 'narrative'}>{truncateText(entry.text.replace(/\s+/g, ' ').trim(), 220)}</Text>
-        </Box>
-      ))}
     </Box>
   );
 }
@@ -411,6 +479,8 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
   const { stdout } = useStdout();
   const [inputVersion, setInputVersion] = useState(0);
   const [feed, setFeed] = useState<FeedEntry[]>([]);
+  /** Operation cards indexed by operationId (ordered insertion). */
+  const [operations, setOperations] = useState<Map<string, YagrOperationEvent>>(new Map());
   const [isRunning, setIsRunning] = useState(false);
   const [currentState, setCurrentState] = useState<YagrAgentState>('idle');
   const [currentPhase, setCurrentPhase] = useState<YagrPhaseEvent['phase'] | null>(null);
@@ -427,6 +497,15 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
   const [contextFillPercent, setContextFillPercent] = useState<number | null>(null);
   const nextEntryIdRef = useRef(1);
   const workspaceLabel = useMemo(() => basename(getYagrN8nWorkspaceDir()), []);
+
+  const upsertOperation = useCallback((op: YagrOperationEvent) => {
+    setOperations((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(op.operationId);
+      next.set(op.operationId, existing ? { ...existing, ...op } : op);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!isRunning) {
@@ -473,8 +552,8 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
   }, [display.showResponses, pushEntry]);
 
   const handleCompact = useCallback(() => {
-    pushEntry('narrative', 'Compact', 'Conversation compaction is handled automatically by Yagr.');
-  }, [pushEntry]);
+    setActiveOperationText('Compaction is handled automatically by Yagr.');
+  }, [setActiveOperationText]);
 
   const runPrompt = useCallback(async (prompt: string) => {
     setLastUserPrompt(prompt);
@@ -491,6 +570,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
     setLiveAssistantText('');
     setWorkflowEmbeds([]);
     setContextFillPercent(null);
+    setOperations(new Map());
 
     const accumulator = createRunAccumulator();
 
@@ -508,17 +588,21 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
             }
             await options.onTextDelta?.(delta);
           },
+          onThinkingDelta: async (_delta) => {
+            // Thinking text is surfaced via onOperation — no additional action needed.
+          },
+          onOperation: async (op) => {
+            if (op.category === 'thinking' && !display.showThinking) return;
+            upsertOperation(op);
+            setActiveOperationText(op.label);
+          },
           onUserVisibleUpdate: async (update) => {
-            if (display.showThinking) {
-              pushEntry(
-                update.tone === 'error' ? 'interrupt' : 'narrative',
-                update.title,
-                update.detail ?? update.title,
-                update.tone === 'error' ? 'strong' : 'normal',
-              );
+            // Keep for error/interrupt entries and phase text.
+            if (update.tone === 'error') {
+              pushEntry('interrupt', update.title, update.detail ?? update.title, 'strong');
             }
             setPhaseStatusText(update.title);
-            setActiveOperationText(update.detail ?? update.title);
+            if (update.detail) setActiveOperationText(update.detail);
           },
           onWorkflowEmbed: async (embed) => {
             const w: WorkflowEmbed = {
@@ -595,6 +679,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
       setLastUserPrompt('');
       setActiveOperationText('Ready for a request.');
       setWorkflowEmbeds([]);
+      setOperations(new Map());
       return;
     }
 
@@ -615,7 +700,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
 
     if (prompt === '/pending') {
       if (pendingRequiredActions.length === 0) {
-        pushEntry('narrative', 'Required actions', 'No required actions pending.');
+        setActiveOperationText('No required actions pending.');
       } else {
         for (const action of pendingRequiredActions) {
           pushEntry('interrupt', 'Pending', formatRequiredAction(action));
@@ -627,7 +712,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
     if (prompt === '/open') {
       const latestEmbed = workflowEmbeds[workflowEmbeds.length - 1];
       if (!latestEmbed) {
-        pushEntry('narrative', 'Workflow', 'No recent workflow to open.');
+        setActiveOperationText('No recent workflow to open.');
         return;
       }
 
@@ -646,7 +731,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
     if (prompt.startsWith('/approve')) {
       const permissionActions = pendingRequiredActions.filter((action) => action.kind === 'permission');
       if (permissionActions.length === 0) {
-        pushEntry('narrative', 'Permissions', 'No permissions pending.');
+        setActiveOperationText('No permissions pending.');
         return;
       }
 
@@ -699,10 +784,17 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
     }
   }, { isActive: true });
 
-  const historyLines = useMemo(() => flattenFeedToHistoryLines(feed), [feed]);
-  const recentIntermediateEntries = useMemo(
-    () => feed.filter((entry) => entry.lane === 'narrative' || entry.lane === 'action' || entry.lane === 'interrupt').slice(-4),
-    [feed],
+  const operationList = useMemo(() => [...operations.values()], [operations]);
+  const historyLines = useMemo(
+    () => flattenOperationsToHistoryLines(operationList, feed),
+    [operationList, feed],
+  );
+  /** Visible cards in the Working panel: last 6, excluding thinking if showThinking=false. */
+  const visibleOperations = useMemo(
+    () => operationList
+      .filter((op) => op.category !== 'thinking' || display.showThinking)
+      .slice(-6),
+    [operationList, display.showThinking],
   );
   const terminalWidth = stdout?.columns ?? process.stdout.columns ?? 100;
   const headerSubtitle = useMemo(() => {
@@ -723,9 +815,11 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
       ? (hasBlockingActions ? 'Action required' : 'Follow-up actions')
       : liveAssistantText
         ? 'Response in progress'
-        : latestAssistantText
-          ? 'Latest response'
-          : 'Ready to start a run';
+        : isRunning
+          ? 'Working'
+          : latestAssistantText
+            ? 'Latest response'
+            : 'Ready to start a run';
   const mainSubtitle = historyOpen
     ? 'plain transcript, terminal selection and scroll'
     : pendingRequiredActions.length > 0
@@ -753,7 +847,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
           <RequiredActionCard actions={pendingRequiredActions} />
         ) : liveAssistantText ? (
           <Box flexDirection="column">
-            <IntermediateMessages entries={recentIntermediateEntries} />
+            <OperationList operations={visibleOperations} />
             <Text color="green">{liveAssistantText}</Text>
           </Box>
         ) : latestAssistantText ? (
@@ -762,7 +856,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
             <WorkflowBanner embeds={workflowEmbeds} />
           </Box>
         ) : isRunning ? (
-          <IntermediateMessages entries={recentIntermediateEntries} />
+          <OperationList operations={visibleOperations} />
         ) : (
           <EmptyState />
         )}

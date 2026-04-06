@@ -18,6 +18,17 @@ type ChatStreamEvent =
   | { type: 'phase'; phase: string; status: 'started' | 'completed'; message: string }
   | { type: 'state'; state: string; message: string }
   | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
+  | {
+      type: 'operation';
+      operationId: string;
+      label: string;
+      category: string;
+      status: 'running' | 'done' | 'error';
+      body?: string;
+      summary?: string;
+      startedAt: number;
+      endedAt?: number;
+    }
   | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
@@ -617,12 +628,56 @@ const Y_PIXELS: Array<[col: number, row: number, delayMs: number]> = [
   [0, 0, 540], [6, 0, 540],         // tips
 ];
 
+const OPERATION_CATEGORY_ICON: Record<string, string> = {
+  'file-read': '📄',
+  'file-write': '✏️',
+  'shell': '⚡',
+  'web': '🌐',
+  'tool': '🔧',
+  'agent': '🤖',
+  'phase': '🏁',
+  'thinking': '💭',
+};
+
+function OperationCard({ entry }: { entry: ChatProgressEntry }): React.JSX.Element {
+  const defaultExpanded = entry.category !== 'thinking' && entry.status === 'running';
+  const [expanded, setExpanded] = React.useState(defaultExpanded);
+  const icon = OPERATION_CATEGORY_ICON[entry.category ?? 'tool'] ?? '🔧';
+  return (
+    <div className={`operationCard ${entry.status ?? 'done'} ${entry.category ?? ''}`}>
+      <button
+        className="opHeader"
+        onClick={() => setExpanded((prev) => !prev)}
+        aria-expanded={expanded}
+        type="button"
+      >
+        <span className="opCategoryIcon" aria-hidden="true">{icon}</span>
+        <span className="opLabel">{entry.title}</span>
+        {entry.status === 'running'
+          ? <span className="opSpinner" aria-hidden="true" />
+          : entry.status === 'error'
+            ? <span className="opStatusIcon error" aria-hidden="true">✕</span>
+            : <span className="opStatusIcon done" aria-hidden="true">✓</span>}
+        <span className="opToggle" aria-hidden="true">{expanded ? '▲' : '▼'}</span>
+      </button>
+      {expanded && entry.body ? (
+        <pre className="opBody">{entry.body}</pre>
+      ) : !expanded && entry.summary ? (
+        <div className="opSummary muted">{entry.summary}</div>
+      ) : null}
+    </div>
+  );
+}
+
 function MessageCard({ message, now }: { message: ChatMessage; now: number }): React.JSX.Element {
   const elapsed = message.streaming && message.startedAt ? formatElapsed(now - message.startedAt) : undefined;
-  const visibleProgress = (message.progress ?? []).slice(-3);
+  const operationEntries = (message.progress ?? []).filter((e) => e.category != null);
+  const legacyEntries = (message.progress ?? []).filter((e) => e.category == null);
+  const visibleOperations = operationEntries.slice(-6);
+  const visibleProgress = legacyEntries.slice(-3);
   const previewLines = message.streaming ? buildStreamingPreview(message.text) : [];
   const showProgress = message.streaming || message.finalState === 'failed_terminal';
-  const showBody = !message.streaming || (previewLines.length === 0 && visibleProgress.length === 0);
+  const showBody = !message.streaming || (previewLines.length === 0 && visibleOperations.length === 0 && visibleProgress.length === 0);
 
   return (
     <article className={`message ${message.role}${message.streaming ? ' streaming' : ''}`}>
@@ -659,6 +714,14 @@ function MessageCard({ message, now }: { message: ChatMessage; now: number }): R
             <strong>{message.statusLabel ?? 'Yagr is working…'}</strong>
             <span className="muted">{elapsed ? `Running for ${elapsed}` : 'Thinking, planning, and executing…'}</span>
           </div>
+        </div>
+      ) : null}
+
+      {showProgress && visibleOperations.length > 0 ? (
+        <div className="operationList">
+          {visibleOperations.map((entry) => (
+            <OperationCard key={entry.id} entry={entry} />
+          ))}
         </div>
       ) : null}
 
@@ -1083,6 +1146,7 @@ function App() {
     patchMessage,
     appendMessageText,
     pushMessageProgress,
+    upsertMessageOperation,
     resetMessages,
     sessionHistory,
     setSessionHistory,
@@ -1524,6 +1588,21 @@ function App() {
             statusLabel: streamEvent.detail ?? streamEvent.title,
           });
           setBusyLabel(streamEvent.detail ?? streamEvent.title);
+          return;
+        }
+
+        if (streamEvent.type === 'operation') {
+          upsertMessageOperation(pendingId, {
+            id: streamEvent.operationId,
+            tone: streamEvent.status === 'error' ? 'error' : 'info',
+            title: streamEvent.label,
+            category: streamEvent.category,
+            status: streamEvent.status,
+            body: streamEvent.body,
+            summary: streamEvent.summary,
+            startedAt: streamEvent.startedAt,
+            endedAt: streamEvent.endedAt,
+          });
           return;
         }
 

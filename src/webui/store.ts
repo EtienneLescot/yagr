@@ -69,6 +69,13 @@ export interface ChatProgressEntry {
   tone: 'info' | 'success' | 'error';
   title: string;
   detail?: string;
+  // Operation card fields (optional — absent on legacy progress entries)
+  category?: string;
+  status?: 'running' | 'done' | 'error';
+  body?: string;
+  summary?: string;
+  startedAt?: number;
+  endedAt?: number;
 }
 
 interface WebUiState {
@@ -95,6 +102,11 @@ interface WebUiState {
   patchMessage: (id: string, patch: Partial<ChatMessage>) => void;
   appendMessageText: (id: string, text: string) => void;
   pushMessageProgress: (id: string, entry: ChatProgressEntry) => void;
+  /**
+   * Create or update an operation card inside a message's progress list.
+   * Matching is done by `entry.id` (= operationId).
+   */
+  upsertMessageOperation: (messageId: string, entry: ChatProgressEntry) => void;
   replaceMessage: (id: string, text: string, role?: ChatMessage['role']) => void;
   resetMessages: () => void;
   setMessages: (messages: ChatMessage[]) => void;
@@ -191,6 +203,17 @@ export const useWebUiStore = create<WebUiState>((set) => ({
         ...message,
         progress: nextProgress,
       };
+    }),
+  })),
+  upsertMessageOperation: (messageId, entry) => set((state) => ({
+    messages: state.messages.map((message) => {
+      if (message.id !== messageId) return message;
+      const existing = message.progress ?? [];
+      const idx = existing.findIndex((e) => e.id === entry.id);
+      const next = idx >= 0
+        ? existing.map((e, i) => i === idx ? { ...e, ...entry } : e)
+        : [...existing, entry];
+      return { ...message, progress: next };
     }),
   })),
   replaceMessage: (id, text, role) => set((state) => ({

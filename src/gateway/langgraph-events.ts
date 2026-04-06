@@ -9,14 +9,18 @@
  *   - `YagrRequiredAction` collection from `requestRequiredAction` tool output
  *   - Workflow embed extraction from `presentWorkflowResult` tool output
  *   - `write_todos` (deepagents planning tool) mapped to a plan-phase update
- *
- * The adapter is purely functional — callers own the accumulator state and
- * pass callbacks for side-effects (e.g. writing SSE frames, sending Telegram
- * messages).  This makes it straightforward to unit-test.
+ *   - `YagrOperationEvent` for per-tool and thinking operation cards
  */
 import type { StreamEvent } from '@langchain/core/tracers/log_stream';
-import type { YagrRequiredAction, YagrToolEvent } from '../types.js';
-import type { YagrUserVisibleUpdate } from '../runtime/user-visible-updates.js';
+import type { YagrOperationEvent, YagrRequiredAction, YagrToolEvent } from '../types.js';
+import {
+  type YagrUserVisibleUpdate,
+  makeToolStartOperationEvent,
+  makeToolEndOperationEvent,
+  makeThinkingStartEvent,
+  makeThinkingEndEvent,
+  THINKING_OP_ID,
+} from '../runtime/user-visible-updates.js';
 import { WORKFLOW_EMBED_TYPE, type WorkflowEmbedPayload } from '../manager-tooling/langchain/index.js';
 import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 
@@ -31,16 +35,36 @@ export interface LangGraphRunAccumulator {
   requiredActions: YagrRequiredAction[];
   /** Workflow embeds raised via `presentWorkflowResult` tool calls. */
   workflowEmbeds: WorkflowEmbedPayload[];
+  /** Accumulated thinking text across the current turn. */
+  thinkingText: string;
+  /** When the current thinking block started (ms). */
+  thinkingStartedAt: number;
+  /** Map of operationId → startedAt for in-flight tool calls. */
+  activeOperations: Map<string, YagrOperationEvent>;
 }
 
 export interface LangGraphEventCallbacks {
   onTextDelta?: (delta: string) => void | Promise<void>;
+  /** Called with each reasoning/thinking text delta from the LLM. */
+  onThinkingDelta?: (delta: string) => void | Promise<void>;
   onUserVisibleUpdate?: (update: YagrUserVisibleUpdate) => void | Promise<void>;
   onWorkflowEmbed?: (embed: WorkflowEmbedPayload) => void | Promise<void>;
+  /**
+   * Called when an operation card is created or updated.
+   * Callers patch by `operationId` — a second call for the same id is an update.
+   */
+  onOperation?: (event: YagrOperationEvent) => void | Promise<void>;
 }
 
 export function createRunAccumulator(): LangGraphRunAccumulator {
-  return { responseText: '', requiredActions: [], workflowEmbeds: [] };
+  return {
+    responseText: '',
+    requiredActions: [],
+    workflowEmbeds: [],
+    thinkingText: '',
+    thinkingStartedAt: 0,
+    activeOperations: new Map(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -59,24 +83,98 @@ export async function processStreamEvent(
 ): Promise<void> {
   switch (event.event) {
     case 'on_chat_model_stream': {
-      const delta = extractTextDelta(event.data?.chunk);
-      if (delta) {
-        accumulator.responseText += delta;
-        await callbacks.onTextDelta?.(delta);
+      const { textDelta, thinkingDelta } = extractDeltas(event.data?.chunk);
+
+      if (thinkingDelta) {
+        const isFirst = accumulator.thinkingText.length === 0;
+        accumulator.thinkingText += thinkingDelta;
+
+        if (isFirst) {
+          // Emit the opening "thinking" card.
+          const startEvent = makeThinkingStartEvent();
+          accumulator.thinkingStartedAt = startEvent.startedAt;
+          await callbacks.onOperation?.(startEvent);
+        } else {
+          // Update the card body incrementally.
+          await callbacks.onOperation?.({
+            kind: 'operation',
+            operationId: THINKING_OP_ID,
+            label: 'Thinking…',
+            category: 'thinking',
+            status: 'running',
+            body: accumulator.thinkingText,
+            startedAt: accumulator.thinkingStartedAt,
+          });
+        }
+
+        await callbacks.onThinkingDelta?.(thinkingDelta);
+      }
+
+      if (textDelta) {
+        // Close the thinking card once real text starts flowing.
+        if (accumulator.thinkingText.length > 0 && !accumulator.activeOperations.has('thinking:closed')) {
+          const closedSentinel: YagrOperationEvent = {
+            kind: 'operation',
+            operationId: THINKING_OP_ID,
+            label: 'Thinking',
+            category: 'thinking',
+            status: 'done',
+            startedAt: accumulator.thinkingStartedAt,
+          };
+          accumulator.activeOperations.set('thinking:closed', closedSentinel);
+          const endPatch = makeThinkingEndEvent(accumulator.thinkingText, accumulator.thinkingStartedAt);
+          await callbacks.onOperation?.({
+            kind: 'operation',
+            operationId: THINKING_OP_ID,
+            label: 'Thinking',
+            category: 'thinking',
+            body: accumulator.thinkingText,
+            startedAt: accumulator.thinkingStartedAt,
+            ...endPatch,
+          } as YagrOperationEvent);
+        }
+
+        accumulator.responseText += textDelta;
+        await callbacks.onTextDelta?.(textDelta);
       }
       break;
     }
 
     case 'on_tool_start': {
-      const update = mapToolStartToUpdate(event.name, event.data?.input as Record<string, unknown> | undefined);
+      // LangChain wraps the actual tool input as { input: realInput } in run.inputs.
+      // event.data.input === run.inputs === { input: { command: '...', file_path: '...', ... } }
+      const rawEventInput = event.data?.input as Record<string, unknown> | undefined;
+      const input = (rawEventInput?.input != null && typeof rawEventInput.input === 'object'
+        ? rawEventInput.input
+        : rawEventInput) as Record<string, unknown> | undefined;
+      const toolName = event.name;
+
+      // Legacy update (still used by surfaces that don't handle operations).
+      const update = mapToolStartToUpdate(toolName, input);
       if (update) {
         await callbacks.onUserVisibleUpdate?.(update);
+      }
+
+      // New operation card.
+      const opEvent = makeToolStartOperationEvent(toolName, input);
+      if (opEvent) {
+        accumulator.activeOperations.set(toolName, opEvent);
+        await callbacks.onOperation?.(opEvent);
       }
       break;
     }
 
     case 'on_tool_end': {
-      await handleToolEnd(event.name, event.data?.output, accumulator, callbacks);
+      const toolName = event.name;
+      const active = accumulator.activeOperations.get(toolName);
+      if (active) {
+        const patch = makeToolEndOperationEvent(active.operationId, toolName, event.data?.output, active.startedAt);
+        const endEvent: YagrOperationEvent = { ...active, ...patch };
+        await callbacks.onOperation?.(endEvent);
+        accumulator.activeOperations.delete(toolName);
+      }
+
+      await handleToolEnd(toolName, event.data?.output, accumulator, callbacks);
       break;
     }
 
@@ -86,39 +184,61 @@ export async function processStreamEvent(
 }
 
 // ---------------------------------------------------------------------------
-// Text delta extraction
+// Delta extraction (text + thinking)
 // ---------------------------------------------------------------------------
 
-function extractTextDelta(chunk: unknown): string {
+interface ExtractedDeltas {
+  textDelta: string;
+  thinkingDelta: string;
+}
+
+function extractDeltas(chunk: unknown): ExtractedDeltas {
   if (!chunk || typeof chunk !== 'object') {
-    return '';
+    return { textDelta: '', thinkingDelta: '' };
   }
 
   const c = chunk as Record<string, unknown>;
-
-  // AIMessageChunk.content — may be a string or an array of content parts
   const content = c['content'];
 
   if (typeof content === 'string') {
-    return content;
+    return { textDelta: content, thinkingDelta: '' };
   }
 
   if (Array.isArray(content)) {
-    return content
-      .map((part: unknown) => {
-        if (typeof part === 'string') {
-          return part;
+    let text = '';
+    let thinking = '';
+    for (const part of content) {
+      if (typeof part === 'string') {
+        text += part;
+        continue;
+      }
+      if (part && typeof part === 'object') {
+        const p = part as Record<string, unknown>;
+        // Anthropic extended thinking: { type: 'thinking', thinking: string }
+        if (p['type'] === 'thinking' && typeof p['thinking'] === 'string') {
+          thinking += p['thinking'];
+          continue;
         }
-        if (part && typeof part === 'object') {
-          const p = part as Record<string, unknown>;
-          return typeof p['text'] === 'string' ? p['text'] : '';
+        // Some OpenRouter/Qwen providers: { type: 'reasoning', reasoning_content: string }
+        if (p['type'] === 'reasoning' && typeof p['reasoning_content'] === 'string') {
+          thinking += p['reasoning_content'];
+          continue;
         }
-        return '';
-      })
-      .join('');
+        // Standard text part
+        if (typeof p['text'] === 'string') {
+          text += p['text'];
+        }
+      }
+    }
+    return { textDelta: text, thinkingDelta: thinking };
   }
 
-  return '';
+  return { textDelta: '', thinkingDelta: '' };
+}
+
+/** @deprecated Use extractDeltas — kept for callers that only need text. */
+function extractTextDelta(chunk: unknown): string {
+  return extractDeltas(chunk).textDelta;
 }
 
 // ---------------------------------------------------------------------------

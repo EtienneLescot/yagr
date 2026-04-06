@@ -927,6 +927,110 @@ button {
   box-shadow: 0 0 0 6px rgba(184, 236, 239, 0.18);
 }
 
+/* ── Operation cards ─────────────────────────────────────────────────── */
+.operationList {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.operationCard {
+  border-radius: 0.4rem;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-strong);
+  font-size: 0.88rem;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.operationCard.running {
+  border-color: var(--blue);
+}
+
+.operationCard.error {
+  border-color: #d94778;
+}
+
+.operationCard.thinking {
+  opacity: 0.72;
+}
+
+.opHeader {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.55rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.opHeader:hover {
+  background: var(--panel-hover, rgba(255,255,255,0.04));
+}
+
+.opCategoryIcon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.opLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opStatusIcon {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.opStatusIcon.done { color: #1cc98a; }
+.opStatusIcon.error { color: #d94778; }
+
+.opToggle {
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+@keyframes opSpin {
+  to { transform: rotate(360deg); }
+}
+
+.opSpinner {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid var(--panel-border);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: opSpin 0.75s linear infinite;
+}
+
+.opBody {
+  margin: 0;
+  padding: 0.5rem 0.75rem 0.6rem;
+  border-top: 1px solid var(--panel-border);
+  font-size: 0.82rem;
+  font-family: var(--mono-font, monospace);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 14rem;
+  overflow-y: auto;
+  color: var(--muted);
+}
+
+.opSummary {
+  padding: 0.25rem 0.75rem 0.45rem;
+  font-size: 0.82rem;
+}
+
 .streamPreview {
   display: grid;
   gap: 0.32rem;

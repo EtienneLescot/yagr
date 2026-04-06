@@ -70,6 +70,17 @@ interface WebUiConfigPayload {
 type WebUiChatStreamEvent =
   | { type: 'start'; sessionId: string; message: string }
   | { type: 'progress'; tone: 'info' | 'success' | 'error'; title: string; detail?: string; phase?: string }
+  | {
+      type: 'operation';
+      operationId: string;
+      label: string;
+      category: string;
+      status: 'running' | 'done' | 'error';
+      body?: string;
+      summary?: string;
+      startedAt: number;
+      endedAt?: number;
+    }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
@@ -638,6 +649,19 @@ class WebUiGateway implements Gateway {
         await processStreamEvent(event, accumulator, {
           onTextDelta: (delta) => {
             writeEvent({ type: 'text-delta', delta });
+          },
+          onOperation: (op) => {
+            writeEvent({
+              type: 'operation',
+              operationId: op.operationId,
+              label: op.label,
+              category: op.category,
+              status: op.status,
+              body: op.body,
+              summary: op.summary,
+              startedAt: op.startedAt,
+              endedAt: op.endedAt,
+            });
           },
           onUserVisibleUpdate: (update) => {
             if (!lastProgressKeys.has(update.dedupeKey)) {

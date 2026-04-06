@@ -293,6 +293,36 @@ export interface YagrContextUsageEvent {
   source: 'api' | 'estimated';
 }
 
+export type YagrOperationStatus = 'running' | 'done' | 'error';
+
+export type YagrOperationCategory =
+  | 'file-read'
+  | 'file-write'
+  | 'shell'
+  | 'web'
+  | 'tool'
+  | 'agent'
+  | 'phase'
+  | 'thinking';
+
+export interface YagrOperationEvent {
+  kind: 'operation';
+  /** Unique identifier for this operation instance. */
+  operationId: string;
+  /** Human-readable label: "Read src/foo.ts", "Shell: npm test", "Thinking…" */
+  label: string;
+  /** Semantic category driving icon and colour. */
+  category: YagrOperationCategory;
+  status: YagrOperationStatus;
+  /** Full body: stdout, file excerpt, thinking tokens… Capped at 4000 chars. */
+  body?: string;
+  /** One-line summary for compact views (≤ 120 chars). */
+  summary?: string;
+  startedAt: number;
+  endedAt?: number;
+  phase?: YagrRunPhase;
+}
+
 export interface YagrDisplayOptions {
   showThinking?: boolean;
   showExecution?: boolean;
