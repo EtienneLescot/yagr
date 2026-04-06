@@ -5,7 +5,7 @@ import {
   resolveLanguageModelConfig,
   resolveModelName,
   resolveModelProvider,
-} from '../dist/llm/create-language-model.js';
+} from '../dist/llm/create-langchain-model.js';
 
 function createConfigStore(localConfig = {}, apiKeys = {}) {
   return {

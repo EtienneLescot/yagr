@@ -2,20 +2,164 @@
  * LangChain model factory.
  *
  * Returns a `BaseChatModel` (LangChain) for the configured Yagr provider.
- * Used exclusively by the deep-agent runtime path — the Vercel AI SDK path
- * (`create-language-model.ts`) is retained for the relay proxy and legacy code
- * until those paths are migrated.
+ * Also exports the model resolution utilities (`resolveLanguageModelConfig`,
+ * `resolveModelProvider`, `resolveModelName`) that are shared with the rest
+ * of the codebase. The legacy Vercel AI SDK factory (`createLanguageModel`)
+ * has been removed — deepagentsjs is the only agent runtime.
  */
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { ChatMistralAI } from '@langchain/mistralai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { resolveLanguageModelConfig } from './create-language-model.js';
+import { YagrConfigService, type YagrConfigStoreLike } from '../config/yagr-config-service.js';
+import {
+  getDefaultBaseUrlForProvider,
+  getDefaultModelForProvider,
+  YAGR_MODEL_PROVIDERS,
+} from './provider-registry.js';
+export type { YagrModelProvider } from './provider-registry.js';
 import { resolveCopilotApiToken, getGitHubCopilotSession } from './copilot-account.js';
 import { getOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL } from './openai-account.js';
 import { getAnthropicAccountSession } from './anthropic-account.js';
-import type { YagrConfigStoreLike } from '../config/yagr-config-service.js';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface YagrLanguageModelConfig {
+  provider?: string;
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+export interface ResolvedYagrLanguageModelConfig {
+  provider: import('./provider-registry.js').YagrModelProvider;
+  model: string;
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+interface YagrLanguageModelConfigStore {
+  getLocalConfig(): import('../config/yagr-config-service.js').YagrLocalConfig;
+  getApiKey(provider: import('./provider-registry.js').YagrModelProvider): string | undefined;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const DEFAULT_ANTHROPIC_MODEL = 'claude-3-5-sonnet-latest';
+const DEFAULT_OPENAI_MODEL = 'gpt-4o';
+const KNOWN_MODEL_PROVIDERS = [...YAGR_MODEL_PROVIDERS];
+
+// ─── Resolution utilities ─────────────────────────────────────────────────────
+
+function preferEnvironmentCredentials(): boolean {
+  return /^(1|true|yes|on)$/i.test(String(process.env.YAGR_PREFER_ENV_CREDENTIALS || '').trim());
+}
+
+function getApiKeyForProvider(
+  provider: import('./provider-registry.js').YagrModelProvider,
+  configStore: YagrLanguageModelConfigStore,
+): string | undefined {
+  const byProvider: Partial<Record<import('./provider-registry.js').YagrModelProvider, string[]>> = {
+    openai: ['OPENAI_LLM_API_KEY', 'OPENAI_API_KEY'],
+    anthropic: ['ANTHROPIC_LLM_API_KEY', 'ANTHROPIC_API_KEY'],
+    google: ['GOOGLE_GENERATIVE_AI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_LLM_API_KEY', 'GOOGLE_LLM_API_KEY'],
+    mistral: ['MISTRAL_API_KEY', 'MISTRAL_LLM_API_KEY'],
+    openrouter: ['OPENROUTER_API_KEY', 'OPENROUTER_LLM_API_KEY'],
+  };
+
+  const envKeys = byProvider[provider] ?? [];
+  for (const envKey of envKeys) {
+    const value = process.env[envKey]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  if (preferEnvironmentCredentials()) {
+    return undefined;
+  }
+
+  return configStore.getApiKey(provider) ?? undefined;
+}
+
+function getBaseUrlForProvider(
+  provider: import('./provider-registry.js').YagrModelProvider,
+  configStore: YagrLanguageModelConfigStore,
+): string | undefined {
+  const localConfig = configStore.getLocalConfig();
+  if (preferEnvironmentCredentials()) {
+    const envKey = `YAGR_${provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_BASE_URL`;
+    const envBaseUrl = process.env[envKey]?.trim();
+    if (envBaseUrl) {
+      return envBaseUrl;
+    }
+  }
+  const configuredBaseUrl = localConfig.provider === provider ? localConfig.baseUrl : undefined;
+  return configuredBaseUrl || getDefaultBaseUrlForProvider(provider);
+}
+
+export function resolveModelProvider(
+  explicitProvider?: string,
+  configStore: YagrLanguageModelConfigStore = new YagrConfigService(),
+): import('./provider-registry.js').YagrModelProvider {
+  if (explicitProvider) {
+    return explicitProvider as import('./provider-registry.js').YagrModelProvider;
+  }
+
+  const localConfig = configStore.getLocalConfig();
+  if (localConfig.provider) {
+    return localConfig.provider;
+  }
+
+  const detectedProvider = KNOWN_MODEL_PROVIDERS.find((provider) => Boolean(configStore.getApiKey(provider)));
+  if (detectedProvider) {
+    return detectedProvider;
+  }
+
+  throw new Error('No valid AI provider detected. Run `yagr setup` first.');
+}
+
+export function resolveModelName(
+  provider: import('./provider-registry.js').YagrModelProvider,
+  explicitModel?: string,
+  configStore: YagrLanguageModelConfigStore = new YagrConfigService(),
+): string {
+  if (explicitModel) {
+    return explicitModel;
+  }
+
+  const localConfig = configStore.getLocalConfig();
+  if (localConfig.provider === provider && localConfig.model) {
+    return localConfig.model;
+  }
+
+  if (provider === 'anthropic') {
+    return DEFAULT_ANTHROPIC_MODEL;
+  }
+
+  if (provider === 'openai') {
+    return DEFAULT_OPENAI_MODEL;
+  }
+
+  return getDefaultModelForProvider(provider);
+}
+
+export function resolveLanguageModelConfig(
+  config: YagrLanguageModelConfig = {},
+  configStore: YagrLanguageModelConfigStore = new YagrConfigService(),
+): ResolvedYagrLanguageModelConfig {
+  const provider = resolveModelProvider(config.provider, configStore);
+
+  return {
+    provider,
+    model: resolveModelName(provider, config.model, configStore),
+    apiKey: config.apiKey || getApiKeyForProvider(provider, configStore),
+    baseUrl: config.baseUrl || getBaseUrlForProvider(provider, configStore),
+  };
+}
+
+// ─── LangChain factory ────────────────────────────────────────────────────────
 
 /**
  * GitHub Copilot sends these headers on every request so the API can
@@ -33,7 +177,7 @@ const COPILOT_DEFAULT_HEADERS = {
  * openai-proxy) need to exchange a short-lived API token at construction time.
  */
 export async function createLangChainModel(
-  configStore?: YagrConfigStoreLike,
+  configStore?: YagrLanguageModelConfigStore,
 ): Promise<BaseChatModel> {
   const { provider, model, apiKey, baseUrl } = resolveLanguageModelConfig({}, configStore);
 

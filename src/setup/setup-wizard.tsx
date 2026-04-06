@@ -2,7 +2,7 @@ import type { IProject } from 'n8nac';
 import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import type { GatewaySurface } from '../gateway/types.js';
-import type { YagrModelProvider } from '../llm/create-language-model.js';
+import type { YagrModelProvider } from '../llm/provider-registry.js';
 import {
   getProviderDisplayName,
   getProviderSetupHint,
