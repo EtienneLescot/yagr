@@ -39,11 +39,10 @@ export {
 export { N8nEngine } from './engine/n8n-engine.js';
 export { YagrNativeEngine } from './engine/yagr-engine.js';
 export {
-  createLanguageModel,
   resolveLanguageModelConfig,
   resolveModelName,
   resolveModelProvider,
-} from './llm/create-language-model.js';
+} from './llm/create-langchain-model.js';
 export {
   fetchAndCacheProviderMetadata,
   clearProviderMetadataCache,
@@ -52,17 +51,7 @@ export {
   warmProviderMetadataCacheFromDiscovery,
 } from './llm/provider-metadata.js';
 export { getProviderPlugin } from './llm/provider-plugin.js';
-export {
-  filterFunctionToolsForCapability,
-  getOpenAiCompatibleProviderSettingsForCapability,
-  getProviderOptionsForCapability,
-  normalizeToolChoiceForCapability,
-  resolveModelCapabilityProfile,
-} from './llm/model-capabilities.js';
-export {
-  classifyOpenRouterMetadataCapability,
-  resolveCapabilityProfileFromMetadata,
-} from './llm/capability-resolver.js';
+
 export {
   buildYagrSetupStatus,
   getYagrSetupStatus,
@@ -70,7 +59,6 @@ export {
 } from './setup.js';
 export { buildSystemPrompt } from './prompt/build-system-prompt.js';
 export {
-  buildTools,
   createListDirTool,
   createDeleteFileTool,
   createYagrProxyTool,
@@ -118,11 +106,6 @@ export type {
   YagrRequiredAction,
   YagrRequiredActionKind,
   YagrRuntimeContext,
-  YagrToolHookContext,
-  YagrToolHookDecision,
-  YagrCompletionAttempt,
-  YagrCompletionHookDecision,
-  YagrRuntimeHook,
   YagrRunPhase,
   YagrRunStep,
   YagrPhaseEvent,
@@ -131,10 +114,7 @@ export type {
   WorkflowSpecNode,
   WorkflowValidationResult,
 } from './types.js';
-export type {
-  YagrModelCapabilityProfile,
-  YagrToolCallingCapability,
-} from './llm/model-capabilities.js';
+
 export type {
   YagrGatewayConfig,
   YagrLocalConfig,

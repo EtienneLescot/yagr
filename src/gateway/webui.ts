@@ -10,7 +10,7 @@ import {
 import { getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
 import { MemoryStore } from '../memory/memory-store.js';
 import { extractSessionMemory } from '../memory/extract-session-memory.js';
-import { SessionStore } from '../session/session-store.js';
+import { WebUiSessionRegistry } from '../session/webui-sessions.js';
 import type { SerializedChatMessage, SessionSummary } from '../session/session-types.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService, type YagrConfigStoreLike } from '../config/yagr-config-service.js';
@@ -137,7 +137,7 @@ class WebUiGateway implements Gateway {
   private enginePromise?: Promise<EngineRuntimePort>;
   private agentHandlePromise?: Promise<YagrDeepAgentHandle>;
   private readonly setupService: YagrSetupApplicationService;
-  private readonly sessionStore = new SessionStore(getYagrSessionsDir());
+  private readonly sessionRegistry = new WebUiSessionRegistry(getYagrSessionsDir());
   private readonly memoryStore = new MemoryStore(getYagrMemoriesDir());
 
   constructor(
@@ -320,7 +320,6 @@ class WebUiGateway implements Gateway {
       );
 
       const lastMessage = extractLastAiMessage(result);
-      this.sessionStore.persistRun(sessionId, 'webui', []);
 
       this.sendJson(response, 200, {
         sessionId,
@@ -349,7 +348,7 @@ class WebUiGateway implements Gateway {
       if (sessionId && isValidSessionId(sessionId)) {
         // Thread state in MemorySaver is abandoned (no delete API); the
         // session ID itself is removed so the frontend creates a new thread.
-        this.sessionStore.delete(sessionId);
+        this.sessionRegistry.delete(sessionId);
         this.memoryStore.delete(sessionId);
       }
       this.sendJson(response, 200, { ok: true });
@@ -368,7 +367,7 @@ class WebUiGateway implements Gateway {
     // -------------------------------------------------------------------------
 
     if (method === 'GET' && url.pathname === '/api/sessions') {
-      const sessions: SessionSummary[] = this.sessionStore.list('webui');
+      const sessions: SessionSummary[] = this.sessionRegistry.list();
       this.sendJson(response, 200, { sessions });
       return;
     }
@@ -385,10 +384,10 @@ class WebUiGateway implements Gateway {
         return;
       }
       const newId = providedId ?? randomUUID();
-      if (!this.sessionStore.get(newId)) {
-        this.sessionStore.createEmpty('webui', newId);
+      if (!this.sessionRegistry.get(newId)) {
+        this.sessionRegistry.createEmpty(newId);
       }
-      this.sessionStore.setActiveSessionId('webui', newId);
+      this.sessionRegistry.setActiveSessionId(newId);
       this.sendJson(response, 201, { id: newId });
       return;
     }
@@ -399,7 +398,7 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'Invalid session id.' });
         return;
       }
-      const session = this.sessionStore.get(sessionId);
+      const session = this.sessionRegistry.get(sessionId);
       if (!session) {
         this.sendJson(response, 404, { error: 'Session not found.' });
         return;
@@ -414,7 +413,7 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'Invalid session id.' });
         return;
       }
-      this.sessionStore.delete(sessionId);
+      this.sessionRegistry.delete(sessionId);
       this.memoryStore.delete(sessionId);
       this.sendJson(response, 200, { ok: true });
       return;
@@ -433,14 +432,14 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'displayMessages must be an array.' });
         return;
       }
-      this.sessionStore.setDisplayMessages(sessionId, displayMessages);
+      this.sessionRegistry.setDisplayMessages(sessionId, displayMessages);
       this.sendJson(response, 200, { ok: true });
       return;
     }
 
     // GET /api/state — server-side active session for this gateway.
     if (method === 'GET' && url.pathname === '/api/state') {
-      const activeSessionId = this.sessionStore.getActiveSessionId('webui') ?? null;
+      const activeSessionId = this.sessionRegistry.getActiveSessionId() ?? null;
       this.sendJson(response, 200, { activeSessionId });
       return;
     }
@@ -450,7 +449,7 @@ class WebUiGateway implements Gateway {
       const body = await this.readJson(request);
       const activeSessionId = String(body.activeSessionId ?? '').trim();
       if (activeSessionId) {
-        this.sessionStore.setActiveSessionId('webui', activeSessionId);
+        this.sessionRegistry.setActiveSessionId(activeSessionId);
       }
       this.sendJson(response, 200, { ok: true });
       return;
@@ -535,13 +534,8 @@ class WebUiGateway implements Gateway {
   }
 
   private persistSessionMetadata(sessionId: string): void {
-    // Conversation messages live in the MemorySaver checkpointer — we only
-    // persist session metadata (title, timestamps) in SessionStore so the
-    // WebUI sidebar can list them.
-    this.sessionStore.persistRun(sessionId, 'webui', []);
-
     try {
-      const session = this.sessionStore.get(sessionId);
+      const session = this.sessionRegistry.get(sessionId);
       const memory = extractSessionMemory(
         sessionId,
         session?.title ?? 'New conversation',

@@ -1,6 +1,7 @@
 import type { N8nWorkflow } from '@n8n-as-code/transformer';
 import type { ValidationResult as SkillsValidationResult } from '@n8n-as-code/skills';
-import type { YagrLanguageModelConfig, YagrModelProvider } from './llm/create-language-model.js';
+import type { YagrLanguageModelConfig } from './llm/create-langchain-model.js';
+import type { YagrModelProvider } from './llm/provider-registry.js';
 
 export type EngineName = 'n8n' | 'yagr-engine';
 

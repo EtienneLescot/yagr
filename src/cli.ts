@@ -18,7 +18,7 @@ import {
   setupTelegramGateway,
 } from './gateway/telegram.js';
 import { createYagrDeepAgent } from './agent-factory.js';
-import type { YagrModelProvider } from './llm/create-language-model.js';
+import type { YagrModelProvider } from './llm/provider-registry.js';
 import {
   getManagedDockerN8nLogs,
   getManagedDockerN8nStatus,

@@ -20,7 +20,7 @@ import {
 import { prepareProviderRuntime } from '../llm/proxy-runtime.js';
 import { ensureN8nRelayServer, resolveDockerHostAddress } from '../llm/llm-relay-server.js';
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
-import { resolveModelProvider } from '../llm/create-language-model.js';
+import { resolveModelProvider } from '../llm/create-langchain-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
 import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';

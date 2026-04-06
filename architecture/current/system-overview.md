@@ -13,109 +13,68 @@ flowchart TD
     end
 
     subgraph Application[Application]
-      Agent[YagrSessionAgent]
-      Runtime[YagrRunEngine]
+      AF[agent-factory\ncreateYagrDeepAgent]
+      DA[deepagentsjs\nLangGraph]
+      EVT[langgraph-events\nadaptateur events]
       Setup[Setup Application Services]
     end
 
-    subgraph RuntimePolicy[Runtime Policy]
-      RTS[tool-runtime-strategy]
-      Hooks[policy-hooks]
-      Toolsets[tools/toolsets]
-    end
-
     subgraph Infra[Infrastructure]
-      LLM[LLM / Provider Plugins]
-      Tools[Runtime Tool Surface]
-      Engine[Engine Ports and n8n Engine]
+      LLM[LangChain BaseChatModel\ncreate-langchain-model]
+      Tools[LangChain Tools\ntools/ + manager-tooling/]
+      Engine[Engine Ports\nn8n Engine]
+      Checkpointer[MemorySaver\ncheckpointer par thread]
       Config[Config Services]
       N8nLocal[Managed Local n8n]
     end
 
+    subgraph Relay[Relay LLM pour n8n]
+      Proxy[proxy-runtime\nllm-relay-server]
+      Accounts[*-account.ts\nCopilot / OpenAI / Anthropic]
+    end
+
     User --> Facades
-    Facades --> Agent
+    Facades --> EVT
+    EVT --> DA
+    DA --> AF
+    AF --> LLM
+    AF --> Tools
+    AF --> Checkpointer
     Facades --> Setup
-    Agent --> Runtime
-    Runtime --> RTS
-    Runtime --> Hooks
-    Runtime --> Toolsets
-    Runtime --> LLM
-    Runtime --> Tools
+    Tools --> Engine
+    LLM --> Accounts
     Setup --> Config
     Setup --> N8nLocal
-    Setup --> LLM
-    Tools --> Engine
+    Setup --> Relay
 ```
-
-Cette vue doit se lire ainsi:
-
-- les facades parlent au session agent et a la couche setup
-- le runtime consomme une politique outillage explicite
-- les providers sont resolves via plugins
-- l'execution reelle passe par les tools puis les ports engine/infrastructure
 
 ## Blocs principaux
 
-### Boucle agentique
+### Boucle agentique (deepagentsjs)
 
-- `src/agent.ts`: session agent runtime (`YagrSessionAgent`), agent complet (`YagrAgent`), historique, system prompt, invalidation de session
-- `src/runtime/run-engine.ts`: boucle principale de run, streaming, phases, recovery, completion gate
-- `src/runtime/tool-runtime-strategy.ts`: strategie runtime derivee du profil de capacite
-- `src/runtime/*`: compaction, policy hooks, required actions, outcome
-- `src/prompt/build-system-prompt.ts`: composition du system prompt runtime
+- `src/agent-factory.ts`: `createYagrDeepAgent(engine, configService)` → `YagrDeepAgentHandle`
+- `deepagentsjs`: `createDeepAgent({ model, tools, systemPrompt, checkpointer })` — LangGraph sous le capot
+- `src/gateway/langgraph-events.ts`: adaptateur events LangGraph → `YagrUserVisibleUpdate`
+- `src/prompt/build-system-prompt.ts`: composition du system prompt (engine, tunnel, n8n host, workspace instructions, memoire cross-session)
 
-Responsabilite actuelle:
-
-- executer la boucle de raisonnement
-- brancher le modele
-- choisir une strategie runtime selon les capacites resolues
-- exposer les outils
-- maintenir l'etat de run et les evenements
-
-Observation actuelle:
-
-- `build-system-prompt.ts` ne depend plus que du port identitaire de l'engine
-- `run-engine.ts` ne depend plus que du port runtime (`EngineRuntimePort`)
-- les facades conversationnelles passent maintenant par `YagrSessionAgent`, sans dependre du contrat `Engine` complet
-- la completion runtime n'accepte plus un run qui a fait du travail materiel sans produire ni resultat concret ni `requiredAction` structuree
-- en cas de pseudo-fin, le runtime tente d'abord une continuation, puis une capture explicite de blocker via `requestRequiredAction`
-- `requestRequiredAction` porte maintenant une distinction generale `blocking` vs `follow-up`, ce qui permet au runtime de ne pas confondre une configuration post-livraison avec un vrai blocker de production du livrable courant
+**Deleted:**
+- `src/agent.ts` (`YagrSessionAgent`) — supprimé
+- `src/runtime/` (7 fichiers) — supprimé
 
 ### LLM / providers
 
-- `src/llm/provider-registry.ts`
-- `src/llm/provider-plugin.ts`
-- `src/llm/create-language-model.ts`
-- `src/llm/provider-discovery.ts`
-- `src/llm/provider-metadata.ts`
-- `src/llm/capability-resolver.ts`
-- `src/llm/proxy-runtime.ts`
-- `src/llm/llm-relay-server.ts`
-- `src/llm/llm-relay-entrypoint.ts`
-- `src/llm/anthropic-relay.ts`
-- `src/llm/*-account.ts`
+Deux couches distinctes :
 
-Responsabilite actuelle:
+**Couche agent (LangChain)** — utilisée par deepagentsjs :
+- `src/llm/create-langchain-model.ts` : factory `BaseChatModel` + resolution config
+- `src/llm/*-account.ts` : auth OAuth (Copilot Device Flow, OpenAI Codex, Claude Pro/Max)
 
-- registre des providers
-- contrat plugin/provider thin pour les faits de transport, discovery, creation de modele et l'hydratation metadata
-- resolution de config provider/model/baseUrl/apiKey
-- creation du modele AI SDK via le plugin provider
-- auth et runtimes comptes/OAuth
-- model discovery via le plugin provider
-- mise en cache de metadonnees provider/model
-- normalisation des capacites provider/model
-- quelques adaptations provider-specifiques
+**Couche relay (Vercel AI SDK)** — utilisée par le relay proxy n8n :
+- `src/llm/proxy-runtime.ts` + `llm-relay-server.ts` : relay OpenAI-compatible local
+- `src/llm/provider-plugin.ts` + `provider-registry.ts` : plugins provider avec factory Vercel AI SDK
+- `src/llm/capability-resolver.ts` + `model-capabilities.ts` : classification capacite (relay uniquement)
 
-Observation actuelle:
-
-- la separation commence a etre plus nette entre metadata provider, normalisation des capacites et strategie runtime
-- `ProviderPlugin` porte maintenant aussi la factory de modele et la discovery, ce qui retire les `switch` provider-specific de `create-language-model.ts` et `provider-discovery.ts`
-- les adapters providers gardent maintenant principalement auth, transport, conversion minimale et hooks metadata/discovery
-- la migration n'est pas terminee, mais la direction `metadata -> normalisation -> runtime strategy` existe maintenant dans le code
-- les providers OpenAI-compatible faibles ne sont plus artificiellement limites au premier tool visible
-- la strategie runtime commune pilote maintenant le mode `stream` vs `generate`, les directives inspect/execute/recovery et la reduction de surface d'outils pour le niveau `none`
-- tous les appels `generateText`/`streamText` utilisent `temperature: 0` pour le determinisme de la boucle agentique
+**Deleted:** `src/llm/create-language-model.ts` — supprimé.
 
 ### N8N Cloudflare Tunnel Exposure
 
