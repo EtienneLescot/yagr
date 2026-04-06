@@ -581,10 +581,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
       );
 
       for await (const event of stream) {
-        // DEBUG — remove after diagnosis
-        if (event.event === 'on_tool_start' || event.event === 'on_tool_end') {
-          process.stderr.write(`[DBG event] ${event.event} name=${event.name} data=${JSON.stringify(event.data).slice(0, 300)}\n`);
-        }
         await processStreamEvent(event, accumulator, {
           onTextDelta: async (delta) => {
             if (display.showResponses) {

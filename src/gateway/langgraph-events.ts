@@ -84,14 +84,6 @@ export async function processStreamEvent(
   switch (event.event) {
     case 'on_chat_model_stream': {
       const { textDelta, thinkingDelta } = extractDeltas(event.data?.chunk);
-      // DEBUG — remove after diagnosis
-      const c = (event.data?.chunk as Record<string,unknown>)?.content;
-      if (Array.isArray(c) && c.length > 0) {
-        const nonText = c.filter((p: unknown) => (p as Record<string,unknown>)?.type !== 'text');
-        if (nonText.length > 0) {
-          process.stderr.write(`[DBG stream nontext] ${JSON.stringify(nonText).slice(0, 400)}\n`);
-        }
-      }
 
       if (thinkingDelta) {
         const isFirst = accumulator.thinkingText.length === 0;
@@ -162,8 +154,6 @@ export async function processStreamEvent(
         input = rawEventInput;
       }
       const toolName = event.name;
-      // DEBUG — remove after diagnosis
-      process.stderr.write(`[DBG tool_start] name=${toolName} rawKeys=${JSON.stringify(Object.keys(rawEventInput ?? {}))} inputKeys=${JSON.stringify(Object.keys(input ?? {}))} sample=${JSON.stringify(input).slice(0, 200)}\n`);
 
       // Legacy update (still used by surfaces that don't handle operations).
       const update = mapToolStartToUpdate(toolName, input);

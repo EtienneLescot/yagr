@@ -223,16 +223,13 @@ export function makeToolEndOperationEvent(
   const base: Partial<YagrOperationEvent> = { status: 'done', endedAt: ended };
 
   if (toolName === 'execute') {
-    const out = parseRawOutput(rawOutput);
-    const exitCode = typeof out?.exitCode === 'number' ? out.exitCode : (typeof out?.exit_code === 'number' ? out.exit_code : undefined);
-    const stdout = typeof out?.stdout === 'string' ? out.stdout.trimEnd() : '';
-    const stderr = typeof out?.stderr === 'string' ? out.stderr.trimEnd() : '';
-    const sections: string[] = [];
-    if (stdout) sections.push(`stdout\n${stdout}`);
-    if (stderr) sections.push(`stderr\n${stderr}`);
-    if (exitCode !== undefined) sections.push(`exit ${exitCode}`);
-    const body = sections.join('\n\n');
-    const lastLine = [...stdout.split('\n')].reverse().find((l) => l.trim()) ?? '';
+    // deepagents execute tool returns a plain text string:
+    // "<output>\n[Command succeeded with exit code 0]"
+    const text = rawOutputToString(rawOutput).trimEnd();
+    const exitMatch = text.match(/\[Command (?:succeeded|failed) with exit code (\d+)\]\s*$/);
+    const exitCode = exitMatch ? parseInt(exitMatch[1], 10) : undefined;
+    const body = exitMatch ? text.slice(0, exitMatch.index).trimEnd() : text;
+    const lastLine = body.split('\n').reverse().find((l) => l.trim()) ?? '';
     return {
       ...base,
       status: exitCode !== undefined && exitCode !== 0 ? 'error' : 'done',
@@ -281,7 +278,14 @@ function parseRawOutput(raw: unknown): Record<string, unknown> | undefined {
       return undefined;
     }
   }
-  if (typeof raw === 'object') return raw as Record<string, unknown>;
+  if (typeof raw === 'object') {
+    const r = raw as Record<string, unknown>;
+    // Unwrap LangChain ToolMessage: { lc:1, type:'constructor', id:[...,'ToolMessage'], kwargs:{content,...} }
+    if (r['type'] === 'constructor' && r['kwargs'] != null && typeof r['kwargs'] === 'object') {
+      return r['kwargs'] as Record<string, unknown>;
+    }
+    return r;
+  }
   return undefined;
 }
 
