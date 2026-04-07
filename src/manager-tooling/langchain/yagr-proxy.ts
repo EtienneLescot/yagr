@@ -15,9 +15,27 @@ import { parseJsonPayload, workspaceRoot } from '../../tools/workspace-utils.js'
 
 type RunResult = { stdout: string; stderr: string; exitCode: number };
 
+/**
+ * Resolve which n8nac package to use based on YAGR_N8NAC_VERSION env var.
+ * - Empty/unset: uses stable 'n8nac' from npm
+ * - '@next': uses 'n8nac@next' preview release
+ * - Other values: passed as-is (e.g., '1.5.2', '@beta')
+ */
+function resolveN8nacPackage(): string {
+  const version = String(process.env.YAGR_N8NAC_VERSION || '').trim();
+  if (!version) {
+    return 'n8nac'; // stable
+  }
+  if (version.startsWith('@') || version.includes('.')) {
+    return `n8nac@${version}`; // '@next', '@beta', '1.5.2', etc.
+  }
+  return `n8nac@${version}`;
+}
+
 async function runN8nacCommand(args: string[], cwd: string): Promise<RunResult> {
   return new Promise((resolve) => {
-    const child = spawn(resolvePackageManagerCommand('npx'), ['--yes', 'n8nac', ...args], {
+    const n8nacPackage = resolveN8nacPackage();
+    const child = spawn(resolvePackageManagerCommand('npx'), ['--yes', n8nacPackage, ...args], {
       cwd,
       env: { ...process.env },
       stdio: 'pipe',
