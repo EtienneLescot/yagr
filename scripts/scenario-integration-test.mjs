@@ -7,6 +7,7 @@
  *
  * Usage:
  *   node --test scripts/scenario-integration-test.mjs [options]
+ *   node scripts/run-scenario-integration.mjs [options]
  *
  * Run specific scenarios (env var, because node --test isolates argv in workers):
  *   YAGR_SCN_SCENARIOS=setup-check node --test scripts/scenario-integration-test.mjs
@@ -41,8 +42,8 @@ dotenvConfig({ path: '.env.test', quiet: true, override: true });
 
 const { getYagrPaths } = await import('../dist/config/yagr-home.js');
 const { createN8nEngineFromWorkspace } = await import('../dist/config/load-n8n-engine-config.js');
-const { YagrAgent } = await import('../dist/agent.js');
-const { analyzeRunOutcome } = await import('../dist/runtime/outcome.js');
+const { createYagrDeepAgent } = await import('../dist/agent-factory.js');
+const { createRunAccumulator, processStreamEvent } = await import('../dist/gateway/langgraph-events.js');
 const { getDefaultBaseUrlForProvider } = await import('../dist/llm/provider-registry.js');
 
 // ---------------------------------------------------------------------------
@@ -61,15 +62,19 @@ function readCliArg(flag) {
   return index !== -1 && index + 1 < process.argv.length ? String(process.argv[index + 1]).trim() : undefined;
 }
 
+const scenarioCliArg = readCliArg('--scenario') || readCliArg('--scenarios');
 const PROVIDER = readCliArg('--provider') || String(process.env.YAGR_SCN_PROVIDER || DEFAULT_PROVIDER).trim();
 const MODEL = readCliArg('--model') || String(process.env.YAGR_SCN_MODEL || DEFAULT_MODEL).trim();
 const DEFAULT_TIMEOUT_MS = toInt(process.env.YAGR_SCN_TIMEOUT_MS, 90_000);
 const CREATION_TIMEOUT_MS = toInt(process.env.YAGR_SCN_CREATION_TIMEOUT_MS, 240_000);
-const markdownDisabled = process.argv.includes('--no-markdown');
+const markdownDisabled = process.argv.includes('--no-markdown') || process.env.YAGR_SCN_NO_MARKDOWN === '1';
+const debug = process.argv.includes('--debug') || process.env.YAGR_SCN_DEBUG === '1';
+const keepTemp = process.argv.includes('--keep-temp') || process.env.YAGR_SCN_KEEP_TEMP === '1';
+const heartbeatMs = toInt(process.env.YAGR_SCN_HEARTBEAT_MS, 15_000);
 const markdownPath = process.env.YAGR_SCN_MARKDOWN_PATH
   || path.join(process.cwd(), 'reports', 'scenario-integration-report.md');
 
-const requestedScenarioIds = (process.env.YAGR_SCN_SCENARIOS || '')
+const requestedScenarioIds = (scenarioCliArg || process.env.YAGR_SCN_SCENARIOS || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
@@ -400,7 +405,34 @@ function createIsolatedHome(testN8nRuntime) {
     reconcileN8nRuntime(tempHome, { host, apiKey, projectId });
   }
 
+  normalizeTestWorkspaceInstanceId(tempHome);
+
   return tempHome;
+}
+
+function normalizeTestWorkspaceInstanceId(tempHome) {
+  const configPath = path.join(tempHome, 'n8n-workspace', 'n8nac-config.json');
+  const config = readJsonIfExists(configPath);
+  if (!config) {
+    return;
+  }
+  const oldInstanceId = String(config.instanceIdentifier || '').replace(/[:<>"|?*]/g, '_');
+  const testInstanceId = 'test';
+  config.instanceIdentifier = testInstanceId;
+  if (Array.isArray(config.instances)) {
+    for (const instance of config.instances) {
+      instance.instanceIdentifier = testInstanceId;
+    }
+  }
+  const workspaceDir = path.join(tempHome, 'n8n-workspace');
+  const syncFolder = String(config.syncFolder || 'workflows');
+  const resolvedSync = path.isAbsolute(syncFolder) ? syncFolder : path.join(workspaceDir, syncFolder);
+  const oldDir = oldInstanceId ? path.join(resolvedSync, oldInstanceId) : '';
+  const newDir = path.join(resolvedSync, testInstanceId);
+  if (oldDir && oldDir !== newDir && fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
+    fs.renameSync(oldDir, newDir);
+  }
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 function reconcileN8nRuntime(tempHome, { host, apiKey, projectId }) {
@@ -436,6 +468,7 @@ function writeIsolatedYagrConfig(tempHome) {
 async function runScenario(scenario, isolatedHome, testN8nRuntime) {
   const journal = [];
   const toolEvents = [];
+  const stdoutChunks = [];
   const envOverrides = {
     YAGR_HOME: isolatedHome,
     YAGR_LAUNCH_CWD: process.cwd(),
@@ -452,24 +485,130 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
       () => controller.abort(new Error(`Timeout after ${scenario.timeoutMs}ms`)),
       scenario.timeoutMs,
     );
+    let heartbeat;
+    let lastActivityAt = Date.now();
+    let lastActivityLabel = 'scenario start';
+    let accumulator = createRunAccumulator();
+
+    const noteActivity = (label) => {
+      lastActivityAt = Date.now();
+      lastActivityLabel = label;
+    };
+
+    if (debug) {
+      heartbeat = setInterval(() => {
+        const idleMs = Date.now() - lastActivityAt;
+        if (idleMs >= heartbeatMs) {
+          logDebug(`scenario ${scenario.id}: heartbeat (${Math.round(idleMs / 1000)}s idle since ${lastActivityLabel})`);
+          lastActivityAt = Date.now();
+        }
+      }, heartbeatMs);
+    }
 
     try {
       const engine = _engine;
-      const agent = new YagrAgent(engine);
-      const result = await agent.run(scenario.prompt, {
-        provider: PROVIDER,
-        model: MODEL,
-        maxSteps: scenario.maxSteps,
-        abortSignal: controller.signal,
-        onToolEvent: async (event) => { toolEvents.push(event); },
-        onJournalEntry: async (entry) => { journal.push(entry); },
-      });
+      const { agent } = await createYagrDeepAgent(engine, undefined, { provider: PROVIDER, model: MODEL });
+      accumulator = createRunAccumulator();
+      const threadId = `scenario-${scenario.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      logProgress(`scenario ${scenario.id}: start (${scenario.name})`);
+      const stream = agent.streamEvents(
+        { messages: [{ role: 'user', content: scenario.prompt }] },
+        { configurable: { thread_id: threadId }, version: 'v2', signal: controller.signal },
+      );
 
-      const mergedJournal = result.journal?.length ? result.journal : journal;
-      const outcome = analyzeRunOutcome(mergedJournal);
+      for await (const event of stream) {
+        noteActivity(event.event || event.name || 'stream event');
+        await processStreamEvent(event, accumulator, {
+          onTextDelta: async (delta) => {
+            stdoutChunks.push(delta);
+            noteActivity('assistant text');
+            if (debug) {
+              logDebug(`scenario ${scenario.id}: assistant ${truncate(singleLine(delta), 160)}`);
+            }
+          },
+          onUserVisibleUpdate: async (update) => {
+            const message = `${update.title}${update.detail ? `: ${update.detail}` : ''}`;
+            toolEvents.push({ type: 'status', toolName: 'reportProgress', message });
+            noteActivity('user-visible update');
+            if (debug) {
+              logDebug(`scenario ${scenario.id}: update ${truncate(singleLine(message), 180)}`);
+            }
+          },
+        });
+
+        if (event.event === 'on_tool_start') {
+          const rawInput = event.data?.input;
+          const inner = rawInput?.input;
+          let parsedInput;
+          if (typeof inner === 'string') {
+            try { parsedInput = JSON.parse(inner); } catch { parsedInput = rawInput; }
+          } else {
+            parsedInput = inner ?? rawInput;
+          }
+          const toolName = event.name;
+          const cmd = String(parsedInput?.command || parsedInput?.cmd || '');
+          if (cmd) {
+            const toolEvent = { type: 'command-start', toolName, command: cmd };
+            toolEvents.push(toolEvent);
+            if (debug) {
+              logDebug(`scenario ${scenario.id}: ${formatToolEvent(toolEvent)}`);
+            }
+          } else {
+            const toolEvent = { type: 'status', toolName, message: `start:${JSON.stringify(parsedInput ?? {}).slice(0, 120)}` };
+            toolEvents.push(toolEvent);
+            if (debug) {
+              logDebug(`scenario ${scenario.id}: ${formatToolEvent(toolEvent)}`);
+            }
+          }
+          journal.push({
+            timestamp: new Date().toISOString(),
+            type: 'step',
+            status: 'started',
+            message: `Tool ${toolName} started`,
+          });
+        } else if (event.event === 'on_tool_end') {
+          const toolName = event.name;
+          const output = event.data?.output;
+          let parsedOutput;
+          if (typeof output === 'string') {
+            try { parsedOutput = JSON.parse(output); } catch { parsedOutput = { text: output }; }
+          } else {
+            parsedOutput = output;
+          }
+          const exitCode = parsedOutput?.exitCode ?? parsedOutput?.exit_code;
+          if (exitCode !== undefined) {
+            const toolEvent = { type: 'command-end', toolName, exitCode: Number(exitCode), timedOut: false };
+            toolEvents.push(toolEvent);
+            if (debug) {
+              logDebug(`scenario ${scenario.id}: ${formatToolEvent(toolEvent)}`);
+            }
+          }
+          const statusMsg = parsedOutput?.message || parsedOutput?.status;
+          if (statusMsg) {
+            const toolEvent = { type: 'status', toolName, message: String(statusMsg) };
+            toolEvents.push(toolEvent);
+            if (debug) {
+              logDebug(`scenario ${scenario.id}: ${formatToolEvent(toolEvent)}`);
+            }
+          }
+          journal.push({
+            timestamp: new Date().toISOString(),
+            type: 'step',
+            status: 'completed',
+            message: `Tool ${toolName} finished`,
+          });
+        }
+      }
+
+      const result = {
+        text: stdoutChunks.join(''),
+        steps: journal.length,
+        journal,
+      };
+      const outcome = buildScenarioOutcome(toolEvents);
       const assertion = await Promise.resolve(scenario.assert(result, outcome, toolEvents, testN8nRuntime));
-      const createdWorkflowIds = toolEvents
-        .filter((e) => e.type === 'embed' && e.kind === 'workflow' && e.workflowId)
+      const createdWorkflowIds = (accumulator.workflowEmbeds || [])
+        .filter((e) => e.workflowId)
         .map((e) => e.workflowId)
         .filter((id, i, arr) => arr.indexOf(id) === i);
       return {
@@ -492,8 +631,27 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
       };
     } finally {
       clearTimeout(timer);
+      if (heartbeat) {
+        clearInterval(heartbeat);
+      }
     }
   });
+}
+
+function buildScenarioOutcome(toolEvents) {
+  const events = toolEvents || [];
+  const scriptEnds = events.filter((event) => event.type === 'command-end');
+  const successfulScriptRuns = scriptEnds.filter((event) => Number(event.exitCode ?? 0) === 0).length;
+  const failedScriptRuns = scriptEnds.filter((event) => Number(event.exitCode ?? 0) !== 0).length;
+  const hasWorkflowWrites = events.some((event) =>
+    event.type === 'status'
+    && ['write_file', 'writeFile', 'edit_file', 'editFile', 'moveFile', 'move_file'].includes(event.toolName));
+
+  return {
+    successfulScriptRuns,
+    failedScriptRuns,
+    hasWorkflowWrites,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -514,8 +672,11 @@ describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1
   before(async () => {
     _testN8nRuntime = resolveTestN8nRuntime();
     _isolatedHome = createIsolatedHome(_testN8nRuntime);
-    process.stdout.write(`n8n: ${_testN8nRuntime.configured ? _testN8nRuntime.host : 'not configured'}\n`);
-    process.stdout.write(`Isolated home: ${_isolatedHome}\n\n`);
+    process.stdout.write(`${stamp()} scenario integration start\n`);
+    process.stdout.write(`${stamp()} provider/model: ${PROVIDER} / ${MODEL}\n`);
+    process.stdout.write(`${stamp()} n8n: ${_testN8nRuntime.configured ? _testN8nRuntime.host : 'not configured'}\n`);
+    process.stdout.write(`${stamp()} isolated home: ${_isolatedHome}\n`);
+    process.stdout.write(`${stamp()} debug: ${debug ? 'on' : 'off'} | keep-temp: ${(keepTemp || debug) ? 'on' : 'off'}\n\n`);
     _engine = await createN8nEngineFromWorkspace();
   });
 
@@ -525,7 +686,11 @@ describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1
       process.stdout.write(`\nCleaning up ${createdWorkflowIds.length} workflow(s) created during tests…\n`);
       await cleanupWorkflows(createdWorkflowIds, _isolatedHome, _testN8nRuntime);
     }
-    try { fs.rmSync(_isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
+    if (keepTemp || debug) {
+      process.stdout.write(`${stamp()} isolated home preserved: ${_isolatedHome}\n`);
+    } else {
+      try { fs.rmSync(_isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
 
     if (!markdownDisabled) {
       writeMarkdownReport(results);
@@ -542,6 +707,7 @@ describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1
 
       const result = await runScenario(scenario, _isolatedHome, _testN8nRuntime);
       results.push({ scenario, ...result });
+      logProgress(`scenario ${scenario.id}: ${result.status} (${result.steps || 0} steps) - ${truncate(singleLine(result.note || ''), 180)}`);
 
       assert.ok(result.status === 'PASS', `${result.status}: ${result.note}`);
     });
@@ -650,6 +816,42 @@ function truncate(text, max) {
 
 function escapeMd(text) {
   return String(text).replace(/\|/g, '\\|');
+}
+
+function formatToolEvent(event) {
+  if (event.type === 'command-start') {
+    return `tool ${event.toolName} start: ${truncate(singleLine(event.command), 180)}`;
+  }
+  if (event.type === 'command-output') {
+    return `tool ${event.toolName} ${event.stream}: ${truncate(singleLine(event.chunk), 180)}`;
+  }
+  if (event.type === 'command-end') {
+    return `tool ${event.toolName} end: exit=${event.exitCode}${event.timedOut ? ' timeout' : ''}`;
+  }
+  if (event.type === 'embed') {
+    return `tool ${event.toolName} embed: workflow=${event.workflowId} url=${event.url}`;
+  }
+  return `tool ${event.toolName} ${event.type}: ${truncate(singleLine(event.message || ''), 180)}`;
+}
+
+function formatJournalEntry(entry) {
+  return `journal ${entry.type}/${entry.status}: ${truncate(singleLine(entry.message || ''), 180)}`;
+}
+
+function logProgress(message) {
+  process.stdout.write(`${stamp()} ${message}\n`);
+}
+
+function logDebug(message) {
+  process.stdout.write(`${stamp()} [debug] ${message}\n`);
+}
+
+function stamp() {
+  return `[${new Date().toISOString().slice(11, 19)}]`;
+}
+
+function singleLine(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
 }
 
 async function cleanupWorkflows(workflowIds, isolatedHome, n8nRuntime) {

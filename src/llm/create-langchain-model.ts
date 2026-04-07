@@ -265,6 +265,7 @@ export async function createLangChainModel(
         throw new Error('GitHub Copilot session not found. Run `yagr setup` first.');
       }
       const runtimeAuth = await resolveCopilotApiToken(copilotSession.githubToken);
+      const isGeminiModel = /^gemini/i.test(model);
       const copilotFields = {
         apiKey: runtimeAuth.token,
         model,
@@ -274,9 +275,9 @@ export async function createLangChainModel(
         },
         // Gemini (via Copilot proxy) only returns reasoning_text when the request
         // includes an explicit thinking_budget.  Without this, Gemini silently
-        // omits thinking tokens whenever tools are present in the request —
-        // which is the case for every agentic turn.
-        modelKwargs: { thinking_budget: 1024 },
+        // omits thinking tokens whenever tools are present in the request.
+        // Non-Gemini models (GPT-*) do not support thinking_budget.
+        ...(isGeminiModel ? { modelKwargs: { thinking_budget: 1024 } } : {}),
       };
       return new ChatOpenAI({
         ...copilotFields,
