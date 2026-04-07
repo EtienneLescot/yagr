@@ -26,10 +26,7 @@ function resolveN8nacPackage(): string {
   if (!version) {
     return 'n8nac'; // stable
   }
-  if (version.startsWith('@') || version.includes('.')) {
-    return `n8nac@${version}`; // '@next', '@beta', '1.5.2', etc.
-  }
-  return `n8nac@${version}`;
+  return version.startsWith('@') ? `n8nac${version}` : `n8nac@${version}`;
 }
 
 async function runN8nacCommand(args: string[], cwd: string): Promise<RunResult> {

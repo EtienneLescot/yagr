@@ -1391,11 +1391,7 @@ function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
   const version = String(process.env.YAGR_N8NAC_VERSION || '').trim();
   let n8nacPackage = 'n8nac';
   if (version) {
-    if (version.startsWith('@') || version.includes('.')) {
-      n8nacPackage = `n8nac@${version}`;
-    } else {
-      n8nacPackage = `n8nac@${version}`;
-    }
+    n8nacPackage = version.startsWith('@') ? `n8nac${version}` : `n8nac@${version}`;
   }
 
   // Call n8nac update-ai to regenerate AGENTS.md
