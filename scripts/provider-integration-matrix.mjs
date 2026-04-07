@@ -6,6 +6,11 @@ import fs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { config as dotenvConfig } from 'dotenv';
 import { N8nApiClient } from 'n8nac';
+import {
+  cleanManagedDockerTestRuntimeWorkflows,
+  ensureManagedDockerTestRuntime,
+  stopManagedDockerTestRuntime,
+} from './test-managed-n8n-runtime.mjs';
 
 dotenvConfig({ path: '.env', quiet: true, override: true });
 dotenvConfig({ path: '.env.test', quiet: true, override: true });
@@ -43,6 +48,8 @@ const markdownDisabled = args.has('--no-markdown');
 const debug = args.has('--debug') || process.env.YAGR_IT_DEBUG === '1';
 const keepTemp = args.has('--keep-temp') || process.env.YAGR_IT_KEEP_TEMP === '1';
 const failFast = args.has('--fail-fast') || process.env.YAGR_IT_FAIL_FAST === '1';
+const useManagedDocker = args.has('--managed-docker') || process.env.YAGR_IT_USE_MANAGED_DOCKER === '1';
+const keepManagedDocker = args.has('--keep-managed-docker') || process.env.YAGR_IT_KEEP_MANAGED_DOCKER === '1';
 const heartbeatMs = toInt(process.env.YAGR_IT_HEARTBEAT_MS, 15_000);
 const advancedIdleTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_IDLE_TIMEOUT_MS, 20_000);
 const markdownPath = process.env.YAGR_IT_MARKDOWN_PATH || path.join(process.cwd(), 'reports', 'provider-integration-matrix.md');
@@ -67,18 +74,35 @@ printRunBanner();
 
 const results = [];
 
-for (const provider of providers) {
-  logProgress(`provider ${provider}: start`);
-  const providerResult = await runProvider(provider);
-  results.push(providerResult);
-  const providerFailed = providerResult.setup.status === 'FAIL'
-    || providerResult.modelListing.status === 'FAIL'
-    || providerResult.inference.status === 'FAIL'
-    || (advanced && providerResult.advancedScenario.status === 'FAIL');
-  logProgress(`provider ${provider}: done (setup=${providerResult.setup.status}, listing=${providerResult.modelListing.status}, inference=${providerResult.inference.status}${advanced ? `, advanced=${providerResult.advancedScenario.status}` : ''})`);
-  if (providerFailed && failFast) {
-    logProgress(`provider ${provider}: fail-fast triggered`);
-    break;
+let managedDockerRuntime;
+if (useManagedDocker) {
+  managedDockerRuntime = await ensureManagedDockerTestRuntime();
+  process.stdout.write(`${stamp()} managed docker n8n: ${managedDockerRuntime.host}\n`);
+}
+
+try {
+  for (const provider of providers) {
+    if (managedDockerRuntime) {
+      const cleanup = await cleanManagedDockerTestRuntimeWorkflows(managedDockerRuntime);
+      logProgress(`provider ${provider}: cleaned managed docker workflows (${cleanup.deleted})`);
+    }
+    logProgress(`provider ${provider}: start`);
+    const providerResult = await runProvider(provider);
+    results.push(providerResult);
+    const providerFailed = providerResult.setup.status === 'FAIL'
+      || providerResult.modelListing.status === 'FAIL'
+      || providerResult.inference.status === 'FAIL'
+      || (advanced && providerResult.advancedScenario.status === 'FAIL');
+    logProgress(`provider ${provider}: done (setup=${providerResult.setup.status}, listing=${providerResult.modelListing.status}, inference=${providerResult.inference.status}${advanced ? `, advanced=${providerResult.advancedScenario.status}` : ''})`);
+    if (providerFailed && failFast) {
+      logProgress(`provider ${provider}: fail-fast triggered`);
+      break;
+    }
+  }
+} finally {
+  if (managedDockerRuntime && !keepManagedDocker) {
+    await stopManagedDockerTestRuntime();
+    logProgress('managed docker n8n: stopped');
   }
 }
 
@@ -376,6 +400,9 @@ function getProviderBaseUrl(provider) {
 }
 
 function resolveTestN8nRuntime() {
+  if (managedDockerRuntime) {
+    return managedDockerRuntime;
+  }
   const configuredHost = String(process.env.N8N_HOST || process.env.YAGR_IT_N8N_HOST || '').trim();
   const configuredApiKey = String(process.env.N8N_API_KEY || process.env.YAGR_IT_N8N_API_KEY || '').trim();
   const configuredProjectId = String(process.env.N8N_PROJECT_ID || process.env.YAGR_IT_N8N_PROJECT_ID || '').trim();

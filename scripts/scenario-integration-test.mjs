@@ -34,9 +34,14 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import assert from 'node:assert';
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, beforeEach } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { config as dotenvConfig } from 'dotenv';
+import {
+  cleanManagedDockerTestRuntimeWorkflows,
+  ensureManagedDockerTestRuntime,
+  stopManagedDockerTestRuntime,
+} from './test-managed-n8n-runtime.mjs';
 
 dotenvConfig({ path: '.env', quiet: true, override: true });
 dotenvConfig({ path: '.env.test', quiet: true, override: true });
@@ -71,6 +76,8 @@ const CREATION_TIMEOUT_MS = toInt(process.env.YAGR_SCN_CREATION_TIMEOUT_MS, 240_
 const markdownDisabled = process.argv.includes('--no-markdown') || process.env.YAGR_SCN_NO_MARKDOWN === '1';
 const debug = process.argv.includes('--debug') || process.env.YAGR_SCN_DEBUG === '1';
 const keepTemp = process.argv.includes('--keep-temp') || process.env.YAGR_SCN_KEEP_TEMP === '1';
+const useManagedDocker = process.argv.includes('--managed-docker') || process.env.YAGR_IT_USE_MANAGED_DOCKER === '1';
+const keepManagedDocker = process.argv.includes('--keep-managed-docker') || process.env.YAGR_IT_KEEP_MANAGED_DOCKER === '1';
 const heartbeatMs = toInt(process.env.YAGR_SCN_HEARTBEAT_MS, 15_000);
 const markdownPath = process.env.YAGR_SCN_MARKDOWN_PATH
   || path.join(process.cwd(), 'reports', 'scenario-integration-report.md');
@@ -376,6 +383,9 @@ const SCENARIOS = [
 // ---------------------------------------------------------------------------
 
 function resolveTestN8nRuntime() {
+  if (_managedDockerRuntime) {
+    return _managedDockerRuntime;
+  }
   const configuredHost = String(process.env.N8N_HOST || process.env.YAGR_IT_N8N_HOST || '').trim();
   const configuredApiKey = String(process.env.N8N_API_KEY || process.env.YAGR_IT_N8N_API_KEY || '').trim();
   const configuredProjectId = String(process.env.N8N_PROJECT_ID || process.env.YAGR_IT_N8N_PROJECT_ID || '').trim();
@@ -699,38 +709,41 @@ const scenariosToRun = SCENARIOS.filter((s) =>
 
 // Hoisted so writeMarkdownReport (a module-level function) can reference them.
 let _testN8nRuntime;
-let _isolatedHome;
 let _engine;
+let _managedDockerRuntime;
 
 describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1 }, () => {
   const results = [];
 
   before(async () => {
+    if (useManagedDocker) {
+      _managedDockerRuntime = await ensureManagedDockerTestRuntime();
+    }
     _testN8nRuntime = resolveTestN8nRuntime();
-    _isolatedHome = createIsolatedHome(_testN8nRuntime);
     process.stdout.write(`${stamp()} scenario integration start\n`);
     process.stdout.write(`${stamp()} provider/model: ${PROVIDER} / ${MODEL}\n`);
     process.stdout.write(`${stamp()} n8n: ${_testN8nRuntime.configured ? _testN8nRuntime.host : 'not configured'}\n`);
-    process.stdout.write(`${stamp()} isolated home: ${_isolatedHome}\n`);
+    process.stdout.write(`${stamp()} isolated home: per-scenario\n`);
     process.stdout.write(`${stamp()} debug: ${debug ? 'on' : 'off'} | keep-temp: ${(keepTemp || debug) ? 'on' : 'off'}\n\n`);
     _engine = await createN8nEngineFromWorkspace();
   });
 
-  after(async () => {
-    const createdWorkflowIds = results.flatMap((r) => r.createdWorkflowIds ?? []);
-    if (createdWorkflowIds.length > 0) {
-      process.stdout.write(`\nCleaning up ${createdWorkflowIds.length} workflow(s) created during tests…\n`);
-      await cleanupWorkflows(createdWorkflowIds, _isolatedHome, _testN8nRuntime);
+  beforeEach(async () => {
+    if (_managedDockerRuntime) {
+      const cleanup = await cleanManagedDockerTestRuntimeWorkflows(_managedDockerRuntime);
+      process.stdout.write(`${stamp()} managed docker cleanup: ${cleanup.deleted} workflow(s)\n`);
     }
-    if (keepTemp || debug) {
-      process.stdout.write(`${stamp()} isolated home preserved: ${_isolatedHome}\n`);
-    } else {
-      try { fs.rmSync(_isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
-    }
+  });
 
+  after(async () => {
     if (!markdownDisabled) {
       writeMarkdownReport(results);
       process.stdout.write(`\nMarkdown report: ${markdownPath}\n`);
+    }
+
+    if (_managedDockerRuntime && !keepManagedDocker) {
+      await stopManagedDockerTestRuntime();
+      process.stdout.write(`${stamp()} managed docker n8n stopped\n`);
     }
   });
 
@@ -741,11 +754,24 @@ describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1
         return;
       }
 
-      const result = await runScenario(scenario, _isolatedHome, _testN8nRuntime);
-      results.push({ scenario, ...result });
-      logProgress(`scenario ${scenario.id}: ${result.status} (${result.steps || 0} steps) - ${truncate(singleLine(result.note || ''), 180)}`);
-
-      assert.ok(result.status === 'PASS', `${result.status}: ${result.note}`);
+      const isolatedHome = createIsolatedHome(_testN8nRuntime);
+      let result;
+      try {
+        result = await runScenario(scenario, isolatedHome, _testN8nRuntime);
+        results.push({ scenario, ...result });
+        logProgress(`scenario ${scenario.id}: ${result.status} (${result.steps || 0} steps) - ${truncate(singleLine(result.note || ''), 180)}`);
+        assert.ok(result.status === 'PASS', `${result.status}: ${result.note}`);
+      } finally {
+        const createdWorkflowIds = result?.createdWorkflowIds ?? [];
+        if (createdWorkflowIds.length > 0) {
+          await cleanupWorkflows(createdWorkflowIds, isolatedHome, _testN8nRuntime);
+        }
+        if (keepTemp || debug) {
+          process.stdout.write(`${stamp()} isolated home preserved: ${isolatedHome}\n`);
+        } else {
+          try { fs.rmSync(isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
+        }
+      }
     });
   }
 });
