@@ -645,17 +645,23 @@ async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Pro
 }
 
 async function ensureManagedN8nAtLaunch(): Promise<void> {
-  const preparation = await prepareConfiguredN8nForLaunch();
-  if (preparation.warning) {
-    process.stderr.write(`Warning: ${preparation.warning}\n`);
-  }
+  try {
+    const preparation = await prepareConfiguredN8nForLaunch();
+    if (preparation.warning) {
+      process.stderr.write(`Warning: ${preparation.warning}\n`);
+    }
 
-  if (!preparation.started || !preparation.state) {
-    return;
-  }
+    if (!preparation.started || !preparation.state) {
+      return;
+    }
 
-  const modeLabel = preparation.state.strategy === 'direct' ? 'non-Docker' : 'Docker';
-  process.stdout.write(`Restarted Yagr-managed n8n (${modeLabel}) at ${preparation.state.url}\n`);
+    const modeLabel = preparation.state.strategy === 'direct' ? 'non-Docker' : 'Docker';
+    process.stdout.write(`Restarted Yagr-managed n8n (${modeLabel}) at ${preparation.state.url}\n`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`\nError: Could not start n8n.\n${message}\n\n`);
+    process.exit(1);
+  }
 }
 
 async function refreshN8nWorkspaceInstructionsAtLaunch(): Promise<void> {

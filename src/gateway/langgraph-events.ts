@@ -206,13 +206,12 @@ function extractDeltas(chunk: unknown): ExtractedDeltas {
   const c = chunk as Record<string, unknown>;
   const content = c['content'];
 
-  if (typeof content === 'string') {
-    return { textDelta: content, thinkingDelta: '' };
-  }
+  let text = '';
+  let thinking = '';
 
-  if (Array.isArray(content)) {
-    let text = '';
-    let thinking = '';
+  if (typeof content === 'string') {
+    text = content;
+  } else if (Array.isArray(content)) {
     for (const part of content) {
       if (typeof part === 'string') {
         text += part;
@@ -236,10 +235,16 @@ function extractDeltas(chunk: unknown): ExtractedDeltas {
         }
       }
     }
-    return { textDelta: text, thinkingDelta: thinking };
   }
 
-  return { textDelta: '', thinkingDelta: '' };
+  // ChatOpenAI (LangChain) stores DeepSeek-style reasoning_content and our
+  // CopilotChatOpenAI subclass maps Gemini's reasoning_text here too.
+  const additionalKwargs = c['additional_kwargs'] as Record<string, unknown> | undefined;
+  if (typeof additionalKwargs?.reasoning_content === 'string' && additionalKwargs.reasoning_content.length > 0) {
+    thinking += additionalKwargs.reasoning_content;
+  }
+
+  return { textDelta: text, thinkingDelta: thinking };
 }
 
 /** @deprecated Use extractDeltas — kept for callers that only need text. */

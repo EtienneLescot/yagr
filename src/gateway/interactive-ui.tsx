@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
-import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
+import { Box, Static, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
@@ -33,13 +33,6 @@ type FeedEntry = {
   text: string;
   timestamp: string;
   emphasis?: 'normal' | 'strong';
-};
-
-type HistoryLine = {
-  id: string;
-  text: string;
-  color?: string;
-  dimColor?: boolean;
 };
 
 type InteractiveAppProps = {
@@ -165,60 +158,6 @@ function buildCommandHistoryText(command: string, stdout: string, stderr: string
 
   sections.push(`exit ${exitCode}${message ? ` ${message}` : ''}`);
   return sections.join('\n\n');
-}
-
-// ---------------------------------------------------------------------------
-// Operation-to-history flattening (for Ctrl+Y view)
-// ---------------------------------------------------------------------------
-
-function flattenOperationsToHistoryLines(
-  operations: YagrOperationEvent[],
-  feedEntries: FeedEntry[],
-): HistoryLine[] {
-  const lines: HistoryLine[] = [];
-
-  // First emit feed entries (user prompts, final responses, interrupts)
-  for (const entry of feedEntries) {
-    lines.push({
-      id: `feed:${entry.id}:header`,
-      text: `[${entry.timestamp}] ${laneLabel(entry.lane)} · ${entry.title}`,
-      color: laneColor(entry.lane),
-    });
-    const bodyLines = entry.text.split('\n');
-    for (let i = 0; i < bodyLines.length; i++) {
-      lines.push({
-        id: `feed:${entry.id}:body:${i}`,
-        text: bodyLines[i].length > 0 ? `  ${bodyLines[i]}` : ' ',
-        color: entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined,
-        dimColor: entry.lane !== 'result',
-      });
-    }
-    lines.push({ id: `feed:${entry.id}:spacer`, text: ' ', dimColor: true });
-  }
-
-  // Then emit each operation in order
-  for (const op of operations) {
-    const elapsed = op.endedAt ? ` · ${((op.endedAt - op.startedAt) / 1000).toFixed(1)}s` : '';
-    const statusIcon = op.status === 'done' ? '●' : op.status === 'error' ? '✕' : '◐';
-    lines.push({
-      id: `op:${op.operationId}:header`,
-      text: `${statusIcon} ${op.label}${elapsed}`,
-      color: opColor(op),
-    });
-    if (op.body) {
-      const bodyLines = op.body.split('\n');
-      for (let i = 0; i < bodyLines.length; i++) {
-        lines.push({
-          id: `op:${op.operationId}:body:${i}`,
-          text: `  ${bodyLines[i]}`,
-          dimColor: op.category === 'thinking',
-        });
-      }
-    }
-    lines.push({ id: `op:${op.operationId}:spacer`, text: ' ', dimColor: true });
-  }
-
-  return lines;
 }
 
 // ---------------------------------------------------------------------------
@@ -351,8 +290,7 @@ function EmptyState(): JSX.Element {
   return (
     <Box flexDirection="column">
       <Text color="cyan" bold>Yagr turns an intent into executable automation.</Text>
-      <Text dimColor>Normal mode: one area for what is happening, one area for the prompt.</Text>
-      <Text dimColor>History mode: Ctrl+Y shows the full transcript as plain text.</Text>
+      <Text dimColor>Type your request below. Scroll up in the terminal to see conversation history.</Text>
     </Box>
   );
 }
@@ -489,7 +427,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
   const [liveAssistantText, setLiveAssistantText] = useState('');
   const [latestAssistantText, setLatestAssistantText] = useState('');
   const [pendingRequiredActions, setPendingRequiredActions] = useState<YagrRequiredAction[]>([]);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [lastUserPrompt, setLastUserPrompt] = useState('');
   const [statusPulse, setStatusPulse] = useState(0);
   const [activeOperationText, setActiveOperationText] = useState('Ready for a request.');
@@ -681,6 +618,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
       setWorkflowEmbeds([]);
       setOperations(new Map());
       return;
+
     }
 
     if (prompt === '/toggle-thinking' || prompt === '/toggle-agent-thinking') {
@@ -690,11 +628,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
 
     if (prompt === '/toggle-cli' || prompt === '/toggle-command-executions') {
       setDisplay((previous) => ({ ...previous, showExecution: !previous.showExecution }));
-      return;
-    }
-
-    if (prompt === '/history' || prompt === '/toggle-history') {
-      setHistoryOpen((previous) => !previous);
       return;
     }
 
@@ -755,11 +688,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
       return;
     }
 
-    if (key.ctrl && inputKey === 'y') {
-      setHistoryOpen((previous) => !previous);
-      return;
-    }
-
     if (key.ctrl && inputKey.toLowerCase() === 'o' && workflowEmbeds.length > 0 && !isRunning) {
       const latestEmbed = workflowEmbeds[workflowEmbeds.length - 1];
       if (!latestEmbed) {
@@ -778,22 +706,11 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
         });
       return;
     }
-
-    if (key.escape && historyOpen) {
-      setHistoryOpen(false);
-    }
   }, { isActive: true });
 
   const operationList = useMemo(() => [...operations.values()], [operations]);
-  const historyLines = useMemo(
-    () => flattenOperationsToHistoryLines(operationList, feed),
-    [operationList, feed],
-  );
-  /** Visible cards in the Working panel: last 6, excluding thinking if showThinking=false. */
   const visibleOperations = useMemo(
-    () => operationList
-      .filter((op) => op.category !== 'thinking' || display.showThinking)
-      .slice(-6),
+    () => operationList.filter((op) => op.category !== 'thinking' || display.showThinking),
     [operationList, display.showThinking],
   );
   const terminalWidth = stdout?.columns ?? process.stdout.columns ?? 100;
@@ -809,61 +726,84 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
   const idleIcon = currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
   const statusText = isRunning ? activeOperationText : phaseStatusText;
   const latestWorkflowTarget = workflowEmbeds.length > 0 ? (workflowEmbeds[workflowEmbeds.length - 1]?.targetUrl ?? workflowEmbeds[workflowEmbeds.length - 1]?.url) : undefined;
-  const mainTitle = historyOpen
-    ? 'Full history'
-    : pendingRequiredActions.length > 0
-      ? (hasBlockingActions ? 'Action required' : 'Follow-up actions')
-      : liveAssistantText
-        ? 'Response in progress'
-        : isRunning
-          ? 'Working'
-          : latestAssistantText
-            ? 'Latest response'
-            : 'Ready to start a run';
-  const mainSubtitle = historyOpen
-    ? 'plain transcript, terminal selection and scroll'
-    : pendingRequiredActions.length > 0
-      ? (hasBlockingActions ? 'run blocked' : 'non-blocking')
-      : liveAssistantText
-        ? 'generation in progress'
+  const liveTitle = pendingRequiredActions.length > 0
+    ? (hasBlockingActions ? 'Action required' : 'Follow-up actions')
+    : liveAssistantText
+      ? 'Response in progress'
+      : isRunning
+        ? 'Working'
+        : latestAssistantText
+          ? 'Latest response'
+          : 'Ready';
+  const liveSubtitle = pendingRequiredActions.length > 0
+    ? (hasBlockingActions ? 'run blocked' : 'non-blocking')
+    : liveAssistantText
+      ? 'generation in progress'
+      : isRunning
+        ? activeOperationText
         : latestAssistantText
           ? 'final summary'
           : headerSubtitle;
+  const livePanelColor = (pendingRequiredActions.length > 0 && hasBlockingActions) ? 'red' : pendingRequiredActions.length > 0 ? 'yellow' : 'cyan';
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0} width="100%">
-      <Box flexDirection="column" marginBottom={1}>
+      {/* ── Static feed: persists in terminal scroll buffer ── */}
+      <Static items={feed}>
+        {(entry) => (
+          <Box key={entry.id} flexDirection="column" marginBottom={0}>
+            <Text color={laneColor(entry.lane)} dimColor>
+              [{entry.timestamp}] {laneLabel(entry.lane)}{entry.title ? ` · ${entry.title}` : ''}
+            </Text>
+            {entry.text.split('\n').map((line, i) => (
+              <Text
+                // eslint-disable-next-line react/no-array-index-key
+                key={i}
+                color={entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined}
+                dimColor={entry.lane !== 'result' && entry.emphasis !== 'strong'}
+              >
+                {'  '}{line}
+              </Text>
+            ))}
+          </Box>
+        )}
+      </Static>
+
+      {/* ── Live workspace header ── */}
+      <Box flexDirection="column" marginBottom={1} marginTop={1}>
         <Text color="cyan" bold>Yagr <Text dimColor>{workspaceLabel}</Text></Text>
       </Box>
 
-      <Panel title={mainTitle} subtitle={mainSubtitle} color={historyOpen ? 'yellow' : (pendingRequiredActions.length > 0 && hasBlockingActions) ? 'red' : pendingRequiredActions.length > 0 ? 'yellow' : 'cyan'}>
-        {historyOpen ? (
-          historyLines.length === 0 ? (
-            <Text dimColor>No events.</Text>
-          ) : historyLines.map((line) => (
-            <Text key={line.id} color={line.color} dimColor={line.dimColor}>{line.text}</Text>
-          ))
-        ) : pendingRequiredActions.length > 0 ? (
-          <RequiredActionCard actions={pendingRequiredActions} />
-        ) : liveAssistantText ? (
-          <Box flexDirection="column">
-            <OperationList operations={visibleOperations} />
-            <Text color="green">{liveAssistantText}</Text>
-          </Box>
-        ) : latestAssistantText ? (
+      {/* ── Current run: operations + live text ── */}
+      {(isRunning || liveAssistantText || pendingRequiredActions.length > 0) ? (
+        <Panel title={liveTitle} subtitle={liveSubtitle} color={livePanelColor}>
+          {pendingRequiredActions.length > 0 ? (
+            <RequiredActionCard actions={pendingRequiredActions} />
+          ) : (
+            <Box flexDirection="column">
+              {visibleOperations.length > 0 ? (
+                <OperationList operations={visibleOperations} />
+              ) : null}
+              {liveAssistantText ? (
+                <Text color="green">{liveAssistantText}</Text>
+              ) : null}
+            </Box>
+          )}
+        </Panel>
+      ) : latestAssistantText ? (
+        <Panel title={liveTitle} subtitle={liveSubtitle} color="cyan">
           <Box flexDirection="column">
             <TerminalMarkdown text={latestAssistantText} />
             <WorkflowBanner embeds={workflowEmbeds} />
           </Box>
-        ) : isRunning ? (
-          <OperationList operations={visibleOperations} />
-        ) : (
-          <EmptyState />
-        )}
-      </Panel>
+        </Panel>
+      ) : (
+        <EmptyState />
+      )}
 
+      {/* ── Prompt ── */}
       <Box marginTop={1} width="100%">
-        <Panel title="Prompt" subtitle={historyOpen ? 'close history to type' : 'user input'} color="cyan">
+        <Panel title="Prompt" subtitle="user input" color="cyan">
           <Box marginBottom={1} flexDirection="column">
             {isRunning ? (
               <ActiveRunIndicator phase={currentPhase} statusText={statusText} pulse={statusPulse} />
@@ -871,11 +811,9 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
               <Text color={stateColor(currentState)}>{idleIcon} {statusText}</Text>
             )}
             <Text dimColor>
-              {historyOpen
-                ? 'History mode is active. Return with Ctrl+Y or Esc.'
-                : latestWorkflowTarget
-                  ? `Ctrl+Y for the full transcript. Press Ctrl+O or type /open to open the latest workflow.`
-                  : 'Ctrl+Y to switch to the full transcript. Type /compact to compact context.'}
+              {latestWorkflowTarget
+                ? `Ctrl+O to open the latest workflow. Scroll up to see history.`
+                : 'Scroll up in the terminal to see conversation history.'}
             </Text>
             {contextFillPercent !== null && (
               <Text dimColor>
@@ -892,7 +830,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
                 void submitPrompt(value);
               }}
               placeholder={isRunning ? 'Please wait while the run is active...' : 'Describe what you want to automate'}
-              isDisabled={isRunning || historyOpen}
+              isDisabled={isRunning}
             />
           </Box>
         </Panel>

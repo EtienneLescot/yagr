@@ -192,14 +192,35 @@ function buildComposeFile(): string {
 
 async function runDockerCompose(args: string[]): Promise<{ stdout: string; stderr: string }> {
   const { rootDir, composeFile } = ensureManagedN8nDirs();
-  return execFileAsync('docker', ['compose', '-f', composeFile, ...args], {
-    cwd: rootDir,
-    timeout: 120_000,
-    env: {
-      ...process.env,
-      COMPOSE_PROJECT_NAME: getComposeProjectName(rootDir),
-    },
-  });
+  try {
+    return await execFileAsync('docker', ['compose', '-f', composeFile, ...args], {
+      cwd: rootDir,
+      timeout: 120_000,
+      env: {
+        ...process.env,
+        COMPOSE_PROJECT_NAME: getComposeProjectName(rootDir),
+      },
+    });
+  } catch (raw) {
+    const message = raw instanceof Error ? raw.message : String(raw);
+    const isNotFound = /not found|not be found|ENOENT|no such file/i.test(message);
+    const isDaemonDown = /cannot connect|error during connect|Is the docker daemon running|permission denied.*docker\.sock/i.test(message);
+
+    if (isNotFound || isDaemonDown) {
+      const reason = isNotFound
+        ? 'Docker is not installed or not in PATH.'
+        : 'Docker is installed but the daemon is not running.';
+      throw new Error(
+        `${reason}\n`
+        + `Your n8n instance is configured to run via Docker Compose.\n`
+        + `→ Start Docker (or Docker Desktop) then retry.\n`
+        + `→ Or reconfigure n8n: run \`yagr setup\` and choose a different n8n mode.`,
+      );
+    }
+
+    // Re-throw with the stderr detail stripped of the raw command path.
+    throw new Error(`Docker Compose command failed (${args[0]}): ${message}`);
+  }
 }
 
 function getComposeProjectName(rootDir: string): string {

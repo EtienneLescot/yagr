@@ -640,9 +640,12 @@ const OPERATION_CATEGORY_ICON: Record<string, string> = {
 };
 
 function OperationCard({ entry }: { entry: ChatProgressEntry }): React.JSX.Element {
-  const defaultExpanded = entry.category !== 'thinking' && entry.status === 'running';
+  // Only auto-expand running operations; completed ones start collapsed
+  const defaultExpanded = entry.status === 'running';
   const [expanded, setExpanded] = React.useState(defaultExpanded);
   const icon = OPERATION_CATEGORY_ICON[entry.category ?? 'tool'] ?? '🔧';
+  const durationMs = entry.startedAt != null && entry.endedAt != null ? entry.endedAt - entry.startedAt : null;
+  const duration = durationMs != null ? (durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`) : null;
   return (
     <div className={`operationCard ${entry.status ?? 'done'} ${entry.category ?? ''}`}>
       <button
@@ -653,17 +656,20 @@ function OperationCard({ entry }: { entry: ChatProgressEntry }): React.JSX.Eleme
       >
         <span className="opCategoryIcon" aria-hidden="true">{icon}</span>
         <span className="opLabel">{entry.title}</span>
-        {entry.status === 'running'
-          ? <span className="opSpinner" aria-hidden="true" />
-          : entry.status === 'error'
-            ? <span className="opStatusIcon error" aria-hidden="true">✕</span>
-            : <span className="opStatusIcon done" aria-hidden="true">✓</span>}
+        <span className="opMeta">
+          {duration ? <span className="opDuration">{duration}</span> : null}
+          {entry.status === 'running'
+            ? <span className="opSpinner" aria-hidden="true" />
+            : entry.status === 'error'
+              ? <span className="opStatusIcon error" aria-hidden="true">✕</span>
+              : <span className="opStatusIcon done" aria-hidden="true">✓</span>}
+        </span>
         <span className="opToggle" aria-hidden="true">{expanded ? '▲' : '▼'}</span>
       </button>
       {expanded && entry.body ? (
         <pre className="opBody">{entry.body}</pre>
       ) : !expanded && entry.summary ? (
-        <div className="opSummary muted">{entry.summary}</div>
+        <div className="opSummary">{entry.summary}</div>
       ) : null}
     </div>
   );
@@ -673,9 +679,10 @@ function MessageCard({ message, now }: { message: ChatMessage; now: number }): R
   const elapsed = message.streaming && message.startedAt ? formatElapsed(now - message.startedAt) : undefined;
   const operationEntries = (message.progress ?? []).filter((e) => e.category != null);
   const legacyEntries = (message.progress ?? []).filter((e) => e.category == null);
-  const visibleOperations = operationEntries.slice(-6);
+  const visibleOperations = operationEntries;
   const visibleProgress = legacyEntries.slice(-3);
   const previewLines = message.streaming ? buildStreamingPreview(message.text) : [];
+  const showOperations = visibleOperations.length > 0;
   const showProgress = message.streaming || message.finalState === 'failed_terminal';
   const showBody = !message.streaming || (previewLines.length === 0 && visibleOperations.length === 0 && visibleProgress.length === 0);
 
@@ -717,7 +724,7 @@ function MessageCard({ message, now }: { message: ChatMessage; now: number }): R
         </div>
       ) : null}
 
-      {showProgress && visibleOperations.length > 0 ? (
+      {showOperations ? (
         <div className="operationList">
           {visibleOperations.map((entry) => (
             <OperationCard key={entry.id} entry={entry} />

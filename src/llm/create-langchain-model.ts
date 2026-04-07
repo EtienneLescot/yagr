@@ -8,10 +8,11 @@
  * has been removed — deepagentsjs is the only agent runtime.
  */
 import { ChatAnthropic } from '@langchain/anthropic';
-import { ChatOpenAI } from '@langchain/openai';
+import { ChatOpenAI, ChatOpenAICompletions } from '@langchain/openai';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { ChatMistralAI } from '@langchain/mistralai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { BaseMessageChunk } from '@langchain/core/messages';
 import { YagrConfigService, type YagrConfigStoreLike } from '../config/yagr-config-service.js';
 import {
   getDefaultBaseUrlForProvider,
@@ -172,6 +173,34 @@ const COPILOT_DEFAULT_HEADERS = {
 };
 
 /**
+ * ChatOpenAICompletions subclass that forwards Gemini's `reasoning_text`
+ * delta field (Copilot proxy extension) into `additional_kwargs.reasoning_content`
+ * so that `extractDeltas` in langgraph-events.ts can surface it as a thinking delta.
+ */
+class CopilotCompletionsModel extends ChatOpenAICompletions {
+  protected override _convertCompletionsDeltaToBaseMessageChunk(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delta: Record<string, any>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rawResponse: any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    defaultRole?: any,
+  ): BaseMessageChunk {
+    const chunk = super._convertCompletionsDeltaToBaseMessageChunk(delta, rawResponse, defaultRole);
+    const reasoningText = delta?.reasoning_text;
+    if (typeof reasoningText === 'string' && reasoningText.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (chunk as any).additional_kwargs = {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...((chunk as any).additional_kwargs ?? {}),
+        reasoning_content: reasoningText,
+      };
+    }
+    return chunk;
+  }
+}
+
+/**
  * Instantiate the LangChain `BaseChatModel` for the currently-configured
  * Yagr provider.  Async because OAuth-account providers (copilot-proxy,
  * openai-proxy) need to exchange a short-lived API token at construction time.
@@ -231,13 +260,22 @@ export async function createLangChainModel(
         throw new Error('GitHub Copilot session not found. Run `yagr setup` first.');
       }
       const runtimeAuth = await resolveCopilotApiToken(copilotSession.githubToken);
-      return new ChatOpenAI({
+      const copilotFields = {
         apiKey: runtimeAuth.token,
         model,
         configuration: {
           baseURL: runtimeAuth.baseUrl,
           defaultHeaders: COPILOT_DEFAULT_HEADERS,
         },
+        // Gemini (via Copilot proxy) only returns reasoning_text when the request
+        // includes an explicit thinking_budget.  Without this, Gemini silently
+        // omits thinking tokens whenever tools are present in the request —
+        // which is the case for every agentic turn.
+        modelKwargs: { thinking_budget: 1024 },
+      };
+      return new ChatOpenAI({
+        ...copilotFields,
+        completions: new CopilotCompletionsModel(copilotFields),
       });
     }
 
