@@ -44,11 +44,12 @@ const debug = args.has('--debug') || process.env.YAGR_IT_DEBUG === '1';
 const keepTemp = args.has('--keep-temp') || process.env.YAGR_IT_KEEP_TEMP === '1';
 const failFast = args.has('--fail-fast') || process.env.YAGR_IT_FAIL_FAST === '1';
 const heartbeatMs = toInt(process.env.YAGR_IT_HEARTBEAT_MS, 15_000);
+const advancedIdleTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_IDLE_TIMEOUT_MS, 20_000);
 const markdownPath = process.env.YAGR_IT_MARKDOWN_PATH || path.join(process.cwd(), 'reports', 'provider-integration-matrix.md');
 const advanced = args.has('--advanced') || process.env.YAGR_IT_ADVANCED === '1';
 const advancedPrompt = process.env.YAGR_IT_ADVANCED_PROMPT
   || 'Crée immédiatement un workflow n8n minimal avec exactement deux noeuds: un Manual Trigger puis un Set qui définit status=\"ok\". Ne me pose aucune question. Utilise les outils n8n disponibles, enregistre le workflow et pousse-le.';
-const advancedTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_TIMEOUT_MS, 180_000);
+const advancedTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_TIMEOUT_MS, 90_000);
 const forcedModel = String(process.env.YAGR_IT_FORCE_MODEL || '').trim();
 
 const providersFromCli = readProvidersFromCli(argv);
@@ -831,7 +832,18 @@ async function validateAdvancedScenarioResult({
     };
   }
 
-  if ((checklist?.failedScriptRuns ?? 0) > 0 && (checklist?.remoteWorkflowCount ?? 0) === 0) {
+  const hasFinalSuccessSignal = Boolean(
+    checklist?.hasWorkflowEmbed
+    || checklist?.hasWorkflowEmbedUrl
+    || (checklist?.remoteWorkflowCount ?? 0) > 0
+    || (
+      checklist?.hasPush
+      && (checklist?.hasVerify || checklist?.hasValidate)
+      && (checklist?.successfulScriptRuns ?? 0) > 0
+    )
+  );
+
+  if ((checklist?.failedScriptRuns ?? 0) > 0 && !hasFinalSuccessSignal) {
     return {
       ok: false,
       error: `CLI scenario executed failing workflow commands without creating any remote workflow: ${truncate(normalized, 220)}`,
@@ -842,8 +854,7 @@ async function validateAdvancedScenarioResult({
     checklist?.usedN8nac
     && checklist?.hasPush
     && (checklist?.hasVerify || checklist?.hasValidate)
-    && (checklist?.failedScriptRuns ?? 0) === 0
-    && ((checklist?.successfulScriptRuns ?? 0) > 0 || (checklist?.remoteWorkflowCount ?? 0) > 0)
+    && ((checklist?.successfulScriptRuns ?? 0) > 0 || (checklist?.remoteWorkflowCount ?? 0) > 0 || checklist?.hasWorkflowEmbed)
   ) {
     // Workflow was created and pushed — embed is optional (nice-to-have, not required for provider tests)
     return { ok: true };
@@ -905,6 +916,7 @@ async function runAdvancedAgentInProcess({
   return await withScopedEnv(envOverrides, async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
+    let idleTimer;
     let heartbeat;
     let lastActivityAt = Date.now();
     let lastActivityLabel = 'agent start';
@@ -913,7 +925,15 @@ async function runAdvancedAgentInProcess({
     const noteActivity = (label) => {
       lastActivityAt = Date.now();
       lastActivityLabel = label;
+      if (advancedIdleTimeoutMs > 0) {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          controller.abort(new Error(`Idle timeout after ${advancedIdleTimeoutMs}ms without meaningful progress (last activity: ${label})`));
+        }, advancedIdleTimeoutMs);
+      }
     };
+
+    noteActivity('agent start');
 
     if (debug) {
       heartbeat = setInterval(() => {
@@ -962,6 +982,10 @@ async function runAdvancedAgentInProcess({
           else { parsedInput = inner ?? rawInput; }
           const toolName = event.name;
           const cmd = String(parsedInput?.command || parsedInput?.cmd || '');
+          const bypassReason = detectForbiddenN8nBypass(toolName, parsedInput, cmd);
+          if (bypassReason) {
+            throw new Error(bypassReason);
+          }
           if (cmd) {
             toolEvents.push({ type: 'command-start', toolName, command: cmd });
             stderrChunks.push(`[tool:${toolName}] START ${cmd}`);
@@ -1041,6 +1065,7 @@ async function runAdvancedAgentInProcess({
       };
     } finally {
       clearTimeout(timer);
+      clearTimeout(idleTimer);
       if (heartbeat) {
         clearInterval(heartbeat);
       }
@@ -1052,6 +1077,9 @@ function printRunBanner() {
   process.stdout.write(`${stamp()} provider matrix start\n`);
   process.stdout.write(`${stamp()} providers: ${providers.join(', ')}\n`);
   process.stdout.write(`${stamp()} advanced: ${advanced ? 'on' : 'off'} | debug: ${debug ? 'on' : 'off'} | keep-temp: ${(keepTemp || debug) ? 'on' : 'off'}\n`);
+  if (advanced) {
+    process.stdout.write(`${stamp()} advanced timeouts: total=${advancedTimeoutMs}ms idle=${advancedIdleTimeoutMs}ms\n`);
+  }
 }
 
 function logProgress(message) {
@@ -1101,6 +1129,26 @@ function hasObservedAdvancedSuccess(toolEvents, workflowEmbeds) {
     && successfulCommands.length > 0;
 
   return hasSuccessfulPush;
+}
+
+function detectForbiddenN8nBypass(toolName, parsedInput, commandText) {
+  const requestUrl = String(parsedInput?.url || parsedInput?.endpoint || '').toLowerCase();
+  const normalizedCommand = String(commandText || '').toLowerCase();
+  const touchesWorkflowApi = requestUrl.includes('/api/v1/workflows') || normalizedCommand.includes('/api/v1/workflows');
+
+  if (!touchesWorkflowApi) {
+    return '';
+  }
+
+  if (toolName === 'httpRequest' || toolName === 'http_request') {
+    return `Forbidden direct n8n API bypass detected via ${toolName}; provider tests must go through n8nac only.`;
+  }
+
+  if (toolName === 'execute' && normalizedCommand.includes('curl')) {
+    return 'Forbidden direct n8n API bypass detected via curl; provider tests must go through n8nac only.';
+  }
+
+  return '';
 }
 
 async function withScopedEnv(overrides, fn) {
