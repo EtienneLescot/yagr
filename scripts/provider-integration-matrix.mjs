@@ -249,6 +249,14 @@ async function runProvider(provider) {
       };
     }
 
+    const n8nAvailability = await checkTestN8nAvailability(testN8nRuntime);
+    if (!n8nAvailability.ok) {
+      return {
+        status: 'FAIL',
+        note: n8nAvailability.error,
+      };
+    }
+
     if (!setupStatus.llmConfigured && setup.status !== 'PASS') {
       return {
         status: 'SKIP',
@@ -380,6 +388,32 @@ function resolveTestN8nRuntime() {
     projectId,
     configured: Boolean(host && apiKey),
   };
+}
+
+async function checkTestN8nAvailability(testN8nRuntime) {
+  const host = String(testN8nRuntime?.host || '').trim();
+  if (!host) {
+    return { ok: false, error: 'n8n host is not configured for advanced tests.' };
+  }
+
+  const baseUrl = host.replace(/\/+$/, '');
+  try {
+    const healthResponse = await fetch(`${baseUrl}/healthz`);
+    if (!healthResponse.ok) {
+      return { ok: false, error: `n8n health check failed with HTTP ${healthResponse.status} for ${baseUrl}.` };
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: `n8n is unreachable at ${baseUrl}: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  if (!String(testN8nRuntime?.apiKey || '').trim()) {
+    return { ok: false, error: `n8n API key is missing for ${baseUrl}.` };
+  }
+
+  return { ok: true };
 }
 
 function configureWritableOAuthPaths() {
@@ -797,7 +831,20 @@ async function validateAdvancedScenarioResult({
     };
   }
 
-  if (checklist?.usedN8nac && checklist?.hasPush && (checklist?.hasVerify || checklist?.hasValidate)) {
+  if ((checklist?.failedScriptRuns ?? 0) > 0 && (checklist?.remoteWorkflowCount ?? 0) === 0) {
+    return {
+      ok: false,
+      error: `CLI scenario executed failing workflow commands without creating any remote workflow: ${truncate(normalized, 220)}`,
+    };
+  }
+
+  if (
+    checklist?.usedN8nac
+    && checklist?.hasPush
+    && (checklist?.hasVerify || checklist?.hasValidate)
+    && (checklist?.failedScriptRuns ?? 0) === 0
+    && ((checklist?.successfulScriptRuns ?? 0) > 0 || (checklist?.remoteWorkflowCount ?? 0) > 0)
+  ) {
     // Workflow was created and pushed — embed is optional (nice-to-have, not required for provider tests)
     return { ok: true };
   }
@@ -936,7 +983,11 @@ async function runAdvancedAgentInProcess({
           let parsedOutput;
           if (typeof output === 'string') { try { parsedOutput = JSON.parse(output); } catch { parsedOutput = { text: output }; } }
           else { parsedOutput = output; }
-          const exitCode = parsedOutput?.exitCode ?? parsedOutput?.exit_code;
+          const outputText = [parsedOutput?.stdout, parsedOutput?.stderr, parsedOutput?.text, parsedOutput?.message]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+            .join(' | ');
+          const exitCode = parsedOutput?.exitCode ?? parsedOutput?.exit_code ?? extractCommandExitCode(outputText);
           if (exitCode !== undefined) {
             toolEvents.push({ type: 'command-end', toolName, exitCode: Number(exitCode), timedOut: false });
             stderrChunks.push(`[tool:${toolName}] END exit=${exitCode}`);
@@ -952,14 +1003,17 @@ async function runAdvancedAgentInProcess({
               logDebug(provider, `tool ${toolName} status: ${truncate(singleLine(String(statusMsg)), 200)}`);
             }
           }
-          const outputText = [parsedOutput?.stdout, parsedOutput?.stderr, parsedOutput?.text]
-            .map((value) => String(value || '').trim())
-            .filter(Boolean)
-            .join(' | ');
           if (debug && outputText) {
             logDebug(provider, `tool ${toolName} output: ${truncate(singleLine(outputText), 220)}`);
           }
           journal.push({ type: 'tool-end', toolName, output: parsedOutput });
+
+          if (hasObservedAdvancedSuccess(toolEvents, accumulator.workflowEmbeds)) {
+            if (debug) {
+              logDebug(provider, 'advanced scenario success observed; stopping stream early');
+            }
+            break;
+          }
         }
       }
 
@@ -1014,6 +1068,39 @@ function stamp() {
 
 function singleLine(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function extractCommandExitCode(text) {
+  const normalized = String(text || '');
+  const failedMatch = normalized.match(/\[Command failed with exit code (\d+)\]|Exit code:\s*(\d+)/i);
+  if (failedMatch) {
+    return Number(failedMatch[1] || failedMatch[2]);
+  }
+  const successMatch = normalized.match(/\[Command succeeded with exit code (\d+)\]/i);
+  if (successMatch) {
+    return Number(successMatch[1]);
+  }
+  return undefined;
+}
+
+function hasObservedAdvancedSuccess(toolEvents, workflowEmbeds) {
+  const embeds = Array.isArray(workflowEmbeds) ? workflowEmbeds : [];
+  if (embeds.length === 0) {
+    return false;
+  }
+
+  const allEvents = Array.isArray(toolEvents) ? toolEvents : [];
+  const successfulCommands = allEvents.filter((event) =>
+    event.type === 'command-end'
+    && Number(event.exitCode ?? 1) === 0);
+  const startedCommands = allEvents.filter((event) => event.type === 'command-start');
+
+  const hasSuccessfulPush = startedCommands.some((event) =>
+    String(event.command || '').toLowerCase().includes('n8nac')
+    && String(event.command || '').toLowerCase().includes('push'))
+    && successfulCommands.length > 0;
+
+  return hasSuccessfulPush;
 }
 
 async function withScopedEnv(overrides, fn) {
