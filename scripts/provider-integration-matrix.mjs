@@ -747,6 +747,9 @@ async function runYagrAdvancedScenarioAttempt({
     });
 
     if (execution.timedOut) {
+      if (validation.ok) {
+        return { ok: true, checklist, assistantResponse: normalizeAssistantResponse(execution.stdout) };
+      }
       const logPath = writeAdvancedFailureLog(provider, {
         code: null,
         stdout: execution.stdout,
@@ -833,7 +836,9 @@ async function validateAdvancedScenarioResult({
   }
 
   const hasFinalSuccessSignal = Boolean(
-    checklist?.hasWorkflowEmbed
+    checklist?.hasVerifiedPushSuccess
+    || checklist?.hasWorkflowEmbed
+    || checklist?.hasWorkflowPresentation
     || checklist?.hasWorkflowEmbedUrl
     || (checklist?.remoteWorkflowCount ?? 0) > 0
     || (
@@ -852,9 +857,19 @@ async function validateAdvancedScenarioResult({
 
   if (
     checklist?.usedN8nac
-    && checklist?.hasPush
-    && (checklist?.hasVerify || checklist?.hasValidate)
-    && ((checklist?.successfulScriptRuns ?? 0) > 0 || (checklist?.remoteWorkflowCount ?? 0) > 0 || checklist?.hasWorkflowEmbed)
+    && (
+      checklist?.hasVerifiedPushSuccess
+      || (
+        checklist?.hasPush
+        && (checklist?.hasVerify || checklist?.hasValidate)
+        && (
+          (checklist?.successfulScriptRuns ?? 0) > 0
+          || (checklist?.remoteWorkflowCount ?? 0) > 0
+          || checklist?.hasWorkflowEmbed
+          || checklist?.hasWorkflowPresentation
+        )
+      )
+    )
   ) {
     // Workflow was created and pushed — embed is optional (nice-to-have, not required for provider tests)
     return { ok: true };
@@ -918,6 +933,7 @@ async function runAdvancedAgentInProcess({
     const timer = setTimeout(() => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
     let idleTimer;
     let heartbeat;
+    const activeToolCommands = new Map();
     let lastActivityAt = Date.now();
     let lastActivityLabel = 'agent start';
     let accumulator = createRunAccumulator();
@@ -987,6 +1003,7 @@ async function runAdvancedAgentInProcess({
             throw new Error(bypassReason);
           }
           if (cmd) {
+            activeToolCommands.set(toolName, cmd);
             toolEvents.push({ type: 'command-start', toolName, command: cmd });
             stderrChunks.push(`[tool:${toolName}] START ${cmd}`);
             if (debug) {
@@ -1012,8 +1029,10 @@ async function runAdvancedAgentInProcess({
             .filter(Boolean)
             .join(' | ');
           const exitCode = parsedOutput?.exitCode ?? parsedOutput?.exit_code ?? extractCommandExitCode(outputText);
+          const completedCommand = String(activeToolCommands.get(toolName) || '');
+          activeToolCommands.delete(toolName);
           if (exitCode !== undefined) {
-            toolEvents.push({ type: 'command-end', toolName, exitCode: Number(exitCode), timedOut: false });
+            toolEvents.push({ type: 'command-end', toolName, command: completedCommand, exitCode: Number(exitCode), timedOut: false });
             stderrChunks.push(`[tool:${toolName}] END exit=${exitCode}`);
             if (debug) {
               logDebug(provider, `tool ${toolName} end: exit=${exitCode}`);
@@ -1026,6 +1045,22 @@ async function runAdvancedAgentInProcess({
             if (debug) {
               logDebug(provider, `tool ${toolName} status: ${truncate(singleLine(String(statusMsg)), 200)}`);
             }
+          }
+          if (
+            toolName === 'presentWorkflowResult'
+            && parsedOutput
+            && (
+              parsedOutput.__type === 'workflow_embed'
+              || parsedOutput.kind === 'workflow'
+              || parsedOutput.workflowId
+              || parsedOutput.url
+            )
+          ) {
+            toolEvents.push({
+              type: 'status',
+              toolName,
+              message: `workflow_embed:${parsedOutput.workflowId || parsedOutput.url || 'ok'}`,
+            });
           }
           if (debug && outputText) {
             logDebug(provider, `tool ${toolName} output: ${truncate(singleLine(outputText), 220)}`);
@@ -1113,20 +1148,34 @@ function extractCommandExitCode(text) {
 
 function hasObservedAdvancedSuccess(toolEvents, workflowEmbeds) {
   const embeds = Array.isArray(workflowEmbeds) ? workflowEmbeds : [];
-  if (embeds.length === 0) {
-    return false;
-  }
-
   const allEvents = Array.isArray(toolEvents) ? toolEvents : [];
+  const hasWorkflowPresentation = allEvents.some((event) =>
+    event.type === 'status'
+    && event.toolName === 'presentWorkflowResult'
+    && String(event.message || '').startsWith('workflow_embed:'),
+  );
+
   const successfulCommands = allEvents.filter((event) =>
     event.type === 'command-end'
     && Number(event.exitCode ?? 1) === 0);
-  const startedCommands = allEvents.filter((event) => event.type === 'command-start');
 
-  const hasSuccessfulPush = startedCommands.some((event) =>
-    String(event.command || '').toLowerCase().includes('n8nac')
-    && String(event.command || '').toLowerCase().includes('push'))
-    && successfulCommands.length > 0;
+  const hasVerifiedPushSuccess = successfulCommands.some((event) => {
+    const command = String(event.command || '').toLowerCase();
+    return isN8nacCommand(command) && command.includes('push') && command.includes('--verify');
+  });
+
+  if (hasVerifiedPushSuccess) {
+    return true;
+  }
+
+  if (embeds.length === 0 && !hasWorkflowPresentation) {
+    return false;
+  }
+
+  const hasSuccessfulPush = successfulCommands.some((event) => {
+    const command = String(event.command || '').toLowerCase();
+    return isN8nacCommand(command) && command.includes('push');
+  });
 
   return hasSuccessfulPush;
 }
@@ -1194,17 +1243,23 @@ function buildAdvancedChecklist({
   const scriptMessages = allEvents
     .filter((event) => (event.type === 'status' || event.type === 'result') && (event.toolName === 'runScript' || event.toolName === 'execute' || event.toolName === 'run_script'))
     .map((event) => String(event.message || '').toLowerCase());
-  const usedN8nacViaScript = scriptMessages.some((msg) => msg.includes('n8nac'));
+  const usedN8nacViaScript = scriptMessages.some((msg) => isN8nacCommand(msg));
   // Also detect n8nac calls from command-start events on execute/run_script tools
   const executeCommands = allEvents
     .filter((event) => event.type === 'command-start' && (event.toolName === 'execute' || event.toolName === 'run_script' || event.toolName === 'runScript'))
     .map((event) => String(event.command || '').toLowerCase());
   const hasPush = commandStarts.some((event) => String(event.command || '').includes('push'))
-    || scriptMessages.some((msg) => msg.includes('n8nac push'))
-    || executeCommands.some((cmd) => cmd.includes('n8nac') && cmd.includes('push'));
+    || scriptMessages.some((msg) => isN8nacCommand(msg) && msg.includes('push'))
+    || executeCommands.some((cmd) => isN8nacCommand(cmd) && cmd.includes('push'));
   const hasVerify = commandStarts.some((event) => String(event.command || '').includes('verify'))
-    || scriptMessages.some((msg) => msg.includes('n8nac verify'))
-    || executeCommands.some((cmd) => cmd.includes('n8nac') && cmd.includes('verify'));
+    || scriptMessages.some((msg) => isN8nacCommand(msg) && msg.includes('verify'))
+    || executeCommands.some((cmd) => isN8nacCommand(cmd) && cmd.includes('verify'))
+    || executeCommands.some((cmd) => isN8nacCommand(cmd) && cmd.includes('push') && cmd.includes('--verify'));
+  const hasWorkflowPresentation = allEvents.some((event) =>
+    event.type === 'status'
+    && event.toolName === 'presentWorkflowResult'
+    && String(event.message || '').startsWith('workflow_embed:'),
+  );
 
   // Workflow embeds come from accumulator.workflowEmbeds (WorkflowEmbedPayload[])
   const embeds = workflowEmbeds || [];
@@ -1217,13 +1272,20 @@ function buildAdvancedChecklist({
   const scriptEnds = allEvents.filter((event) => event.type === 'command-end' && (event.toolName === 'execute' || event.toolName === 'run_script' || event.toolName === 'runScript'));
   const successfulScriptRuns = scriptEnds.filter((e) => Number(e.exitCode ?? 0) === 0).length;
   const failedScriptRuns = scriptEnds.filter((e) => Number(e.exitCode ?? 0) !== 0).length;
+  const hasVerifiedPushSuccess = scriptEnds.some((event) => {
+    const command = String(event.command || '').toLowerCase();
+    return Number(event.exitCode ?? 1) === 0
+      && isN8nacCommand(command)
+      && command.includes('push')
+      && command.includes('--verify');
+  });
 
   // Detect workflow file writes from tool-start events (write_file / writeFile / edit_file)
   const writeEvents = allEvents.filter((event) => event.type === 'status' && (event.toolName === 'write_file' || event.toolName === 'writeFile' || event.toolName === 'edit_file' || event.toolName === 'editFile'));
   const wroteWorkflowFile = writeEvents.length > 0 || (changedWorkflows || []).length > 0;
 
   return {
-    usedN8nac: commandStarts.length > 0 || usedN8nacViaScript || executeCommands.some((cmd) => cmd.includes('n8nac')),
+    usedN8nac: commandStarts.length > 0 || usedN8nacViaScript || executeCommands.some((cmd) => isN8nacCommand(cmd)),
     hasPush,
     hasVerify,
     actionNames,
@@ -1232,7 +1294,9 @@ function buildAdvancedChecklist({
     commandEndCount: commandEnds.length,
     successfulScriptRuns,
     failedScriptRuns,
+    hasVerifiedPushSuccess,
     hasWorkflowEmbed: embeds.length > 0,
+    hasWorkflowPresentation,
     hasWorkflowEmbedUrl: embeds.some((embed) => Boolean(String(embed.url || '').trim())),
     hasWorkflowEmbedDiagram: embeds.some((embed) => Boolean(String(embed.diagram || '').trim())),
     wroteWorkflowFile,
@@ -1243,6 +1307,11 @@ function buildAdvancedChecklist({
     blockingRequiredActionTitles: blockingRequiredActions.map((action) => action.title),
     followUpRequiredActionTitles: followUpRequiredActions.map((action) => action.title),
   };
+}
+
+function isN8nacCommand(text) {
+  const normalized = String(text || '').toLowerCase();
+  return normalized.includes('n8nac') || normalized.includes('/packages/cli/dist/index.js');
 }
 
 function resolveActiveWorkflowDir(yagrHome = getYagrPaths().homeDir) {
@@ -1283,49 +1352,60 @@ function createAdvancedScenarioHome(provider, model, testN8nRuntime = {}) {
   const baseDir = path.join(os.tmpdir(), 'yagr-provider-advanced');
   fs.mkdirSync(baseDir, { recursive: true });
   const tempHome = fs.mkdtempSync(path.join(baseDir, `${provider.replace(/[^a-z0-9]+/gi, '-')}-`));
-  const sourcePaths = getYagrPaths();
 
+  // Create isolated Yagr home structure from scratch
+  const n8nWorkspaceDir = path.join(tempHome, 'n8n-workspace');
+  fs.mkdirSync(n8nWorkspaceDir, { recursive: true });
+
+  // Write Yagr config
   writeIsolatedYagrConfig(tempHome, provider, model);
-  copyIfExists(sourcePaths.homeInstructionsPath, path.join(tempHome, 'AGENTS.md'));
-  copyDirIfExists(sourcePaths.n8nWorkspaceDir, path.join(tempHome, 'n8n-workspace'));
-  reconcileAdvancedScenarioN8nRuntime(tempHome, testN8nRuntime);
-  // Normalize the instanceIdentifier to a simple value so the system prompt advertises
-  // a clean path (workflows/test/personal/) that models can follow without guessing.
-  normalizeTestWorkspaceInstanceId(tempHome);
+
+  // Initialize n8nac config from scratch with test instance
+  initializeTestN8nConfig(n8nWorkspaceDir, testN8nRuntime);
 
   return tempHome;
 }
 
-function normalizeTestWorkspaceInstanceId(tempHome) {
-  const configPath = path.join(tempHome, 'n8n-workspace', 'n8nac-config.json');
-  const config = readJsonIfExists(configPath);
-  if (!config) {
-    return;
-  }
-  const testInstanceId = 'test';
-  const oldInstanceId = String(config.instanceIdentifier || '').replace(/[:<>"\|?*]/g, '_');
-  config.instanceIdentifier = testInstanceId;
-  if (Array.isArray(config.instances)) {
-    for (const inst of config.instances) {
-      inst.instanceIdentifier = testInstanceId;
-    }
-  }
-  const workspaceDir = path.join(tempHome, 'n8n-workspace');
-  const syncFolder = String(config.syncFolder || 'workflows');
-  const resolvedSync = path.isAbsolute(syncFolder) ? syncFolder : path.join(workspaceDir, syncFolder);
-  const projectSlug = String(config.projectName || config.projectId || 'personal')
-    .normalize('NFKD').replace(/[^\w\s-]/g, '').trim().toLowerCase().replace(/[-\s]+/g, '-');
-  // Rename the old instance folder to 'test' if it exists
-  if (oldInstanceId && oldInstanceId !== testInstanceId) {
-    const oldDir = path.join(resolvedSync, oldInstanceId);
-    const newDir = path.join(resolvedSync, testInstanceId);
-    if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
-      fs.renameSync(oldDir, newDir);
-    }
-  }
-  // Ensure the target workflow directory exists
-  fs.mkdirSync(path.join(resolvedSync, testInstanceId, projectSlug), { recursive: true });
+function initializeTestN8nConfig(n8nWorkspaceDir, testN8nRuntime = {}) {
+  const configPath = path.join(n8nWorkspaceDir, 'n8nac-config.json');
+  const host = String(testN8nRuntime.host || '').trim() || 'http://127.0.0.1:5678';
+  const projectId = String(testN8nRuntime.projectId || '').trim() || 'personal';
+  const projectName = projectId === 'personal' ? 'Personal' : projectId;
+
+  const config = {
+    version: 2,
+    activeInstanceId: 'test-local',
+    instances: [
+      {
+        id: 'test-local',
+        name: 'test-local',
+        host,
+        syncFolder: 'workflows',
+        projectId,
+        projectName,
+        instanceIdentifier: 'test',
+        verification: {
+          status: 'verified',
+          normalizedHost: host,
+          userId: 'test-user',
+          userName: 'test-user',
+          userEmail: 'test@local.yagr',
+          lastCheckedAt: new Date().toISOString(),
+        },
+      },
+    ],
+    host,
+    syncFolder: 'workflows',
+    projectId,
+    projectName,
+    instanceIdentifier: 'test',
+  };
+
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  // Create the workflow directory structure
+  const workflowDir = path.join(n8nWorkspaceDir, 'workflows', 'test', projectId.toLowerCase().replace(/\s+/g, '-'));
+  fs.mkdirSync(workflowDir, { recursive: true });
 }
 
 function cleanupAdvancedScenarioHome(tempHome) {
@@ -1334,73 +1414,6 @@ function cleanupAdvancedScenarioHome(tempHome) {
   } catch {
     // Best effort cleanup only.
   }
-}
-
-function copyIfExists(source, destination) {
-  if (!source || !fs.existsSync(source)) {
-    return;
-  }
-
-  fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.copyFileSync(source, destination);
-}
-
-function copyIfMissing(source, destination) {
-  if (!destination || fs.existsSync(destination)) {
-    return;
-  }
-
-  copyIfExists(source, destination);
-}
-
-function copyDirIfExists(sourceDir, destinationDir) {
-  if (!sourceDir || !fs.existsSync(sourceDir)) {
-    return;
-  }
-
-  fs.mkdirSync(path.dirname(destinationDir), { recursive: true });
-  fs.cpSync(sourceDir, destinationDir, { recursive: true });
-}
-
-function reconcileAdvancedScenarioN8nRuntime(tempHome, testN8nRuntime = {}) {
-  const host = String(testN8nRuntime.host || '').trim();
-  const apiKey = String(testN8nRuntime.apiKey || '').trim();
-  const projectId = String(testN8nRuntime.projectId || '').trim();
-
-  if (!host && !apiKey && !projectId) {
-    return;
-  }
-
-  const configPath = path.join(tempHome, 'n8n-workspace', 'n8nac-config.json');
-  const normalizedHost = normalizeHostForStore(host);
-  const localConfig = readJsonIfExists(configPath) || {};
-  const previousHost = String(localConfig.host || '').trim();
-  const previousProjectId = String(localConfig.projectId || '').trim();
-  const hostChanged = Boolean(host && normalizeHostForStore(previousHost) !== normalizedHost);
-  const projectChanged = Boolean(projectId && previousProjectId && previousProjectId !== projectId);
-
-  if (host) {
-    localConfig.host = host;
-  }
-
-  if (projectId) {
-    localConfig.projectId = projectId;
-  }
-
-  if (!localConfig.syncFolder) {
-    localConfig.syncFolder = 'workflows';
-  }
-
-  if ((hostChanged || projectChanged) && localConfig.instanceIdentifier) {
-    delete localConfig.instanceIdentifier;
-  }
-
-  if (projectId === 'personal') {
-    localConfig.projectName = 'Personal';
-  }
-
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, `${JSON.stringify(localConfig, null, 2)}\n`);
 }
 
 function writeIsolatedYagrConfig(tempHome, provider, model) {
@@ -1428,12 +1441,13 @@ function readJsonIfExists(filePath) {
   }
 }
 
-function normalizeHostForStore(host) {
-  try {
-    return new URL(host).origin;
-  } catch {
-    return String(host || '').trim().replace(/\/$/, '');
+function copyIfExists(source, destination) {
+  if (!source || !fs.existsSync(source)) {
+    return;
   }
+
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.copyFileSync(source, destination);
 }
 
 async function listRemoteWorkflows() {
