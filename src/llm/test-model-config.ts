@@ -19,10 +19,10 @@ export const YAGR_PROVIDER_TEST_MODEL_CONFIG: Partial<Record<YagrModelProvider, 
   },
   openai: {
     preferredModels: [
-      'gpt-5-mini',
+      'gpt-4o',
       'gpt-4.1-mini',
       'gpt-4o-mini',
-      'gpt-4o',
+      'gpt-5-mini',
     ],
   },
   google: {
@@ -33,8 +33,8 @@ export const YAGR_PROVIDER_TEST_MODEL_CONFIG: Partial<Record<YagrModelProvider, 
   },
   mistral: {
     preferredModels: [
-      'ministral-8b-latest',
       'mistral-small-latest',
+      'ministral-8b-latest',
       'mistral-large-latest',
     ],
   },
