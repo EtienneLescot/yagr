@@ -35,6 +35,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import assert from 'node:assert';
 import { describe, it, before, after } from 'node:test';
+import { spawnSync } from 'node:child_process';
 import { config as dotenvConfig } from 'dotenv';
 
 dotenvConfig({ path: '.env', quiet: true, override: true });
@@ -389,6 +390,38 @@ function resolveTestN8nRuntime() {
 // Isolated home setup
 // ---------------------------------------------------------------------------
 
+/**
+ * Regenerate AGENTS.md in an isolated test home using n8nac update-ai.
+ * This ensures the test environment has fresh, up-to-date instructions.
+ */
+function generateTestAgentsMd(homeDir) {
+  // Resolve n8nac package based on YAGR_N8NAC_VERSION
+  const version = String(process.env.YAGR_N8NAC_VERSION || '').trim();
+  let n8nacPackage = 'n8nac';
+  if (version) {
+    if (version.startsWith('@') || version.includes('.')) {
+      n8nacPackage = `n8nac@${version}`;
+    } else {
+      n8nacPackage = `n8nac@${version}`;
+    }
+  }
+
+  // Call n8nac update-ai to regenerate AGENTS.md
+  const result = spawnSync('npx', ['--yes', n8nacPackage, 'update-ai', '--silent'], {
+    cwd: homeDir,
+    env: { ...process.env },
+    stdio: 'pipe',
+    encoding: 'utf8',
+  });
+
+  if ((result.status ?? 1) !== 0) {
+    const stderr = String(result.stderr || '').trim();
+    const stdout = String(result.stdout || '').trim();
+    // Log warning but don't fail — tests can continue even if update-ai fails
+    console.warn(`Warning: n8nac update-ai failed for ${homeDir}: ${stderr || stdout || `exit ${result.status ?? 1}`}`);
+  }
+}
+
 function createIsolatedHome(testN8nRuntime) {
   const baseDir = path.join(os.tmpdir(), 'yagr-scenario-test');
   fs.mkdirSync(baseDir, { recursive: true });
@@ -406,6 +439,9 @@ function createIsolatedHome(testN8nRuntime) {
   }
 
   normalizeTestWorkspaceInstanceId(tempHome);
+
+  // Generate fresh AGENTS.md with current n8nac version
+  generateTestAgentsMd(tempHome);
 
   return tempHome;
 }

@@ -3,7 +3,7 @@ import process from 'node:process';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { config as dotenvConfig } from 'dotenv';
 import { N8nApiClient } from 'n8nac';
 
@@ -1348,6 +1348,40 @@ function buildAdvancedScenarioPrompt(prompt, provider) {
   return `${prompt}\n\nContraintes de test:\n- Cree un nouveau workflow.\n- Donne-lui un nom unique qui commence par "${marker}".\n- N'update pas un workflow existant.\n- Ne pose aucune question et n'attends aucune confirmation.\n- Termine seulement quand le workflow est enregistre et pousse.`;
 }
 
+/**
+ * Regenerate AGENTS.md in an isolated test home using n8nac update-ai.
+ * This ensures each test environment has fresh, up-to-date instructions.
+ */
+function generateTestAgentsMd(homeDir) {
+  // Resolve n8nac package based on YAGR_N8NAC_VERSION
+  const version = String(process.env.YAGR_N8NAC_VERSION || '').trim();
+  let n8nacPackage = 'n8nac';
+  if (version) {
+    if (version.startsWith('@') || version.includes('.')) {
+      n8nacPackage = `n8nac@${version}`;
+    } else {
+      n8nacPackage = `n8nac@${version}`;
+    }
+  }
+
+  // Call n8nac update-ai to regenerate AGENTS.md
+  const result = spawnSync('npx', ['--yes', n8nacPackage, 'update-ai', '--silent'], {
+    cwd: homeDir,
+    env: { ...process.env },
+    stdio: 'pipe',
+    encoding: 'utf8',
+  });
+
+  if ((result.status ?? 1) !== 0) {
+    const stderr = String(result.stderr || '').trim();
+    const stdout = String(result.stdout || '').trim();
+    // Log warning but don't fail — tests can continue even if update-ai fails
+    if (debug) {
+      logDebug('SETUP', `Warning: n8nac update-ai failed for ${homeDir}: ${stderr || stdout || `exit ${result.status ?? 1}`}`);
+    }
+  }
+}
+
 function createAdvancedScenarioHome(provider, model, testN8nRuntime = {}) {
   const baseDir = path.join(os.tmpdir(), 'yagr-provider-advanced');
   fs.mkdirSync(baseDir, { recursive: true });
@@ -1362,6 +1396,9 @@ function createAdvancedScenarioHome(provider, model, testN8nRuntime = {}) {
 
   // Initialize n8nac config from scratch with test instance
   initializeTestN8nConfig(n8nWorkspaceDir, testN8nRuntime);
+
+  // Generate fresh AGENTS.md with current n8nac version
+  generateTestAgentsMd(tempHome);
 
   return tempHome;
 }
