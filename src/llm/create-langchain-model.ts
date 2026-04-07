@@ -204,11 +204,16 @@ class CopilotCompletionsModel extends ChatOpenAICompletions {
  * Instantiate the LangChain `BaseChatModel` for the currently-configured
  * Yagr provider.  Async because OAuth-account providers (copilot-proxy,
  * openai-proxy) need to exchange a short-lived API token at construction time.
+ *
+ * @param config Optional explicit overrides (provider, model, apiKey, baseUrl).
+ *   When omitted, values are read from the config store / environment.
+ * @param configStore Optional config store to read defaults from.
  */
 export async function createLangChainModel(
+  config?: YagrLanguageModelConfig,
   configStore?: YagrLanguageModelConfigStore,
 ): Promise<BaseChatModel> {
-  const { provider, model, apiKey, baseUrl } = resolveLanguageModelConfig({}, configStore);
+  const { provider, model, apiKey, baseUrl } = resolveLanguageModelConfig(config ?? {}, configStore);
 
   switch (provider) {
     case 'anthropic':

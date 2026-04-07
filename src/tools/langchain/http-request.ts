@@ -79,7 +79,7 @@ export const httpRequestTool = tool(
       method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET').describe('HTTP method.'),
       url: z.string().url().describe('Full URL to request.'),
       headers: z.record(z.string()).optional().describe('HTTP headers as key/value pairs.'),
-      body: z.string().nullable().optional().describe('Request body as a string (e.g. JSON-serialized object). Set Content-Type header accordingly.'),
+      body: z.string().optional().describe('Request body as a string (e.g. JSON-serialized object). Set Content-Type header accordingly.'),
       timeoutMs: z.number().int().min(500).max(30_000).default(10_000).describe('Request timeout in milliseconds.'),
     }),
   },

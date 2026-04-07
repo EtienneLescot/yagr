@@ -72,12 +72,17 @@ function buildYagrTools(): StructuredTool[] {
  * again; the new handle will use a fresh checkpointer so session history
  * starts over — matching the current behaviour where `agents.clear()` is
  * called on config change.
+ *
+ * @param engine The engine runtime port (n8n workspace context).
+ * @param configStore Optional config store to read LLM defaults from.
+ * @param modelConfig Optional explicit model overrides (provider, model, apiKey, baseUrl).
  */
 export async function createYagrDeepAgent(
   engine: EngineRuntimePort,
   configStore?: YagrConfigStoreLike,
+  modelConfig?: { provider?: string; model?: string; apiKey?: string; baseUrl?: string },
 ): Promise<YagrDeepAgentHandle> {
-  const model = await createLangChainModel(configStore);
+  const model = await createLangChainModel(modelConfig, configStore);
   const systemPrompt = buildSystemPrompt(engine);
   const checkpointer = new MemorySaver();
 

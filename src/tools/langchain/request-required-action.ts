@@ -34,7 +34,7 @@ export const requestRequiredActionTool = tool(
       kind: z.enum(['input', 'permission', 'external']).describe('Type of blocker that needs user or external action.'),
       title: z.string().min(1).max(120).describe('Short title for the blocker.'),
       message: z.string().min(1).max(500).describe('Short actionable message shown to the user.'),
-      detail: z.string().max(1000).nullable().optional().describe('Detailed explanation or next step. Use null when there is no extra detail.'),
+      detail: z.string().max(1000).optional().describe('Detailed explanation or next step. Omit when there is no extra detail.'),
       resumable: z.boolean().optional().default(true).describe('Whether the run should be considered resumable once the action is satisfied.'),
       blocking: z.boolean().optional().default(true).describe('Whether this action blocks delivery of the current task. Set false for follow-up configuration or next steps that can happen after the current artifact is delivered.'),
     }),

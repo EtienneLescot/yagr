@@ -20,17 +20,15 @@ const {
   isOAuthAccountProvider,
 } = await import('../dist/llm/provider-registry.js');
 const { prepareProviderRuntime } = await import('../dist/llm/proxy-runtime.js');
-const { createLanguageModel } = await import('../dist/llm/create-language-model.js');
 const { getProviderTestModelPreferences } = await import('../dist/llm/test-model-policy.js');
 const { getYagrSetupStatus } = await import('../dist/setup.js');
 const { YagrConfigService } = await import('../dist/config/yagr-config-service.js');
 const { YagrN8nConfigService } = await import('../dist/config/n8n-config-service.js');
 const { getYagrPaths } = await import('../dist/config/yagr-home.js');
-const { YagrAgent } = await import('../dist/agent.js');
+const { createYagrDeepAgent } = await import('../dist/agent-factory.js');
+const { createLangChainModel, resolveModelCapabilityProfile } = await import('../dist/llm/create-langchain-model.js');
 const { createN8nEngineFromWorkspace } = await import('../dist/config/load-n8n-engine-config.js');
-const { analyzeRunOutcome } = await import('../dist/runtime/outcome.js');
-const { resolveToolRuntimeStrategy } = await import('../dist/runtime/tool-runtime-strategy.js');
-const { collectRequiredActions, splitRequiredActions } = await import('../dist/runtime/required-actions.js');
+const { createRunAccumulator, processStreamEvent } = await import('../dist/gateway/langgraph-events.js');
 
 const DEFAULT_TIMEOUT_MS = toInt(process.env.YAGR_IT_TIMEOUT_MS, 60_000);
 const INFERENCE_TIMEOUT_MS = toInt(process.env.YAGR_IT_INFERENCE_TIMEOUT_MS, 75_000);
@@ -172,14 +170,14 @@ async function runProvider(provider) {
   }, DEFAULT_TIMEOUT_MS);
 
   const chosenModel = chooseModel(setupRuntime?.models, modelListing.models, provider);
-  const toolingLevel = resolveToolRuntimeStrategy(provider, chosenModel).capabilityProfile.toolCalling;
+  const toolingLevel = resolveModelCapabilityProfile({ provider, model: chosenModel }).toolCalling;
 
   const inference = await runStep(async () => {
     if (setup.status === 'SKIP') {
       return { status: 'SKIP', note: 'Skipped because setup is not available.' };
     }
 
-    const model = createLanguageModel({
+    const model = await createLangChainModel({
       provider,
       model: chosenModel,
       apiKey: setupRuntime?.apiKey || configuredApiKey,
@@ -188,11 +186,10 @@ async function runProvider(provider) {
 
     let response;
     try {
-      response = await withTimeout(model.doGenerate({
-        inputFormat: 'prompt',
-        mode: { type: 'regular' },
-        prompt: [{ role: 'user', content: [{ type: 'text', text: 'Reply with exactly: OK' }] }],
-      }), INFERENCE_TIMEOUT_MS);
+      response = await withTimeout(
+        model.invoke([{ role: 'user', content: 'Reply with exactly: OK' }]),
+        INFERENCE_TIMEOUT_MS,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (isTransientRateLimit(message)) {
@@ -204,7 +201,7 @@ async function runProvider(provider) {
       throw error;
     }
 
-    const text = String(response?.text || '').trim();
+    const text = String(response?.content || '').trim();
     if (!text) {
       return {
         status: 'FAIL',
@@ -648,8 +645,8 @@ async function runYagrAdvancedScenarioAttempt({
 }) {
   const testN8nRuntime = resolveTestN8nRuntime();
   const isolatedHome = createAdvancedScenarioHome(provider, model, testN8nRuntime);
-  const workflowDir = resolveActiveWorkflowDir(isolatedHome);
-  const beforeSnapshot = snapshotWorkflowFiles(workflowDir);
+  const workspaceScanDir = path.join(isolatedHome, 'n8n-workspace');
+  const beforeSnapshot = snapshotWorkflowFiles(workspaceScanDir);
   const beforeRemoteSnapshot = await listRemoteWorkflows();
   const beforeRemoteDetails = await getRemoteWorkflowDetails(beforeRemoteSnapshot);
   const effectivePrompt = buildAdvancedScenarioPrompt(prompt, provider);
@@ -663,12 +660,13 @@ async function runYagrAdvancedScenarioAttempt({
       timeoutMs,
       testN8nRuntime,
     });
-    const afterSnapshot = snapshotWorkflowFiles(workflowDir);
+    const afterSnapshot = snapshotWorkflowFiles(workspaceScanDir);
     const changedWorkflows = diffWorkflowSnapshots(beforeSnapshot, afterSnapshot);
+    const workflowDir = resolveActiveWorkflowDir(isolatedHome);
     const createdRemoteWorkflows = await getCreatedRemoteWorkflows(beforeRemoteSnapshot);
     const checklist = buildAdvancedChecklist({
-      journal: execution.journal,
       toolEvents: execution.toolEvents,
+      requiredActions: execution.requiredActions,
       changedWorkflows,
       createdRemoteWorkflows,
     });
@@ -831,40 +829,71 @@ async function runAdvancedAgentInProcess({
   return await withScopedEnv(envOverrides, async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
+    let accumulator = createRunAccumulator();
 
     try {
       const engine = await createN8nEngineFromWorkspace();
-      const agent = new YagrAgent(engine);
-      const result = await agent.run(prompt, {
-        provider,
-        model,
-        maxSteps: 10,
-        abortSignal: controller.signal,
-        onTextDelta: async (textDelta) => {
-          stdoutChunks.push(String(textDelta));
-        },
-        onToolEvent: async (event) => {
-          toolEvents.push(event);
-          if (event.type === 'command-start') {
-            stderrChunks.push(`[tool:${event.toolName}] START ${event.command}`);
-          } else if (event.type === 'command-output') {
-            stderrChunks.push(`[tool:${event.toolName}] ${event.stream}: ${String(event.chunk).trimEnd()}`);
-          } else if (event.type === 'command-end') {
-            stderrChunks.push(`[tool:${event.toolName}] END exit=${event.exitCode}${event.timedOut ? ' timedOut=1' : ''}`);
-          } else if (event.type === 'status' || event.type === 'result') {
-            stderrChunks.push(`[tool:${event.toolName}] ${event.type}: ${event.message}`);
+      const { agent } = await createYagrDeepAgent(engine, undefined, { provider, model, apiKey });
+      accumulator = createRunAccumulator();
+      const threadId = `matrix-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      const stream = agent.streamEvents(
+        { messages: [{ role: 'user', content: prompt }] },
+        { configurable: { thread_id: threadId }, version: 'v2', signal: controller.signal },
+      );
+
+      for await (const event of stream) {
+        await processStreamEvent(event, accumulator, {
+          onTextDelta: async (delta) => { stdoutChunks.push(delta); },
+          onUserVisibleUpdate: async (update) => {
+            stderrChunks.push(`[update] ${update.title}${update.detail ? `: ${update.detail}` : ''}`);
+          },
+        });
+
+        // Collect tool events from stream for checklist analysis
+        if (event.event === 'on_tool_start') {
+          const rawInput = event.data?.input;
+          const inner = rawInput?.input;
+          let parsedInput;
+          if (typeof inner === 'string') { try { parsedInput = JSON.parse(inner); } catch { parsedInput = rawInput; } }
+          else { parsedInput = inner ?? rawInput; }
+          const toolName = event.name;
+          const cmd = String(parsedInput?.command || parsedInput?.cmd || '');
+          if (cmd) {
+            toolEvents.push({ type: 'command-start', toolName, command: cmd });
+            stderrChunks.push(`[tool:${toolName}] START ${cmd}`);
+          } else {
+            toolEvents.push({ type: 'status', toolName, message: `start:${JSON.stringify(parsedInput ?? {}).slice(0, 120)}` });
           }
-        },
-        onJournalEntry: async (entry) => {
-          journal.push(entry);
-        },
-      });
+          // Track script/write calls for analysis
+          journal.push({ type: 'tool-start', toolName, input: parsedInput });
+        } else if (event.event === 'on_tool_end') {
+          const toolName = event.name;
+          const output = event.data?.output;
+          // Parse tool output
+          let parsedOutput;
+          if (typeof output === 'string') { try { parsedOutput = JSON.parse(output); } catch { parsedOutput = { text: output }; } }
+          else { parsedOutput = output; }
+          const exitCode = parsedOutput?.exitCode ?? parsedOutput?.exit_code;
+          if (exitCode !== undefined) {
+            toolEvents.push({ type: 'command-end', toolName, exitCode: Number(exitCode), timedOut: false });
+            stderrChunks.push(`[tool:${toolName}] END exit=${exitCode}`);
+          }
+          const statusMsg = parsedOutput?.message || parsedOutput?.status;
+          if (statusMsg) {
+            toolEvents.push({ type: 'status', toolName, message: String(statusMsg) });
+            stderrChunks.push(`[tool:${toolName}] status: ${statusMsg}`);
+          }
+          journal.push({ type: 'tool-end', toolName, output: parsedOutput });
+        }
+      }
 
       return {
-        stdout: result.text || stdoutChunks.join(''),
+        stdout: stdoutChunks.join(''),
         stderr: stderrChunks.join('\n'),
-        journal: result.journal || journal,
+        journal,
         toolEvents,
+        requiredActions: accumulator.requiredActions,
         timedOut: false,
         error: '',
       };
@@ -875,6 +904,7 @@ async function runAdvancedAgentInProcess({
         stderr: `${stderrChunks.join('\n')}\n${message}`.trim(),
         journal,
         toolEvents,
+        requiredActions: accumulator?.requiredActions ?? [],
         timedOut: /timeout after/i.test(message),
         error: message,
       };
@@ -909,29 +939,63 @@ async function withScopedEnv(overrides, fn) {
 }
 
 function buildAdvancedChecklist({
-  journal,
   toolEvents,
+  requiredActions,
   changedWorkflows,
   createdRemoteWorkflows,
 }) {
-  const outcome = analyzeRunOutcome(journal || []);
-  const requiredActions = collectRequiredActions(journal || []);
-  const { blocking: blockingRequiredActions, followUp: followUpRequiredActions } = splitRequiredActions(requiredActions);
-  const commandStarts = (toolEvents || []).filter((event) => event.type === 'command-start' && event.toolName === 'n8nac');
-  const commandEnds = (toolEvents || []).filter((event) => event.type === 'command-end' && event.toolName === 'n8nac');
-  const workflowEmbeds = (toolEvents || []).filter((event) => event.type === 'embed' && event.kind === 'workflow');
+  // Split required actions into blocking vs follow-up
+  const blockingRequiredActions = (requiredActions || []).filter((a) => a.blocking !== false);
+  const followUpRequiredActions = (requiredActions || []).filter((a) => a.blocking === false);
+
+  const allEvents = (toolEvents || []);
+  // Legacy path: command-start events from direct n8nac tool invocations
+  const commandStarts = allEvents.filter((event) => event.type === 'command-start' && event.toolName === 'n8nac');
+  const commandEnds = allEvents.filter((event) => event.type === 'command-end' && event.toolName === 'n8nac');
+  // New path: runScript / execute status messages containing n8nac subcommands
+  const scriptMessages = allEvents
+    .filter((event) => (event.type === 'status' || event.type === 'result') && (event.toolName === 'runScript' || event.toolName === 'execute' || event.toolName === 'run_script'))
+    .map((event) => String(event.message || '').toLowerCase());
+  const usedN8nacViaScript = scriptMessages.some((msg) => msg.includes('n8nac'));
+  // Also detect n8nac calls from command-start events on execute/run_script tools
+  const executeCommands = allEvents
+    .filter((event) => event.type === 'command-start' && (event.toolName === 'execute' || event.toolName === 'run_script' || event.toolName === 'runScript'))
+    .map((event) => String(event.command || '').toLowerCase());
+  const hasPush = commandStarts.some((event) => String(event.command || '').includes('push'))
+    || scriptMessages.some((msg) => msg.includes('n8nac push'))
+    || executeCommands.some((cmd) => cmd.includes('n8nac') && cmd.includes('push'));
+  const hasVerify = commandStarts.some((event) => String(event.command || '').includes('verify'))
+    || scriptMessages.some((msg) => msg.includes('n8nac verify'))
+    || executeCommands.some((cmd) => cmd.includes('n8nac') && cmd.includes('verify'));
+  const workflowEmbeds = allEvents.filter((event) => event.type === 'embed' && event.kind === 'workflow');
+  const actionNames = [
+    ...(hasPush ? ['push'] : []),
+    ...(hasVerify ? ['verify'] : []),
+  ];
+
+  // Count script runs from tool-end events
+  const scriptEnds = allEvents.filter((event) => event.type === 'command-end' && (event.toolName === 'execute' || event.toolName === 'run_script' || event.toolName === 'runScript'));
+  const successfulScriptRuns = scriptEnds.filter((e) => Number(e.exitCode ?? 0) === 0).length;
+  const failedScriptRuns = scriptEnds.filter((e) => Number(e.exitCode ?? 0) !== 0).length;
+
+  // Detect workflow file writes from tool-start events (write_file / writeFile / edit_file)
+  const writeEvents = allEvents.filter((event) => event.type === 'status' && (event.toolName === 'write_file' || event.toolName === 'writeFile' || event.toolName === 'edit_file' || event.toolName === 'editFile'));
+  const wroteWorkflowFile = writeEvents.length > 0 || (changedWorkflows || []).length > 0;
 
   return {
-    usedN8nac: commandStarts.length > 0,
-    scriptRunCount: outcome.successfulScriptRuns + outcome.failedScriptRuns,
+    usedN8nac: commandStarts.length > 0 || usedN8nacViaScript || executeCommands.some((cmd) => cmd.includes('n8nac')),
+    hasPush,
+    hasVerify,
+    actionNames,
+    scriptRunCount: successfulScriptRuns + failedScriptRuns,
     commandStartCount: commandStarts.length,
     commandEndCount: commandEnds.length,
-    successfulScriptRuns: outcome.successfulScriptRuns,
-    failedScriptRuns: outcome.failedScriptRuns,
+    successfulScriptRuns,
+    failedScriptRuns,
     hasWorkflowEmbed: workflowEmbeds.length > 0,
     hasWorkflowEmbedUrl: workflowEmbeds.some((event) => Boolean(String(event.url || '').trim())),
     hasWorkflowEmbedDiagram: workflowEmbeds.some((event) => Boolean(String(event.diagram || '').trim())),
-    wroteWorkflowFile: Boolean(outcome.hasWorkflowWrites),
+    wroteWorkflowFile,
     changedWorkflowFileCount: (changedWorkflows || []).length,
     remoteWorkflowCount: Array.isArray(createdRemoteWorkflows) ? createdRemoteWorkflows.length : 0,
     blockingRequiredActionCount: blockingRequiredActions.length,
@@ -1254,23 +1318,27 @@ function serializeWorkflowForComparison(workflow) {
   });
 }
 
-function snapshotWorkflowFiles(workflowDir) {
-  if (!workflowDir || !fs.existsSync(workflowDir)) {
+function snapshotWorkflowFiles(baseDir) {
+  if (!baseDir || !fs.existsSync(baseDir)) {
     return new Map();
   }
 
   const entries = new Map();
-  for (const entry of fs.readdirSync(workflowDir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.workflow.ts')) {
-      continue;
+  const scan = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        scan(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.workflow.ts')) {
+        const content = fs.readFileSync(fullPath, 'utf8');
+        entries.set(fullPath, {
+          content,
+          mtimeMs: fs.statSync(fullPath).mtimeMs,
+        });
+      }
     }
-    const filePath = path.join(workflowDir, entry.name);
-    const content = fs.readFileSync(filePath, 'utf8');
-    entries.set(filePath, {
-      content,
-      mtimeMs: fs.statSync(filePath).mtimeMs,
-    });
-  }
+  };
+  scan(baseDir);
   return entries;
 }
 
