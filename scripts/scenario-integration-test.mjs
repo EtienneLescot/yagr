@@ -404,7 +404,7 @@ function resolveTestN8nRuntime() {
  * Regenerate AGENTS.md in an isolated test home using n8nac update-ai.
  * This ensures the test environment has fresh, up-to-date instructions.
  */
-function generateTestAgentsMd(homeDir) {
+function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
   // Resolve n8nac package based on YAGR_N8NAC_VERSION
   const version = String(process.env.YAGR_N8NAC_VERSION || '').trim();
   let n8nacPackage = 'n8nac';
@@ -419,7 +419,12 @@ function generateTestAgentsMd(homeDir) {
   // Call n8nac update-ai to regenerate AGENTS.md
   const result = spawnSync('npx', ['--yes', n8nacPackage, 'update-ai', '--silent'], {
     cwd: homeDir,
-    env: { ...process.env },
+    env: {
+      ...process.env,
+      ...(testN8nRuntime.host ? { N8N_HOST: String(testN8nRuntime.host) } : {}),
+      ...(testN8nRuntime.apiKey ? { N8N_API_KEY: String(testN8nRuntime.apiKey) } : {}),
+      ...(testN8nRuntime.projectId ? { N8N_PROJECT_ID: String(testN8nRuntime.projectId) } : {}),
+    },
     stdio: 'pipe',
     encoding: 'utf8',
   });
@@ -448,12 +453,20 @@ function createIsolatedHome(testN8nRuntime) {
     reconcileN8nRuntime(tempHome, { host, apiKey, projectId });
   }
 
+  ensureIsolatedHomeProjectCompatibility(tempHome);
+
+  writeIsolatedN8nCredentials(tempHome, testN8nRuntime);
+
   normalizeTestWorkspaceInstanceId(tempHome);
 
   // Generate fresh AGENTS.md with current n8nac version
-  generateTestAgentsMd(tempHome);
+  generateTestAgentsMd(tempHome, testN8nRuntime);
 
   return tempHome;
+}
+
+function getIsolatedWorkspaceDir(homeDir) {
+  return path.join(homeDir, 'n8n-workspace');
 }
 
 function normalizeTestWorkspaceInstanceId(tempHome) {
@@ -493,6 +506,31 @@ function reconcileN8nRuntime(tempHome, { host, apiKey, projectId }) {
   fs.writeFileSync(configPath, `${JSON.stringify(localConfig, null, 2)}\n`);
 }
 
+function ensureIsolatedHomeProjectCompatibility(homeDir) {
+  const workspaceDir = path.join(homeDir, 'n8n-workspace');
+  const workspaceConfigPath = path.join(workspaceDir, 'n8nac-config.json');
+  const rootConfigPath = path.join(homeDir, 'n8nac-config.json');
+  const workspaceWorkflowsDir = path.join(workspaceDir, 'workflows');
+  const rootWorkflowsDir = path.join(homeDir, 'workflows');
+
+  const config = readJsonIfExists(workspaceConfigPath);
+  if (config) {
+    fs.writeFileSync(rootConfigPath, `${JSON.stringify(config, null, 2)}\n`);
+  }
+
+  try {
+    if (fs.existsSync(rootWorkflowsDir)) {
+      const stat = fs.lstatSync(rootWorkflowsDir);
+      if (stat.isSymbolicLink() || stat.isDirectory()) {
+        fs.rmSync(rootWorkflowsDir, { recursive: true, force: true });
+      }
+    }
+    fs.symlinkSync(workspaceWorkflowsDir, rootWorkflowsDir, 'dir');
+  } catch {
+    fs.mkdirSync(rootWorkflowsDir, { recursive: true });
+  }
+}
+
 function writeIsolatedYagrConfig(tempHome) {
   const configPath = path.join(tempHome, 'yagr-config.json');
   const baseUrlEnvKey = `YAGR_${PROVIDER.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_BASE_URL`;
@@ -507,6 +545,27 @@ function writeIsolatedYagrConfig(tempHome) {
   fs.writeFileSync(configPath, `${JSON.stringify(localConfig, null, 2)}\n`);
 }
 
+function writeIsolatedN8nCredentials(homeDir, testN8nRuntime = {}) {
+  const host = String(testN8nRuntime.host || '').trim();
+  const apiKey = String(testN8nRuntime.apiKey || '').trim();
+  if (!host || !apiKey) {
+    return;
+  }
+
+  const normalizedHost = normalizeHost(host);
+  const credentialsPath = path.join(homeDir, 'n8n-credentials.json');
+  const payload = { hosts: { [normalizedHost]: apiKey } };
+  fs.writeFileSync(credentialsPath, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function normalizeHost(host) {
+  try {
+    return new URL(host).origin;
+  } catch {
+    return String(host || '').trim().replace(/\/$/, '');
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Scenario runner
 // ---------------------------------------------------------------------------
@@ -517,7 +576,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
   const stdoutChunks = [];
   const envOverrides = {
     YAGR_HOME: isolatedHome,
-    YAGR_LAUNCH_CWD: process.cwd(),
+    YAGR_LAUNCH_CWD: isolatedHome,
     YAGR_ALLOW_N8N_ENV: '1',
     YAGR_PREFER_ENV_CREDENTIALS: '1',
     ...(testN8nRuntime.host ? { N8N_HOST: testN8nRuntime.host } : {}),
@@ -526,6 +585,8 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
   };
 
   return await withScopedEnv(envOverrides, async () => {
+    const previousCwd = process.cwd();
+    process.chdir(getIsolatedWorkspaceDir(isolatedHome));
     const controller = new AbortController();
     const timer = setTimeout(
       () => controller.abort(new Error(`Timeout after ${scenario.timeoutMs}ms`)),
@@ -676,6 +737,11 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
         timedOut,
       };
     } finally {
+      try {
+        process.chdir(previousCwd);
+      } catch {
+        // Best effort restore only.
+      }
       clearTimeout(timer);
       if (heartbeat) {
         clearInterval(heartbeat);

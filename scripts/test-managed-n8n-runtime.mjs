@@ -22,6 +22,7 @@ export async function ensureManagedDockerTestRuntime() {
   return await withManagedTestHome(async () => {
     const { getManagedDockerN8nStatus, installManagedDockerN8n, startManagedDockerN8n } = await import('../dist/n8n-local/docker-manager.js');
     const { bootstrapManagedLocalN8n } = await import('../dist/n8n-local/bootstrap.js');
+    const { YagrN8nConfigService } = await import('../dist/config/n8n-config-service.js');
 
     const status = await getManagedDockerN8nStatus();
     let state;
@@ -37,10 +38,24 @@ export async function ensureManagedDockerTestRuntime() {
       throw new Error('Managed Docker n8n test runtime did not provide a URL.');
     }
 
+    const configService = new YagrN8nConfigService();
+    const existingApiKey = configService.getApiKey(state.url);
+    if (existingApiKey) {
+      return {
+        host: state.url,
+        apiKey: existingApiKey,
+        projectId: 'personal',
+        configured: true,
+        managedHome: TEST_MANAGED_HOME,
+      };
+    }
+
     const bootstrap = await bootstrapManagedLocalN8n({ url: state.url });
     if (!bootstrap.apiKey) {
       throw new Error(`Managed Docker n8n bootstrap failed: ${bootstrap.reason || 'API key was not generated.'}`);
     }
+
+    configService.saveApiKey(state.url, bootstrap.apiKey);
 
     return {
       host: state.url,
