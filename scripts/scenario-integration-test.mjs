@@ -449,11 +449,11 @@ function createIsolatedHome(testN8nRuntime) {
     reconcileN8nRuntime(tempHome, { host, apiKey, projectId });
   }
 
-  ensureIsolatedHomeProjectCompatibility(tempHome);
-
   writeIsolatedN8nCredentials(tempHome, testN8nRuntime);
 
   normalizeTestWorkspaceInstanceId(tempHome);
+
+  ensureIsolatedHomeProjectCompatibility(tempHome);
 
   // Generate fresh AGENTS.md with current n8nac version
   generateTestAgentsMd(tempHome, testN8nRuntime);
@@ -493,10 +493,30 @@ function normalizeTestWorkspaceInstanceId(tempHome) {
 function reconcileN8nRuntime(tempHome, { host, apiKey, projectId }) {
   const configPath = path.join(tempHome, 'n8n-workspace', 'n8nac-config.json');
   const localConfig = readJsonIfExists(configPath) || {};
+  const normalizedHost = host ? normalizeHost(host) : undefined;
+  const normalizedProjectId = projectId || localConfig.projectId || 'personal';
+  const projectName = localConfig.projectName || 'Personal';
+  const activeInstanceId = 'test-local';
 
   if (host) localConfig.host = host;
   if (projectId) localConfig.projectId = projectId;
+  if (!localConfig.projectName) localConfig.projectName = projectName;
   if (!localConfig.syncFolder) localConfig.syncFolder = 'workflows';
+
+  if (normalizedHost) {
+    localConfig.activeInstanceId = activeInstanceId;
+    localConfig.instances = [
+      {
+        id: activeInstanceId,
+        name: 'test-local',
+        host: normalizedHost,
+        syncFolder: localConfig.syncFolder,
+        projectId: normalizedProjectId,
+        projectName,
+        instanceIdentifier: localConfig.instanceIdentifier || 'test',
+      },
+    ];
+  }
 
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify(localConfig, null, 2)}\n`);
@@ -572,7 +592,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
   const stdoutChunks = [];
   const envOverrides = {
     YAGR_HOME: isolatedHome,
-    YAGR_LAUNCH_CWD: isolatedHome,
+    YAGR_LAUNCH_CWD: getIsolatedWorkspaceDir(isolatedHome),
     YAGR_ALLOW_N8N_ENV: '1',
     YAGR_PREFER_ENV_CREDENTIALS: '1',
     ...(testN8nRuntime.host ? { N8N_HOST: testN8nRuntime.host } : {}),
@@ -678,7 +698,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
           } else {
             parsedOutput = output;
           }
-          const exitCode = parsedOutput?.exitCode ?? parsedOutput?.exit_code;
+          const exitCode = extractToolExitCode(toolName, parsedOutput, output);
           if (exitCode !== undefined) {
             const toolEvent = { type: 'command-end', toolName, exitCode: Number(exitCode), timedOut: false };
             toolEvents.push(toolEvent);
@@ -760,6 +780,37 @@ function buildScenarioOutcome(toolEvents) {
     failedScriptRuns,
     hasWorkflowWrites,
   };
+}
+
+function extractToolExitCode(toolName, parsedOutput, rawOutput) {
+  const directExitCode = parsedOutput?.exitCode ?? parsedOutput?.exit_code;
+  if (directExitCode !== undefined && directExitCode !== null) {
+    return Number(directExitCode);
+  }
+  if (toolName !== 'execute') {
+    return undefined;
+  }
+
+  const text = rawOutputToString(rawOutput).trimEnd();
+  const exitMatch = text.match(/\[Command (?:succeeded|failed) with exit code (\d+)\]\s*$/);
+  return exitMatch ? Number.parseInt(exitMatch[1], 10) : undefined;
+}
+
+function rawOutputToString(rawOutput) {
+  if (typeof rawOutput === 'string') {
+    return rawOutput;
+  }
+  if (rawOutput == null) {
+    return '';
+  }
+  if (typeof rawOutput === 'object' && typeof rawOutput.text === 'string') {
+    return rawOutput.text;
+  }
+  try {
+    return JSON.stringify(rawOutput);
+  } catch {
+    return String(rawOutput);
+  }
 }
 
 // ---------------------------------------------------------------------------

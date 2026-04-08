@@ -2,7 +2,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { N8nApiClient } from 'n8nac';
 
-const TEST_MANAGED_HOME = path.join(os.tmpdir(), 'yagr-it-managed-n8n');
+const TEST_MANAGED_HOME = resolveManagedTestHome();
+
+function resolveManagedTestHome() {
+  const configured = String(process.env.YAGR_IT_MANAGED_HOME || '').trim();
+  if (configured) {
+    return configured;
+  }
+  const uid = typeof process.getuid === 'function' ? String(process.getuid()) : 'user';
+  return path.join(os.tmpdir(), `yagr-it-managed-n8n-${uid}`);
+}
 
 function withManagedTestHome(fn) {
   const previous = process.env.YAGR_HOME;
@@ -40,7 +49,7 @@ export async function ensureManagedDockerTestRuntime() {
 
     const configService = new YagrN8nConfigService();
     const existingApiKey = configService.getApiKey(state.url);
-    if (existingApiKey) {
+    if (existingApiKey && await isApiKeyValid(state.url, existingApiKey)) {
       return {
         host: state.url,
         apiKey: existingApiKey,
@@ -65,6 +74,22 @@ export async function ensureManagedDockerTestRuntime() {
       managedHome: TEST_MANAGED_HOME,
     };
   });
+}
+
+async function isApiKeyValid(host, apiKey) {
+  const baseUrl = String(host || '').replace(/\/+$/, '');
+  if (!baseUrl || !apiKey) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/workflows?limit=1`, {
+      headers: { 'X-N8N-API-KEY': apiKey },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function stopManagedDockerTestRuntime() {
