@@ -25,11 +25,14 @@ export class OpenAiAccountChatModel extends BaseChatModel<OpenAiAccountChatCallO
 
   private readonly boundTools?: LanguageModelV1FunctionTool[];
 
-  constructor(fields: BaseChatModelParams & { model: string; capabilityProfile?: YagrModelCapabilityProfile; boundTools?: LanguageModelV1FunctionTool[] }) {
+  private readonly boundCallOptions?: Partial<OpenAiAccountChatCallOptions>;
+
+  constructor(fields: BaseChatModelParams & { model: string; capabilityProfile?: YagrModelCapabilityProfile; boundTools?: LanguageModelV1FunctionTool[]; boundCallOptions?: Partial<OpenAiAccountChatCallOptions> }) {
     super(fields);
     this.model = fields.model;
     this.capabilityProfile = fields.capabilityProfile;
     this.boundTools = fields.boundTools;
+    this.boundCallOptions = fields.boundCallOptions;
   }
 
   _llmType(): string {
@@ -47,12 +50,17 @@ export class OpenAiAccountChatModel extends BaseChatModel<OpenAiAccountChatCallO
     const normalizedTools = tools
       .map(toLanguageModelTool)
       .filter((tool): tool is LanguageModelV1FunctionTool => Boolean(tool));
+    const boundCallOptions = {
+      ...(kwargs ?? {}),
+      tool_choice: kwargs?.tool_choice ?? (normalizedTools.length > 0 ? 'any' : undefined),
+    };
     return new OpenAiAccountChatModel({
       model: this.model,
       capabilityProfile: this.capabilityProfile,
       disableStreaming: this.disableStreaming,
       outputVersion: this.outputVersion,
       boundTools: normalizedTools,
+      boundCallOptions,
       ...(kwargs?.callbacks ? { callbacks: kwargs.callbacks } : {}),
       ...(kwargs?.tags ? { tags: kwargs.tags } : {}),
       ...(kwargs?.metadata ? { metadata: kwargs.metadata } : {}),
@@ -65,12 +73,13 @@ export class OpenAiAccountChatModel extends BaseChatModel<OpenAiAccountChatCallO
     _runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
     const model = createOpenAiAccountLanguageModel(this.model, this.capabilityProfile);
+    const boundToolChoice = this.boundCallOptions?.tool_choice;
     const result = await model.doGenerate({
       inputFormat: 'prompt',
       mode: {
         type: 'regular',
         tools: options.tools ?? this.boundTools ?? [],
-        toolChoice: normalizeToolChoice(options.tool_choice),
+        toolChoice: normalizeToolChoice(options.tool_choice ?? boundToolChoice),
       },
       prompt: toLanguageModelPrompt(messages),
       abortSignal: options.signal,

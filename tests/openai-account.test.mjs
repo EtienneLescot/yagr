@@ -173,3 +173,85 @@ test('openai-proxy LangChain model invokes the Codex runtime instead of ChatOpen
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('openai-proxy LangChain model preserves bindTools tool choice and sends bound tools to Codex', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-langchain-bind-'));
+  const authPath = path.join(tempDir, 'auth.json');
+  const accessToken = makeJwtWithAccountId('acct_yagr_langchain_bind');
+  fs.writeFileSync(authPath, JSON.stringify({
+    auth_mode: 'chatgpt',
+    tokens: {
+      access_token: accessToken,
+      refresh_token: 'refresh-token',
+    },
+  }));
+
+  const previousAuthPath = process.env.YAGR_CODEX_AUTH_PATH;
+  const previousFetch = globalThis.fetch;
+  let seenBody;
+
+  process.env.YAGR_CODEX_AUTH_PATH = authPath;
+  globalThis.fetch = async (_url, init) => {
+    seenBody = JSON.parse(String(init?.body || '{}'));
+    return createSseResponse([
+      {
+        type: 'response.output_item.added',
+        item: {
+          type: 'function_call',
+          call_id: 'call_456',
+          name: 'n8nac',
+          arguments: '',
+        },
+      },
+      {
+        type: 'response.function_call_arguments.delta',
+        item_id: 'call_456',
+        delta: '{"action":"setup_check"}',
+      },
+      {
+        type: 'response.completed',
+        response: {
+          usage: {
+            input_tokens: 9,
+            output_tokens: 4,
+          },
+        },
+      },
+    ]);
+  };
+
+  try {
+    const model = await createLangChainModel({ provider: 'openai-proxy', model: 'gpt-5.1-codex-mini' });
+    const boundModel = model.bindTools([
+      {
+        name: 'n8nac',
+        description: 'Run n8nac.',
+        parameters: {
+          type: 'object',
+          properties: {
+            action: { type: 'string' },
+          },
+          required: ['action'],
+          additionalProperties: false,
+        },
+      },
+    ], { tool_choice: 'any' });
+
+    const result = await boundModel.invoke([new HumanMessage('Check workspace setup.')]);
+
+    assert.equal(seenBody.model, 'gpt-5.1-codex-mini');
+    assert.equal(Array.isArray(seenBody.tools), true);
+    assert.equal(seenBody.tools[0].name, 'n8nac');
+    assert.equal(seenBody.tool_choice, 'required');
+    assert.equal(result.tool_calls.length, 1);
+    assert.equal(result.tool_calls[0].name, 'n8nac');
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousAuthPath === undefined) {
+      delete process.env.YAGR_CODEX_AUTH_PATH;
+    } else {
+      process.env.YAGR_CODEX_AUTH_PATH = previousAuthPath;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});

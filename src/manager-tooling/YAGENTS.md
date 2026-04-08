@@ -27,3 +27,4 @@ This is a manager-owned rule and it takes precedence over generic `n8nac` worksp
 - Do not switch to a direct Gemini, OpenAI, Anthropic, or other provider credential for the AI Agent / LangChain node when the goal is a Yagr-managed LLM setup.
 - Do not ask the user for an n8n API key or OpenAI-compatible API key just to wire the AI Agent / LangChain node when `yagr yagrProxy` can handle it.
 - If `yagr yagrProxy` succeeds, reuse the returned credential directly in the workflow.
+- When using shell commands for `yagr yagrProxy` or `n8nac` discovery/setup, prefer one short command per shell tool call. Avoid chaining multiple long discovery steps with `&&` when they can be run sequentially, because idle timeouts can interrupt the workflow setup loop.
