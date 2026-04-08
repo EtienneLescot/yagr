@@ -55,7 +55,7 @@ const advancedIdleTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_IDLE_TIMEOUT_MS
 const markdownPath = process.env.YAGR_IT_MARKDOWN_PATH || path.join(process.cwd(), 'reports', 'provider-integration-matrix.md');
 const advanced = args.has('--advanced') || process.env.YAGR_IT_ADVANCED === '1';
 const advancedPrompt = process.env.YAGR_IT_ADVANCED_PROMPT
-  || 'Crée immédiatement un workflow n8n minimal avec exactement deux noeuds: un Manual Trigger puis un Set qui définit status=\"ok\". Ne me pose aucune question. Utilise les outils n8n disponibles, enregistre le workflow et pousse-le.';
+  || 'Create a minimal n8n workflow with exactly two nodes: a Manual Trigger followed by a Set node that defines status=\"ok\". Do not ask any questions. Save the workflow and push it.';
 const advancedTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_TIMEOUT_MS, 90_000);
 const forcedModel = String(process.env.YAGR_IT_FORCE_MODEL || '').trim();
 const disabledProviderTests = new Set(
@@ -1424,13 +1424,42 @@ function resolveActiveWorkflowDir(yagrHome = getYagrPaths().homeDir) {
 
 function buildAdvancedScenarioPrompt(prompt, provider) {
   const marker = `yagr-it-${provider.replace(/[^a-z0-9]+/gi, '-')}-${Date.now()}`;
-  return `${prompt}\n\nContraintes de test:\n- Cree un nouveau workflow.\n- Donne-lui un nom unique qui commence par "${marker}".\n- N'update pas un workflow existant.\n- Ne pose aucune question et n'attends aucune confirmation.\n- Termine seulement quand le workflow est enregistre et pousse.`;
+  return `${prompt}\n\nTest constraints:\n- Create a new workflow.\n- Give it a unique name starting with "${marker}".\n- Do not update an existing workflow.\n- Do not ask any questions or wait for confirmation.\n- Only finish when the workflow is saved and pushed.`;
 }
 
 /**
  * Regenerate AGENTS.md in an isolated test home using n8nac update-ai.
  * This ensures each test environment has fresh, up-to-date instructions.
  */
+function seedHomeAgentsMd(homeDir) {
+  // Mirrors ensureHomeInstructionsSeeded from src/config/yagr-home.ts:
+  // seed homeDir/AGENTS.md from the bundled YAGENTS.md template if not already present.
+  const destPath = path.join(homeDir, 'AGENTS.md');
+  if (fs.existsSync(destPath)) {
+    return;
+  }
+
+  const launchDir = process.env.YAGR_LAUNCH_CWD || process.cwd();
+  const candidates = [
+    path.join(launchDir, 'node_modules', '@yagr', 'manager-tooling', 'YAGENTS.md'),
+    path.join(launchDir, 'src', 'manager-tooling', 'YAGENTS.md'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      try {
+        const content = fs.readFileSync(candidate, 'utf8').trim();
+        if (content) {
+          fs.writeFileSync(destPath, `${content}\n`);
+        }
+      } catch {
+        // Best effort only.
+      }
+      return;
+    }
+  }
+}
+
 function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
   // Resolve n8nac package based on YAGR_N8NAC_VERSION
   const version = String(process.env.YAGR_N8NAC_VERSION || '').trim();
@@ -1439,9 +1468,9 @@ function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
     n8nacPackage = version.startsWith('@') ? `n8nac${version}` : `n8nac@${version}`;
   }
 
-  // Call n8nac update-ai to regenerate AGENTS.md
+  // Call n8nac update-ai to regenerate AGENTS.md in the n8n-workspace directory
   const result = spawnSync('npx', ['--yes', n8nacPackage, 'update-ai', '--silent'], {
-    cwd: homeDir,
+    cwd: path.join(homeDir, 'n8n-workspace'),
     env: {
       ...process.env,
       ...(testN8nRuntime.host ? { N8N_HOST: String(testN8nRuntime.host) } : {}),
@@ -1481,7 +1510,10 @@ function createAdvancedScenarioHome(provider, model, testN8nRuntime = {}) {
   // Persist credentials inside the isolated YAGR_HOME so runtime/config resolution is self-contained.
   writeIsolatedN8nCredentials(tempHome, testN8nRuntime);
 
-  // Generate fresh AGENTS.md with current n8nac version
+  // Seed homeDir/AGENTS.md from the bundled YAGENTS.md template (mirrors ensureHomeInstructionsSeeded in production).
+  seedHomeAgentsMd(tempHome);
+
+  // Generate fresh n8n-workspace/AGENTS.md with current n8nac version (mirrors refreshAiContext in production).
   generateTestAgentsMd(tempHome, testN8nRuntime);
 
   return tempHome;
