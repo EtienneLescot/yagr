@@ -148,8 +148,16 @@ export const YAGR_MODEL_PROVIDERS = Object.freeze(Object.keys(YAGR_PROVIDER_DEFI
 export const YAGR_SUPPORTED_MODEL_PROVIDERS = Object.freeze(
   YAGR_MODEL_PROVIDERS.filter((provider) => YAGR_PROVIDER_DEFINITIONS[provider].supported !== false),
 );
+
+const YAGR_HIDDEN_SELECTABLE_MODEL_PROVIDERS = new Set<YagrModelProvider>(['anthropic-proxy']);
+
 export const YAGR_SELECTABLE_MODEL_PROVIDERS = Object.freeze(
-  YAGR_SUPPORTED_MODEL_PROVIDERS.filter((provider) => !isOAuthAccountProvider(provider) || isSupportedProvider(provider)),
+  YAGR_SUPPORTED_MODEL_PROVIDERS.filter((provider) => {
+    if (YAGR_HIDDEN_SELECTABLE_MODEL_PROVIDERS.has(provider)) {
+      return false;
+    }
+    return !isOAuthAccountProvider(provider) || isSupportedProvider(provider);
+  }),
 );
 
 export function getProviderDefinition(provider: YagrModelProvider): YagrProviderDefinition {

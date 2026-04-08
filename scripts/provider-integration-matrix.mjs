@@ -58,6 +58,12 @@ const advancedPrompt = process.env.YAGR_IT_ADVANCED_PROMPT
   || 'Crée immédiatement un workflow n8n minimal avec exactement deux noeuds: un Manual Trigger puis un Set qui définit status=\"ok\". Ne me pose aucune question. Utilise les outils n8n disponibles, enregistre le workflow et pousse-le.';
 const advancedTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_TIMEOUT_MS, 90_000);
 const forcedModel = String(process.env.YAGR_IT_FORCE_MODEL || '').trim();
+const disabledProviderTests = new Set(
+  String(process.env.YAGR_IT_DISABLED_PROVIDERS || 'anthropic-proxy')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean),
+);
 
 const providersFromCli = readProvidersFromCli(argv);
 const requestedProviders = (providersFromCli || process.env.YAGR_IT_PROVIDERS || '')
@@ -66,7 +72,7 @@ const requestedProviders = (providersFromCli || process.env.YAGR_IT_PROVIDERS ||
   .filter(Boolean);
 const providers = requestedProviders.length > 0
   ? requestedProviders.map((entry) => normalizeProviderSelector(entry))
-  : [...YAGR_SUPPORTED_MODEL_PROVIDERS];
+  : [...YAGR_SUPPORTED_MODEL_PROVIDERS].filter((provider) => !disabledProviderTests.has(provider));
 
 configureWritableOAuthPaths();
 
@@ -125,6 +131,22 @@ if (strict && failed.length > 0) {
 }
 
 async function runProvider(provider) {
+  if (disabledProviderTests.has(provider)) {
+    const note = provider === 'anthropic-proxy'
+      ? 'Provider test disabled: anthropic-proxy currently requires a dedicated setup token that is not configured for this machine.'
+      : 'Provider test disabled by YAGR_IT_DISABLED_PROVIDERS.';
+    return {
+      provider,
+      providerLabel: getProviderDisplayName(provider),
+      chosenModel: getDefaultModelForProvider(provider),
+      toolingLevel: 'unknown',
+      setup: serializeStep({ status: 'SKIP', note }),
+      modelListing: serializeStep({ status: 'SKIP', note }),
+      inference: serializeStep({ status: 'SKIP', note }),
+      advancedScenario: serializeStep({ status: 'SKIP', note }),
+    };
+  }
+
   const definition = getProviderDefinition(provider);
   const configuredApiKey = getProviderApiKey(provider);
   const configuredBaseUrl = getProviderBaseUrl(provider);
@@ -151,9 +173,10 @@ async function runProvider(provider) {
     if (!prepared.ready || !prepared.runtime) {
       const reason = prepared.reason || 'Runtime preparation returned not-ready.';
       const missingCredential = /no .*credential|api key|sign in|oauth/i.test(reason);
+      const credentialWarning = missingCredential ? getProviderCredentialWarning(provider) : '';
       return {
         status: missingCredential ? 'SKIP' : 'FAIL',
-        note: reason,
+        note: credentialWarning ? `${reason} ${credentialWarning}` : reason,
       };
     }
 
@@ -447,13 +470,35 @@ async function checkTestN8nAvailability(testN8nRuntime) {
 function configureWritableOAuthPaths() {
   const base = path.join(os.tmpdir(), 'yagr-provider-matrix');
   const sourcePaths = getYagrPaths();
+  const defaultCodexAuthPath = path.join(os.homedir(), '.codex', 'auth.json');
 
+  process.env.YAGR_CODEX_AUTH_PATH ||= path.join(base, 'codex-auth.json');
   process.env.YAGR_COPILOT_SESSION_PATH ||= path.join(base, 'copilot-session.json');
   process.env.YAGR_COPILOT_TOKEN_CACHE_PATH ||= path.join(base, 'copilot-token-cache.json');
   process.env.YAGR_GH_HOSTS_PATH ||= path.join(os.homedir(), '.config', 'gh', 'hosts.yml');
 
+  copyIfExists(defaultCodexAuthPath, process.env.YAGR_CODEX_AUTH_PATH);
   copyIfExists(path.join(sourcePaths.accountAuthDir, 'copilot-oauth.json'), process.env.YAGR_COPILOT_SESSION_PATH);
   copyIfExists(path.join(sourcePaths.accountAuthDir, 'copilot-runtime-token.json'), process.env.YAGR_COPILOT_TOKEN_CACHE_PATH);
+}
+
+function getProviderCredentialWarning(provider) {
+  if (provider === 'openai-proxy') {
+    const authPath = process.env.YAGR_CODEX_AUTH_PATH || path.join(os.homedir(), '.codex', 'auth.json');
+    return `Missing OpenAI OAuth credentials. Expected a Codex auth file at ${authPath}. Run yagr llm setup for OpenAI on this machine before running provider tests.`;
+  }
+
+  if (provider === 'copilot-proxy') {
+    const sessionPath = process.env.YAGR_COPILOT_SESSION_PATH || path.join(getYagrPaths().accountAuthDir, 'copilot-oauth.json');
+    const ghHostsPath = process.env.YAGR_GH_HOSTS_PATH || path.join(os.homedir(), '.config', 'gh', 'hosts.yml');
+    return `Missing GitHub/Copilot OAuth credentials. Expected a Yagr Copilot session at ${sessionPath} or a GitHub CLI session at ${ghHostsPath}. Run yagr llm setup for Copilot or gh auth login on this machine before running provider tests.`;
+  }
+
+  if (provider === 'anthropic-proxy') {
+    return 'anthropic-proxy is currently disabled for provider tests until a dedicated setup token is configured.';
+  }
+
+  return '';
 }
 
 async function discoverModelsVerbose(provider, apiKey, baseUrl) {
