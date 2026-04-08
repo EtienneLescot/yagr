@@ -23,6 +23,7 @@ import { prepareProviderRuntime } from './proxy-runtime.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import type { YagrModelProvider } from './provider-registry.js';
 import { handleAnthropicRelay } from './anthropic-relay.js';
+import { resolveLanguageModelConfig } from './create-langchain-model.js';
 
 export const YAGR_LLM_RELAY_HOST_ENV = 'YAGR_LLM_RELAY_HOST';
 
@@ -314,10 +315,11 @@ async function startRelayInProcess(): Promise<number> {
 async function resolveProviderRuntime() {
   const configService = new YagrConfigService();
   const config = configService.getLocalConfig();
-  const provider = (config.provider ?? 'openai') as YagrModelProvider;
-  const apiKey = configService.getApiKey(provider);
-  const baseUrl = config.baseUrl;
-  return prepareProviderRuntime(provider, { apiKey, baseUrl });
+  const resolved = resolveLanguageModelConfig({ provider: config.provider ?? 'openai' }, configService);
+  return prepareProviderRuntime(resolved.provider as YagrModelProvider, {
+    apiKey: resolved.apiKey,
+    baseUrl: resolved.baseUrl,
+  });
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {

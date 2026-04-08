@@ -10,6 +10,7 @@ When you reference, show, deploy, push, pull, or discuss a specific n8n workflow
 - Pass the `diagram` parameter with the ASCII header block from the n8nac TypeScript output.
 - The tool will automatically construct the correct workflow URL from the configured n8n host and workflow ID.
 - If you have just run or tested a workflow, pass the execution result in the `executionResult` parameter.
+- For `workflow activate`, `workflow deactivate`, `verify`, `test`, `execution list`, and `execution get`, always reuse the concrete workflow ID returned by `push`, `create`, `import`, or `list --remote --json`. Never substitute the workflow title, the TypeScript class name, or the local file path where an ID is required.
 
 ## n8n operations
 

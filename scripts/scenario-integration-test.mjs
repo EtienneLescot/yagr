@@ -505,6 +505,7 @@ function createIsolatedHome(testN8nRuntime) {
   writeIsolatedN8nCredentials(tempHome, testN8nRuntime);
 
   normalizeTestWorkspaceInstanceId(tempHome);
+  sanitizeIsolatedWorkspace(tempHome);
 
   // Generate fresh AGENTS.md with current n8nac version
   generateTestAgentsMd(tempHome, testN8nRuntime);
@@ -539,6 +540,25 @@ function normalizeTestWorkspaceInstanceId(tempHome) {
     fs.renameSync(oldDir, newDir);
   }
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+function sanitizeIsolatedWorkspace(tempHome) {
+  const workspaceDir = getIsolatedWorkspaceDir(tempHome);
+  const configPath = path.join(workspaceDir, 'n8nac-config.json');
+  const config = readJsonIfExists(configPath) || {};
+  const syncFolder = String(config.syncFolder || 'workflows');
+  const resolvedSync = path.isAbsolute(syncFolder) ? syncFolder : path.join(workspaceDir, syncFolder);
+
+  for (const entry of fs.readdirSync(workspaceDir)) {
+    if (/^exec_\d+\.json$/.test(entry)) {
+      fs.rmSync(path.join(workspaceDir, entry), { force: true });
+    }
+  }
+
+  if (fs.existsSync(resolvedSync)) {
+    fs.rmSync(resolvedSync, { recursive: true, force: true });
+  }
+  fs.mkdirSync(resolvedSync, { recursive: true });
 }
 
 function reconcileN8nRuntime(tempHome, { host, apiKey, projectId }) {
@@ -766,7 +786,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
         text: result.text || '',
         steps: result.steps || 0,
         timedOut: false,
-        createdWorkflowIds: [],
+        createdWorkflowIds,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -801,15 +821,40 @@ function buildScenarioOutcome(toolEvents, isolatedHome) {
     event.type === 'status'
     && ['write_file', 'writeFile', 'edit_file', 'editFile', 'moveFile', 'move_file'].includes(event.toolName));
   const usedYagrProxyTool = events.some((event) => event.toolName === 'yagrProxy');
-  const relayExecutionConfirmed = detectRelayExecution(isolatedHome);
+  const successfulProdTestRuns = countSuccessfulProdTests(events);
+  const relayExecutionConfirmed = detectRelayExecution(isolatedHome)
+    || (usedYagrProxyTool && successfulProdTestRuns > 0);
 
   return {
     successfulScriptRuns,
     failedScriptRuns,
     hasWorkflowWrites,
     usedYagrProxyTool,
+    successfulProdTestRuns,
     relayExecutionConfirmed,
   };
+}
+
+function countSuccessfulProdTests(events) {
+  let count = 0;
+
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    if (event?.type !== 'command-start') {
+      continue;
+    }
+    const command = String(event.command || '');
+    if (!/n8nac(?:@[^\s]+)?\s+test\s+/i.test(command) || !/--prod\b/i.test(command)) {
+      continue;
+    }
+
+    const nextEnd = events.slice(index + 1).find((candidate) => candidate?.type === 'command-end');
+    if (Number(nextEnd?.exitCode ?? 1) === 0) {
+      count += 1;
+    }
+  }
+
+  return count;
 }
 
 function detectRelayExecution(isolatedHome) {
