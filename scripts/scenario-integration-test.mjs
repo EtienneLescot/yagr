@@ -87,6 +87,50 @@ const requestedScenarioIds = (scenarioCliArg || process.env.YAGR_SCN_SCENARIOS |
   .map((s) => s.trim())
   .filter(Boolean);
 
+function getProviderApiKey(provider) {
+  const byProvider = {
+    openai: process.env.OPENAI_LLM_API_KEY || process.env.OPENAI_API_KEY,
+    anthropic: process.env.ANTHROPIC_LLM_API_KEY || process.env.ANTHROPIC_API_KEY,
+    google:
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY
+      || process.env.GEMINI_API_KEY
+      || process.env.GOOGLE_API_KEY
+      || process.env.GEMINI_LLM_API_KEY
+      || process.env.GOOGLE_LLM_API_KEY,
+    mistral: process.env.MISTRAL_API_KEY || process.env.MISTRAL_LLM_API_KEY,
+    openrouter: process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_LLM_API_KEY,
+    'openai-proxy': process.env.YAGR_OPENAI_PROXY_TOKEN,
+    'anthropic-proxy': process.env.YAGR_ANTHROPIC_SETUP_TOKEN,
+    'copilot-proxy': process.env.YAGR_COPILOT_TOKEN,
+  };
+  return byProvider[provider];
+}
+
+function resolveScenarioProviderBootstrap(scenarioId) {
+  if (scenarioId !== 'credential-orchestration') {
+    return null;
+  }
+
+  const candidates = [
+    { provider: 'google', envVar: 'GEMINI_API_KEY', apiKey: getProviderApiKey('google') },
+    { provider: 'openai', envVar: 'OPENAI_API_KEY', apiKey: getProviderApiKey('openai') },
+    { provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY', apiKey: getProviderApiKey('anthropic') },
+    { provider: 'mistral', envVar: 'MISTRAL_API_KEY', apiKey: getProviderApiKey('mistral') },
+    { provider: 'openrouter', envVar: 'OPENROUTER_API_KEY', apiKey: getProviderApiKey('openrouter') },
+  ];
+
+  return candidates.find((candidate) => typeof candidate.apiKey === 'string' && candidate.apiKey.trim().length > 0) ?? null;
+}
+
+function buildScenarioPrompt(scenario) {
+  const bootstrap = resolveScenarioProviderBootstrap(scenario.id);
+  if (!bootstrap) {
+    return scenario.prompt;
+  }
+
+  return `${scenario.prompt}\n\nContexte de test: si aucun credential LLM compatible n'existe encore, crée-le toi-même sans me poser de question. Un provider ${bootstrap.provider} est autorisé pour ce test et une clé API valide est déjà disponible dans l'environnement via ${bootstrap.envVar}. Utilise cette variable d'environnement au lieu de demander une clé.`;
+}
+
 // ---------------------------------------------------------------------------
 // Scenario definitions
 // ---------------------------------------------------------------------------
@@ -177,7 +221,7 @@ const SCENARIOS = [
       // Primary signal: workflow file written + scripts ran successfully
       if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0) {
         const text = String(result.text || '');
-        const checkedCredentials = /credential|llm_provider/i.test(text);
+        const checkedCredentials = /credential|llm_provider|gemini|google/i.test(text);
         return {
           pass: true,
           note: `Workflow déployé. Credentials inspectés: ${checkedCredentials}.`,
@@ -326,30 +370,30 @@ const SCENARIOS = [
     assert(result, outcome) {
       const text = String(result.text || '');
       const mentionsCapital = /paris|capital/i.test(text);
+      const usedRelayTool = outcome.usedYagrProxyTool;
+      const relayExecutionConfirmed = outcome.relayExecutionConfirmed;
 
-      // Accept: workflow deployed + agent ran scripts (test/execution)
-      if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0) {
+      if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0 && usedRelayTool && relayExecutionConfirmed) {
         return {
           pass: true,
-          note: `Proxy LLM opérationnel — workflow créé et déployé${mentionsCapital ? ', résultat mentionne Paris/capital' : ''}.`,
+          note: `Proxy LLM confirmé par exécution relay — workflow créé et déployé${mentionsCapital ? ', résultat mentionne Paris/capital' : ''}.`,
         };
       }
 
-      // Accept: agent reused existing workflow and ran scripts
-      if (!outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0 && mentionsCapital) {
+      if (!outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0 && usedRelayTool && relayExecutionConfirmed && mentionsCapital) {
         return {
           pass: true,
-          note: `Workflow réutilisé (pas de fichier), scripts exécutés, résultat mentionne Paris/capital.`,
+          note: `Workflow réutilisé, relay confirmé à l'exécution, résultat mentionne Paris/capital.`,
         };
       }
 
       if (!outcome.hasWorkflowWrites) {
-        return { pass: false, note: `Workflow non créé et non testé. Réponse: ${text.slice(0, 150)}` };
+        return { pass: false, note: `Workflow non créé ou preuve relay absente. Réponse: ${text.slice(0, 150)}` };
       }
 
       return {
         pass: false,
-        note: `Workflow créé mais exécution non confirmée. Réponse: ${text.slice(0, 150)}`,
+        note: `Workflow créé mais preuve d'appel effectif au relay absente. Réponse: ${text.slice(0, 150)}`,
       };
     },
   },
@@ -401,7 +445,7 @@ function resolveTestN8nRuntime() {
 // ---------------------------------------------------------------------------
 
 /**
- * Regenerate AGENTS.md in an isolated test home using n8nac update-ai.
+ * Regenerate AGENTS.md in the isolated n8n workspace using n8nac update-ai.
  * This ensures the test environment has fresh, up-to-date instructions.
  */
 function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
@@ -414,7 +458,7 @@ function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
 
   // Call n8nac update-ai to regenerate AGENTS.md
   const result = spawnSync('npx', ['--yes', n8nacPackage, 'update-ai', '--silent'], {
-    cwd: homeDir,
+    cwd: getIsolatedWorkspaceDir(homeDir),
     env: {
       ...process.env,
       ...(testN8nRuntime.host ? { N8N_HOST: String(testN8nRuntime.host) } : {}),
@@ -430,6 +474,15 @@ function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
     const stdout = String(result.stdout || '').trim();
     // Log warning but don't fail — tests can continue even if update-ai fails
     console.warn(`Warning: n8nac update-ai failed for ${homeDir}: ${stderr || stdout || `exit ${result.status ?? 1}`}`);
+    return;
+  }
+
+  const agentsPath = path.join(getIsolatedWorkspaceDir(homeDir), 'AGENTS.md');
+  const clarificationMarker = '<!-- yagr-test-clarification-start -->';
+  const yagrWorkspaceClarification = '\n\n<!-- yagr-test-clarification-start -->\n## Yagr Test Workspace Clarification\n\nIn Yagr integration tests, the n8n workspace root is the current directory where you are running commands.\n- During these tests, your cwd is already `./n8n-workspace`.\n- Therefore, when generic n8nac instructions say "look for `n8nac-config.json` in the workspace root", they mean the current directory.\n- Do not go back to the Yagr home root to initialize n8nac. Reuse the existing `n8nac-config.json` in the current directory when it is present and complete.\n<!-- yagr-test-clarification-end -->\n';
+  const existingAgents = fs.readFileSync(agentsPath, 'utf-8');
+  if (!existingAgents.includes(clarificationMarker)) {
+    fs.writeFileSync(agentsPath, `${existingAgents.trimEnd()}${yagrWorkspaceClarification}`);
   }
 }
 
@@ -440,9 +493,9 @@ function createIsolatedHome(testN8nRuntime) {
   const sourcePaths = getYagrPaths();
 
   writeIsolatedYagrConfig(tempHome);
-  copyIfExists(sourcePaths.homeInstructionsPath, path.join(tempHome, 'AGENTS.md'));
   copyIfExists(sourcePaths.n8nCredentialsPath, path.join(tempHome, 'n8n-credentials.json'));
   copyDirIfExists(sourcePaths.n8nWorkspaceDir, path.join(tempHome, 'n8n-workspace'));
+  copyIfExists(sourcePaths.workspaceInstructionsPath, path.join(tempHome, 'n8n-workspace', 'AGENTS.md'));
 
   const { host, apiKey, projectId } = testN8nRuntime;
   if (host || apiKey || projectId) {
@@ -452,8 +505,6 @@ function createIsolatedHome(testN8nRuntime) {
   writeIsolatedN8nCredentials(tempHome, testN8nRuntime);
 
   normalizeTestWorkspaceInstanceId(tempHome);
-
-  ensureIsolatedHomeProjectCompatibility(tempHome);
 
   // Generate fresh AGENTS.md with current n8nac version
   generateTestAgentsMd(tempHome, testN8nRuntime);
@@ -520,31 +571,6 @@ function reconcileN8nRuntime(tempHome, { host, apiKey, projectId }) {
 
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify(localConfig, null, 2)}\n`);
-}
-
-function ensureIsolatedHomeProjectCompatibility(homeDir) {
-  const workspaceDir = path.join(homeDir, 'n8n-workspace');
-  const workspaceConfigPath = path.join(workspaceDir, 'n8nac-config.json');
-  const rootConfigPath = path.join(homeDir, 'n8nac-config.json');
-  const workspaceWorkflowsDir = path.join(workspaceDir, 'workflows');
-  const rootWorkflowsDir = path.join(homeDir, 'workflows');
-
-  const config = readJsonIfExists(workspaceConfigPath);
-  if (config) {
-    fs.writeFileSync(rootConfigPath, `${JSON.stringify(config, null, 2)}\n`);
-  }
-
-  try {
-    if (fs.existsSync(rootWorkflowsDir)) {
-      const stat = fs.lstatSync(rootWorkflowsDir);
-      if (stat.isSymbolicLink() || stat.isDirectory()) {
-        fs.rmSync(rootWorkflowsDir, { recursive: true, force: true });
-      }
-    }
-    fs.symlinkSync(workspaceWorkflowsDir, rootWorkflowsDir, 'dir');
-  } catch {
-    fs.mkdirSync(rootWorkflowsDir, { recursive: true });
-  }
 }
 
 function writeIsolatedYagrConfig(tempHome) {
@@ -635,7 +661,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
       const threadId = `scenario-${scenario.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       logProgress(`scenario ${scenario.id}: start (${scenario.name})`);
       const stream = agent.streamEvents(
-        { messages: [{ role: 'user', content: scenario.prompt }] },
+        { messages: [{ role: 'user', content: buildScenarioPrompt(scenario) }] },
         { configurable: { thread_id: threadId }, version: 'v2', signal: controller.signal },
       );
 
@@ -728,7 +754,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
         steps: journal.length,
         journal,
       };
-      const outcome = buildScenarioOutcome(toolEvents);
+      const outcome = buildScenarioOutcome(toolEvents, isolatedHome);
       const assertion = await Promise.resolve(scenario.assert(result, outcome, toolEvents, testN8nRuntime));
       const createdWorkflowIds = (accumulator.workflowEmbeds || [])
         .filter((e) => e.workflowId)
@@ -766,7 +792,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
   });
 }
 
-function buildScenarioOutcome(toolEvents) {
+function buildScenarioOutcome(toolEvents, isolatedHome) {
   const events = toolEvents || [];
   const scriptEnds = events.filter((event) => event.type === 'command-end');
   const successfulScriptRuns = scriptEnds.filter((event) => Number(event.exitCode ?? 0) === 0).length;
@@ -774,12 +800,69 @@ function buildScenarioOutcome(toolEvents) {
   const hasWorkflowWrites = events.some((event) =>
     event.type === 'status'
     && ['write_file', 'writeFile', 'edit_file', 'editFile', 'moveFile', 'move_file'].includes(event.toolName));
+  const usedYagrProxyTool = events.some((event) => event.toolName === 'yagrProxy');
+  const relayExecutionConfirmed = detectRelayExecution(isolatedHome);
 
   return {
     successfulScriptRuns,
     failedScriptRuns,
     hasWorkflowWrites,
+    usedYagrProxyTool,
+    relayExecutionConfirmed,
   };
+}
+
+function detectRelayExecution(isolatedHome) {
+  try {
+    const workspaceDir = getIsolatedWorkspaceDir(isolatedHome);
+    const relayBaseUrls = collectConfirmedRelayBaseUrls(isolatedHome);
+    if (relayBaseUrls.length === 0) {
+      return false;
+    }
+
+    const execFiles = fs.readdirSync(workspaceDir)
+      .filter((name) => /^exec_\d+\.json$/.test(name))
+      .sort();
+
+    for (const execFile of execFiles) {
+      const payload = JSON.parse(fs.readFileSync(path.join(workspaceDir, execFile), 'utf-8'));
+      const serialized = JSON.stringify(payload);
+      if (relayBaseUrls.some((baseUrl) => serialized.includes(baseUrl))) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function collectConfirmedRelayBaseUrls(isolatedHome) {
+  const urls = new Set();
+
+  try {
+    const yagrConfig = JSON.parse(fs.readFileSync(path.join(isolatedHome, 'yagr-config.json'), 'utf-8'));
+    const confirmed = String(yagrConfig?.llmProxy?.confirmedCredentialBaseUrl || '').trim();
+    if (confirmed) {
+      urls.add(confirmed.replace(/\/+$/, ''));
+    }
+  } catch {
+    // Best effort only.
+  }
+
+  try {
+    const relayState = JSON.parse(fs.readFileSync(path.join(isolatedHome, 'proxy-runtime', 'llm-relay.json'), 'utf-8'));
+    const port = Number(relayState?.port);
+    if (Number.isFinite(port) && port > 0) {
+      urls.add(`http://127.0.0.1:${port}/v1`);
+      urls.add(`http://localhost:${port}/v1`);
+    }
+  } catch {
+    // Best effort only.
+  }
+
+  return [...urls];
 }
 
 function extractToolExitCode(toolName, parsedOutput, rawOutput) {
