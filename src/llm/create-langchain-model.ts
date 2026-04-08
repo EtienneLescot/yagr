@@ -23,6 +23,7 @@ export type { YagrModelProvider } from './provider-registry.js';
 import { resolveCopilotApiToken, getGitHubCopilotSession } from './copilot-account.js';
 import { getOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL } from './openai-account.js';
 import { getAnthropicAccountSession } from './anthropic-account.js';
+import { OpenAiAccountChatModel } from './openai-account-langchain.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -252,10 +253,8 @@ export async function createLangChainModel(
       if (!session?.accessToken) {
         throw new Error('OpenAI account session not found. Run `yagr setup` first.');
       }
-      return new ChatOpenAI({
-        apiKey: session.accessToken,
+      return new OpenAiAccountChatModel({
         model,
-        configuration: { baseURL: OPENAI_ACCOUNT_BASE_URL },
       });
     }
 

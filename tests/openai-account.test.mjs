@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { HumanMessage } from '@langchain/core/messages';
 
 import { createOpenAiAccountLanguageModel } from '../dist/llm/openai-account.js';
+import { createLangChainModel } from '../dist/llm/create-langchain-model.js';
 
 function makeJwtWithAccountId(accountId) {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
@@ -108,6 +110,59 @@ test('openai-proxy sends function tools and returns tool calls from Codex respon
     assert.equal(result.toolCalls[0].toolName, 'n8nac');
     assert.equal(result.toolCalls[0].toolCallId, 'call_123');
     assert.equal(result.toolCalls[0].args, '{"action":"setup_check"}');
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousAuthPath === undefined) {
+      delete process.env.YAGR_CODEX_AUTH_PATH;
+    } else {
+      process.env.YAGR_CODEX_AUTH_PATH = previousAuthPath;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('openai-proxy LangChain model invokes the Codex runtime instead of ChatOpenAI backend compatibility mode', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-langchain-'));
+  const authPath = path.join(tempDir, 'auth.json');
+  const accessToken = makeJwtWithAccountId('acct_yagr_langchain');
+  fs.writeFileSync(authPath, JSON.stringify({
+    auth_mode: 'chatgpt',
+    tokens: {
+      access_token: accessToken,
+      refresh_token: 'refresh-token',
+    },
+  }));
+
+  const previousAuthPath = process.env.YAGR_CODEX_AUTH_PATH;
+  const previousFetch = globalThis.fetch;
+  let seenUrl;
+
+  process.env.YAGR_CODEX_AUTH_PATH = authPath;
+  globalThis.fetch = async (url) => {
+    seenUrl = String(url);
+    return createSseResponse([
+      {
+        type: 'response.output_text.delta',
+        delta: 'OK',
+      },
+      {
+        type: 'response.completed',
+        response: {
+          usage: {
+            input_tokens: 3,
+            output_tokens: 1,
+          },
+        },
+      },
+    ]);
+  };
+
+  try {
+    const model = await createLangChainModel({ provider: 'openai-proxy', model: 'gpt-5.1-codex-mini' });
+    const result = await model.invoke([new HumanMessage('Reply with exactly: OK')]);
+
+    assert.equal(result.text, 'OK');
+    assert.equal(seenUrl, 'https://chatgpt.com/backend-api/codex/responses');
   } finally {
     globalThis.fetch = previousFetch;
     if (previousAuthPath === undefined) {
