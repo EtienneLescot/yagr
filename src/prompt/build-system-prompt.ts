@@ -44,7 +44,6 @@ export function buildSystemPromptSnapshot(engine: EngineIdentityPort): SystemPro
       'After making changes, verify them with the most relevant available checks.',
       'When a tool reveals an artifact was created in the wrong place, reconcile the state before finishing.',
       'Prefer concrete edits and command execution over abstract planning, but think before acting so each tool call is justified by the current evidence.',
-      'When using the shell tool, prefer short, single-purpose commands. Do not chain long discovery or setup sequences with && when the next step can be run as a separate tool call. This is especially important for n8nac discovery, workflow validation, and any network-dependent command that may otherwise go idle before producing progress.',
       'Keep final user-facing summaries concise.',
       // --- Required actions ---
       'When progress is blocked on missing user input or an external dependency, use the requestRequiredAction tool so the blocker is represented explicitly in runtime state.',

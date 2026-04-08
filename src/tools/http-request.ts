@@ -16,9 +16,9 @@ function truncateBody(body: string): string {
 export function createHttpRequestTool(observer?: ToolExecutionObserver) {
   return tool({
     description:
-      'Make an HTTP request to a local or external URL. Use this to call local service APIs (n8n REST API, relay health check, etc.), inspect live state, validate credentials, or probe endpoints. ' +
-      'Do NOT use this for SSRF-sensitive contexts or to access private network addresses outside the local machine. ' +
-      'For n8n REST API calls, set the X-N8N-API-KEY header with the stored API key.',
+      'Make an HTTP request to a local or external URL. Use this for low-level inspection, health checks, credential validation, or probing endpoints. ' +
+      'Do NOT use this for SSRF-sensitive contexts or to access private network addresses outside the local machine.',
+
     parameters: z.object({
       method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET').describe('HTTP method.'),
       url: z.string().url().describe('Full URL to request.'),
@@ -40,7 +40,7 @@ export function createHttpRequestTool(observer?: ToolExecutionObserver) {
       try {
         response = await fetch(url, {
           method,
-          headers: headers ?? {},
+          headers: headers,
           body: body ?? undefined,
           signal: controller.signal,
         });

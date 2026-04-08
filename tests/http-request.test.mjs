@@ -3,6 +3,7 @@ import http from 'node:http';
 import test from 'node:test';
 
 import { createHttpRequestTool } from '../dist/tools/http-request.js';
+import { httpRequestTool } from '../dist/tools/langchain/http-request.js';
 
 function startEchoServer() {
   return new Promise((resolve) => {
