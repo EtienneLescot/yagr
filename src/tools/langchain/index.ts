@@ -9,10 +9,6 @@
  *   - reportProgress      — user-visible progress update
  *   - moveFile            — move/rename workspace file (not in deepagents)
  *   - deleteFile          — delete workspace file (not in deepagents)
- *
- * Manager-level tools (`presentWorkflowResult`, `yagrProxy`) live in
- * `src/manager-tooling/langchain/` and are injected separately so the n8n
- * concern stays in its own module.
  */
 export { httpRequestTool } from './http-request.js';
 export { requestRequiredActionTool } from './request-required-action.js';

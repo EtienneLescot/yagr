@@ -73,6 +73,18 @@ export function makeToolStartOperationEvent(
   switch (toolName) {
     case 'execute': {
       const command = typeof input?.command === 'string' ? input.command : '';
+      if (looksLikeYagrProxyCommand(command)) {
+        return {
+          kind: 'operation',
+          operationId,
+          label: 'Configuring LLM relay',
+          category: 'tool',
+          status: 'running',
+          summary: command.slice(0, 120),
+          startedAt: now,
+        };
+      }
+
       return {
         kind: 'operation',
         operationId,
@@ -207,6 +219,10 @@ function categoryForTool(toolName: string): YagrOperationCategory {
     return 'agent';
   }
   return 'tool';
+}
+
+function looksLikeYagrProxyCommand(command: string): boolean {
+  return /(^|\s)(?:npx\s+)?yagr\s+yagrProxy(\s|$)/.test(command.trim());
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,56 @@ Ce document décrit l'architecture de l'agent Yagr après la migration complète
 L'agent Yagr est construit sur **deepagentsjs** (`createDeepAgent`), qui utilise LangGraph comme
 moteur d'orchestration. Toutes les gateways consomment un `YagrDeepAgentHandle`.
 
+## Separation Haute Niveau
+
+Le modele d'architecture de reference est le suivant:
+
+1. `yagr-agent` est un agent de codage strictement agnostique.
+2. `yagr-manager` fournit une premiere couche d'instructions via le `AGENTS.md` de la home Yagr. Ce fichier est seme depuis le template manager `src/manager-tooling/YAGENTS.md` et indique a l'agent qu'il travaille dans un workspace `n8n-workspace` et qu'il doit prendre en compte le `AGENT.md` / `AGENTS.md` present dans ce workspace.
+3. Le `AGENT.md` / `AGENTS.md` genere par `n8nac` constitue la deuxieme couche d'instructions metier pour le travail dans le workspace n8n.
+4. En parallele, `yagr-manager` porte sa propre couche infrastructure (n8n local, relay, proxy, setup, tunnel, etc.) sans melanger cette logique avec le coeur de `yagr-agent`.
+5. Les comportements manager specifiques passent par des commandes CLI internes (`yagr presentWorkflowResult`, `yagr yagrProxy`) executees via le shell, jamais par injection explicite de tools dans le deep-agent.
+
+```mermaid
+flowchart TD
+    subgraph AgentCore["yagr-agent"]
+        YA[Agent de codage<br/>agnostique]
+    end
+
+    subgraph ManagerLayer["Second layer of specific instructions: home Yagr"]
+        YI[AGENTS.md de la home<br/>seme depuis le template<br/>manager YAGENTS.md<br/>cadre le contexte<br/>et renvoie vers le workspace]
+        YC[Commandes CLI manager<br/>utilisees via shell<br/>yagr presentWorkflowResult<br/>yagr yagrProxy]
+    end
+
+    subgraph WorkspaceContainer["Second layer of specific instructions: n8n-workspace"]
+        NA[AGENT.md / AGENTS.md<br/>genere par n8nac]
+        NC[Commandes CLI workspace<br/>utilisees via shell<br/>npx n8nac ...]
+    end
+
+    subgraph InfraLayer["Infrastructure yagr-manager"]
+        NI[n8n<br/>managed runtime]
+        RP[relay<br/>proxies<br/>tunnel<br/>setup]
+    end
+
+    YI --> YA
+    YI --> NA
+    NA --> YA
+    NA --> NC
+    YA --> WorkspaceContainer
+    YA --> YC
+    YA --> NC
+    RP --> YC
+    NI --> WorkspaceContainer
+```
+
+Contraintes d'architecture:
+
+- `yagr-agent` ne porte aucune regle n8n specifique en dur.
+- le `AGENTS.md` de home est la premiere couche effectivement lue par l'agent.
+- `src/manager-tooling/YAGENTS.md` est le template source maintenu par `yagr-manager` pour semer ce `AGENTS.md` de home.
+- le comportement metier n8n de premier niveau est porte par le `AGENT.md` / `AGENTS.md` genere dans `n8n-workspace`.
+- la couche infrastructure manager reste separee des couches d'instructions exposees a l'agent de codage.
+
 ```mermaid
 flowchart TD
     subgraph Interfaces
@@ -25,9 +75,12 @@ flowchart TD
         CKPT[LangGraph Checkpointer\nthread_id = sessionId]
     end
 
-    subgraph YagrTools["src/tools/ + src/manager-tooling/"]
-        MT[presentWorkflowResult\nyagrProxy\nrequestRequiredAction]
-        GT[httpRequest · runScript · reportProgress]
+    subgraph YagrTools["src/tools/"]
+        GT[httpRequest · execute · reportProgress\nrequestRequiredAction]
+    end
+
+    subgraph ManagerCli["src/manager-tooling/"]
+        MT[presentWorkflowResult\nyagrProxy\ncommandes CLI internes]
     end
 
     subgraph Prompt["src/prompt/"]
@@ -48,7 +101,8 @@ flowchart TD
     DA --> YagrTools
     DA --> BSP
     BSP --> MS
-    YagrTools --> N8N
+    YagrTools --> MT
+    MT --> N8N
 ```
 
 ## Point d'entrée : `createYagrDeepAgent`
@@ -64,9 +118,17 @@ export async function createYagrDeepAgent(
 Responsabilités :
 1. Instancie un `BaseChatModel` LangChain via `createLangChainModel(configService)`
 2. Construit le `systemPrompt` via `buildSystemPrompt(engine, configService, ...)`
-3. Assemble les tools LangChain (tools/ + manager-tooling/)
+3. Assemble les tools LangChain agnostiques (`src/tools/langchain/*`)
 4. Configure un `MemorySaver` (checkpointer en mémoire, par thread)
 5. Appelle `createDeepAgent({ model, tools, systemPrompt, checkpointer })`
+
+Clarification importante:
+
+- `yagr-agent` reste agnostique et ne porte pas de connaissance n8n specifique dans son system prompt ou dans sa factory de tools
+- `yagr-manager` n'injecte pas de tools manager dans le deep-agent
+- le `AGENTS.md` de home apprend a l'agent a utiliser les commandes CLI internes `yagr presentWorkflowResult` et `yagr yagrProxy` via le shell
+- les instructions shell `n8nac` de premier niveau proviennent du `AGENT.md` / `AGENTS.md` genere par `n8nac` dans `n8n-workspace`
+- `src/manager-tooling/YAGENTS.md` ne doit pas dupliquer ces instructions; il ne porte que les comportements specifiques a yagr-manager
 
 ## Persistance de session
 

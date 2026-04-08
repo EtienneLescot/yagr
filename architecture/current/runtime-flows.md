@@ -1,6 +1,6 @@
 # Runtime Flows
 
-Cette page documente les flux transverses principaux du repo tel qu'il fonctionne aujourd'hui.
+Cette page documente les flux transverses principaux du repo dans le modele deep-agent actuel.
 
 ## 1. Message entrant vers execution agentique
 
@@ -8,37 +8,27 @@ Cette page documente les flux transverses principaux du repo tel qu'il fonctionn
 sequenceDiagram
     participant U as User
     participant F as Facade
-    participant A as YagrSessionAgent
-    participant R as YagrRunEngine
-    participant S as tool-runtime-strategy
-    participant M as ProviderPlugin/Model
-    participant T as Tool Surface
-    participant E as Engine
+    participant H as YagrDeepAgentHandle
+    participant M as LangChain Model
+    participant T as Deep-agent tools
+    participant E as Engine or shell
 
     U->>F: prompt
-    F->>A: run(prompt)
-    A->>R: execute(prompt, options)
-    R->>S: resolveToolRuntimeStrategy()
-    R->>M: createLanguageModel()
-    R->>T: buildTools(engine, strategy)
-    M-->>R: model
-    S-->>R: execution mode, tool policy, step limits
-    T-->>R: tools
-    R->>M: stream/generate
+    F->>H: stream/invoke
+    H->>M: run prompt with system instructions
     M->>T: tool call(s)
-    T->>E: engine operations when needed
+    T->>E: file, shell, HTTP, engine operations
     E-->>T: results
-    T-->>R: tool results
-    R-->>A: final result
-    A-->>F: response and events
+    T-->>M: tool results
+    M-->>F: response and events
     F-->>U: rendered output
 ```
 
 Observation:
 
-- les facades conversationnelles passent maintenant par `YagrSessionAgent`
-- `YagrRunEngine` choisit lui-meme la strategie runtime, la surface d'outils et les hooks associes
-- le flux est maintenant explicitement pilote par `tool-runtime-strategy.ts`
+- les facades conversationnelles consomment toutes un `YagrDeepAgentHandle`
+- le deep-agent porte directement sa surface d'outils agnostiques
+- les comportements manager et workspace passent ensuite par shell via `yagr ...` et `npx n8nac ...`
 - les messages assistant libres ne doivent plus servir de canal d'avancement pendant l'execution: l'avancement montrable passe par les evenements runtime/user-visible updates, puis la prose assistant n'est emise qu'au moment de la vraie reponse finale
 
 Invariants runtime a conserver:
@@ -46,7 +36,7 @@ Invariants runtime a conserver:
 - la completion est une responsabilite runtime, pas juste un texte assistant
 - un run ne doit pas etre "complete" uniquement parce que le modele s'arrete
 - les blocages et required actions doivent rester representes explicitement
-- une `requiredAction` peut maintenant etre bloquante ou non bloquante: les follow-ups de configuration ne doivent pas etre confondus avec un blocker terminal si le livrable actuel peut encore etre produit
+- une `requiredAction` peut etre bloquante ou non bloquante: les follow-ups de configuration ne doivent pas etre confondus avec un blocker terminal si le livrable actuel peut encore etre produit
 - les politiques produit doivent rester au-dessus du coeur runtime
 - si un run a deja engage du travail materiel, il doit finir par un resultat concret, une `requiredAction` structuree, ou une poursuite de la boucle; pas par un simple aveu d'echec en prose
 
@@ -92,7 +82,7 @@ Observation:
 flowchart TD
     CFG[Stored config] --> RES[resolveLanguageModelConfig]
     RES --> REG[provider-registry]
-    RES --> CLM[create-language-model]
+    RES --> CLM[create-langchain-model]
     REG --> PLUG[ProviderPlugin]
     PLUG --> DISC[provider-discovery]
     DISC --> META[provider-metadata cache]
@@ -101,16 +91,13 @@ flowchart TD
     PR[proxy-runtime] --> DISC
     PR --> ACC[account auth files and sessions]
     ACC --> PLUG
-    CLM --> SDK[AI SDK model via plugin factory]
-    CAP --> RTS[tool-runtime-strategy]
-    RTS --> RT[Runtime]
-    SDK --> RT[Runtime]
+    CLM --> RT[deepagents runtime]
 ```
 
 Observation:
 
 - `ProviderPlugin` porte maintenant discovery, metadata hooks et factory de modele
-- le flux est maintenant structurellement `metadata -> normalisation -> runtime strategy`
+- le flux est maintenant structurellement `metadata -> normalisation -> model LangChain`
 
 ## 3bis. Resolution provider/capability
 
@@ -121,47 +108,44 @@ flowchart LR
     DISC[discovery]
     META[metadata cache]
     CAP[capability-resolver]
-    STRAT[tool-runtime-strategy]
     MODEL[model factory]
 
     REG --> PLUG
     PLUG --> DISC
     DISC --> META
     META --> CAP
-    CAP --> STRAT
     CAP --> MODEL
     PLUG --> MODEL
 ```
 
-## 4. Flux tooling/runtime actuel
+## 4. Flux instructions + CLI actuel
 
 ```mermaid
 flowchart LR
-    RUN[YagrRunEngine]
-    CAP[Resolved capability profile]
-    STRAT[tool-runtime-strategy]
-    SETS[tools/toolsets]
-    BUILD[build-tools]
-    HOOKS[policy-hooks]
-    TOOLS[Runtime tools]
+    HOME[Home AGENTS.md]
+    HCLI[Commandes yagr manager]
+    WORK[Workspace AGENT.md / AGENTS.md]
+    WCLI[Commandes n8nac workspace]
+    AGENT[deep-agent]
+    SHELL[execute shell tool]
 
-    RUN --> CAP
-    CAP --> STRAT
-    STRAT --> SETS
-    STRAT --> BUILD
-    STRAT --> HOOKS
-    BUILD --> TOOLS
-    HOOKS --> TOOLS
-    TOOLS --> RUN
+    HOME --> AGENT
+    HOME --> HCLI
+    WORK --> AGENT
+    WORK --> WCLI
+    AGENT --> SHELL
+    SHELL --> HCLI
+    SHELL --> WCLI
 ```
 
 Observation:
 
-- `toolsets.ts` est maintenant le SSOT des groupes d'outils
-- `tool-runtime-strategy.ts` choisit la surface exposee, le mode de tool calling et la politique post-sync
-- `policy-hooks.ts` applique cette politique au lieu de porter ses propres regles implicites
+- la home Yagr cadre l'usage des commandes manager `yagr ...`
+- le workspace n8n cadre l'usage des commandes `npx n8nac ...`
+- le deep-agent ne recoit pas de tools manager ou n8nac injectes explicitement
 - le runtime n8n utilise maintenant une resolution partagee de disponibilite (`config locale` par defaut, `env` seulement pour le harness automatise)
 - la presentation workflow ne doit plus exposer de diagramme brut infere: le diagramme doit passer par le parseur partage de `src/gateway/workflow-diagram.ts` avant d'etre emis puis rendu
+- cette separation doit rester visible dans `src/config/n8n-config-service.ts`, `src/manager-tooling/*`, `src/cli.ts` et `scripts/provider-integration-matrix.mjs`
 
 ## 5. Flux facade WebUI actuel
 

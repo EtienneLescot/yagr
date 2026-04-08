@@ -65,6 +65,16 @@ export function extractSessionMemory(
               workflowRefs.push({ id: wfId, title: wfTitle || wfId });
             }
           }
+
+          if (toolName === 'execute') {
+            const args = typedPart['args'] as Record<string, unknown> | undefined;
+            const command = String(args?.['command'] ?? '').trim();
+            const workflowId = extractWorkflowIdFromPresentWorkflowCommand(command);
+            if (workflowId && !seenWorkflowIds.has(workflowId)) {
+              seenWorkflowIds.add(workflowId);
+              workflowRefs.push({ id: workflowId, title: workflowId });
+            }
+          }
         }
       }
 
@@ -106,6 +116,11 @@ export function extractSessionMemory(
     toolsUsed: [...toolNames].sort(),
     workflowRefs,
   };
+}
+
+function extractWorkflowIdFromPresentWorkflowCommand(command: string): string | undefined {
+  const match = command.match(/(?:^|\s)(?:npx\s+)?yagr\s+presentWorkflowResult\s+.*?--workflow-id\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
+  return match?.[1] ?? match?.[2] ?? match?.[3];
 }
 
 function extractTextFromContent(content: unknown): string {

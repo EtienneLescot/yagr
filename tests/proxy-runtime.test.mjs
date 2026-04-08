@@ -39,6 +39,23 @@ test('prepareProviderRuntime detects an already running proxy endpoint', async (
   });
 });
 
+test('prepareProviderRuntime keeps configured openai-compatible providers usable when model discovery fails', async () => {
+  await withMockedFetch(async () => {
+    throw new Error('transient discovery failure');
+  }, async () => {
+    const result = await prepareProviderRuntime('openrouter', { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1' });
+
+    assert.equal(result.ready, true);
+    assert.equal(result.runtime?.baseUrl, 'https://openrouter.ai/api/v1');
+    assert.equal(result.runtime?.apiKey, 'test-key');
+    assert.deepEqual(result.runtime?.models, []);
+    assert.match(
+      result.notes.join('\n'),
+      /Model discovery (failed|returned no models),/,
+    );
+  });
+});
+
 test('prepareProviderRuntime resolves the local Codex ChatGPT session for openai-proxy', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-codex-auth-'));
   const authPath = path.join(tempDir, 'auth.json');

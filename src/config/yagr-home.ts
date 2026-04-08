@@ -26,6 +26,42 @@ export interface YagrPaths {
   legacyN8nCredentialsPath: string;
 }
 
+function resolveBundledManagerInstructionsPath(launchDir: string = getYagrLaunchDir()): string | undefined {
+  const candidates = [
+    path.join(launchDir, 'node_modules', '@yagr', 'manager-tooling', 'YAGENTS.md'),
+    path.join(launchDir, 'src', 'manager-tooling', 'YAGENTS.md'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function ensureHomeInstructionsSeeded(paths: YagrPaths): void {
+  if (fs.existsSync(paths.homeInstructionsPath)) {
+    return;
+  }
+
+  const bundledInstructionsPath = resolveBundledManagerInstructionsPath(paths.launchDir);
+  if (!bundledInstructionsPath) {
+    return;
+  }
+
+  try {
+    const content = fs.readFileSync(bundledInstructionsPath, 'utf8').trim();
+    if (!content) {
+      return;
+    }
+    fs.writeFileSync(paths.homeInstructionsPath, `${content}\n`);
+  } catch {
+    // Best effort only.
+  }
+}
+
 if (!process.env.YAGR_LAUNCH_CWD) {
   process.env.YAGR_LAUNCH_CWD = initialLaunchDir;
 }
@@ -148,5 +184,6 @@ export function ensureYagrHomeDir(): string {
   fs.mkdirSync(paths.managedN8nDir, { recursive: true });
   fs.mkdirSync(paths.proxyRuntimeDir, { recursive: true });
   fs.mkdirSync(paths.accountAuthDir, { recursive: true });
+  ensureHomeInstructionsSeeded(paths);
   return paths.homeDir;
 }

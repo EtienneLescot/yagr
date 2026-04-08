@@ -7,8 +7,8 @@
  *   - `LocalShellBackend` — actual filesystem I/O + shell execution
  *     (provides `ls`, `read_file`, `write_file`, `edit_file`, `glob`,
  *      `grep`, `execute` as native tools)
- *   - Yagr-specific tools injected on top (httpRequest, requestRequiredAction,
- *     reportProgress, moveFile, deleteFile, presentWorkflowResult, yagrProxy)
+ *   - Yagr-specific generic tools injected on top (httpRequest,
+ *     requestRequiredAction, reportProgress, moveFile, deleteFile)
  *   - `MemorySaver` checkpointer so per-thread (=per-session) state is
  *     maintained within the process lifetime
  *   - System prompt built from the current engine / config / workspace context
@@ -20,7 +20,6 @@
  */
 import { createDeepAgent, LocalShellBackend } from 'deepagents';
 import { MemorySaver } from '@langchain/langgraph';
-import type { StructuredTool } from '@langchain/core/tools';
 import type { EngineRuntimePort } from './engine/engine.js';
 import type { YagrConfigStoreLike } from './config/yagr-config-service.js';
 import { createLangChainModel } from './llm/create-langchain-model.js';
@@ -32,10 +31,6 @@ import {
   moveFileTool,
   deleteFileTool,
 } from './tools/langchain/index.js';
-import {
-  presentWorkflowResultTool,
-  yagrProxyTool,
-} from './manager-tooling/langchain/index.js';
 
 /** Returned by `createYagrDeepAgent`. */
 export interface YagrDeepAgentHandle {
@@ -52,15 +47,13 @@ export interface YagrDeepAgentHandle {
  * (ls, read_file, write_file, edit_file, glob, grep, execute) are NOT
  * included here to avoid duplication.
  */
-function buildYagrTools(): StructuredTool[] {
+function buildYagrTools() {
   return [
-    httpRequestTool as StructuredTool,
-    requestRequiredActionTool as StructuredTool,
-    reportProgressTool as StructuredTool,
-    moveFileTool as StructuredTool,
-    deleteFileTool as StructuredTool,
-    presentWorkflowResultTool as StructuredTool,
-    yagrProxyTool as StructuredTool,
+    httpRequestTool,
+    requestRequiredActionTool,
+    reportProgressTool,
+    moveFileTool,
+    deleteFileTool,
   ];
 }
 
@@ -73,7 +66,7 @@ function buildYagrTools(): StructuredTool[] {
  * starts over — matching the current behaviour where `agents.clear()` is
  * called on config change.
  *
- * @param engine The engine runtime port (n8n workspace context).
+ * @param engine The engine runtime port.
  * @param configStore Optional config store to read LLM defaults from.
  * @param modelConfig Optional explicit model overrides (provider, model, apiKey, baseUrl).
  */

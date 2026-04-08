@@ -51,10 +51,10 @@ test('system prompt includes generic coding-agent baseline and defers domain rul
     assert.match(prompt, /verify them with the most relevant available checks/i);
     assert.match(prompt, /requestRequiredAction tool/i);
     assert.match(prompt, /Keep final user-facing summaries concise/i);
-    // yagr manager instructions (proxy, LLM credentials, n8n node wiring)
-    assert.match(prompt, /responsesApiEnabled/i);
-    assert.match(prompt, /yagr_proxy_relay_start/i);
-    assert.match(prompt, /custom baseURL/i);
+    // domain-specific workflow rules must come from workspace instructions, not Yagr source
+    assert.doesNotMatch(prompt, /responsesApiEnabled/i);
+    assert.doesNotMatch(prompt, /yagr_proxy_relay_start/i);
+    assert.doesNotMatch(prompt, /custom baseURL/i);
     // workspace instructions injected verbatim
     assert.match(prompt, /remote n8n instance, you MUST run n8nac pull/i);
     assert.match(prompt, /Do not present remote-only workflows from memory/i);
@@ -134,6 +134,25 @@ test('workspace AGENTS is distinct from Yagr home instructions', () => {
 
     assert.match(prompt, /# Workspace Rules/);
     assert.match(prompt, /# Home Notes/);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('home AGENTS can teach manager CLI behaviors without changing the built-in tool surface', () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-'));
+  const previousCwd = process.cwd();
+
+  try {
+    writeWorkspaceInstructions(homeDir, '# Workspace Rules\nUse n8nac CLI commands in the workspace.\n');
+    fs.writeFileSync(path.join(homeDir, 'AGENTS.md'), '# Home Notes\nUse yagr presentWorkflowResult and yagr yagrProxy through the shell tool.\n', 'utf8');
+
+    process.chdir(homeDir);
+    const prompt = withTempInstructionRoots(homeDir, () => buildSystemPrompt({ name: 'test-engine' }));
+
+    assert.match(prompt, /Use yagr presentWorkflowResult and yagr yagrProxy through the shell tool/i);
+    assert.match(prompt, /Use n8nac CLI commands in the workspace/i);
   } finally {
     process.chdir(previousCwd);
     fs.rmSync(homeDir, { recursive: true, force: true });

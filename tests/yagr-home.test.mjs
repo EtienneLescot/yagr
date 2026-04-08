@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
 import {
+  ensureYagrHomeDir,
   getYagrHomeDir,
   getYagrLaunchDir,
   getYagrN8nWorkspaceDir,
@@ -67,6 +69,7 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
     assert.equal(paths.homeDir, path.resolve(getYagrLaunchDir(), '.yagr-test-workspace'));
     assert.equal(paths.n8nWorkspaceDir, path.join(paths.homeDir, 'n8n-workspace'));
     assert.equal(paths.managedN8nDir, path.join(paths.homeDir, 'n8n'));
+    assert.equal(paths.homeInstructionsPath, path.join(paths.homeDir, 'AGENTS.md'));
     assert.equal(paths.workspaceInstructionsPath, path.join(paths.n8nWorkspaceDir, 'AGENTS.md'));
     assert.equal(paths.yagrConfigPath, path.join(paths.homeDir, 'yagr-config.json'));
     assert.equal(paths.yagrCredentialsPath, path.join(paths.homeDir, 'credentials.json'));
@@ -78,6 +81,27 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
     } else {
       delete process.env.YAGR_HOME;
     }
+  }
+});
+
+test('ensureYagrHomeDir seeds the home AGENTS.md from the bundled manager template when missing', () => {
+  const previousYagrHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-seed-'));
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    ensureYagrHomeDir();
+    const paths = getYagrPaths();
+    assert.ok(fs.existsSync(paths.homeInstructionsPath));
+    const content = fs.readFileSync(paths.homeInstructionsPath, 'utf8');
+    assert.match(content, /Yagr Manager Instructions/i);
+  } finally {
+    if (previousYagrHome !== undefined) {
+      process.env.YAGR_HOME = previousYagrHome;
+    } else {
+      delete process.env.YAGR_HOME;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
   }
 });
 

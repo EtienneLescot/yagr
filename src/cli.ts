@@ -38,6 +38,8 @@ import {
   prepareConfiguredN8nForLaunch,
 } from './n8n-local/managed-runtime.js';
 import { createN8nBootstrapPlan } from './n8n-local/plan.js';
+import { presentWorkflowResultCli } from './manager-tooling/present-workflow.js';
+import { runYagrProxyCli } from './manager-tooling/yagr-proxy.js';
 import { readManagedN8nState } from './n8n-local/state.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrLlmSetup, runYagrLlmProxySetup, runYagrSetup } from './setup.js';
 import { YagrSetupApplicationService } from './setup/application-services.js';
@@ -60,7 +62,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url' | 'presentWorkflowResult' | 'yagrProxy';
   startTarget?: 'webui' | 'tui';
   n8nLocalRuntime?: 'docker' | 'direct';
   prompt?: string;
@@ -74,6 +76,14 @@ interface ParsedArgs {
   yes: boolean;
   dryRun: boolean;
   resetScope?: YagrResetScope;
+  workflowId?: string;
+  workflowUrl?: string;
+  title?: string;
+  diagramFile?: string;
+  executionStatus?: 'success' | 'error' | 'waiting';
+  executionId?: string;
+  executionSummary?: string;
+  executionDataFile?: string;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -141,6 +151,16 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (argv[0] === 'webui') {
     parsed.command = 'webui';
     return parsed;
+  }
+
+  if (argv[0] === 'presentWorkflowResult') {
+    parsed.command = 'presentWorkflowResult';
+    startIndex = 1;
+  }
+
+  if (argv[0] === 'yagrProxy') {
+    parsed.command = 'yagrProxy';
+    startIndex = 1;
   }
 
   if (argv[0] === 'setup' || argv[0] === 'onboard') {
@@ -378,6 +398,59 @@ function parseArgs(argv: string[]): ParsedArgs {
       }
 
       throw new Error('Invalid value for --runtime. Use one of: docker, direct.');
+    }
+
+    if (arg === '--workflow-id') {
+      parsed.workflowId = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--workflow-url') {
+      parsed.workflowUrl = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--title') {
+      parsed.title = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--diagram-file') {
+      parsed.diagramFile = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--execution-status') {
+      const value = argv[index + 1];
+      if (value === 'success' || value === 'error' || value === 'waiting') {
+        parsed.executionStatus = value;
+        index += 1;
+        continue;
+      }
+
+      throw new Error('Invalid value for --execution-status. Use one of: success, error, waiting.');
+    }
+
+    if (arg === '--execution-id') {
+      parsed.executionId = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--execution-summary') {
+      parsed.executionSummary = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--execution-data-file') {
+      parsed.executionDataFile = argv[index + 1];
+      index += 1;
+      continue;
     }
 
     if (arg === '--docker') {
@@ -636,6 +709,14 @@ async function runTui(args: ParsedArgs): Promise<void> {
   });
 }
 
+function readOptionalTextFile(filePath: string | undefined): string | undefined {
+  if (!filePath) {
+    return undefined;
+  }
+
+  return fs.readFileSync(filePath, 'utf8');
+}
+
 async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
   await runGatewaySurfaces(['webui'], async () => await createN8nEngineFromWorkspace(), {
     provider: args.provider,
@@ -773,6 +854,8 @@ Commands:
   n8n tunnel refresh           Renew the tunnel (stop + start, new public URL)
   n8n tunnel status            Show tunnel status (JSON)
   n8n tunnel url               Print the current public tunnel URL
+  presentWorkflowResult        Internal manager command for workflow presentation JSON
+  yagrProxy                    Internal manager command for LLM proxy/credential JSON
 
   config show                  Show current configuration (JSON)
   config reset                 Clear all configuration and stored credentials
@@ -1156,6 +1239,35 @@ async function main(): Promise<void> {
       }
 
       process.stdout.write(`${active.publicUrl}\n`);
+      return;
+    }
+
+    if (args.command === 'presentWorkflowResult') {
+      if (!args.workflowId) {
+        throw new Error('presentWorkflowResult requires --workflow-id.');
+      }
+
+      const payload = await presentWorkflowResultCli({
+        workflowId: args.workflowId,
+        workflowUrl: args.workflowUrl,
+        title: args.title,
+        diagram: readOptionalTextFile(args.diagramFile),
+        executionResult: args.executionStatus
+          ? {
+              status: args.executionStatus,
+              executionId: args.executionId,
+              summary: args.executionSummary,
+              data: readOptionalTextFile(args.executionDataFile),
+            }
+          : undefined,
+      });
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      return;
+    }
+
+    if (args.command === 'yagrProxy') {
+      const payload = await runYagrProxyCli();
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
       return;
     }
   }

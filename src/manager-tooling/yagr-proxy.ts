@@ -54,6 +54,72 @@ async function runN8nacCommand(args: string[], cwd: string): Promise<RunResult> 
   });
 }
 
+export async function runYagrProxyCli() {
+  const cwd = workspaceRoot();
+  const relay = await ensureN8nRelayServer();
+  const effectiveRelayBaseUrl = relay.baseUrl;
+
+  const listResult = await runN8nacCommand(['credential', 'list', '--json'], cwd);
+  const existingList = parseJsonPayload(listResult.stdout);
+  const existingCredentials = Array.isArray(existingList)
+    ? existingList as Array<{ id?: string; name?: string; type?: string }>
+    : [];
+  const existing = existingCredentials.find(
+    (c) => c.name === N8N_RELAY_CREDENTIAL_NAME && c.type === 'openAiApi',
+  );
+
+  if (existing?.id) {
+    const confirmedUrl = (new YagrConfigService()).getLocalConfig().llmProxy?.confirmedCredentialBaseUrl;
+    const urlIsStale = confirmedUrl !== effectiveRelayBaseUrl;
+
+    if (!urlIsStale) {
+      return {
+        operation: 'yagrProxy',
+        success: true,
+        port: relay.port,
+        baseUrl: effectiveRelayBaseUrl,
+        credentialId: existing.id,
+        credentialName: N8N_RELAY_CREDENTIAL_NAME,
+        credentialType: 'openAiApi',
+        created: false,
+        reused: true,
+        next: `Relay is running. Reusing existing credential "${N8N_RELAY_CREDENTIAL_NAME}" (id: ${existing.id}). Assign it to the node.`,
+      };
+    }
+
+    await runN8nacCommand(['credential', 'delete', existing.id], cwd);
+  }
+
+  const credData = JSON.stringify({ apiKey: N8N_RELAY_FAKE_API_KEY, url: effectiveRelayBaseUrl });
+  const createResult = await runN8nacCommand(
+    ['credential', 'create', '--type', 'openAiApi', '--name', N8N_RELAY_CREDENTIAL_NAME, '--data', credData, '--json'],
+    cwd,
+  );
+  const created = parseJsonPayload(createResult.stdout) as Record<string, unknown> | undefined;
+
+  if (createResult.exitCode === 0) {
+    (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
+  }
+
+  return {
+    operation: 'yagrProxy',
+    success: createResult.exitCode === 0,
+    exitCode: createResult.exitCode,
+    port: relay.port,
+    baseUrl: effectiveRelayBaseUrl,
+    credentialId: (created?.id as string | undefined) ?? null,
+    credentialName: N8N_RELAY_CREDENTIAL_NAME,
+    credentialType: 'openAiApi',
+    created: createResult.exitCode === 0,
+    reused: false,
+    createExitCode: createResult.exitCode,
+    createStderr: createResult.stderr || null,
+    next: createResult.exitCode === 0
+      ? `Relay is running and credential "${N8N_RELAY_CREDENTIAL_NAME}" created (id: ${created?.id ?? '?'}). Assign it to the node.`
+      : `Relay is running but credential creation failed (exit ${createResult.exitCode}). Inspect createStderr and fix before assigning.`,
+  };
+}
+
 export function createYagrProxyTool(observer?: ToolExecutionObserver) {
   return tool({
     description:
@@ -62,72 +128,14 @@ export function createYagrProxyTool(observer?: ToolExecutionObserver) {
       + 'Returns the credentialId ready to assign to the node.',
     parameters: z.object({}),
     execute: async () => {
-      const cwd = workspaceRoot();
       const relay = await ensureN8nRelayServer();
-      const effectiveRelayBaseUrl = relay.baseUrl;
 
       await emitToolEvent(observer, {
         type: 'status',
         toolName: 'yagrProxy',
-        message: `Relay running at ${effectiveRelayBaseUrl}`,
+        message: `Relay running at ${relay.baseUrl}`,
       });
-
-      // Check whether the Yagr relay credential already exists.
-      const listResult = await runN8nacCommand(['credential', 'list', '--json'], cwd);
-      const existingList = parseJsonPayload(listResult.stdout);
-      const existingCredentials = Array.isArray(existingList)
-        ? existingList as Array<{ id?: string; name?: string; type?: string }>
-        : [];
-      const existing = existingCredentials.find(
-        (c) => c.name === N8N_RELAY_CREDENTIAL_NAME && c.type === 'openAiApi',
-      );
-
-      if (existing?.id) {
-        const confirmedUrl = (new YagrConfigService()).getLocalConfig().llmProxy?.confirmedCredentialBaseUrl;
-        const urlIsStale = confirmedUrl !== effectiveRelayBaseUrl;
-
-        if (!urlIsStale) {
-          return {
-            port: relay.port,
-            baseUrl: effectiveRelayBaseUrl,
-            credentialId: existing.id,
-            credentialName: N8N_RELAY_CREDENTIAL_NAME,
-            credentialType: 'openAiApi',
-            created: false,
-            reused: true,
-            next: `Relay is running. Reusing existing credential "${N8N_RELAY_CREDENTIAL_NAME}" (id: ${existing.id}). Assign it to the node.`,
-          };
-        }
-
-        // Stale URL — delete old credential so it will be recreated below.
-        await runN8nacCommand(['credential', 'delete', existing.id], cwd);
-      }
-
-      const credData = JSON.stringify({ apiKey: N8N_RELAY_FAKE_API_KEY, url: effectiveRelayBaseUrl });
-      const createResult = await runN8nacCommand(
-        ['credential', 'create', '--type', 'openAiApi', '--name', N8N_RELAY_CREDENTIAL_NAME, '--data', credData, '--json'],
-        cwd,
-      );
-      const created = parseJsonPayload(createResult.stdout) as Record<string, unknown> | undefined;
-
-      if (createResult.exitCode === 0) {
-        (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
-      }
-
-      return {
-        port: relay.port,
-        baseUrl: effectiveRelayBaseUrl,
-        credentialId: (created?.id as string | undefined) ?? null,
-        credentialName: N8N_RELAY_CREDENTIAL_NAME,
-        credentialType: 'openAiApi',
-        created: createResult.exitCode === 0,
-        reused: false,
-        createExitCode: createResult.exitCode,
-        createStderr: createResult.stderr || null,
-        next: createResult.exitCode === 0
-          ? `Relay is running and credential "${N8N_RELAY_CREDENTIAL_NAME}" created (id: ${created?.id ?? '?'}). Assign it to the node.`
-          : `Relay is running but credential creation failed (exit ${createResult.exitCode}). Inspect createStderr and fix before assigning.`,
-      };
+      return runYagrProxyCli();
     },
   });
 }

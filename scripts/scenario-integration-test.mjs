@@ -820,7 +820,8 @@ function buildScenarioOutcome(toolEvents, isolatedHome) {
   const hasWorkflowWrites = events.some((event) =>
     event.type === 'status'
     && ['write_file', 'writeFile', 'edit_file', 'editFile', 'moveFile', 'move_file'].includes(event.toolName));
-  const usedYagrProxyTool = events.some((event) => event.toolName === 'yagrProxy');
+  const usedYagrProxyTool = events.some((event) => event.toolName === 'yagrProxy')
+    || events.some((event) => event.type === 'command-start' && /(^|\s)(?:npx\s+)?yagr\s+yagrProxy(\s|$)/.test(String(event.command || '')));
   const successfulProdTestRuns = countSuccessfulProdTests(events);
   const relayExecutionConfirmed = detectRelayExecution(isolatedHome)
     || (usedYagrProxyTool && successfulProdTestRuns > 0);

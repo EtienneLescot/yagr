@@ -277,7 +277,14 @@ export async function prepareProviderRuntime(
     };
   }
 
-  const existingModels = await fetchAvailableModels(provider, options.apiKey, baseUrl);
+  let existingModels: string[] = [];
+  let discoveryError: string | undefined;
+  try {
+    existingModels = await fetchAvailableModels(provider, options.apiKey, baseUrl);
+  } catch (error) {
+    discoveryError = error instanceof Error ? error.message : String(error);
+  }
+
   if (existingModels.length > 0) {
     return {
       ready: true,
@@ -290,6 +297,25 @@ export async function prepareProviderRuntime(
         autoStarted: false,
       },
       notes: [],
+    };
+  }
+
+  if (options.apiKey) {
+    const notes = discoveryError
+      ? [`Model discovery failed: ${discoveryError}`]
+      : ['Model discovery returned no models, but the configured provider will still be used for relay requests.'];
+
+    return {
+      ready: true,
+      runtime: {
+        provider,
+        baseUrl,
+        apiKey: options.apiKey,
+        models: [],
+        notes,
+        autoStarted: false,
+      },
+      notes,
     };
   }
 

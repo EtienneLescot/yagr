@@ -21,7 +21,8 @@ import {
   makeThinkingEndEvent,
   THINKING_OP_ID,
 } from '../runtime/user-visible-updates.js';
-import { WORKFLOW_EMBED_TYPE, type WorkflowEmbedPayload } from '../manager-tooling/langchain/index.js';
+import { WORKFLOW_EMBED_TYPE } from '../manager-tooling/present-workflow.js';
+import type { WorkflowEmbedPayload } from '../manager-tooling/present-workflow.js';
 import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 
 // ---------------------------------------------------------------------------
@@ -336,6 +337,16 @@ async function handleToolEnd(
   const output = parseToolOutput(rawOutput);
 
   switch (toolName) {
+    case 'execute': {
+      if (output?.__type === WORKFLOW_EMBED_TYPE) {
+        const embed = output as unknown as WorkflowEmbedPayload;
+        const enriched = enrichWorkflowEmbedPayload(embed);
+        accumulator.workflowEmbeds.push(enriched);
+        await callbacks.onWorkflowEmbed?.(enriched);
+      }
+      break;
+    }
+
     case 'reportProgress': {
       const message = output?.message;
       if (typeof message === 'string') {
@@ -382,6 +393,11 @@ function parseToolOutput(raw: unknown): Record<string, unknown> | undefined {
   }
 
   if (typeof raw === 'string') {
+    const executePayload = parseExecuteJsonPayload(raw);
+    if (executePayload) {
+      return executePayload;
+    }
+
     try {
       const parsed = JSON.parse(raw);
       return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
@@ -395,6 +411,26 @@ function parseToolOutput(raw: unknown): Record<string, unknown> | undefined {
   }
 
   return undefined;
+}
+
+function parseExecuteJsonPayload(raw: string): Record<string, unknown> | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const exitMatch = trimmed.match(/\n\[Command (?:succeeded|failed) with exit code \d+\]\s*$/);
+  const body = exitMatch ? trimmed.slice(0, exitMatch.index).trim() : trimmed;
+  if (!body.startsWith('{') || !body.endsWith('}')) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(body);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function isRequiredAction(obj: Record<string, unknown>): boolean {

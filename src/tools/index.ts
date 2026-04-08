@@ -1,4 +1,3 @@
-export { buildTools, type AllBuiltTools } from './build-tools.js';
 export { createDeleteFileTool } from './delete-workspace-file.js';
 export { createHttpRequestTool } from './http-request.js';
 export { createRunScriptTool } from './run-script.js';

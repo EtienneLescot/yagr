@@ -19,6 +19,33 @@ import { resolveWorkspacePath } from '../tools/workspace-utils.js';
 
 const WORKFLOW_FILE_SUFFIX = '.workflow.ts';
 const WORKFLOW_SCAN_SKIP_DIRS = new Set(['.git', 'dist', 'node_modules', 'docs', 'build']);
+export const WORKFLOW_EMBED_TYPE = 'workflow-embed';
+
+export interface PresentWorkflowExecutionResult {
+  status: 'success' | 'error' | 'waiting';
+  executionId?: string;
+  summary?: string;
+  data?: string;
+}
+
+export interface PresentWorkflowCliInput {
+  workflowId: string;
+  workflowUrl?: string;
+  title?: string;
+  diagram?: string;
+  executionResult?: PresentWorkflowExecutionResult;
+}
+
+export interface WorkflowEmbedPayload {
+  __type: typeof WORKFLOW_EMBED_TYPE;
+  kind: 'workflow';
+  workflowId: string;
+  url: string;
+  targetUrl: string;
+  title?: string;
+  diagram?: string;
+  executionResult?: PresentWorkflowExecutionResult;
+}
 
 export function extractWorkflowMapHeader(source: string): string | undefined {
   const start = source.indexOf('<workflow-map>');
@@ -168,6 +195,30 @@ export function resolveWorkflowDiagram(workflowId: string, fallbackDiagram?: str
   return normalizeRenderableWorkflowDiagram(fallbackDiagram);
 }
 
+export async function presentWorkflowResultCli({
+  workflowId,
+  workflowUrl,
+  title,
+  diagram,
+  executionResult,
+}: PresentWorkflowCliInput) {
+  const resolvedDiagram = resolveWorkflowDiagram(workflowId, diagram);
+  const canonicalUrl = resolveWorkflowUrl(workflowId, workflowUrl);
+
+  return {
+    __type: WORKFLOW_EMBED_TYPE,
+    kind: 'workflow',
+    workflowId,
+    url: canonicalUrl,
+    targetUrl: canonicalUrl,
+    title: title ?? undefined,
+    diagram: resolvedDiagram ?? undefined,
+    executionResult: executionResult ?? undefined,
+    presented: true,
+    workflowUrl: canonicalUrl,
+  };
+}
+
 export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver) {
   return tool({
     description:
@@ -189,29 +240,19 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
       }).optional().describe('Include this whenever you have run or tested a workflow and received execution output. Pass the actual data from the tool result, do not summarize from memory.'),
     }),
     execute: async ({ workflowId, workflowUrl, title, diagram, executionResult }) => {
-      const resolvedDiagram = resolveWorkflowDiagram(workflowId, diagram);
-      // Resolve the canonical n8n URL from config + workflowId, ignoring any
-      // hallucinated URL the agent may have passed in workflowUrl.
-      const canonicalUrl = resolveWorkflowUrl(workflowId, workflowUrl);
+      const payload = await presentWorkflowResultCli({ workflowId, workflowUrl, title, diagram, executionResult });
       await emitToolEvent(observer, {
         type: 'embed',
         toolName: 'presentWorkflowResult',
         kind: 'workflow',
-        workflowId,
-        url: canonicalUrl,
-        targetUrl: canonicalUrl,
-        title,
-        diagram: resolvedDiagram,
-        executionResult,
+        workflowId: payload.workflowId,
+        url: payload.url,
+        targetUrl: payload.targetUrl,
+        title: payload.title ?? undefined,
+        diagram: payload.diagram ?? undefined,
+        executionResult: payload.executionResult ?? undefined,
       });
-      return {
-        presented: true,
-        workflowId,
-        workflowUrl: canonicalUrl,
-        canonicalUrl,
-        title: title ?? null,
-        executionResult: executionResult ?? null,
-      };
+      return payload;
     },
   });
 }

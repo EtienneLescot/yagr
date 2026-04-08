@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createYagrProxyTool } from '../dist/tools/yagr-proxy-tool.js';
+import { createYagrProxyTool } from '../dist/manager-tooling/yagr-proxy.js';
 
 test('yagrProxy tool has no required parameters', () => {
   const tool = createYagrProxyTool();

@@ -28,7 +28,7 @@ Notes:
 - `src/agent.ts` (`YagrSessionAgent`) **supprimé** — remplacé par `agent-factory.ts` (`createYagrDeepAgent`)
 - `llm/` porte les providers, la metadata, les comptes OAuth et le relay proxy n8n
 - `tools/` porte les outils LangChain generalistes (FS, shell, HTTP)
-- `manager-tooling/` porte les outils yagr-manager (presentWorkflowResult, yagrProxy)
+- `manager-tooling/` porte les comportements manager internes exposes via CLI (`presentWorkflowResult`, `yagrProxy`)
 - `gateway/` porte les facades + l'adaptateur events LangGraph
 - `session/` porte le registre UI des sessions WebUI (metadata + display messages)
 - `memory/` porte le `MemoryStore` cross-session (synthetique, injecte dans le system prompt)
@@ -58,15 +58,20 @@ Note: orthogonal à deepagentsjs — les deux peuvent evoluer independamment.
 Cree le deep agent Yagr :
 
 ```typescript
-createYagrDeepAgent(engine, configService) → YagrDeepAgentHandle
+createYagrDeepAgent(engine, configService, modelConfig?) → YagrDeepAgentHandle
 ```
 
 Responsabilites:
 - instantiate `createLangChainModel()`
-- injecter les tools LangChain (tools/ + manager-tooling/)
+- injecter uniquement les tools LangChain agnostiques (`src/tools/langchain/*`)
 - injecter le `systemPrompt` via `buildSystemPrompt()`
 - configurer `MemorySaver` (checkpointer par thread)
 - deleger à `createDeepAgent()` de deepagentsjs
+
+Note:
+
+- les tools manager n8n ne sont plus importes directement par `yagr-agent`
+- les instructions de home apprennent a l'agent a passer par `execute` pour lancer `yagr presentWorkflowResult` et `yagr yagrProxy`
 
 ### `src/gateway/`
 
@@ -119,9 +124,16 @@ Note: les tools sont maintenant des `DynamicStructuredTool` LangChain, injectes 
 
 Fichiers clefs:
 
-- `langchain/present-workflow.ts` — Tool `presentWorkflowResult`
-- `langchain/yagr-proxy.ts` — Tool `yagrProxy`
-- `YAGENTS.md` — Instructions injectees dans le system prompt
+- `present-workflow.ts` — logique manager et commande CLI interne `presentWorkflowResult`
+- `yagr-proxy.ts` — logique manager et commande CLI interne `yagrProxy`
+- `YAGENTS.md` — template source des instructions manager semees dans le `AGENTS.md` de la home Yagr
+
+Clarification:
+
+- l'agent lit automatiquement le `AGENTS.md` de la home Yagr comme premiere couche d'instructions
+- ce fichier de home est seme depuis `src/manager-tooling/YAGENTS.md` lorsqu'il est absent
+- les instructions shell `n8nac` de premier niveau appartiennent au fichier genere par `n8nac` dans `n8n-workspace`
+- ce template `YAGENTS.md` ne porte que les comportements specifiques a yagr-manager (presentation workflow, proxy LLM, etc.) et apprend a l'agent a invoquer les commandes CLI internes via le shell
 
 ### `src/setup.ts` et `src/setup/`
 
@@ -144,7 +156,7 @@ Role actuel:
 - Agent: `src/agent-factory.ts`, `deepagentsjs`
 - Providers: `src/llm/*`
 - Tooling generaliste: `src/tools/langchain/*`
-- Tooling manager: `src/manager-tooling/langchain/*`
+- Tooling manager: `src/manager-tooling/*`
 - Facades: `src/gateway/*`
 - Setup: `src/setup.ts`, `src/setup/*`, `src/n8n-local/*`
 - Sessions UI: `src/session/webui-sessions.ts`

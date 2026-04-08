@@ -179,24 +179,18 @@ flowchart LR
 
 **Outils generalistes (`src/tools/`) :**
 
-- `src/tools/build-tools.ts`
-- `src/tools/toolsets.ts`
 - `src/tools/*.ts` (FS, shell, HTTP, status)
-- `src/runtime/tool-runtime-strategy.ts`
-- `src/runtime/policy-hooks.ts`
 
 **Tooling manager (`src/manager-tooling/`) :**
 
-- `src/manager-tooling/present-workflow.ts` — Tool `presentWorkflowResult`
-- `src/manager-tooling/yagr-proxy.ts` — Tool `yagrProxy`
-- `src/manager-tooling/YAGENTS.md` — Instructions injectees dans le system prompt
+- `src/manager-tooling/present-workflow.ts` — logique et commande CLI `presentWorkflowResult`
+- `src/manager-tooling/yagr-proxy.ts` — logique et commande CLI `yagrProxy`
+- `src/manager-tooling/YAGENTS.md` — template source des instructions manager semees dans la home Yagr
 
 Responsabilite actuelle:
 
-- `src/tools/` : construire la surface d'outils generalistes exposee au runtime
-- `src/manager-tooling/` : outillage specifique yagr-manager, enregistre dynamiquement
-- normaliser les groupes d'outils et les contraintes post-sync
-- faire porter par la strategie runtime la selection de surface et le mode de tool calling
+- `src/tools/` : porter les outils generalistes directement exposes au deep-agent
+- `src/manager-tooling/` : comportements specifique yagr-manager reutilisables depuis des commandes CLI internes
 
 #### Doctrine d'outillage
 
@@ -223,15 +217,14 @@ Les outils sont organises en trois couches :
 ┌─────────────────────────────────────────────────────────────────┐
 │  COUCHE 2 — Orchestration n8n via n8nac (dependance externe)   │
 │                                                                 │
-│  n8nac action=command          — tout npx n8nac <args>         │
-│  n8nac action=yagr_proxy_relay_start — demarrage relay + cred  │
+│  npx n8nac <args>              — orchestration workspace       │
 └─────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────┐
 │  COUCHE 3 — Specificites Yagr (src/manager-tooling/)            │
 │                                                                 │
-│  presentWorkflowResult — URL canonique + diagramme ASCII        │
-│  yagrProxy — proxy LLM + credential n8n                         │
-│  YAGENTS.md — instructions manager pour l'agent                 │
+│  yagr presentWorkflowResult — URL canonique + diagramme ASCII   │
+│  yagr yagrProxy — proxy LLM + credential n8n                    │
+│  YAGENTS.md — template manager pour la home Yagr               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -259,22 +252,19 @@ Les outils d'ecriture restent intentionnellement sandboxes au workspace. Les out
 2. Les outils d'ecriture FS restent sandboxes au workspace par defaut.
 3. `runShell` reste opt-in, avec warning explicite dans sa description.
 4. `n8nac` reste une dependance externe, jamais reimplementee dans le core.
-5. `presentWorkflowResult` doit etre appele systematiquement quand l'agent manipule un workflow connu.
-6. Les outils n8n-specific vivent dans `src/manager-tooling/`, pas dans `src/tools/`.
+5. `yagr presentWorkflowResult` doit etre appele systematiquement quand l'agent manipule un workflow connu.
+6. Les comportements n8n-specific vivent dans `src/manager-tooling/`, pas dans `src/tools/`.
 
 #### Observation actuelle
 
-- `src/tools/toolsets.ts` definit le SSOT des groupes d'outils runtime (`core`, `discovery`, `edit`, `workflow execution`)
-- `src/runtime/tool-runtime-strategy.ts` choisit explicitement la surface exposee, le mode `parallel / sequential / disabled` et les tools autorises apres un `push/verify`
-- `src/runtime/policy-hooks.ts` consomme cette politique runtime au lieu de porter sa propre allowlist implicite
-- la surface reste plate cote implementation, filtree et contrainte selon `native / compatible / weak / none`
+- la surface d'outils du deep-agent est maintenant simple et agnostique: fichiers, shell, HTTP, progression et required actions
 - le bridge `n8nac` privilegie le repertoire de sync actif lors des retries `push`
-- le tool `presentWorkflowResult` est traite comme une sortie produit de premier plan : le harness `advanced` verifie la presence d'une banniere workflow complete avec URL et diagramme
+- la commande `yagr presentWorkflowResult` est traitee comme une sortie produit de premier plan : le harness `advanced` verifie la presence d'une banniere workflow complete avec URL et diagramme
 - le diagramme workflow est valide via `src/gateway/workflow-diagram.ts` avant presentation
-- la resolution du runtime n8n est partagee entre guard runtime et bridge `n8nac`
+- la resolution du runtime n8n est partagee entre le manager, le relay et le bridge `n8nac`
 - `N8N_HOST` / `N8N_API_KEY` ne sont pris en compte que lorsque le harness active explicitement `YAGR_ALLOW_N8N_ENV=1`
 - les required actions non bloquantes ne forcent plus l'arret d'un run qui a deja un resultat concret
-- les outils n8n-specific (`presentWorkflowResult`, `yagrProxy`) ont ete extraits vers `src/manager-tooling/` pour que yagr-agent reste agnostique
+- les comportements n8n-specific (`presentWorkflowResult`, `yagrProxy`) vivent dans `src/manager-tooling/` et sont atteints via CLI interne pour que yagr-agent reste agnostique
 
 ### Gateway / facades
 
@@ -300,7 +290,7 @@ Observation actuelle:
 flowchart LR
     UI[WebUI / Telegram / CLI / TUI]
     GW[gateway handlers]
-    SA[YagrSessionAgent]
+  SA[YagrDeepAgentHandle]
     SS[setup/status]
     AS[setup/application-services]
     CFG[config services]
@@ -370,15 +360,9 @@ flowchart LR
     end
 
     subgraph Application
-      AG[YagrSessionAgent]
-      RE[YagrRunEngine]
+      AG[YagrDeepAgentHandle]
       AS[setup/application-services]
       ST[setup/status]
-    end
-
-    subgraph RuntimePolicy
-      STRAT[tool-runtime-strategy]
-      TOOLS[buildTools + toolsets]
     end
 
     subgraph Infrastructure
@@ -397,11 +381,8 @@ flowchart LR
     CLI --> AS
     AG --> RE
     WEB --> ST
-    RE --> STRAT
-    RE --> LLM
-    RE --> TOOLS
-    TOOLS --> ENG
-    AS --> CFG
+    AG --> LLM
+    AG --> ENG
     AS --> N8NLOCAL
 ```
 
