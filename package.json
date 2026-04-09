@@ -9,7 +9,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -b && node scripts/build-webui.mjs",
+    "build": "tsc -b && node scripts/copy-manager-assets.mjs && node scripts/build-webui.mjs",
     "clean": "rm -rf dist tsconfig.tsbuildinfo node_modules/.cache docs/static/img/yagr-logo.png",
     "clean:yagr:all": "node scripts/clean-yagr-local.mjs",
     "test": "npm run test:unit",
@@ -54,6 +54,7 @@
     "conf": "^13.0.1",
     "deepagents": "^1.8.8",
     "dotenv": "^17.2.3",
+    "fast-glob": "^3.3.3",
     "fullscreen-ink": "^0.1.0",
     "ink": "^6.8.0",
     "n8nac": "^1.6.0",

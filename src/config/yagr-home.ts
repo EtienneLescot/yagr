@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const initialLaunchDir = process.env.YAGR_LAUNCH_CWD ?? process.cwd();
 
@@ -27,7 +28,12 @@ export interface YagrPaths {
 }
 
 function resolveBundledManagerInstructionsPath(launchDir: string = getYagrLaunchDir()): string | undefined {
+  const moduleRelativeCandidates = [
+    fileURLToPath(new URL('../manager-tooling/YAGENTS.md', import.meta.url)),
+    fileURLToPath(new URL('../src/manager-tooling/YAGENTS.md', import.meta.url)),
+  ];
   const candidates = [
+    ...moduleRelativeCandidates,
     path.join(launchDir, 'node_modules', '@yagr', 'manager-tooling', 'YAGENTS.md'),
     path.join(launchDir, 'src', 'manager-tooling', 'YAGENTS.md'),
   ];

@@ -86,8 +86,11 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
 
 test('ensureYagrHomeDir seeds the home AGENTS.md from the bundled manager template when missing', () => {
   const previousYagrHome = process.env.YAGR_HOME;
+  const previousLaunchDir = process.env.YAGR_LAUNCH_CWD;
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-seed-'));
+  const emptyLaunchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-launch-empty-'));
   process.env.YAGR_HOME = tempHome;
+  process.env.YAGR_LAUNCH_CWD = emptyLaunchDir;
 
   try {
     ensureYagrHomeDir();
@@ -101,7 +104,13 @@ test('ensureYagrHomeDir seeds the home AGENTS.md from the bundled manager templa
     } else {
       delete process.env.YAGR_HOME;
     }
+    if (previousLaunchDir !== undefined) {
+      process.env.YAGR_LAUNCH_CWD = previousLaunchDir;
+    } else {
+      delete process.env.YAGR_LAUNCH_CWD;
+    }
     fs.rmSync(tempHome, { recursive: true, force: true });
+    fs.rmSync(emptyLaunchDir, { recursive: true, force: true });
   }
 });
 
