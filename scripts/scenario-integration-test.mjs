@@ -824,7 +824,8 @@ function buildScenarioOutcome(toolEvents, isolatedHome) {
     || events.some((event) => event.type === 'command-start' && /(^|\s)(?:npx\s+)?yagr\s+yagrProxy(\s|$)/.test(String(event.command || '')));
   const successfulProdTestRuns = countSuccessfulProdTests(events);
   const relayExecutionConfirmed = detectRelayExecution(isolatedHome)
-    || (usedYagrProxyTool && successfulProdTestRuns > 0);
+    || (usedYagrProxyTool && successfulProdTestRuns > 0)
+    || (successfulProdTestRuns > 0 && hasYagrProxyCredentialReference(isolatedHome));
 
   return {
     successfulScriptRuns,
@@ -903,12 +904,47 @@ function collectConfirmedRelayBaseUrls(isolatedHome) {
     if (Number.isFinite(port) && port > 0) {
       urls.add(`http://127.0.0.1:${port}/v1`);
       urls.add(`http://localhost:${port}/v1`);
+      urls.add(`http://host.docker.internal:${port}/v1`);
     }
   } catch {
     // Best effort only.
   }
 
   return [...urls];
+}
+
+function hasYagrProxyCredentialReference(isolatedHome) {
+  try {
+    const workspaceDir = getIsolatedWorkspaceDir(isolatedHome);
+    const workflowRoot = path.join(workspaceDir, 'workflows');
+    const stack = [workflowRoot];
+
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current || !fs.existsSync(current)) {
+        continue;
+      }
+      const entries = fs.readdirSync(current, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(fullPath);
+          continue;
+        }
+        if (!entry.isFile() || !entry.name.endsWith('.workflow.ts')) {
+          continue;
+        }
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        if (/name:\s*'Yagr LLM Proxy'/.test(content)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 function extractToolExitCode(toolName, parsedOutput, rawOutput) {
