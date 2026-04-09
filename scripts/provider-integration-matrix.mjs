@@ -88,6 +88,10 @@ if (useManagedDocker) {
 
 try {
   for (const provider of providers) {
+    if (useManagedDocker) {
+      managedDockerRuntime = await ensureManagedDockerTestRuntime();
+      logDebug('SETUP', `provider ${provider}: managed docker ready at ${managedDockerRuntime.host}`);
+    }
     if (managedDockerRuntime) {
       const cleanup = await cleanManagedDockerTestRuntimeWorkflows(managedDockerRuntime);
       logProgress(`provider ${provider}: cleaned managed docker workflows (${cleanup.deleted})`);
@@ -1247,6 +1251,20 @@ function hasObservedAdvancedSuccess(toolEvents, workflowEmbeds) {
     return true;
   }
 
+  // Also detect shell-based presentWorkflowResult (yagr presentWorkflowResult --workflow-id ...) as a success signal
+  const hasShellPresentWorkflowResult = successfulCommands.some((event) => {
+    const command = String(event.command || '').toLowerCase();
+    return command.includes('presentworkflowresult');
+  });
+
+  if (hasShellPresentWorkflowResult) {
+    const hasSuccessfulPushForShell = successfulCommands.some((event) => {
+      const command = String(event.command || '').toLowerCase();
+      return isN8nacCommand(command) && command.includes('push');
+    });
+    if (hasSuccessfulPushForShell) return true;
+  }
+
   if (embeds.length === 0 && !hasWorkflowPresentation) {
     return false;
   }
@@ -1437,7 +1455,7 @@ function buildWorkspaceContext(isolatedHome) {
     const activeId = config.activeInstanceId;
     const instance = (config.instances || []).find((i) => i.id === activeId);
     if (!instance) return '';
-    return `- \`n8nac-config.json\` is present and verified (host: ${instance.host}, project: ${instance.projectName}). Use \`npx --yes n8nac@next\` for all n8n operations.`;
+    return `- \`n8nac-config.json\` is present and verified (host: ${instance.host}, project: ${instance.projectName}). Use \`npx --yes n8nac@next\` for all n8n operations. Paths reported by \`n8nac\` are workspace-relative; keep them relative to the current n8n workspace and do not prefix them with \`/\`.`;
   } catch {
     return '';
   }
@@ -1479,7 +1497,7 @@ function seedHomeAgentsMd(homeDir) {
 function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
   // Resolve n8nac package based on YAGR_N8NAC_VERSION
   const version = String(process.env.YAGR_N8NAC_VERSION || '').trim();
-  let n8nacPackage = 'n8nac';
+  let n8nacPackage = 'n8nac@next';
   if (version) {
     n8nacPackage = version.startsWith('@') ? `n8nac${version}` : `n8nac@${version}`;
   }

@@ -78,6 +78,7 @@ export async function createYagrDeepAgent(
   const model = await createLangChainModel(modelConfig, configStore);
   const systemPrompt = buildSystemPrompt(engine);
   const checkpointer = new MemorySaver();
+  const rootDir = process.cwd();
 
   const agent = createDeepAgent({
     model,
@@ -85,8 +86,12 @@ export async function createYagrDeepAgent(
     systemPrompt,
     checkpointer,
     backend: new LocalShellBackend({
-      rootDir: process.cwd(),
+      rootDir,
       inheritEnv: true,
+      // Virtual path mode: sandbox ls/read_file/glob/grep to rootDir so that
+      // ls('/') returns workspace root instead of the real OS root.
+      // Shell execution via `execute` is still unrestricted (by design).
+      virtualMode: true,
     }),
   });
 
