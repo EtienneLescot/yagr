@@ -78,6 +78,11 @@ const debug = process.argv.includes('--debug') || process.env.YAGR_SCN_DEBUG ===
 const keepTemp = process.argv.includes('--keep-temp') || process.env.YAGR_SCN_KEEP_TEMP === '1';
 const useManagedDocker = process.argv.includes('--managed-docker') || process.env.YAGR_IT_USE_MANAGED_DOCKER === '1';
 const keepManagedDocker = process.argv.includes('--keep-managed-docker') || process.env.YAGR_IT_KEEP_MANAGED_DOCKER === '1';
+const MANAGED_DOCKER_TIMEOUT_BONUS_MS = toInt(
+  process.env.YAGR_SCN_MANAGED_DOCKER_TIMEOUT_BONUS_MS,
+  useManagedDocker ? 60_000 : 0,
+);
+const SCENARIO_MAX_RETRIES = Math.max(0, toInt(process.env.YAGR_SCN_MAX_RETRIES, useManagedDocker ? 1 : 0));
 const heartbeatMs = toInt(process.env.YAGR_SCN_HEARTBEAT_MS, 15_000);
 const markdownPath = process.env.YAGR_SCN_MARKDOWN_PATH
   || path.join(process.cwd(), 'reports', 'scenario-integration-report.md');
@@ -636,6 +641,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
   const journal = [];
   const toolEvents = [];
   const stdoutChunks = [];
+  const effectiveTimeoutMs = getEffectiveScenarioTimeoutMs(scenario);
   const envOverrides = {
     YAGR_HOME: isolatedHome,
     YAGR_LAUNCH_CWD: getIsolatedWorkspaceDir(isolatedHome),
@@ -651,8 +657,8 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
     process.chdir(getIsolatedWorkspaceDir(isolatedHome));
     const controller = new AbortController();
     const timer = setTimeout(
-      () => controller.abort(new Error(`Timeout after ${scenario.timeoutMs}ms`)),
-      scenario.timeoutMs,
+      () => controller.abort(new Error(`Timeout after ${effectiveTimeoutMs}ms`)),
+      effectiveTimeoutMs,
     );
     let heartbeat;
     let lastActivityAt = Date.now();
@@ -793,7 +799,7 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
       const timedOut = /timeout after/i.test(message);
       return {
         status: 'FAIL',
-        note: timedOut ? `Timeout après ${scenario.timeoutMs}ms.` : message.slice(0, 200),
+        note: timedOut ? `Timeout après ${effectiveTimeoutMs}ms.` : message.slice(0, 200),
         text: '',
         steps: 0,
         timedOut,
@@ -810,6 +816,93 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
       }
     }
   });
+}
+
+function getEffectiveScenarioTimeoutMs(scenario) {
+  const baseTimeoutMs = Number(scenario?.timeoutMs || DEFAULT_TIMEOUT_MS);
+  if (!useManagedDocker || !scenario?.n8nRequired) {
+    return baseTimeoutMs;
+  }
+  return baseTimeoutMs + MANAGED_DOCKER_TIMEOUT_BONUS_MS;
+}
+
+function getScenarioTestTimeoutMs(scenario) {
+  const attempts = 1 + (scenario?.n8nRequired ? SCENARIO_MAX_RETRIES : 0);
+  return (getEffectiveScenarioTimeoutMs(scenario) * attempts) + 20_000;
+}
+
+function isInfrastructureError(message) {
+  const normalized = String(message || '').toLowerCase();
+  return (
+    normalized.includes('socket hang up')
+    || normalized.includes('econnrefused')
+    || normalized.includes('econnreset')
+    || normalized.includes('fetch failed')
+    || normalized.includes('network error')
+    || normalized.includes('connect etimedout')
+  );
+}
+
+function shouldRetryScenarioResult(scenario, result) {
+  if (!scenario?.n8nRequired || !result || result.status !== 'FAIL') {
+    return false;
+  }
+  if (result.timedOut) {
+    return true;
+  }
+  return isInfrastructureError(result.note || '');
+}
+
+async function prepareManagedDockerScenario() {
+  if (!_managedDockerRuntime) {
+    return;
+  }
+  _managedDockerRuntime = await ensureManagedDockerTestRuntime();
+  _testN8nRuntime = resolveTestN8nRuntime();
+  const cleanup = await cleanManagedDockerTestRuntimeWorkflows(_managedDockerRuntime);
+  process.stdout.write(`${stamp()} managed docker cleanup: ${cleanup.deleted} workflow(s)\n`);
+}
+
+async function cleanupScenarioAttempt(result, isolatedHome, testN8nRuntime) {
+  const createdWorkflowIds = result?.createdWorkflowIds ?? [];
+  if (createdWorkflowIds.length > 0) {
+    await cleanupWorkflows(createdWorkflowIds, isolatedHome, testN8nRuntime);
+  }
+  if (keepTemp || debug) {
+    process.stdout.write(`${stamp()} isolated home preserved: ${isolatedHome}\n`);
+  } else {
+    try { fs.rmSync(isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+}
+
+async function runScenarioWithRetries(scenario) {
+  const attempts = 1 + (scenario?.n8nRequired ? SCENARIO_MAX_RETRIES : 0);
+  let lastResult;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const testN8nRuntime = _testN8nRuntime;
+    const isolatedHome = createIsolatedHome(testN8nRuntime);
+    let result;
+    try {
+      result = await runScenario(scenario, isolatedHome, testN8nRuntime);
+      lastResult = result;
+    } finally {
+      await cleanupScenarioAttempt(result, isolatedHome, testN8nRuntime);
+    }
+
+    if (lastResult?.status === 'PASS') {
+      return lastResult;
+    }
+
+    if (attempt >= attempts || !shouldRetryScenarioResult(scenario, lastResult)) {
+      return lastResult;
+    }
+
+    logProgress(`scenario ${scenario.id}: retry ${attempt + 1}/${attempts} after ${lastResult.timedOut ? 'timeout' : 'transient infrastructure failure'}`);
+    await prepareManagedDockerScenario();
+  }
+
+  return lastResult;
 }
 
 function buildScenarioOutcome(toolEvents, isolatedHome) {
@@ -1007,10 +1100,7 @@ describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1
   });
 
   beforeEach(async () => {
-    if (_managedDockerRuntime) {
-      const cleanup = await cleanManagedDockerTestRuntimeWorkflows(_managedDockerRuntime);
-      process.stdout.write(`${stamp()} managed docker cleanup: ${cleanup.deleted} workflow(s)\n`);
-    }
+    await prepareManagedDockerScenario();
   });
 
   after(async () => {
@@ -1026,30 +1116,16 @@ describe(`Scenario Integration Tests (${PROVIDER} / ${MODEL})`, { concurrency: 1
   });
 
   for (const scenario of scenariosToRun) {
-    it(`[${scenario.id}] ${scenario.name}`, { timeout: scenario.timeoutMs + 10_000 }, async (t) => {
+    it(`[${scenario.id}] ${scenario.name}`, { timeout: getScenarioTestTimeoutMs(scenario) }, async (t) => {
       if (scenario.n8nRequired && !_testN8nRuntime.configured) {
         t.skip('n8n non configuré');
         return;
       }
 
-      const isolatedHome = createIsolatedHome(_testN8nRuntime);
-      let result;
-      try {
-        result = await runScenario(scenario, isolatedHome, _testN8nRuntime);
-        results.push({ scenario, ...result });
-        logProgress(`scenario ${scenario.id}: ${result.status} (${result.steps || 0} steps) - ${truncate(singleLine(result.note || ''), 180)}`);
-        assert.ok(result.status === 'PASS', `${result.status}: ${result.note}`);
-      } finally {
-        const createdWorkflowIds = result?.createdWorkflowIds ?? [];
-        if (createdWorkflowIds.length > 0) {
-          await cleanupWorkflows(createdWorkflowIds, isolatedHome, _testN8nRuntime);
-        }
-        if (keepTemp || debug) {
-          process.stdout.write(`${stamp()} isolated home preserved: ${isolatedHome}\n`);
-        } else {
-          try { fs.rmSync(isolatedHome, { recursive: true, force: true }); } catch { /* best effort */ }
-        }
-      }
+      const result = await runScenarioWithRetries(scenario);
+      results.push({ scenario, ...result });
+      logProgress(`scenario ${scenario.id}: ${result.status} (${result.steps || 0} steps) - ${truncate(singleLine(result.note || ''), 180)}`);
+      assert.ok(result.status === 'PASS', `${result.status}: ${result.note}`);
     });
   }
 });
