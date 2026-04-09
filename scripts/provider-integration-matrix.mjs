@@ -301,7 +301,12 @@ async function runProvider(provider) {
       };
     }
 
-    const n8nAvailability = await checkTestN8nAvailability(testN8nRuntime);
+    let n8nAvailability = await checkTestN8nAvailability(testN8nRuntime);
+    if (!n8nAvailability.ok && isInfrastructureError(n8nAvailability.error || '') && useManagedDocker) {
+      process.stdout.write(`${stamp()} [infra-retry] ${provider}: infrastructure error at availability check ("${n8nAvailability.error}"), restarting Docker and retrying...\n`);
+      managedDockerRuntime = await ensureManagedDockerTestRuntime();
+      n8nAvailability = await checkTestN8nAvailability(resolveTestN8nRuntime());
+    }
     if (!n8nAvailability.ok) {
       return {
         status: 'FAIL',
