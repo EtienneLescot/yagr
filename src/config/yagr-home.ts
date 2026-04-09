@@ -41,22 +41,38 @@ function resolveBundledManagerInstructionsPath(launchDir: string = getYagrLaunch
   return undefined;
 }
 
-function ensureHomeInstructionsSeeded(paths: YagrPaths): void {
-  if (fs.existsSync(paths.homeInstructionsPath)) {
-    return;
-  }
+function isManagedHomeInstructions(content: string): boolean {
+  return content.includes('# Yagr Manager Instructions')
+    && content.includes('These instructions are managed by yagr-manager');
+}
 
+function ensureHomeInstructionsSeeded(paths: YagrPaths): void {
   const bundledInstructionsPath = resolveBundledManagerInstructionsPath(paths.launchDir);
   if (!bundledInstructionsPath) {
     return;
   }
 
   try {
-    const content = fs.readFileSync(bundledInstructionsPath, 'utf8').trim();
-    if (!content) {
+    const bundledContent = fs.readFileSync(bundledInstructionsPath, 'utf8').trim();
+    if (!bundledContent) {
       return;
     }
-    fs.writeFileSync(paths.homeInstructionsPath, `${content}\n`);
+
+    const nextContent = `${bundledContent}\n`;
+
+    if (!fs.existsSync(paths.homeInstructionsPath)) {
+      fs.writeFileSync(paths.homeInstructionsPath, nextContent);
+      return;
+    }
+
+    const existingContent = fs.readFileSync(paths.homeInstructionsPath, 'utf8');
+    if (!isManagedHomeInstructions(existingContent)) {
+      return;
+    }
+
+    if (existingContent !== nextContent) {
+      fs.writeFileSync(paths.homeInstructionsPath, nextContent);
+    }
   } catch {
     // Best effort only.
   }

@@ -15,7 +15,7 @@ import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { getActiveTunnelState } from '../n8n-local/n8n-tunnel.js';
 import type { ToolExecutionObserver } from '../tools/observer.js';
 import { emitToolEvent } from '../tools/observer.js';
-import { resolveWorkspacePath } from '../tools/workspace-utils.js';
+import { resolveN8nWorkspacePath } from '../tools/n8n-workspace-path-utils.js';
 
 const WORKFLOW_FILE_SUFFIX = '.workflow.ts';
 const WORKFLOW_SCAN_SKIP_DIRS = new Set(['.git', 'dist', 'node_modules', 'docs', 'build']);
@@ -64,7 +64,7 @@ export function resolveWorkflowDiagramFromFilePath(filePath: string): string | u
 
   const candidatePath = path.isAbsolute(filePath)
     ? filePath
-    : resolveWorkspacePath(filePath);
+    : resolveN8nWorkspacePath(filePath);
 
   if (!fs.existsSync(candidatePath)) {
     return undefined;

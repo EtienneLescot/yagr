@@ -21,7 +21,7 @@ import {
   makeThinkingEndEvent,
   THINKING_OP_ID,
 } from '../runtime/user-visible-updates.js';
-import { WORKFLOW_EMBED_TYPE } from '../manager-tooling/present-workflow.js';
+import { presentWorkflowResultCli, WORKFLOW_EMBED_TYPE } from '../manager-tooling/present-workflow.js';
 import type { WorkflowEmbedPayload } from '../manager-tooling/present-workflow.js';
 import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 
@@ -36,6 +36,8 @@ export interface LangGraphRunAccumulator {
   requiredActions: YagrRequiredAction[];
   /** Workflow embeds raised via `presentWorkflowResult` tool calls. */
   workflowEmbeds: WorkflowEmbedPayload[];
+  /** Workflow IDs detected from structured tool outputs during the run. */
+  workflowCandidates: Array<{ workflowId: string; workflowUrl?: string; title?: string }>;
   /** Accumulated thinking text across the current turn. */
   thinkingText: string;
   /** When the current thinking block started (ms). */
@@ -62,6 +64,7 @@ export function createRunAccumulator(): LangGraphRunAccumulator {
     responseText: '',
     requiredActions: [],
     workflowEmbeds: [],
+    workflowCandidates: [],
     thinkingText: '',
     thinkingStartedAt: 0,
     activeOperations: new Map(),
@@ -343,6 +346,7 @@ async function handleToolEnd(
   callbacks: LangGraphEventCallbacks,
 ): Promise<void> {
   const output = parseToolOutput(rawOutput);
+  captureWorkflowCandidate(output, accumulator);
 
   switch (toolName) {
     case 'execute': {
@@ -391,9 +395,117 @@ async function handleToolEnd(
   }
 }
 
+export async function ensureWorkflowPresentation(
+  accumulator: LangGraphRunAccumulator,
+  callbacks: Pick<LangGraphEventCallbacks, 'onWorkflowEmbed'> = {},
+): Promise<void> {
+  if (accumulator.workflowEmbeds.length > 0) {
+    return;
+  }
+
+  const candidate = accumulator.workflowCandidates.at(-1);
+  if (!candidate?.workflowId) {
+    return;
+  }
+
+  const payload = await presentWorkflowResultCli({
+    workflowId: candidate.workflowId,
+    workflowUrl: candidate.workflowUrl,
+    title: candidate.title,
+  }) as WorkflowEmbedPayload;
+  const enriched = enrichWorkflowEmbedPayload(payload);
+  accumulator.workflowEmbeds.push(enriched);
+  await callbacks.onWorkflowEmbed?.(enriched);
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function captureWorkflowCandidate(
+  output: Record<string, unknown> | undefined,
+  accumulator: LangGraphRunAccumulator,
+): void {
+  const candidate = extractWorkflowCandidate(output);
+  if (!candidate) {
+    return;
+  }
+
+  const existingIndex = accumulator.workflowCandidates.findIndex((entry) => entry.workflowId === candidate.workflowId);
+  if (existingIndex >= 0) {
+    accumulator.workflowCandidates[existingIndex] = {
+      ...accumulator.workflowCandidates[existingIndex],
+      ...candidate,
+    };
+    return;
+  }
+
+  accumulator.workflowCandidates.push(candidate);
+}
+
+function extractWorkflowCandidate(
+  output: Record<string, unknown> | undefined,
+): { workflowId: string; workflowUrl?: string; title?: string } | undefined {
+  if (!output) {
+    return undefined;
+  }
+
+  const directWorkflowId = asNonEmptyString(output.workflowId);
+  if (directWorkflowId) {
+    return {
+      workflowId: directWorkflowId,
+      workflowUrl: asWorkflowUrl(output.workflowUrl) ?? asWorkflowUrl(output.url),
+      title: asNonEmptyString(output.title) ?? asNonEmptyString(output.name),
+    };
+  }
+
+  const directId = asNonEmptyString(output.id);
+  if (directId && looksLikeWorkflowRecord(output)) {
+    return {
+      workflowId: directId,
+      workflowUrl: asWorkflowUrl(output.workflowUrl) ?? asWorkflowUrl(output.url),
+      title: asNonEmptyString(output.title) ?? asNonEmptyString(output.name),
+    };
+  }
+
+  const nestedCandidates = ['workflow', 'data', 'result'];
+  for (const key of nestedCandidates) {
+    const nested = output[key];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const candidate = extractWorkflowCandidate(nested as Record<string, unknown>);
+      if (candidate) {
+        return candidate;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function looksLikeWorkflowRecord(output: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(output.nodes) ||
+    Array.isArray(output.connections) ||
+    typeof output.active === 'boolean' ||
+    typeof output.updatedAt === 'string' ||
+    typeof output.createdAt === 'string' ||
+    !!asWorkflowUrl(output.workflowUrl) ||
+    !!asWorkflowUrl(output.url)
+  );
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function asWorkflowUrl(value: unknown): string | undefined {
+  const normalized = asNonEmptyString(value);
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.includes('/workflow/') ? normalized : undefined;
+}
 
 function parseToolOutput(raw: unknown): Record<string, unknown> | undefined {
   if (!raw) {

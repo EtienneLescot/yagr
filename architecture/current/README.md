@@ -20,6 +20,11 @@ Les trois pages principales doivent rester coherentes entre elles:
 
 ## Convention
 
+Pour les fichiers d'instructions runtime, la convention Yagr a retenir est:
+
+- `AGENTS.md` est le format canonique pour la home Yagr et les workspaces geres.
+- `AGENT.md` reste supporte pour compatibilite et pour certains repos existants, mais ce n'est pas le nom a privilegier pour la home/runtime Yagr.
+
 Quand une responsabilite change, il faut mettre a jour:
 
 - le graphe concerne

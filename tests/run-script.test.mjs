@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import { createRunScriptTool } from '../dist/tools/run-script.js';
@@ -45,4 +48,28 @@ test('runScript captures stderr', async () => {
   });
 
   assert.equal(result.stderr, 'oops');
+});
+
+test('runScript defaults to the Yagr home directory', async () => {
+  const previousYagrHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-run-script-'));
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const tool = createRunScriptTool();
+    const result = await tool.execute({
+      command: 'node -e "process.stdout.write(process.cwd())"',
+      timeoutMs: 5000,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.stdout, tempHome);
+  } finally {
+    if (previousYagrHome !== undefined) {
+      process.env.YAGR_HOME = previousYagrHome;
+    } else {
+      delete process.env.YAGR_HOME;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });

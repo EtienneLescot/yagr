@@ -1,8 +1,7 @@
-import { ensureYagrHomeDir, getYagrN8nWorkspaceDir } from './yagr-home.js';
+import { ensureYagrHomeDir } from './yagr-home.js';
 
-ensureYagrHomeDir();
-const workspaceDir = getYagrN8nWorkspaceDir();
+const homeDir = ensureYagrHomeDir();
 
-if (process.cwd() !== workspaceDir) {
-  process.chdir(workspaceDir);
+if (process.cwd() !== homeDir) {
+  process.chdir(homeDir);
 }

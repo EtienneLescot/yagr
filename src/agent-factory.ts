@@ -61,7 +61,7 @@ function buildYagrTools() {
  * Instantiate a Yagr-configured deep agent.
  *
  * This should be called once per active engine instance.  When the engine
- * is invalidated (e.g. n8n config change), discard the handle and call this
+ * is invalidated by runtime configuration changes, discard the handle and call this
  * again; the new handle will use a fresh checkpointer so session history
  * starts over — matching the current behaviour where `agents.clear()` is
  * called on config change.
@@ -88,10 +88,8 @@ export async function createYagrDeepAgent(
     backend: new LocalShellBackend({
       rootDir,
       inheritEnv: true,
-      // Virtual path mode: sandbox ls/read_file/glob/grep to rootDir so that
-      // ls('/') returns workspace root instead of the real OS root.
-      // Shell execution via `execute` is still unrestricted (by design).
-      virtualMode: true,
+      // Keep filesystem and shell semantics aligned: absolute paths should
+      // mean the same thing for read/glob/grep and execute.
     }),
   });
 

@@ -8,11 +8,12 @@
 import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
+import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { emitToolEvent, type ToolExecutionObserver } from '../tools/observer.js';
 import { ensureN8nRelayServer, N8N_RELAY_CREDENTIAL_NAME, N8N_RELAY_FAKE_API_KEY } from '../llm/llm-relay-server.js';
-import { parseJsonPayload, workspaceRoot } from '../tools/workspace-utils.js';
+import { parseJsonPayload } from '../tools/fs-utils.js';
 
 type RunResult = { stdout: string; stderr: string; exitCode: number };
 
@@ -55,7 +56,7 @@ async function runN8nacCommand(args: string[], cwd: string): Promise<RunResult> 
 }
 
 export async function runYagrProxyCli() {
-  const cwd = workspaceRoot();
+  const cwd = getYagrN8nWorkspaceDir();
   const relay = await ensureN8nRelayServer();
   const effectiveRelayBaseUrl = relay.baseUrl;
 

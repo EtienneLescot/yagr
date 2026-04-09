@@ -198,6 +198,8 @@ Responsabilite actuelle:
 
 La regle est simple : **qui peut le plus peut le moins**. Un agent capable de lire n'importe quel fichier peut lire un fichier de workflow. Un outil de recherche generique peut chercher dans un workspace n8nac. L'outillage n8n-specifique ne doit couvrir que ce qu'un outil generaliste ne peut pas faire par construction.
 
+Dans le modele cible et attendu, la racine operationnelle est la **home Yagr** (`YAGR_HOME`). Le dossier `n8n-workspace` est un sous-workspace de cette home, pas le root implicite du process.
+
 Les outils sont organises en trois couches :
 
 ```
@@ -205,7 +207,7 @@ Les outils sont organises en trois couches :
 │  COUCHE 1 — Capacites generalistes (src/tools/)                 │
 │                                                                 │
 │  readFile   grep   listDir                                      │
-│  ↳ absolute=true pour sortir du sandbox workspace              │
+│  ↳ lisent le FS visible depuis la home Yagr                    │
 │                                                                 │
 │  writeFile  replaceInFile  moveFile  deleteFile                 │
 │                                                                 │
@@ -232,15 +234,15 @@ Outils FS et leur scope :
 
 | Outil | Scope par defaut | Scope etendu |
 |---|---|---|
-| `readFile` | workspace n8nac | `absolute=true` → tout le FS |
-| `grep` | workspace n8nac | `absolute=true` → tout le FS |
-| `listDir` | workspace n8nac | `absolute=true` → tout le FS |
-| `writeFile` | workspace n8nac | — |
-| `replaceInFile` | workspace n8nac | — |
-| `moveFile` | workspace n8nac | — |
-| `deleteFile` | workspace n8nac | — |
+| `readFile` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
+| `grep` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
+| `listDir` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
+| `writeFile` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
+| `replaceInFile` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
+| `moveFile` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
+| `deleteFile` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
 
-Les outils d'ecriture restent intentionnellement sandboxes au workspace. Les outils de lecture acceptent `absolute=true` pour sortir du sandbox.
+Le workspace `n8n-workspace` reste le sous-dossier metier principal pour les automatisations n8n, mais il ne doit pas etre confondu avec la racine de processus ou avec un faux root de filesystem.
 
 **runScript (allowlist)** : commandes autorisees : `npm run`, `npm test`, `npx tsc`, `node --test`, `git status/diff/log`, `node -e`, `cat`, `ls`, `find`. Toujours disponible.
 
@@ -249,7 +251,7 @@ Les outils d'ecriture restent intentionnellement sandboxes au workspace. Les out
 #### Regles d'evolution
 
 1. Avant d'ajouter un outil n8n-specifique, verifier si un outil generaliste (httpRequest, runScript, FS) ne suffit pas.
-2. Les outils d'ecriture FS restent sandboxes au workspace par defaut.
+2. Ne pas introduire de faux root implicite sur `n8n-workspace` qui divergerait du shell ou du FS reel.
 3. `runShell` reste opt-in, avec warning explicite dans sa description.
 4. `n8nac` reste une dependance externe, jamais reimplementee dans le core.
 5. `yagr presentWorkflowResult` doit etre appele systematiquement quand l'agent manipule un workflow connu.

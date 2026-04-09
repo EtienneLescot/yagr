@@ -132,7 +132,7 @@ Clarification:
 
 - l'agent lit automatiquement le `AGENTS.md` de la home Yagr comme premiere couche d'instructions
 - ce fichier de home est seme depuis `src/manager-tooling/YAGENTS.md` lorsqu'il est absent
-- les instructions shell `n8nac` de premier niveau appartiennent au fichier genere par `n8nac` dans `n8n-workspace`
+- les instructions shell `n8nac` de premier niveau appartiennent au fichier genere par `n8nac` dans `n8n-workspace`, que l'agent inspecte lorsqu'il entre dans ce sous-workspace
 - ce template `YAGENTS.md` ne porte que les comportements specifiques a yagr-manager (presentation workflow, proxy LLM, etc.) et apprend a l'agent a invoquer les commandes CLI internes via le shell
 
 ### `src/setup.ts` et `src/setup/`

@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { Box, Static, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
-import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
+import { createRunAccumulator, ensureWorkflowPresentation, processStreamEvent } from './langgraph-events.js';
 import {
   type WorkflowEmbed,
   resolveTerminalWorkflowOpenUrl,
@@ -38,9 +38,6 @@ type InteractiveAppProps = {
   threadIdRef: { current: string };
   options: YagrRunOptions;
 };
-
-const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
-const PULSE_CYCLE = SPINNER_FRAMES.length;
 
 function stateColor(state: YagrAgentState): string {
   switch (state) {
@@ -173,7 +170,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
   const [liveThinkingLine, setLiveThinkingLine] = useState('');
   const [pendingRequiredActions, setPendingRequiredActions] = useState<YagrRequiredAction[]>([]);
   const [lastUserPrompt, setLastUserPrompt] = useState('');
-  const [statusPulse, setStatusPulse] = useState(0);
   const [activeOperationText, setActiveOperationText] = useState('Ready for a request.');
   const [workflowEmbeds, setWorkflowEmbeds] = useState<WorkflowEmbed[]>([]);
   const nextEntryIdRef = useRef(1);
@@ -183,18 +179,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
   const seenOperationEndRef = useRef(new Set<string>());
   const operationStateRef = useRef(new Map<string, YagrOperationEvent>());
   const workspaceLabel = useMemo(() => basename(getYagrN8nWorkspaceDir()), []);
-
-  useEffect(() => {
-    if (!isRunning) {
-      return undefined;
-    }
-
-    const timer = setInterval(() => {
-      setStatusPulse((previous) => (previous + 1) % PULSE_CYCLE);
-    }, 80);
-
-    return () => clearInterval(timer);
-  }, [isRunning]);
 
   const pushEntry = useCallback((lane: FeedLane, title: string, text = '', emphasis: FeedEntry['emphasis'] = 'normal') => {
     if (!title.trim() && !text.trim()) {
@@ -386,6 +370,27 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
         });
       }
 
+      await ensureWorkflowPresentation(accumulator, {
+        onWorkflowEmbed: async (embed) => {
+          const w: WorkflowEmbed = {
+            workflowId: embed.workflowId,
+            url: embed.url,
+            targetUrl: embed.targetUrl,
+            title: embed.title,
+            diagram: embed.diagram,
+            executionResult: embed.executionResult,
+          };
+          setWorkflowEmbeds((prev) => (
+            prev.some((entry) => workflowEmbedKey(entry) === workflowEmbedKey(w))
+              ? prev
+              : [...prev, w]
+          ));
+          const label = w.title ? `${w.title} — ${w.url}` : w.url;
+          pushEntry('result', 'Workflow available', label, 'strong');
+          setActiveOperationText(`Workflow ready: ${w.url}`);
+        },
+      });
+
       if (display.showResponses) {
         finalizeAssistantStream();
       }
@@ -420,7 +425,12 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
 
   const submitPrompt = useCallback(async (rawPrompt: string) => {
     const prompt = rawPrompt.trim();
-    if (!prompt || isRunning) {
+    if (!prompt) {
+      return;
+    }
+
+    if (isRunning) {
+      setActiveOperationText('Current run still in progress. Wait before sending a new message.');
       return;
     }
 
@@ -547,7 +557,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
   const idleIcon = currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
   const statusText = isRunning ? activeOperationText : phaseStatusText;
   const latestWorkflowTarget = workflowEmbeds.length > 0 ? (workflowEmbeds[workflowEmbeds.length - 1]?.targetUrl ?? workflowEmbeds[workflowEmbeds.length - 1]?.url) : undefined;
-  const spinnerChar = SPINNER_FRAMES[statusPulse % SPINNER_FRAMES.length];
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0} width="100%">
@@ -582,8 +591,9 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
 
       <Box flexDirection="column" marginTop={1}>
         <Text color={isRunning ? 'yellow' : stateColor(currentState)}>
-          {isRunning ? `${spinnerChar} ${statusText}` : `${idleIcon} ${statusText}`}
+          {isRunning ? `◐ ${statusText}` : `${idleIcon} ${statusText}`}
         </Text>
+        {isRunning ? <Text color="yellow">Enter is disabled while the agent is still working. You can keep typing and send once the run finishes.</Text> : null}
         {liveThinkingLine ? <Text color="magenta">Thinking: {liveThinkingLine}</Text> : null}
         {liveAssistantText ? <Text color="green">Assistant: {liveAssistantText}</Text> : null}
         {pendingRequiredActions.length > 0 ? <RequiredActionList actions={pendingRequiredActions} /> : null}
@@ -602,7 +612,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
           onSubmit={(value) => {
             void submitPrompt(value);
           }}
-          placeholder={isRunning ? 'Type while the current run continues' : 'Describe what you want to automate'}
+          placeholder={isRunning ? 'Draft your next message. Press Enter when the current run finishes.' : 'Describe what you want to automate'}
         />
       </Box>
     </Box>

@@ -12,8 +12,8 @@ moteur d'orchestration. Toutes les gateways consomment un `YagrDeepAgentHandle`.
 Le modele d'architecture de reference est le suivant:
 
 1. `yagr-agent` est un agent de codage strictement agnostique.
-2. `yagr-manager` fournit une premiere couche d'instructions via le `AGENTS.md` de la home Yagr. Ce fichier est seme depuis le template manager `src/manager-tooling/YAGENTS.md` et indique a l'agent qu'il travaille dans un workspace `n8n-workspace` et qu'il doit prendre en compte le `AGENT.md` / `AGENTS.md` present dans ce workspace.
-3. Le `AGENT.md` / `AGENTS.md` genere par `n8nac` constitue la deuxieme couche d'instructions metier pour le travail dans le workspace n8n.
+2. `yagr-manager` fournit une premiere couche d'instructions via le `AGENTS.md` de la home Yagr. Ce fichier est seme depuis le template manager `src/manager-tooling/YAGENTS.md` et indique a l'agent que la home Yagr est sa base operationnelle et que `n8n-workspace` est un sous-workspace dedie aux automatisations.
+3. Le `AGENTS.md` genere par `n8nac` constitue la deuxieme couche d'instructions metier pour le travail dans le workspace n8n, mais il est lu par l'agent quand celui-ci entre dans `n8n-workspace`; il n'est pas injecte d'office comme couche de system prompt.
 4. En parallele, `yagr-manager` porte sa propre couche infrastructure (n8n local, relay, proxy, setup, tunnel, etc.) sans melanger cette logique avec le coeur de `yagr-agent`.
 5. Les comportements manager specifiques passent par des commandes CLI internes (`yagr presentWorkflowResult`, `yagr yagrProxy`) executees via le shell, jamais par injection explicite de tools dans le deep-agent.
 
@@ -39,8 +39,7 @@ flowchart TD
     end
 
     YI --> YA
-    YI --> NA
-    NA --> YA
+    YA -.inspecte.-> NA
     NA --> NC
     YA --> WorkspaceContainer
     YA --> YC
@@ -54,7 +53,8 @@ Contraintes d'architecture:
 - `yagr-agent` ne porte aucune regle n8n specifique en dur.
 - le `AGENTS.md` de home est la premiere couche effectivement lue par l'agent.
 - `src/manager-tooling/YAGENTS.md` est le template source maintenu par `yagr-manager` pour semer ce `AGENTS.md` de home.
-- le comportement metier n8n de premier niveau est porte par le `AGENT.md` / `AGENTS.md` genere dans `n8n-workspace`.
+- le comportement metier n8n de premier niveau est porte par le `AGENTS.md` genere dans `n8n-workspace`.
+- la home Yagr reste la racine operationnelle; `n8n-workspace` est un sous-workspace, pas le cwd implicite du process.
 - la couche infrastructure manager reste separee des couches d'instructions exposees a l'agent de codage.
 
 ```mermaid
@@ -127,7 +127,7 @@ Clarification importante:
 - `yagr-agent` reste agnostique et ne porte pas de connaissance n8n specifique dans son system prompt ou dans sa factory de tools
 - `yagr-manager` n'injecte pas de tools manager dans le deep-agent
 - le `AGENTS.md` de home apprend a l'agent a utiliser les commandes CLI internes `yagr presentWorkflowResult` et `yagr yagrProxy` via le shell
-- les instructions shell `n8nac` de premier niveau proviennent du `AGENT.md` / `AGENTS.md` genere par `n8nac` dans `n8n-workspace`
+- les instructions shell `n8nac` de premier niveau proviennent du `AGENTS.md` genere par `n8nac` dans `n8n-workspace`, que l'agent lit lorsqu'il entre dans ce sous-workspace
 - `src/manager-tooling/YAGENTS.md` ne doit pas dupliquer ces instructions; il ne porte que les comportements specifiques a yagr-manager
 
 ## Persistance de session

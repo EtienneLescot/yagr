@@ -105,6 +105,59 @@ test('ensureYagrHomeDir seeds the home AGENTS.md from the bundled manager templa
   }
 });
 
+test('ensureYagrHomeDir refreshes an existing managed home AGENTS.md from the bundled template', () => {
+  const previousYagrHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-refresh-'));
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    fs.mkdirSync(tempHome, { recursive: true });
+    fs.writeFileSync(
+      path.join(tempHome, 'AGENTS.md'),
+      '# Yagr Manager Instructions\n\nThese instructions are managed by yagr-manager and apply when the n8n engine is active.\n\nStale content.\n',
+      'utf8',
+    );
+
+    ensureYagrHomeDir();
+
+    const content = fs.readFileSync(path.join(tempHome, 'AGENTS.md'), 'utf8');
+    assert.match(content, /Yagr Manager Instructions/i);
+    assert.match(content, /When you need to configure an AI Agent \/ LangChain node/i);
+    assert.doesNotMatch(content, /Stale content\./i);
+  } finally {
+    if (previousYagrHome !== undefined) {
+      process.env.YAGR_HOME = previousYagrHome;
+    } else {
+      delete process.env.YAGR_HOME;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('ensureYagrHomeDir preserves a custom home AGENTS.md that is not manager-managed', () => {
+  const previousYagrHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-custom-'));
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const customContent = '# Personal Notes\n\nDo not overwrite this file.\n';
+    fs.mkdirSync(tempHome, { recursive: true });
+    fs.writeFileSync(path.join(tempHome, 'AGENTS.md'), customContent, 'utf8');
+
+    ensureYagrHomeDir();
+
+    const content = fs.readFileSync(path.join(tempHome, 'AGENTS.md'), 'utf8');
+    assert.equal(content, customContent);
+  } finally {
+    if (previousYagrHome !== undefined) {
+      process.env.YAGR_HOME = previousYagrHome;
+    } else {
+      delete process.env.YAGR_HOME;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
 test('explicit n8n workspace helper resolves under YAGR_HOME', () => {
   const previousYagrHome = process.env.YAGR_HOME;
   process.env.YAGR_HOME = '.yagr-test-workspace';

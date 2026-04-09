@@ -8,7 +8,7 @@ import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import type { YagrUserVisibleUpdate } from '../runtime/user-visible-updates.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
-import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
+import { createRunAccumulator, ensureWorkflowPresentation, processStreamEvent } from './langgraph-events.js';
 import {
   type WorkflowEmbed,
   buildWorkflowBannerHtml,
@@ -526,6 +526,8 @@ class TelegramGateway implements Gateway {
           onUserVisibleUpdate: sendProgressUpdate,
         });
       }
+
+      await ensureWorkflowPresentation(accumulator);
 
       if (accumulator.requiredActions.length > 0) {
         this.pendingApprovals.set(chatId, accumulator.requiredActions);

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { emitToolEvent, type ToolExecutionObserver } from './observer.js';
-import { workspaceRoot } from './workspace-utils.js';
+import { getYagrHomeDir } from '../config/yagr-home.js';
 import type { YagrShellCommandsConfig } from '../config/yagr-config-service.js';
 
 const MAX_OUTPUT_SIZE = 20_000; // characters
@@ -48,10 +48,10 @@ export function createRunScriptTool(observer?: ToolExecutionObserver, shellComma
 
   return tool({
     description:
-      'Run a shell command in the active workspace. ' +
+      'Run a shell command from the Yagr home directory by default. ' +
       'Use this to build the project, run tests, inspect files, manage git, or execute any necessary tool. ' +
       modeDescription +
-      ' Runs in the active workspace directory by default.',
+      ' Runs in the Yagr home directory unless cwd is provided.',
     parameters: z.object({
       command: z.string().min(1).describe('Shell command to run.'),
       cwd: z.string().optional().describe('Working directory. Defaults to the active workspace root.'),
@@ -67,7 +67,7 @@ export function createRunScriptTool(observer?: ToolExecutionObserver, shellComma
         };
       }
 
-      const workingDir = cwd ?? workspaceRoot();
+      const workingDir = cwd ?? getYagrHomeDir();
 
       await emitToolEvent(observer, {
         type: 'status',

@@ -498,9 +498,11 @@ function createIsolatedHome(testN8nRuntime) {
   const sourcePaths = getYagrPaths();
 
   writeIsolatedYagrConfig(tempHome);
+  copyIfExists(sourcePaths.homeInstructionsPath, path.join(tempHome, 'AGENTS.md'));
   copyIfExists(sourcePaths.n8nCredentialsPath, path.join(tempHome, 'n8n-credentials.json'));
   copyDirIfExists(sourcePaths.n8nWorkspaceDir, path.join(tempHome, 'n8n-workspace'));
   copyIfExists(sourcePaths.workspaceInstructionsPath, path.join(tempHome, 'n8n-workspace', 'AGENTS.md'));
+  seedHomeAgentsMd(tempHome);
 
   const { host, apiKey, projectId } = testN8nRuntime;
   if (host || apiKey || projectId) {
@@ -1068,6 +1070,35 @@ function rawOutputToString(rawOutput) {
     return JSON.stringify(rawOutput);
   } catch {
     return String(rawOutput);
+  }
+}
+
+function seedHomeAgentsMd(homeDir) {
+  const destPath = path.join(homeDir, 'AGENTS.md');
+  if (fs.existsSync(destPath)) {
+    return;
+  }
+
+  const launchDir = process.env.YAGR_LAUNCH_CWD || process.cwd();
+  const candidates = [
+    path.join(launchDir, 'node_modules', '@yagr', 'manager-tooling', 'YAGENTS.md'),
+    path.join(launchDir, 'src', 'manager-tooling', 'YAGENTS.md'),
+  ];
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) {
+      continue;
+    }
+
+    try {
+      const content = fs.readFileSync(candidate, 'utf8').trim();
+      if (content) {
+        fs.writeFileSync(destPath, `${content}\n`);
+      }
+    } catch {
+      // Best effort only.
+    }
+    return;
   }
 }
 

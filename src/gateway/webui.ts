@@ -30,6 +30,7 @@ import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
 import {
   createRunAccumulator,
+  ensureWorkflowPresentation,
   processStreamEvent,
   extractLastAiMessage,
 } from './langgraph-events.js';
@@ -689,6 +690,21 @@ class WebUiGateway implements Gateway {
           },
         });
       }
+
+      await ensureWorkflowPresentation(accumulator, {
+        onWorkflowEmbed: (embed) => {
+          writeEvent({
+            type: 'embed',
+            kind: embed.kind,
+            workflowId: embed.workflowId,
+            url: embed.url,
+            targetUrl: embed.targetUrl,
+            title: embed.title,
+            diagram: embed.diagram,
+            executionResult: embed.executionResult,
+          });
+        },
+      });
 
       runFinished = true;
       this.persistSessionMetadata(sessionId);

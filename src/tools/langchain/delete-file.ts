@@ -7,16 +7,17 @@
 import fs from 'node:fs';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { fileExists, relativeWorkspacePath, resolveWorkspacePath } from '../workspace-utils.js';
+import { fileExists } from '../fs-utils.js';
+import { relativeYagrHomePath, resolveYagrHomePath } from '../home-path-utils.js';
 
 export const deleteFileTool = tool(
   async ({ path: inputPath, allowMissing }): Promise<string> => {
-    const targetPath = resolveWorkspacePath(inputPath);
+    const targetPath = resolveYagrHomePath(inputPath);
 
     if (!fileExists(targetPath)) {
       return JSON.stringify({
         ok: allowMissing,
-        path: relativeWorkspacePath(targetPath),
+        path: relativeYagrHomePath(targetPath),
         deleted: false,
         error: allowMissing ? undefined : `File does not exist: ${inputPath}`,
       });
@@ -26,16 +27,16 @@ export const deleteFileTool = tool(
 
     return JSON.stringify({
       ok: true,
-      path: relativeWorkspacePath(targetPath),
+      path: relativeYagrHomePath(targetPath),
       deleted: true,
     });
   },
   {
     name: 'deleteFile',
     description:
-      'Delete a workspace file. Use when the user explicitly requests deletion, or when a file is obsolete, orphaned, or superseded by a canonical copy.',
+      'Delete a file under the Yagr home directory. Use when the user explicitly requests deletion, or when a file is obsolete, orphaned, or superseded by a canonical copy.',
     schema: z.object({
-      path: z.string().min(1).describe('Workspace-relative file path.'),
+      path: z.string().min(1).describe('Yagr-home-relative file path.'),
       allowMissing: z.boolean().default(true).describe('Whether missing files should be treated as a non-fatal result.'),
     }),
   },
