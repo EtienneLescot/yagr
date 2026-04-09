@@ -86,6 +86,8 @@ export async function ensureManagedDockerTestRuntime() {
       throw new Error('Managed Docker n8n test runtime did not provide a URL.');
     }
 
+    await assertManagedDockerRuntimeReady(state.url);
+
     const configService = new YagrN8nConfigService();
     const existingApiKey = configService.getApiKey(state.url);
     if (existingApiKey && await isApiKeyValid(state.url, existingApiKey)) {
@@ -113,6 +115,29 @@ export async function ensureManagedDockerTestRuntime() {
       managedHome: TEST_MANAGED_HOME,
     };
   });
+}
+
+async function assertManagedDockerRuntimeReady(host) {
+  const baseUrl = String(host || '').replace(/\/+$/, '');
+  if (!baseUrl) {
+    throw new Error('Managed Docker n8n runtime did not provide a host.');
+  }
+
+  const startedAt = Date.now();
+  const timeoutMs = 15_000;
+  while ((Date.now() - startedAt) < timeoutMs) {
+    try {
+      const response = await fetch(`${baseUrl}/healthz`);
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // keep polling until timeout
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  throw new Error(`Managed Docker n8n runtime is not healthy at ${baseUrl}.`);
 }
 
 async function isApiKeyValid(host, apiKey) {

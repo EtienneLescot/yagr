@@ -19,9 +19,7 @@ export const YAGR_PROVIDER_TEST_MODEL_CONFIG: Partial<Record<YagrModelProvider, 
   },
   openai: {
     preferredModels: [
-      'gpt-4o',
-      'gpt-4.1-mini',
-      'gpt-4o-mini',
+      'gpt-5.4-mini',
       'gpt-5-mini',
     ],
   },
