@@ -1,5 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
+import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { N8nApiClient } from 'n8nac';
 
 const TEST_MANAGED_HOME = resolveManagedTestHome();
@@ -27,7 +29,44 @@ function withManagedTestHome(fn) {
     });
 }
 
+/**
+ * Detect and remove a root-owned `data/` directory inside the managed test home.
+ * This happens when Docker previously created the volume mount as root (uid=0).
+ * We use `docker run --rm` to delete it without requiring sudo on the host.
+ */
+async function repairManagedDockerHome() {
+  const dataDir = path.join(TEST_MANAGED_HOME, 'n8n', 'data');
+  if (!fs.existsSync(dataDir)) {
+    return;
+  }
+
+  let stat;
+  try {
+    stat = fs.statSync(dataDir);
+  } catch {
+    return;
+  }
+
+  // uid 0 = root — Docker created this; we can't rm it as the current user
+  if (stat.uid !== 0) {
+    return;
+  }
+
+  // Use a throw-away alpine container to delete the root-owned directory
+  try {
+    execFileSync(
+      'docker',
+      ['run', '--rm', '-v', `${dataDir}:/target`, 'alpine', 'sh', '-c', 'rm -rf /target/*'],
+      { stdio: 'pipe' },
+    );
+    fs.rmdirSync(dataDir);
+  } catch {
+    // best effort; ensureManagedDockerTestRuntime will fail with a clear error if still broken
+  }
+}
+
 export async function ensureManagedDockerTestRuntime() {
+  await repairManagedDockerHome();
   return await withManagedTestHome(async () => {
     const { getManagedDockerN8nStatus, installManagedDockerN8n, startManagedDockerN8n } = await import('../dist/n8n-local/docker-manager.js');
     const { bootstrapManagedLocalN8n } = await import('../dist/n8n-local/bootstrap.js');

@@ -779,7 +779,7 @@ async function runYagrAdvancedScenarioAttempt({
   const beforeSnapshot = snapshotWorkflowFiles(workspaceScanDir);
   const beforeRemoteSnapshot = await listRemoteWorkflows();
   const beforeRemoteDetails = await getRemoteWorkflowDetails(beforeRemoteSnapshot);
-  const effectivePrompt = buildAdvancedScenarioPrompt(prompt, provider);
+  const effectivePrompt = buildAdvancedScenarioPrompt(prompt, provider, isolatedHome);
   const workflowDir = resolveActiveWorkflowDir(isolatedHome);
 
   if (debug) {
@@ -1422,9 +1422,25 @@ function resolveActiveWorkflowDir(yagrHome = getYagrPaths().homeDir) {
   }
 }
 
-function buildAdvancedScenarioPrompt(prompt, provider) {
+function buildAdvancedScenarioPrompt(prompt, provider, isolatedHome) {
   const marker = `yagr-it-${provider.replace(/[^a-z0-9]+/gi, '-')}-${Date.now()}`;
-  return `${prompt}\n\nTest constraints:\n- Create a new workflow.\n- Give it a unique name starting with "${marker}".\n- Do not update an existing workflow.\n- Do not ask any questions or wait for confirmation.\n- Only finish when the workflow is saved and pushed.`;
+  const workspaceContext = buildWorkspaceContext(isolatedHome);
+  return `${prompt}\n\nTest constraints:\n- Create a new workflow.\n- Give it a unique name starting with "${marker}".\n- Do not update an existing workflow.\n- Do not ask any questions or wait for confirmation.\n- Only finish when the workflow is saved and pushed.${workspaceContext ? `\n\nWorkspace state:\n${workspaceContext}` : ''}`;
+}
+
+function buildWorkspaceContext(isolatedHome) {
+  if (!isolatedHome) return '';
+  try {
+    const configPath = path.join(isolatedHome, 'n8n-workspace', 'n8nac-config.json');
+    if (!fs.existsSync(configPath)) return '';
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const activeId = config.activeInstanceId;
+    const instance = (config.instances || []).find((i) => i.id === activeId);
+    if (!instance) return '';
+    return `- \`n8nac-config.json\` is present and verified (host: ${instance.host}, project: ${instance.projectName}). Use \`npx --yes n8nac@next\` for all n8n operations.`;
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -1468,15 +1484,34 @@ function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
     n8nacPackage = version.startsWith('@') ? `n8nac${version}` : `n8nac@${version}`;
   }
 
+  const sharedEnv = {
+    ...process.env,
+    ...(testN8nRuntime.host ? { N8N_HOST: String(testN8nRuntime.host) } : {}),
+    ...(testN8nRuntime.apiKey ? { N8N_API_KEY: String(testN8nRuntime.apiKey) } : {}),
+    ...(testN8nRuntime.projectId ? { N8N_PROJECT_ID: String(testN8nRuntime.projectId) } : {}),
+  };
+
+  // Ensure n8nac's global Conf store has the correct API key for this host.
+  // When the managed docker runtime is re-bootstrapped, a new key is generated and stored
+  // in Yagr's n8n-credentials.json, but n8nac's own globalStore may have a stale key.
+  // Running init-auth here updates the Conf store so n8nac can authenticate correctly.
+  if (testN8nRuntime.host && testN8nRuntime.apiKey) {
+    spawnSync(
+      'npx',
+      ['--yes', n8nacPackage, 'init-auth', '--host', String(testN8nRuntime.host), '--api-key', String(testN8nRuntime.apiKey)],
+      {
+        cwd: path.join(homeDir, 'n8n-workspace'),
+        env: sharedEnv,
+        stdio: 'pipe',
+        encoding: 'utf8',
+      },
+    );
+  }
+
   // Call n8nac update-ai to regenerate AGENTS.md in the n8n-workspace directory
   const result = spawnSync('npx', ['--yes', n8nacPackage, 'update-ai', '--silent'], {
     cwd: path.join(homeDir, 'n8n-workspace'),
-    env: {
-      ...process.env,
-      ...(testN8nRuntime.host ? { N8N_HOST: String(testN8nRuntime.host) } : {}),
-      ...(testN8nRuntime.apiKey ? { N8N_API_KEY: String(testN8nRuntime.apiKey) } : {}),
-      ...(testN8nRuntime.projectId ? { N8N_PROJECT_ID: String(testN8nRuntime.projectId) } : {}),
-    },
+    env: sharedEnv,
     stdio: 'pipe',
     encoding: 'utf8',
   });
@@ -1488,6 +1523,29 @@ function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
     if (debug) {
       logDebug('SETUP', `Warning: n8nac update-ai failed for ${homeDir}: ${stderr || stdout || `exit ${result.status ?? 1}`}`);
     }
+  }
+}
+
+/**
+ * After n8nac update-ai rewrites n8nac-config.json with the real instanceIdentifier,
+ * ensure the correct workflow directory exists and remove the provisional 'test/' scaffold.
+ */
+function reconcileWorkflowDirs(n8nWorkspaceDir) {
+  const configPath = path.join(n8nWorkspaceDir, 'n8nac-config.json');
+  if (!fs.existsSync(configPath)) return;
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const workflowDir = config.workflowDir;
+    if (workflowDir) {
+      fs.mkdirSync(path.join(n8nWorkspaceDir, workflowDir), { recursive: true });
+    }
+    // Remove the provisional 'test/' directory created by initializeTestN8nConfig if it still exists
+    const provisionalDir = path.join(n8nWorkspaceDir, 'workflows', 'test');
+    if (fs.existsSync(provisionalDir) && workflowDir && !workflowDir.startsWith('workflows/test')) {
+      fs.rmSync(provisionalDir, { recursive: true, force: true });
+    }
+  } catch {
+    // best effort
   }
 }
 
@@ -1515,6 +1573,11 @@ function createAdvancedScenarioHome(provider, model, testN8nRuntime = {}) {
 
   // Generate fresh n8n-workspace/AGENTS.md with current n8nac version (mirrors refreshAiContext in production).
   generateTestAgentsMd(tempHome, testN8nRuntime);
+
+  // After generateTestAgentsMd, n8nac update-ai may have rewritten n8nac-config.json with the real
+  // instanceIdentifier (e.g. '127_0_0_1:5678_yagr_l'). Ensure the correct workflow directory exists
+  // and remove the provisional 'test/' scaffold created by initializeTestN8nConfig.
+  reconcileWorkflowDirs(n8nWorkspaceDir);
 
   return tempHome;
 }
