@@ -316,7 +316,17 @@ async function runProvider(provider) {
       };
     }
 
-    const result = await runYagrAdvancedScenario({ provider, model: chosenModel, prompt: advancedPrompt, timeoutMs: advancedTimeoutMs });
+    const runAdvanced = async () => runYagrAdvancedScenario({ provider, model: chosenModel, prompt: advancedPrompt, timeoutMs: advancedTimeoutMs });
+    let result = await runAdvanced();
+
+    // Retry once on infrastructure errors (socket hang up, connection refused) by
+    // restarting the managed Docker runtime before the retry.
+    if (isInfrastructureError(result.error || '') && useManagedDocker) {
+      process.stdout.write(`${stamp()} [infra-retry] ${provider}: infrastructure error detected ("${result.error}"), restarting Docker and retrying...\n`);
+      managedDockerRuntime = await ensureManagedDockerTestRuntime();
+      result = await runAdvanced();
+    }
+
     const checklistNote = formatAdvancedChecklistNote(result.checklist);
     if (result.ok) {
       return {
@@ -2017,6 +2027,16 @@ function isTransientRateLimit(message) {
     || normalized.includes('too many requests')
     || normalized.includes('http 429')
     || normalized.includes('status code 429')
+  );
+}
+
+function isInfrastructureError(message) {
+  const normalized = String(message || '').toLowerCase();
+  return (
+    normalized.includes('socket hang up')
+    || normalized.includes('econnrefused')
+    || normalized.includes('econnreset')
+    || normalized.includes('enotfound')
   );
 }
 

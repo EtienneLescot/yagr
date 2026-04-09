@@ -124,20 +124,37 @@ async function assertManagedDockerRuntimeReady(host) {
   }
 
   const startedAt = Date.now();
-  const timeoutMs = 15_000;
+  const timeoutMs = 30_000;
+
+  // Phase 1: wait for healthz (process alive)
   while ((Date.now() - startedAt) < timeoutMs) {
     try {
       const response = await fetch(`${baseUrl}/healthz`);
       if (response.ok) {
-        return;
+        break;
       }
     } catch {
-      // keep polling until timeout
+      // keep polling
+    }
+    if ((Date.now() - startedAt) >= timeoutMs) {
+      throw new Error(`Managed Docker n8n runtime is not healthy at ${baseUrl}.`);
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
-  throw new Error(`Managed Docker n8n runtime is not healthy at ${baseUrl}.`);
+  // Phase 2: wait for REST API to accept connections (any HTTP response = API ready)
+  while ((Date.now() - startedAt) < timeoutMs) {
+    try {
+      await fetch(`${baseUrl}/api/v1/`);
+      // Any HTTP response (including 401 Unauthorized) means the API is up
+      return;
+    } catch {
+      // connection refused / socket hang up = not ready yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  throw new Error(`Managed Docker n8n REST API did not become ready at ${baseUrl}.`);
 }
 
 async function isApiKeyValid(host, apiKey) {
