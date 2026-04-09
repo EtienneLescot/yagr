@@ -321,7 +321,13 @@ async function runProvider(provider) {
       };
     }
 
-    const runAdvanced = async () => runYagrAdvancedScenario({ provider, model: chosenModel, prompt: advancedPrompt, timeoutMs: advancedTimeoutMs });
+    const runAdvanced = async () => {
+      try {
+        return await runYagrAdvancedScenario({ provider, model: chosenModel, prompt: advancedPrompt, timeoutMs: advancedTimeoutMs });
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    };
     let result = await runAdvanced();
 
     // Retry once on infrastructure errors (socket hang up, connection refused) by
