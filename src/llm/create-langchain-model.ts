@@ -70,6 +70,13 @@ function getApiKeyForProvider(
     openrouter: ['OPENROUTER_API_KEY', 'OPENROUTER_LLM_API_KEY'],
   };
 
+  if (!preferEnvironmentCredentials()) {
+    const storedApiKey = configStore.getApiKey(provider)?.trim();
+    if (storedApiKey) {
+      return storedApiKey;
+    }
+  }
+
   const envKeys = byProvider[provider] ?? [];
   for (const envKey of envKeys) {
     const value = process.env[envKey]?.trim();

@@ -314,7 +314,7 @@ export interface YagrOperationEvent {
   /** Semantic category driving icon and colour. */
   category: YagrOperationCategory;
   status: YagrOperationStatus;
-  /** Full body: stdout, file excerpt, thinking tokens… Capped at 4000 chars. */
+  /** Full body: stdout, file excerpt, thinking tokens… May be capped depending on the producer. */
   body?: string;
   /** One-line summary for compact views (≤ 120 chars). */
   summary?: string;

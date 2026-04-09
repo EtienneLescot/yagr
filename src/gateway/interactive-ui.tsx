@@ -3,7 +3,7 @@ import { basename } from 'node:path';
 import { Box, Static, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { JSX, ReactNode } from 'react';
+import type { JSX } from 'react';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
@@ -11,7 +11,6 @@ import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import {
   type WorkflowEmbed,
-  buildWorkflowBannerTerminal,
   resolveTerminalWorkflowOpenUrl,
   workflowEmbedKey,
 } from './format-message.js';
@@ -19,12 +18,11 @@ import type {
   YagrAgentState,
   YagrDisplayOptions,
   YagrOperationEvent,
-  YagrPhaseEvent,
   YagrRequiredAction,
   YagrRunOptions,
 } from '../types.js';
 
-type FeedLane = 'user' | 'result' | 'interrupt';
+type FeedLane = 'user' | 'assistant' | 'thinking' | 'action' | 'result' | 'interrupt';
 
 type FeedEntry = {
   id: number;
@@ -42,36 +40,7 @@ type InteractiveAppProps = {
 };
 
 const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
-const BAR_WIDTH = 16;
-const BAR_CYCLE = (BAR_WIDTH - 1) * 2; // 30 ticks per back-and-forth
-const PULSE_CYCLE = BAR_CYCLE * SPINNER_FRAMES.length; // 120 — LCM of both animations
-
-const ACTIVITY_PHASES: Array<YagrPhaseEvent['phase']> = [
-  'inspect', 'plan', 'edit', 'summarize',
-];
-
-function buildActivityBar(pulse: number): string {
-  const pos = pulse % BAR_CYCLE;
-  const ballPos = pos <= BAR_WIDTH - 1 ? pos : BAR_CYCLE - pos;
-  return Array.from({ length: BAR_WIDTH }, (_, i) => {
-    const dist = Math.abs(i - ballPos);
-    if (dist === 0) return '█';
-    if (dist === 1) return '▓';
-    if (dist === 2) return '▒';
-    if (dist === 3) return '░';
-    return '─';
-  }).join('');
-}
-
-function phaseLabel(phase: YagrPhaseEvent['phase'] | null): string {
-  switch (phase) {
-    case 'inspect': return 'Inspect';
-    case 'plan': return 'Plan';
-    case 'edit': return 'Edit';
-    case 'summarize': return 'Summary';
-    default: return 'Waiting';
-  }
-}
+const PULSE_CYCLE = SPINNER_FRAMES.length;
 
 function stateColor(state: YagrAgentState): string {
   switch (state) {
@@ -91,6 +60,9 @@ function stateColor(state: YagrAgentState): string {
 function laneColor(lane: FeedLane): string {
   switch (lane) {
     case 'user': return 'cyan';
+    case 'assistant': return 'green';
+    case 'thinking': return 'magenta';
+    case 'action': return 'yellow';
     case 'result': return 'green';
     case 'interrupt': return 'red';
   }
@@ -99,6 +71,9 @@ function laneColor(lane: FeedLane): string {
 function laneLabel(lane: FeedLane): string {
   switch (lane) {
     case 'user': return 'You';
+    case 'assistant': return 'Assistant';
+    case 'thinking': return 'Thinking';
+    case 'action': return 'Action';
     case 'result': return 'Result';
     case 'interrupt': return 'Blocked';
   }
@@ -115,6 +90,23 @@ function normalizeDisplayOptions(display?: YagrDisplayOptions): Required<YagrDis
 
 function normalizeCommandChunk(chunk: string): string {
   return chunk.replace(/\r+/g, '\n');
+}
+
+function splitStreamingText(text: string, flushAll = false): { emitted: string; remainder: string } {
+  const normalized = normalizeCommandChunk(text);
+  if (flushAll) {
+    return { emitted: normalized, remainder: '' };
+  }
+
+  const lines = normalized.split('\n');
+  if (lines.length <= 1) {
+    return { emitted: '', remainder: normalized };
+  }
+
+  return {
+    emitted: lines.slice(0, -1).join('\n'),
+    remainder: lines.at(-1) ?? '',
+  };
 }
 
 function formatRequiredAction(action: YagrRequiredAction): string {
@@ -139,166 +131,19 @@ function truncateText(text: string, maxLength: number): string {
   return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-function buildContextBar(fillPercent: number): string {
-  const TOTAL = 10;
-  const filled = Math.round(Math.max(0, Math.min(100, fillPercent)) / 100 * TOTAL);
-  return `[${'█'.repeat(filled)}${'░'.repeat(TOTAL - filled)}]`;
-}
-
-function buildCommandHistoryText(command: string, stdout: string, stderr: string, exitCode: number, message?: string): string {
-  const sections = [`$ ${command}`];
-
-  if (stdout.trimEnd()) {
-    sections.push(`stdout\n${stdout.trimEnd()}`);
-  }
-
-  if (stderr.trimEnd()) {
-    sections.push(`stderr\n${stderr.trimEnd()}`);
-  }
-
-  sections.push(`exit ${exitCode}${message ? ` ${message}` : ''}`);
-  return sections.join('\n\n');
-}
-
-// ---------------------------------------------------------------------------
-// Operation card helpers
-// ---------------------------------------------------------------------------
-
-function opCategoryPrefix(category: YagrOperationEvent['category']): string {
-  switch (category) {
-    case 'shell': return 'Shell ';
-    case 'file-read': return 'Read ';
-    case 'file-write': return 'Write ';
-    case 'web': return 'Web ';
-    case 'agent': return 'Agent ';
-    case 'phase': return '';
-    case 'thinking': return '';
-    default: return '';
-  }
-}
-
-function opColor(op: YagrOperationEvent): string {
-  if (op.status === 'error') return 'red';
-  if (op.category === 'thinking') return 'magenta';
-  if (op.category === 'phase') return 'cyan';
-  if (op.category === 'shell') return op.status === 'running' ? 'yellow' : 'green';
-  if (op.category === 'file-read' || op.category === 'file-write') return op.status === 'running' ? 'yellow' : 'blue';
-  if (op.category === 'web') return op.status === 'running' ? 'yellow' : 'cyan';
-  return op.status === 'running' ? 'yellow' : 'white';
-}
-
-function OperationCard({ op }: { op: YagrOperationEvent }): JSX.Element {
-  const icon = op.status === 'done' ? '●' : op.status === 'error' ? '✕' : '◐';
-  const color = opColor(op);
-  const elapsed = op.endedAt ? `  ${((op.endedAt - op.startedAt) / 1000).toFixed(1)}s` : '';
-
-  return (
-    <Box flexDirection="column" marginBottom={0}>
-      <Box>
-        <Text color={color}>{icon} </Text>
-        <Text bold={op.status === 'running'} color={color}>{truncateText(op.label, 80)}</Text>
-        {elapsed ? <Text dimColor>{elapsed}</Text> : null}
-      </Box>
-      {op.summary && op.status !== 'running' ? (
-        <Box paddingLeft={2}>
-          <Text dimColor>{truncateText(op.summary, 100)}</Text>
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
-
-function OperationList({ operations }: { operations: YagrOperationEvent[] }): JSX.Element {
-  if (operations.length === 0) {
-    return <Text dimColor>Yagr is working…</Text>;
-  }
-
-  return (
-    <Box flexDirection="column" marginBottom={1}>
-      {operations.map((op) => (
-        <OperationCard key={op.operationId} op={op} />
-      ))}
-    </Box>
-  );
-}
-
-function Panel({
-  title,
-  subtitle,
-  color,
-  children,
-  width = '100%',
-}: {
-  title: string;
-  subtitle?: string;
-  color: string;
-  children: ReactNode;
-  width?: number | string;
-}): JSX.Element {
-  return (
-    <Box flexDirection="column" borderStyle="round" borderColor={color} paddingX={1} paddingY={0} width={width}>
-      <Box justifyContent="space-between" marginBottom={1}>
-        <Text color={color} bold>{title}</Text>
-        {subtitle ? <Text dimColor>{subtitle}</Text> : <Text dimColor> </Text>}
-      </Box>
-      <Box flexDirection="column">{children}</Box>
-    </Box>
-  );
-}
-
-function ActiveRunIndicator({
-  phase,
-  statusText,
-  pulse,
-}: {
-  phase: YagrPhaseEvent['phase'] | null;
-  statusText: string;
-  pulse: number;
-}): JSX.Element {
-  const spinnerChar = SPINNER_FRAMES[pulse % SPINNER_FRAMES.length];
-  const phaseIndex = phase ? ACTIVITY_PHASES.indexOf(phase) : -1;
-  const bar = buildActivityBar(pulse);
-  const dots = ACTIVITY_PHASES.map((_, i) => {
-    if (phaseIndex < 0) return '◇';
-    if (i < phaseIndex) return '◉';
-    if (i === phaseIndex) return '◆';
-    return '◇';
-  }).join(' ');
-  const phaseName = phase ? phaseLabel(phase) : '';
-
-  return (
-    <Box flexDirection="column">
-      <Box>
-        <Text color="yellow" bold>{spinnerChar} </Text>
-        <Text bold>{truncateText(statusText, 80)}</Text>
-      </Box>
-      <Box>
-        <Text dimColor>  ╰ </Text>
-        <Text color="cyan">{bar}</Text>
-        {phaseIndex >= 0 && (
-          <Text dimColor>  {phaseName} ({phaseIndex + 1}/{ACTIVITY_PHASES.length})</Text>
-        )}
-      </Box>
-      <Box>
-        <Text dimColor>      {dots}</Text>
-      </Box>
-    </Box>
-  );
-}
-
 function EmptyState(): JSX.Element {
   return (
     <Box flexDirection="column">
       <Text color="cyan" bold>Yagr turns an intent into executable automation.</Text>
-      <Text dimColor>Type your request below. Scroll up in the terminal to see conversation history.</Text>
+      <Text dimColor>Type your request below.</Text>
     </Box>
   );
 }
 
-function RequiredActionCard({ actions }: { actions: YagrRequiredAction[] }): JSX.Element {
+function RequiredActionList({ actions }: { actions: YagrRequiredAction[] }): JSX.Element {
   const hasBlocking = actions.some((a) => a.blocking !== false);
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" marginTop={1}>
       {hasBlocking
         ? <Text color="red" bold>Run blocked</Text>
         : <Text color="yellow" bold>Follow-up actions</Text>}
@@ -315,134 +160,29 @@ function RequiredActionCard({ actions }: { actions: YagrRequiredAction[] }): JSX
   );
 }
 
-// ---------------------------------------------------------------------------
-// TerminalMarkdown: light markdown rendering for assistant responses
-// ---------------------------------------------------------------------------
-
-type MdSegment =
-  | { kind: 'heading'; text: string }
-  | { kind: 'code'; text: string }
-  | { kind: 'text'; text: string }
-  | { kind: 'bullet'; text: string };
-
-function parseMarkdownSegments(md: string): MdSegment[] {
-  const segments: MdSegment[] = [];
-  const lines = md.split('\n');
-  let inCode = false;
-  const codeBuf: string[] = [];
-
-  for (const line of lines) {
-    if (line.trimStart().startsWith('```')) {
-      if (inCode) {
-        segments.push({ kind: 'code', text: codeBuf.join('\n') });
-        codeBuf.length = 0;
-      }
-      inCode = !inCode;
-      continue;
-    }
-    if (inCode) { codeBuf.push(line); continue; }
-
-    const trimmed = line.trimStart();
-    if (/^#{1,6}\s/.test(trimmed)) {
-      segments.push({ kind: 'heading', text: trimmed.replace(/^#{1,6}\s+/, '') });
-    } else if (/^[-*]\s/.test(trimmed)) {
-      segments.push({ kind: 'bullet', text: trimmed.replace(/^[-*]\s+/, '') });
-    } else {
-      segments.push({ kind: 'text', text: line });
-    }
-  }
-  if (codeBuf.length > 0) {
-    segments.push({ kind: 'code', text: codeBuf.join('\n') });
-  }
-  return segments;
-}
-
-function stripInlineMarkdown(text: string): string {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '$1')
-    .replace(/`([^`]+)`/g, '$1');
-}
-
-function TerminalMarkdown({ text }: { text: string }): JSX.Element {
-  const segments = useMemo(() => parseMarkdownSegments(text), [text]);
-
-  return (
-    <Box flexDirection="column">
-      {segments.map((seg, i) => {
-        switch (seg.kind) {
-          case 'heading':
-            return <Text key={i} color="green" bold>{stripInlineMarkdown(seg.text)}</Text>;
-          case 'code':
-            return (
-              <Box key={i} marginLeft={2} marginY={0}>
-                <Text color="gray">{seg.text}</Text>
-              </Box>
-            );
-          case 'bullet':
-            return <Text key={i} color="green">  • {stripInlineMarkdown(seg.text)}</Text>;
-          default:
-            return <Text key={i} color="green">{stripInlineMarkdown(seg.text)}</Text>;
-        }
-      })}
-    </Box>
-  );
-}
-
-function WorkflowBanner({ embeds }: { embeds: WorkflowEmbed[] }): JSX.Element | null {
-  if (embeds.length === 0) return null;
-
-  const execEmbed = embeds.find(e => e.executionResult);
-  const exec = execEmbed?.executionResult;
-
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Text>{buildWorkflowBannerTerminal(embeds)}</Text>
-      {exec ? (
-        <Box flexDirection="column" marginTop={1} paddingLeft={1} borderLeft={true} borderStyle="single" borderColor={exec.status === 'success' ? 'green' : exec.status === 'error' ? 'red' : 'yellow'}>
-          <Text bold color={exec.status === 'success' ? 'green' : exec.status === 'error' ? 'red' : 'yellow'}>
-            {exec.status === 'success' ? '✓ Exécution réussie' : exec.status === 'error' ? '✗ Erreur d\'exécution' : '⧗ En attente'}
-            {exec.executionId ? ` · #${exec.executionId}` : ''}
-          </Text>
-          {exec.summary ? <Text>{exec.summary}</Text> : null}
-          {exec.data ? <Text dimColor>{exec.data}</Text> : null}
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
-
 function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps) {
   const app = useApp();
   const { stdout } = useStdout();
   const [inputVersion, setInputVersion] = useState(0);
   const [feed, setFeed] = useState<FeedEntry[]>([]);
-  /** Operation cards indexed by operationId (ordered insertion). */
-  const [operations, setOperations] = useState<Map<string, YagrOperationEvent>>(new Map());
   const [isRunning, setIsRunning] = useState(false);
   const [currentState, setCurrentState] = useState<YagrAgentState>('idle');
-  const [currentPhase, setCurrentPhase] = useState<YagrPhaseEvent['phase'] | null>(null);
   const [phaseStatusText, setPhaseStatusText] = useState('Ready.');
   const [display, setDisplay] = useState<Required<YagrDisplayOptions>>(() => normalizeDisplayOptions(options.display));
   const [liveAssistantText, setLiveAssistantText] = useState('');
-  const [latestAssistantText, setLatestAssistantText] = useState('');
+  const [liveThinkingLine, setLiveThinkingLine] = useState('');
   const [pendingRequiredActions, setPendingRequiredActions] = useState<YagrRequiredAction[]>([]);
   const [lastUserPrompt, setLastUserPrompt] = useState('');
   const [statusPulse, setStatusPulse] = useState(0);
   const [activeOperationText, setActiveOperationText] = useState('Ready for a request.');
   const [workflowEmbeds, setWorkflowEmbeds] = useState<WorkflowEmbed[]>([]);
-  const [contextFillPercent, setContextFillPercent] = useState<number | null>(null);
   const nextEntryIdRef = useRef(1);
+  const assistantBufferRef = useRef('');
+  const thinkingBufferRef = useRef('');
+  const seenOperationStartRef = useRef(new Set<string>());
+  const seenOperationEndRef = useRef(new Set<string>());
+  const operationStateRef = useRef(new Map<string, YagrOperationEvent>());
   const workspaceLabel = useMemo(() => basename(getYagrN8nWorkspaceDir()), []);
-
-  const upsertOperation = useCallback((op: YagrOperationEvent) => {
-    setOperations((prev) => {
-      const next = new Map(prev);
-      const existing = next.get(op.operationId);
-      next.set(op.operationId, existing ? { ...existing, ...op } : op);
-      return next;
-    });
-  }, []);
 
   useEffect(() => {
     if (!isRunning) {
@@ -456,8 +196,8 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
     return () => clearInterval(timer);
   }, [isRunning]);
 
-  const pushEntry = useCallback((lane: FeedLane, title: string, text: string, emphasis: FeedEntry['emphasis'] = 'normal') => {
-    if (!text.trim()) {
+  const pushEntry = useCallback((lane: FeedLane, title: string, text = '', emphasis: FeedEntry['emphasis'] = 'normal') => {
+    if (!title.trim() && !text.trim()) {
       return;
     }
 
@@ -474,19 +214,104 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
     ]);
   }, []);
 
-  const finalizeAssistantEntry = useCallback((finalText: string) => {
-    const resolvedText = finalText.trim();
-    setLiveAssistantText('');
+  const flushStreamBuffer = useCallback((
+    lane: FeedLane,
+    bufferRef: { current: string },
+    setLive: (value: string) => void,
+    flushAll = false,
+  ) => {
+    const { emitted, remainder } = splitStreamingText(bufferRef.current, flushAll);
+    bufferRef.current = remainder;
+    setLive(remainder);
 
-    if (!resolvedText) {
+    if (emitted.trim()) {
+      pushEntry(lane, '', emitted);
+    }
+  }, [pushEntry]);
+
+  const appendStreamDelta = useCallback((
+    lane: FeedLane,
+    delta: string,
+    bufferRef: { current: string },
+    setLive: (value: string) => void,
+  ) => {
+    bufferRef.current += normalizeCommandChunk(delta);
+    flushStreamBuffer(lane, bufferRef, setLive, false);
+  }, [flushStreamBuffer]);
+
+  const resetStreamingBuffers = useCallback(() => {
+    assistantBufferRef.current = '';
+    thinkingBufferRef.current = '';
+    setLiveAssistantText('');
+    setLiveThinkingLine('');
+  }, []);
+
+  const appendAssistantDelta = useCallback((delta: string) => {
+    assistantBufferRef.current += normalizeCommandChunk(delta);
+    setLiveAssistantText(assistantBufferRef.current);
+  }, []);
+
+  const finalizeAssistantStream = useCallback(() => {
+    const finalText = assistantBufferRef.current.trimEnd();
+    if (finalText) {
+      pushEntry('assistant', '', finalText);
+    }
+    assistantBufferRef.current = '';
+    setLiveAssistantText('');
+  }, [pushEntry]);
+
+  const handleOperationEvent = useCallback((op: YagrOperationEvent) => {
+    const previous = operationStateRef.current.get(op.operationId);
+    const merged = previous ? { ...previous, ...op } : op;
+    operationStateRef.current.set(op.operationId, merged);
+    setActiveOperationText(merged.label);
+
+    if (merged.category === 'thinking') {
+      if (!display.showThinking) {
+        return;
+      }
+
+      if (!seenOperationStartRef.current.has(merged.operationId)) {
+        seenOperationStartRef.current.add(merged.operationId);
+        pushEntry('thinking', `◐ ${merged.label}`);
+      }
+
+      if ((merged.status === 'done' || merged.status === 'error') && !seenOperationEndRef.current.has(merged.operationId)) {
+        flushStreamBuffer('thinking', thinkingBufferRef, setLiveThinkingLine, true);
+        if (merged.summary) {
+          pushEntry('thinking', `● ${merged.label}`, merged.summary);
+        }
+        seenOperationEndRef.current.add(merged.operationId);
+      }
       return;
     }
 
-    setLatestAssistantText(resolvedText);
-    if (display.showResponses) {
-      pushEntry('result', 'Final response', resolvedText, 'strong');
+    if (!display.showExecution) {
+      return;
     }
-  }, [display.showResponses, pushEntry]);
+
+    if (!seenOperationStartRef.current.has(merged.operationId)) {
+      seenOperationStartRef.current.add(merged.operationId);
+      pushEntry('action', `◐ ${merged.label}`);
+    }
+
+    if ((merged.status === 'done' || merged.status === 'error') && !seenOperationEndRef.current.has(merged.operationId)) {
+      const parts: string[] = [];
+      if (merged.category !== 'file-read' && merged.body?.trim()) {
+        parts.push(normalizeCommandChunk(merged.body).trimEnd());
+      }
+      if (merged.summary?.trim()) {
+        parts.push(merged.summary.trim());
+      }
+      pushEntry(
+        merged.status === 'error' ? 'interrupt' : 'action',
+        `${merged.status === 'error' ? '✕' : '●'} ${merged.label}`,
+        parts.join('\n\n'),
+        merged.status === 'error' ? 'strong' : 'normal',
+      );
+      seenOperationEndRef.current.add(merged.operationId);
+    }
+  }, [display.showExecution, display.showThinking, flushStreamBuffer, pushEntry]);
 
   const handleCompact = useCallback(() => {
     setActiveOperationText('Compaction is handled automatically by Yagr.');
@@ -501,13 +326,13 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
 
     setIsRunning(true);
     setCurrentState('running');
-    setCurrentPhase('inspect');
     setPhaseStatusText('Analyzing...');
     setActiveOperationText('Analyzing the workspace and constraints.');
-    setLiveAssistantText('');
+    resetStreamingBuffers();
     setWorkflowEmbeds([]);
-    setContextFillPercent(null);
-    setOperations(new Map());
+    seenOperationStartRef.current = new Set();
+    seenOperationEndRef.current = new Set();
+    operationStateRef.current = new Map();
 
     const accumulator = createRunAccumulator();
 
@@ -521,20 +346,19 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
         await processStreamEvent(event, accumulator, {
           onTextDelta: async (delta) => {
             if (display.showResponses) {
-              setLiveAssistantText((previous) => `${previous}${delta}`);
+              appendAssistantDelta(delta);
             }
             await options.onTextDelta?.(delta);
           },
-          onThinkingDelta: async (_delta) => {
-            // Thinking text is surfaced via onOperation — no additional action needed.
+          onThinkingDelta: async (delta) => {
+            if (display.showThinking) {
+              appendStreamDelta('thinking', delta, thinkingBufferRef, setLiveThinkingLine);
+            }
           },
           onOperation: async (op) => {
-            if (op.category === 'thinking' && !display.showThinking) return;
-            upsertOperation(op);
-            setActiveOperationText(op.label);
+            handleOperationEvent(op);
           },
           onUserVisibleUpdate: async (update) => {
-            // Keep for error/interrupt entries and phase text.
             if (update.tone === 'error') {
               pushEntry('interrupt', update.title, update.detail ?? update.title, 'strong');
             }
@@ -562,10 +386,14 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
         });
       }
 
-      finalizeAssistantEntry(accumulator.responseText);
+      if (display.showResponses) {
+        finalizeAssistantStream();
+      }
+      if (display.showThinking) {
+        flushStreamBuffer('thinking', thinkingBufferRef, setLiveThinkingLine, true);
+      }
       const finalState: YagrAgentState = accumulator.requiredActions.length > 0 ? 'waiting_for_input' : 'completed';
       setCurrentState(finalState);
-      setCurrentPhase(null);
       setPendingRequiredActions(accumulator.requiredActions);
 
       if (accumulator.requiredActions.length > 0) {
@@ -581,15 +409,14 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       pushEntry('interrupt', 'Run failed', message);
-      setLiveAssistantText('');
+      resetStreamingBuffers();
       setCurrentState('failed_terminal');
-      setCurrentPhase(null);
       setPhaseStatusText('Run failed.');
       setActiveOperationText(message);
     } finally {
       setIsRunning(false);
     }
-  }, [agent, threadIdRef, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantEntry, options, pushEntry]);
+  }, [agent, appendAssistantDelta, appendStreamDelta, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantStream, flushStreamBuffer, handleOperationEvent, options, pushEntry, resetStreamingBuffers, threadIdRef]);
 
   const submitPrompt = useCallback(async (rawPrompt: string) => {
     const prompt = rawPrompt.trim();
@@ -609,14 +436,14 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
       setFeed([]);
       setPendingRequiredActions([]);
       setCurrentState('idle');
-      setCurrentPhase(null);
       setPhaseStatusText('Conversation reset.');
-      setLiveAssistantText('');
-      setLatestAssistantText('');
+      resetStreamingBuffers();
       setLastUserPrompt('');
       setActiveOperationText('Ready for a request.');
       setWorkflowEmbeds([]);
-      setOperations(new Map());
+      seenOperationStartRef.current = new Set();
+      seenOperationEndRef.current = new Set();
+      operationStateRef.current = new Map();
       return;
 
     }
@@ -708,11 +535,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
     }
   }, { isActive: true });
 
-  const operationList = useMemo(() => [...operations.values()], [operations]);
-  const visibleOperations = useMemo(
-    () => operationList.filter((op) => op.category !== 'thinking' || display.showThinking),
-    [operationList, display.showThinking],
-  );
   const terminalWidth = stdout?.columns ?? process.stdout.columns ?? 100;
   const headerSubtitle = useMemo(() => {
     if (!lastUserPrompt) {
@@ -722,118 +544,66 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
     return truncateText(lastUserPrompt.replace(/\s+/g, ' ').trim(), Math.max(24, Math.floor(terminalWidth * 0.65)));
   }, [lastUserPrompt, terminalWidth]);
 
-  const hasBlockingActions = pendingRequiredActions.some((a) => a.blocking !== false);
   const idleIcon = currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
   const statusText = isRunning ? activeOperationText : phaseStatusText;
   const latestWorkflowTarget = workflowEmbeds.length > 0 ? (workflowEmbeds[workflowEmbeds.length - 1]?.targetUrl ?? workflowEmbeds[workflowEmbeds.length - 1]?.url) : undefined;
-  const liveTitle = pendingRequiredActions.length > 0
-    ? (hasBlockingActions ? 'Action required' : 'Follow-up actions')
-    : liveAssistantText
-      ? 'Response in progress'
-      : isRunning
-        ? 'Working'
-        : latestAssistantText
-          ? 'Latest response'
-          : 'Ready';
-  const liveSubtitle = pendingRequiredActions.length > 0
-    ? (hasBlockingActions ? 'run blocked' : 'non-blocking')
-    : liveAssistantText
-      ? 'generation in progress'
-      : isRunning
-        ? activeOperationText
-        : latestAssistantText
-          ? 'final summary'
-          : headerSubtitle;
-  const livePanelColor = (pendingRequiredActions.length > 0 && hasBlockingActions) ? 'red' : pendingRequiredActions.length > 0 ? 'yellow' : 'cyan';
+  const spinnerChar = SPINNER_FRAMES[statusPulse % SPINNER_FRAMES.length];
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0} width="100%">
-      {/* ── Static feed: persists in terminal scroll buffer ── */}
       <Static items={feed}>
         {(entry) => (
           <Box key={entry.id} flexDirection="column" marginBottom={0}>
             <Text color={laneColor(entry.lane)} dimColor>
               [{entry.timestamp}] {laneLabel(entry.lane)}{entry.title ? ` · ${entry.title}` : ''}
             </Text>
-            {entry.text.split('\n').map((line, i) => (
-              <Text
-                // eslint-disable-next-line react/no-array-index-key
-                key={i}
-                color={entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined}
-                dimColor={entry.lane !== 'result' && entry.emphasis !== 'strong'}
-              >
-                {'  '}{line}
-              </Text>
-            ))}
+            {entry.text
+              ? entry.text.split('\n').map((line, i) => (
+                <Text
+                  // eslint-disable-next-line react/no-array-index-key
+                  key={i}
+                  color={entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined}
+                  dimColor={entry.lane !== 'assistant' && entry.lane !== 'thinking' && entry.emphasis !== 'strong'}
+                >
+                  {'  '}{line}
+                </Text>
+              ))
+              : null}
           </Box>
         )}
       </Static>
 
-      {/* ── Live workspace header ── */}
       <Box flexDirection="column" marginBottom={1} marginTop={1}>
         <Text color="cyan" bold>Yagr <Text dimColor>{workspaceLabel}</Text></Text>
+        <Text dimColor>{headerSubtitle}</Text>
       </Box>
 
-      {/* ── Current run: operations + live text ── */}
-      {(isRunning || liveAssistantText || pendingRequiredActions.length > 0) ? (
-        <Panel title={liveTitle} subtitle={liveSubtitle} color={livePanelColor}>
-          {pendingRequiredActions.length > 0 ? (
-            <RequiredActionCard actions={pendingRequiredActions} />
-          ) : (
-            <Box flexDirection="column">
-              {visibleOperations.length > 0 ? (
-                <OperationList operations={visibleOperations} />
-              ) : null}
-              {liveAssistantText ? (
-                <Text color="green">{liveAssistantText}</Text>
-              ) : null}
-            </Box>
-          )}
-        </Panel>
-      ) : latestAssistantText ? (
-        <Panel title={liveTitle} subtitle={liveSubtitle} color="cyan">
-          <Box flexDirection="column">
-            <TerminalMarkdown text={latestAssistantText} />
-            <WorkflowBanner embeds={workflowEmbeds} />
-          </Box>
-        </Panel>
-      ) : (
-        <EmptyState />
-      )}
+      {feed.length === 0 && !isRunning && pendingRequiredActions.length === 0 ? <EmptyState /> : null}
 
-      {/* ── Prompt ── */}
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={isRunning ? 'yellow' : stateColor(currentState)}>
+          {isRunning ? `${spinnerChar} ${statusText}` : `${idleIcon} ${statusText}`}
+        </Text>
+        {liveThinkingLine ? <Text color="magenta">Thinking: {liveThinkingLine}</Text> : null}
+        {liveAssistantText ? <Text color="green">Assistant: {liveAssistantText}</Text> : null}
+        {pendingRequiredActions.length > 0 ? <RequiredActionList actions={pendingRequiredActions} /> : null}
+        <Text dimColor>
+          {latestWorkflowTarget
+            ? 'Ctrl+O to open the latest workflow.'
+            : ' '}
+        </Text>
+        {latestWorkflowTarget ? <Text dimColor>Latest workflow: {latestWorkflowTarget}</Text> : null}
+      </Box>
+
       <Box marginTop={1} width="100%">
-        <Panel title="Prompt" subtitle="user input" color="cyan">
-          <Box marginBottom={1} flexDirection="column">
-            {isRunning ? (
-              <ActiveRunIndicator phase={currentPhase} statusText={statusText} pulse={statusPulse} />
-            ) : (
-              <Text color={stateColor(currentState)}>{idleIcon} {statusText}</Text>
-            )}
-            <Text dimColor>
-              {latestWorkflowTarget
-                ? `Ctrl+O to open the latest workflow. Scroll up to see history.`
-                : 'Scroll up in the terminal to see conversation history.'}
-            </Text>
-            {contextFillPercent !== null && (
-              <Text dimColor>
-                Context: {buildContextBar(contextFillPercent)} {Math.round(contextFillPercent)}%
-              </Text>
-            )}
-            {latestWorkflowTarget ? <Text dimColor>Latest workflow: {latestWorkflowTarget}</Text> : null}
-          </Box>
-          <Box>
-            <Text color="green">› </Text>
-            <TextInput
-              key={`prompt-input-${inputVersion}`}
-              onSubmit={(value) => {
-                void submitPrompt(value);
-              }}
-              placeholder={isRunning ? 'Please wait while the run is active...' : 'Describe what you want to automate'}
-              isDisabled={isRunning}
-            />
-          </Box>
-        </Panel>
+        <Text color="green">› </Text>
+        <TextInput
+          key={`prompt-input-${inputVersion}`}
+          onSubmit={(value) => {
+            void submitPrompt(value);
+          }}
+          placeholder={isRunning ? 'Type while the current run continues' : 'Describe what you want to automate'}
+        />
       </Box>
     </Box>
   );

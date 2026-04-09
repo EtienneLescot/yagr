@@ -74,6 +74,22 @@ test('resolveLanguageModelConfig returns persisted provider model and api key', 
   });
 });
 
+test('resolveLanguageModelConfig prefers stored credentials over ambient env by default', async () => {
+  const configStore = createConfigStore(
+    { provider: 'openai', model: 'gpt-5.4' },
+    { openai: 'stored-openai-key' },
+  );
+
+  await withEnv({ OPENAI_API_KEY: 'lm-studio', YAGR_PREFER_ENV_CREDENTIALS: undefined }, async () => {
+    assert.deepEqual(resolveLanguageModelConfig({}, configStore), {
+      provider: 'openai',
+      model: 'gpt-5.4',
+      apiKey: 'stored-openai-key',
+      baseUrl: undefined,
+    });
+  });
+});
+
 test('resolveLanguageModelConfig supports proxy providers without api keys', () => {
   const configStore = createConfigStore(
     { provider: 'anthropic-proxy', model: 'claude-haiku-4-5' },

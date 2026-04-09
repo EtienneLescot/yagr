@@ -40,7 +40,7 @@ export interface LangGraphRunAccumulator {
   thinkingText: string;
   /** When the current thinking block started (ms). */
   thinkingStartedAt: number;
-  /** Map of operationId → startedAt for in-flight tool calls. */
+  /** Map of event-scoped tool run keys → operation metadata for in-flight tool calls. */
   activeOperations: Map<string, YagrOperationEvent>;
 }
 
@@ -155,6 +155,7 @@ export async function processStreamEvent(
         input = rawEventInput;
       }
       const toolName = event.name;
+      const operationKey = getToolOperationKey(event);
 
       // Legacy update (still used by surfaces that don't handle operations).
       const update = mapToolStartToUpdate(toolName, input);
@@ -165,7 +166,7 @@ export async function processStreamEvent(
       // New operation card.
       const opEvent = makeToolStartOperationEvent(toolName, input);
       if (opEvent) {
-        accumulator.activeOperations.set(toolName, opEvent);
+        accumulator.activeOperations.set(operationKey, opEvent);
         await callbacks.onOperation?.(opEvent);
       }
       break;
@@ -173,12 +174,13 @@ export async function processStreamEvent(
 
     case 'on_tool_end': {
       const toolName = event.name;
-      const active = accumulator.activeOperations.get(toolName);
+      const operationKey = getToolOperationKey(event);
+      const active = accumulator.activeOperations.get(operationKey);
       if (active) {
         const patch = makeToolEndOperationEvent(active.operationId, toolName, event.data?.output, active.startedAt);
         const endEvent: YagrOperationEvent = { ...active, ...patch };
         await callbacks.onOperation?.(endEvent);
-        accumulator.activeOperations.delete(toolName);
+        accumulator.activeOperations.delete(operationKey);
       }
 
       await handleToolEnd(toolName, event.data?.output, accumulator, callbacks);
@@ -188,6 +190,12 @@ export async function processStreamEvent(
     default:
       break;
   }
+}
+
+function getToolOperationKey(event: StreamEvent): string {
+  const toolName = event.name || 'tool';
+  const runId = typeof event.run_id === 'string' && event.run_id.length > 0 ? event.run_id : 'unknown';
+  return `${toolName}:${runId}`;
 }
 
 // ---------------------------------------------------------------------------

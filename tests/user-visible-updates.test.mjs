@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  makeToolEndOperationEvent,
   mapPhaseEventToUserVisibleUpdate,
   mapStateEventToUserVisibleUpdate,
   mapToolEventToUserVisibleUpdate,
@@ -73,5 +74,19 @@ test('mapToolEventToUserVisibleUpdate keeps only user-facing tool events', () =>
     }),
     undefined,
   );
+});
+
+test('makeToolEndOperationEvent preserves full execute output for shell logs', () => {
+  const body = 'x'.repeat(5000);
+  const event = makeToolEndOperationEvent(
+    'tool:execute:test',
+    'execute',
+    `${body}\n[Command succeeded with exit code 0]`,
+    Date.now() - 100,
+  );
+
+  assert.equal(event.status, 'done');
+  assert.equal(event.body, body);
+  assert.match(event.summary, /^exit 0/);
 });
 

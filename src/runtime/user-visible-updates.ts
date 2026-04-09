@@ -16,6 +16,10 @@ function capBody(text: string): string {
   return text.length > OPERATION_BODY_LIMIT ? `${text.slice(0, OPERATION_BODY_LIMIT)}…` : text;
 }
 
+function preserveBody(text: string): string {
+  return text;
+}
+
 function summarize(text: string, max = 120): string {
   const line = text.split('\n').find((l) => l.trim().length > 0) ?? text;
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
@@ -198,6 +202,23 @@ export function makeToolStartOperationEvent(
     case 'grep':
       return undefined;
 
+    case 'runShell':
+    case 'runScript': {
+      const command = typeof input?.command === 'string' ? input.command : '';
+      const cwd = typeof input?.cwd === 'string' ? input.cwd : undefined;
+      const label = toolName === 'runShell' ? 'Shell' : 'Script';
+      const summary = command ? summarize(command, 80) : undefined;
+      return {
+        kind: 'operation',
+        operationId,
+        label: `${label}: ${summary || 'command'}`,
+        category: 'tool',
+        status: 'running',
+        summary,
+        startedAt: now,
+      };
+    }
+
     default: {
       if (!toolName) return undefined;
       const detail = input ? Object.values(input).find((v) => typeof v === 'string') as string | undefined : undefined;
@@ -249,8 +270,37 @@ export function makeToolEndOperationEvent(
     return {
       ...base,
       status: exitCode !== undefined && exitCode !== 0 ? 'error' : 'done',
-      body: capBody(body),
+      body: preserveBody(body),
       summary: exitCode !== undefined ? `exit ${exitCode}${lastLine ? `  ${summarize(lastLine, 80)}` : ''}` : summarize(lastLine, 120),
+    };
+  }
+
+  if (toolName === 'runShell' || toolName === 'runScript') {
+    // runShell and runScript return { ok, command, exitCode, timedOut, stdout, stderr }
+    const out = parseRawOutput(rawOutput);
+    if (!out) {
+      return base;
+    }
+    
+    const exitCode = typeof out.exitCode === 'number' ? out.exitCode : undefined;
+    const ok = out.ok === true;
+    const stdout = typeof out.stdout === 'string' ? out.stdout : '';
+    const stderr = typeof out.stderr === 'string' ? out.stderr : '';
+    const command = typeof out.command === 'string' ? out.command : '';
+    
+    // Combine stdout and stderr for display
+    let output = '';
+    if (stdout) output += stdout;
+    if (stderr) output += (output ? '\n' : '') + stderr;
+    
+    // Extract last non-empty line for summary
+    const lastLine = output.split('\n').reverse().find((l) => l.trim()) ?? '';
+    
+    return {
+      ...base,
+      status: exitCode !== undefined && exitCode !== 0 ? 'error' : 'done',
+      body: preserveBody(output),
+      summary: exitCode !== undefined ? `exit ${exitCode}${lastLine ? `  ${summarize(lastLine, 80)}` : ''}` : (ok ? 'OK' : 'Failed'),
     };
   }
 
