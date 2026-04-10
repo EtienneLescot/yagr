@@ -7,7 +7,7 @@
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { tool } from 'ai';
+import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { getYagrN8nWorkspaceDir, getYagrPaths } from '../config/yagr-home.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
@@ -185,18 +185,19 @@ export async function syncProxyCredentialIfEnabled(): Promise<void> {
 }
 
 export function createYagrProxyTool(observer?: ToolExecutionObserver) {
-  return tool({
+  return new DynamicStructuredTool({
+    name: 'yagrProxy',
     description:
       'Reads the current Yagr LLM proxy status and returns the provisioned openAiApi credential when available. '
       + 'Call this when you need to inspect which Yagr-managed LLM credential should be assigned to an n8n node.',
-    parameters: z.object({}),
-    execute: async () => {
+    schema: z.object({}),
+    func: async () => {
       await emitToolEvent(observer, {
         type: 'status',
         toolName: 'yagrProxy',
         message: 'Inspecting Yagr LLM proxy status',
       });
-      return runYagrProxyCli();
+      return JSON.stringify(await runYagrProxyCli());
     },
   });
 }

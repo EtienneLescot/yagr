@@ -40,8 +40,6 @@ export {
   createWebUiGatewayRuntime,
   getWebUiGatewayStatus,
 } from './gateway/webui.js';
-export { N8nEngine } from './engine/n8n-engine.js';
-export { YagrNativeEngine } from './engine/yagr-engine.js';
 export {
   resolveLanguageModelConfig,
   resolveModelName,
@@ -78,16 +76,6 @@ export {
   createYagrProxyTool,
 } from './tools/index.js';
 
-export type {
-  Engine,
-  EngineIdentityPort,
-  EngineRuntimePort,
-  NodeCatalogPort,
-  TemplateCatalogPort,
-  WorkflowCompilerPort,
-  WorkflowValidatorPort,
-  WorkflowLifecyclePort,
-} from './engine/engine.js';
 export type { Gateway, InboundMessage } from './gateway/types.js';
 export type { GatewayRuntimeHandle, GatewaySurface } from './gateway/types.js';
 export type { GatewaySupervisorStatus, GatewaySurfaceStatus } from './gateway/manager.js';

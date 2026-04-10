@@ -1,4 +1,4 @@
-import type { CoreMessage } from 'ai';
+import type { SessionMessage } from '../session/session-types.js';
 import type { SessionMemoryRecord, WorkflowRef } from './memory-types.js';
 
 /**
@@ -19,7 +19,7 @@ export function extractSessionMemory(
   sessionId: string,
   title: string,
   createdAt: string,
-  messages: readonly CoreMessage[],
+  messages: readonly SessionMessage[],
 ): SessionMemoryRecord {
   const userTexts: string[] = [];
   const toolNames = new Set<string>();

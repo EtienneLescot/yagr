@@ -1,6 +1,5 @@
 import qrcode from 'qrcode-terminal';
 import { YagrConfigService, type YagrConfigStoreLike, type YagrGatewayConfig } from '../config/yagr-config-service.js';
-import type { EngineRuntimePort } from '../engine/engine.js';
 import type { YagrRunOptions } from '../types.js';
 import type { GatewayRuntimeHandle, GatewaySurface } from './types.js';
 import { createTelegramGatewayRuntime, getTelegramGatewayStatus, type TelegramGatewayStatus } from './telegram.js';
@@ -29,7 +28,6 @@ interface GatewayDescriptor {
   label: string;
   getStatus: (configService: YagrConfigStoreLike, enabled: boolean) => Omit<GatewaySurfaceStatus, 'startable'>;
   createRuntime?: (
-    engineResolver: () => Promise<EngineRuntimePort>,
     options: YagrRunOptions,
     configService: YagrConfigService,
   ) => Promise<GatewayRuntimeHandle> | GatewayRuntimeHandle;
@@ -73,7 +71,7 @@ const GATEWAY_DESCRIPTORS: GatewayDescriptor[] = [
         },
       };
     },
-    createRuntime: async (engineResolver, options, configService) => createTelegramGatewayRuntime(engineResolver, options, configService),
+    createRuntime: async (options, configService) => createTelegramGatewayRuntime(options, configService),
   },
   {
     id: 'webui',
@@ -94,7 +92,7 @@ const GATEWAY_DESCRIPTORS: GatewayDescriptor[] = [
       },
     };
     },
-    createRuntime: async (engineResolver, options, configService) => createWebUiGatewayRuntime(engineResolver, options, configService),
+    createRuntime: async (options, configService) => createWebUiGatewayRuntime(options, configService),
   },
   {
     id: 'whatsapp',
@@ -162,7 +160,6 @@ async function stopRuntimeHandles(runtimes: GatewayRuntimeHandle[]): Promise<voi
  */
 export async function startGatewaySurfacesInBackground(
   surfaces: GatewaySurface[],
-  engineResolver: () => Promise<EngineRuntimePort>,
   options: YagrRunOptions = {},
   configService = new YagrConfigService(),
 ): Promise<() => Promise<void>> {
@@ -186,7 +183,7 @@ export async function startGatewaySurfacesInBackground(
     }
 
     try {
-      const runtime = await descriptor.createRuntime(engineResolver, options, configService);
+      const runtime = await descriptor.createRuntime(options, configService);
       await runtime.gateway.start();
       runtimes.push(runtime);
 
@@ -211,7 +208,6 @@ export async function startGatewaySurfacesInBackground(
 
 export async function runGatewaySurfaces(
   surfaces: GatewaySurface[],
-  engineResolver: () => Promise<EngineRuntimePort>,
   options: YagrRunOptions = {},
   configService = new YagrConfigService(),
 ): Promise<void> {
@@ -238,7 +234,7 @@ export async function runGatewaySurfaces(
         throw new Error(`${descriptor.label} is not configured.`);
       }
 
-      const runtime = await descriptor.createRuntime(engineResolver, options, configService);
+      const runtime = await descriptor.createRuntime(options, configService);
       await runtime.gateway.start();
       runtimes.push(runtime);
 
@@ -304,7 +300,6 @@ export function getGatewayRunningBanner(configService = new YagrConfigService(),
 }
 
 export async function runGatewaySupervisor(
-  engineResolver: () => Promise<EngineRuntimePort>,
   options: YagrRunOptions = {},
   configService = new YagrConfigService(),
 ): Promise<void> {
@@ -323,7 +318,7 @@ export async function runGatewaySupervisor(
         continue;
       }
 
-      const runtime = await descriptor.createRuntime(engineResolver, options, configService);
+      const runtime = await descriptor.createRuntime(options, configService);
       await runtime.gateway.start();
       runtimes.push(runtime);
 

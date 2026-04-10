@@ -12,12 +12,7 @@ import type {
   LanguageModelV1Prompt,
   LanguageModelV1StreamPart,
   LanguageModelV1ToolChoice,
-} from '@ai-sdk/provider';
-import {
-  filterFunctionToolsForCapability,
-  normalizeToolChoiceForCapability,
-  type YagrModelCapabilityProfile,
-} from './model-capabilities.js';
+} from './provider-types.js';
 import { normalizeFunctionToolParametersSchema } from './tool-schema.js';
 
 export const OPENAI_ACCOUNT_BASE_URL = 'https://chatgpt.com/backend-api';
@@ -323,18 +318,16 @@ export async function validateOpenAiAccountRuntime(modelId = OPENAI_ACCOUNT_DEFA
 
 export function createOpenAiAccountLanguageModel(
   modelId: string,
-  capabilityProfile?: YagrModelCapabilityProfile,
 ): LanguageModelV1 {
-  const profile = capabilityProfile;
   return {
     specificationVersion: 'v1',
     provider: 'openai-proxy.account',
     modelId,
     defaultObjectGenerationMode: undefined,
     supportsImageUrls: false,
-    supportsStructuredOutputs: Boolean(profile?.supportsStructuredOutputs),
+    supportsStructuredOutputs: false,
     async doGenerate(options) {
-      const execution = await runOpenAiAccountCompletion(modelId, options, profile);
+      const execution = await runOpenAiAccountCompletion(modelId, options);
       return {
         text: execution.text,
         finishReason: execution.finishReason,
@@ -352,7 +345,7 @@ export function createOpenAiAccountLanguageModel(
       };
     },
     async doStream(options) {
-      const execution = await runOpenAiAccountCompletion(modelId, options, profile);
+      const execution = await runOpenAiAccountCompletion(modelId, options);
       const stream = new ReadableStream<LanguageModelV1StreamPart>({
         start(controller) {
           if (execution.text) {
@@ -383,7 +376,6 @@ export function createOpenAiAccountLanguageModel(
 async function runOpenAiAccountCompletion(
   modelId: string,
   options: Pick<LanguageModelV1CallOptions, 'prompt' | 'mode' | 'inputFormat'>,
-  capabilityProfile?: YagrModelCapabilityProfile,
 ): Promise<{
   text: string;
   finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown';
@@ -397,7 +389,7 @@ async function runOpenAiAccountCompletion(
   }
 
   const regularMode = options.mode.type === 'regular' ? options.mode : undefined;
-  const tools = getFunctionTools(options.mode, capabilityProfile);
+  const tools = getFunctionTools(options.mode);
   const warnings = buildCodexWarnings(options, tools);
   const accountId = extractChatGptAccountId(session.accessToken);
   const { instructions, input } = convertPromptToCodexInput(options.prompt);
@@ -410,8 +402,8 @@ async function runOpenAiAccountCompletion(
     instructions: instructions || 'You are a helpful assistant.',
     input,
     text: { verbosity: 'medium' },
-    ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice, capabilityProfile) } : { tool_choice: 'auto' }),
-    parallel_tool_calls: capabilityProfile?.supportsParallelToolCalls ?? false,
+    ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice) } : { tool_choice: 'auto' }),
+    parallel_tool_calls: false,
   };
 
   const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
@@ -547,12 +539,12 @@ function convertPromptToCodexInput(prompt: LanguageModelV1Prompt): {
       continue;
     }
     if (message.role === 'user') {
-      const text = message.content.map((p) => p.type === 'text' ? p.text : `[${p.type}]`).join('\n');
+      const text = (message.content as Array<{ type: string; text?: string }>).map((p) => p.type === 'text' ? (p.text ?? '') : `[${p.type}]`).join('\n');
       input.push({ role: 'user', content: [{ type: 'input_text', text }] });
     } else if (message.role === 'assistant') {
-      const text = message.content
+      const text = (message.content as Array<{ type: string; text?: string }>)
         .filter((p) => p.type === 'text' || p.type === 'reasoning')
-        .map((p) => p.text)
+        .map((p) => p.text ?? '')
         .join('\n')
         .trim();
       if (text) {
@@ -630,14 +622,12 @@ function buildCodexWarnings(
 
 function getFunctionTools(
   mode: LanguageModelV1CallOptions['mode'],
-  capabilityProfile?: YagrModelCapabilityProfile,
 ): LanguageModelV1FunctionTool[] {
   if (mode.type !== 'regular' || !Array.isArray(mode.tools) || mode.tools.length === 0) {
     return [];
   }
 
-  const tools = mode.tools.filter((tool): tool is LanguageModelV1FunctionTool => tool.type === 'function');
-  return capabilityProfile ? filterFunctionToolsForCapability(tools, capabilityProfile) : tools;
+  return mode.tools.filter((tool): tool is LanguageModelV1FunctionTool => tool.type === 'function');
 }
 
 function toCodexTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string, unknown>> {
@@ -653,26 +643,17 @@ function toCodexTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string
 
 function toCodexToolChoice(
   toolChoice: LanguageModelV1ToolChoice | undefined,
-  capabilityProfile?: YagrModelCapabilityProfile,
 ): unknown {
-  const normalizedToolChoice = capabilityProfile
-    ? normalizeToolChoiceForCapability(toolChoice, capabilityProfile)
-    : toolChoice;
-
-  if (capabilityProfile && !capabilityProfile.supportsForcedToolChoice) {
+  if (!toolChoice || toolChoice.type === 'auto') {
     return 'auto';
   }
-
-  if (!normalizedToolChoice || normalizedToolChoice.type === 'auto') {
-    return 'auto';
+  if (toolChoice.type === 'none' || toolChoice.type === 'required') {
+    return toolChoice.type;
   }
-  if (normalizedToolChoice.type === 'none' || normalizedToolChoice.type === 'required') {
-    return normalizedToolChoice.type;
-  }
-  if (normalizedToolChoice.type === 'tool') {
+  if (toolChoice.type === 'tool') {
     return {
       type: 'function',
-      name: normalizedToolChoice.toolName,
+      name: toolChoice.toolName,
     };
   }
   return 'auto';

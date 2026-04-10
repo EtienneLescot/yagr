@@ -7,7 +7,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { tool } from 'ai';
+import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { getYagrLaunchDir, getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { normalizeRenderableWorkflowDiagram } from '../gateway/workflow-diagram.js';
@@ -220,14 +220,15 @@ export async function presentWorkflowResultCli({
 }
 
 export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver) {
-  return tool({
+  return new DynamicStructuredTool({
+    name: 'presentWorkflowResult',
     description:
       'Present an n8n workflow to the user. ' +
       'You MUST call this tool every time you reference, show, deploy, push, pull, or discuss a specific n8n workflow and you know its ID. ' +
       'If you have just run or tested a workflow, pass the execution result in the executionResult parameter so the user sees real output data — not just a deployment banner. ' +
       'If you do not have the full URL, construct it as {n8nHost}/workflow/{workflowId}. ' +
       'Always include the diagram parameter with the ASCII header from the n8nac TypeScript output so rich surfaces can show the workflow graph at a glance.',
-    parameters: z.object({
+    schema: z.object({
       workflowId: z.string().describe('The n8n workflow ID.'),
       workflowUrl: z.string().describe('The full URL to the workflow in n8n (e.g. http://localhost:5678/workflow/abc123).'),
       title: z.string().optional().describe('Human-readable workflow name for the banner.'),
@@ -239,7 +240,7 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
         data: z.string().optional().describe('Key output data from the execution — paste the relevant node output JSON or text here verbatim from the tool result.'),
       }).optional().describe('Include this whenever you have run or tested a workflow and received execution output. Pass the actual data from the tool result, do not summarize from memory.'),
     }),
-    execute: async ({ workflowId, workflowUrl, title, diagram, executionResult }) => {
+    func: async ({ workflowId, workflowUrl, title, diagram, executionResult }) => {
       const payload = await presentWorkflowResultCli({ workflowId, workflowUrl, title, diagram, executionResult });
       await emitToolEvent(observer, {
         type: 'embed',
@@ -252,7 +253,7 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
         diagram: payload.diagram ?? undefined,
         executionResult: payload.executionResult ?? undefined,
       });
-      return payload;
+      return JSON.stringify(payload);
     },
   });
 }

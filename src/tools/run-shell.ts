@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { tool } from 'ai';
+import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { emitToolEvent, type ToolExecutionObserver } from './observer.js';
 
@@ -24,28 +24,29 @@ function truncateOutput(output: string): string {
 }
 
 export function createRunShellTool(observer?: ToolExecutionObserver) {
-  return tool({
+  return new DynamicStructuredTool({
+    name: 'runShell',
     description:
       '⚠️  UNRESTRICTED SHELL — runs any command in a bash subprocess. ' +
       'This tool is DISABLED by default and requires the YAGR_ENABLE_SHELL=1 environment variable to be set by the user. ' +
       'When enabled, it can execute arbitrary commands including destructive ones (rm, git push, etc.). ' +
       'Use runScript for safe, allowlist-controlled operations. ' +
       'Only use runShell when runScript is insufficient and the user has explicitly opted in.',
-    parameters: z.object({
+    schema: z.object({
       command: z.string().min(1).describe('Shell command to execute.'),
       cwd: z.string().optional().describe('Working directory. Defaults to the current process directory.'),
       timeoutMs: z.number().int().min(1_000).max(300_000).default(30_000).describe('Timeout in milliseconds (max 5 minutes).'),
     }),
-    execute: async ({ command, cwd, timeoutMs }) => {
+    func: async ({ command, cwd, timeoutMs }) => {
       if (!isShellEnabled()) {
-        return {
+        return JSON.stringify({
           ok: false,
           command,
           error:
             'runShell is disabled. Set YAGR_ENABLE_SHELL=1 to opt in. ' +
             'Warning: this grants the agent unrestricted shell access. ' +
             'Consider using runScript for safe allowlisted operations instead.',
-        };
+        });
       }
 
       await emitToolEvent(observer, {
@@ -111,7 +112,7 @@ export function createRunShellTool(observer?: ToolExecutionObserver) {
         });
 
         child.once('exit', (code) => finish(code));
-      });
+      }).then((result) => JSON.stringify(result));
     },
   });
 }

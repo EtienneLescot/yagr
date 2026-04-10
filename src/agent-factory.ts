@@ -17,7 +17,6 @@
  */
 import { createDeepAgent } from 'deepagents';
 import { MemorySaver } from '@langchain/langgraph';
-import type { EngineRuntimePort } from './engine/engine.js';
 import type { YagrConfigStoreLike } from './config/yagr-config-service.js';
 import { createLangChainModel } from './llm/create-langchain-model.js';
 import { getCodingOrientedDeepAgentMiddleware } from './deepagents/coding-orientation.js';
@@ -44,12 +43,10 @@ export const getYagrAgentMemorySources = getPristineDeepAgentMemorySources;
  * starts over — matching the current behaviour where `agents.clear()` is
  * called on config change.
  *
- * @param engine The engine runtime port.
  * @param configStore Optional config store to read LLM defaults from.
  * @param modelConfig Optional explicit model overrides (provider, model, apiKey, baseUrl).
  */
 export async function createYagrDeepAgent(
-  _engine: EngineRuntimePort,
   configStore?: YagrConfigStoreLike,
   modelConfig?: { provider?: string; model?: string; apiKey?: string; baseUrl?: string },
 ): Promise<YagrDeepAgentHandle> {

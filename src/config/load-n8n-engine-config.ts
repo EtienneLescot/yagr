@@ -1,5 +1,4 @@
 import type { N8nEngineConfig } from '../types.js';
-import { N8nEngine } from '../engine/n8n-engine.js';
 import { YagrN8nConfigService } from './n8n-config-service.js';
 
 function missingFieldError(field: string): Error {
@@ -47,7 +46,7 @@ export async function loadN8nEngineConfig(configService = new YagrN8nConfigServi
 
 export async function createN8nEngineFromWorkspace(
   configService = new YagrN8nConfigService(),
-): Promise<N8nEngine> {
+): Promise<void> {
   const config = await loadN8nEngineConfig(configService);
 
   // Inject n8n credentials into process.env so generic tools (runScript, runShell)
@@ -59,6 +58,4 @@ export async function createN8nEngineFromWorkspace(
   if (!process.env.N8N_API_KEY && config.apiKey) {
     process.env.N8N_API_KEY = config.apiKey;
   }
-
-  return new N8nEngine(config);
 }

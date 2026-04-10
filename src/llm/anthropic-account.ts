@@ -1,9 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import type { LanguageModelV1 } from '@ai-sdk/provider';
-import type { YagrModelCapabilityProfile } from './model-capabilities.js';
 
 export const ANTHROPIC_ACCOUNT_DEFAULT_MODEL = 'claude-haiku-4-5';
 
@@ -131,15 +128,27 @@ export async function validateAnthropicAccountRuntime(
   }
 
   try {
-    const model = createAnthropicAccountLanguageModel(modelId, apiKey);
-    const result = await model.doGenerate({
-      inputFormat: 'prompt',
-      mode: { type: 'regular' },
-      prompt: [{ role: 'user', content: [{ type: 'text', text: 'Reply with exactly OK.' }] }],
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: modelId,
+        max_tokens: 16,
+        messages: [{ role: 'user', content: 'Reply with exactly OK.' }],
+      }),
     });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json() as { content?: Array<{ text?: string }> };
+    const text = data.content?.[0]?.text ?? '';
     return {
-      ok: (result.text ?? '').trim().toUpperCase().includes('OK'),
-      text: result.text,
+      ok: text.trim().toUpperCase().includes('OK'),
+      text,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -148,23 +157,4 @@ export async function validateAnthropicAccountRuntime(
     }
     return { ok: false, error: message };
   }
-}
-
-// ─── Language model ────────────────────────────────────────────────────────────
-
-export function createAnthropicAccountLanguageModel(
-  modelId: string,
-  overrideApiKey?: string,
-  _capabilityProfile?: YagrModelCapabilityProfile,
-): LanguageModelV1 {
-  const session = getAnthropicAccountSession();
-  const apiKey = overrideApiKey?.trim() || session?.apiKey;
-  if (!apiKey) {
-    throw new Error(
-      'Anthropic account credentials not found. '
-      + 'Install Claude Code CLI (`claude`) and sign in, or set ANTHROPIC_API_KEY.',
-    );
-  }
-
-  return createAnthropic({ apiKey })(modelId);
 }

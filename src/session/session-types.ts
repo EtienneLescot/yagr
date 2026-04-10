@@ -1,4 +1,11 @@
-import type { CoreMessage } from 'ai';
+/**
+ * A serialized LLM message stored on disk (role + content, JSON-safe).
+ * Mirrors the shape of Vercel AI SDK CoreMessage without the runtime dependency.
+ */
+export interface SessionMessage {
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string | unknown[];
+}
 
 /**
  * Which Yagr interface originated the session.
@@ -60,11 +67,11 @@ export interface PersistedSession {
    */
   gatewayKey: string;
   /** LLM core messages — the authoritative conversation history. */
-  messages: CoreMessage[];
+  messages: SessionMessage[];
   /**
    * Optional rich UI snapshot saved by the WebUI after every run.
    * When present, the WebUI uses this to restore the full visual state
-   * instead of reconstructing it from raw CoreMessages.
+   * instead of reconstructing it from raw SessionMessages.
    */
   displayMessages?: SerializedChatMessage[];
 }

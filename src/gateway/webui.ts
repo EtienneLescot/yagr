@@ -14,7 +14,6 @@ import { WebUiSessionRegistry } from '../session/webui-sessions.js';
 import type { SerializedChatMessage, SessionSummary } from '../session/session-types.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService, type YagrConfigStoreLike } from '../config/yagr-config-service.js';
-import type { EngineRuntimePort } from '../engine/engine.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
@@ -129,13 +128,12 @@ export function getWebUiGatewayStatus(configService: YagrConfigStoreLike = new Y
 }
 
 export function createWebUiGatewayRuntime(
-  engineResolver: () => Promise<EngineRuntimePort>,
   options: YagrRunOptions = {},
   configService = new YagrConfigService(),
 ): GatewayRuntimeHandle {
   const status = getWebUiGatewayStatus(configService);
   return {
-    gateway: new WebUiGateway(engineResolver, options, configService, status),
+    gateway: new WebUiGateway(options, configService, status),
     startupMessages: [
       `Yagr Web UI listening at ${status.url}.`,
       'Open the local UI to configure the runtime, link Telegram, and chat with Yagr.',
@@ -146,14 +144,12 @@ export function createWebUiGatewayRuntime(
 
 class WebUiGateway implements Gateway {
   private server?: Server;
-  private enginePromise?: Promise<EngineRuntimePort>;
   private agentHandlePromise?: Promise<YagrDeepAgentHandle>;
   private readonly setupService: YagrSetupApplicationService;
   private readonly sessionRegistry = new WebUiSessionRegistry(getYagrSessionsDir());
   private readonly memoryStore = new MemoryStore(getYagrMemoriesDir());
 
   constructor(
-    private readonly engineResolver: () => Promise<EngineRuntimePort>,
     private readonly options: YagrRunOptions,
     private readonly configService: YagrConfigService,
     private readonly status: WebUiGatewayStatus,
@@ -533,9 +529,8 @@ class WebUiGateway implements Gateway {
     instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   }): Promise<string | undefined> {
     const warning = await this.setupService.saveN8nConfig(input);
-    // Invalidate the cached engine and agent handle so the next request
-    // picks up a fresh engine and model built from the new config.
-    this.enginePromise = undefined;
+    // Invalidate the cached agent handle so the next request picks up
+    // a fresh model built from the new config.
     this.agentHandlePromise = undefined;
     return warning;
   }
@@ -548,14 +543,7 @@ class WebUiGateway implements Gateway {
   }
 
   private async resolveAgentHandle(): Promise<YagrDeepAgentHandle> {
-    if (!this.agentHandlePromise) {
-      if (!this.enginePromise) {
-        this.enginePromise = this.engineResolver();
-      }
-      this.agentHandlePromise = this.enginePromise.then((engine) =>
-        createYagrDeepAgent(engine, this.configService),
-      );
-    }
+    this.agentHandlePromise ??= createYagrDeepAgent(this.configService);
     return this.agentHandlePromise;
   }
 

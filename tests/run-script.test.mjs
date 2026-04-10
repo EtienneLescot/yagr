@@ -6,9 +6,13 @@ import test from 'node:test';
 
 import { createRunScriptTool } from '../dist/tools/run-script.js';
 
+async function exec(tool, input) {
+  return JSON.parse(await tool.invoke(input));
+}
+
 test('runScript executes an allowed command and returns stdout', async () => {
   const tool = createRunScriptTool();
-  const result = await tool.execute({
+  const result = await exec(tool, {
     command: 'node -e "process.stdout.write(\'hello\')"',
     timeoutMs: 5000,
   });
@@ -20,7 +24,7 @@ test('runScript executes an allowed command and returns stdout', async () => {
 
 test('runScript rejects a command not in the approved list when mode is user-approved', async () => {
   const tool = createRunScriptTool(undefined, { mode: 'user-approved', approved: ['npm run', 'node -e'] });
-  const result = await tool.execute({
+  const result = await exec(tool, {
     command: 'rm -rf /tmp/yagr-test-should-never-run',
     timeoutMs: 5000,
   });
@@ -31,7 +35,7 @@ test('runScript rejects a command not in the approved list when mode is user-app
 
 test('runScript captures non-zero exit code', async () => {
   const tool = createRunScriptTool();
-  const result = await tool.execute({
+  const result = await exec(tool, {
     command: 'node -e "process.exit(1)"',
     timeoutMs: 5000,
   });
@@ -42,7 +46,7 @@ test('runScript captures non-zero exit code', async () => {
 
 test('runScript captures stderr', async () => {
   const tool = createRunScriptTool();
-  const result = await tool.execute({
+  const result = await exec(tool, {
     command: 'node -e "process.stderr.write(\'oops\')"',
     timeoutMs: 5000,
   });
@@ -57,7 +61,7 @@ test('runScript defaults to the Yagr home directory', async () => {
 
   try {
     const tool = createRunScriptTool();
-    const result = await tool.execute({
+    const result = await exec(tool, {
       command: 'node -e "process.stdout.write(process.cwd())"',
       timeoutMs: 5000,
     });

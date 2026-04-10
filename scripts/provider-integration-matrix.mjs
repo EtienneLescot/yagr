@@ -32,7 +32,6 @@ const { YagrN8nConfigService } = await import('../dist/config/n8n-config-service
 const { getYagrPaths } = await import('../dist/config/yagr-home.js');
 const { createYagrDeepAgent } = await import('../dist/agent-factory.js');
 const { createLangChainModel } = await import('../dist/llm/create-langchain-model.js');
-const { resolveModelCapabilityProfile } = await import('../dist/llm/model-capabilities.js');
 const { createN8nEngineFromWorkspace } = await import('../dist/config/load-n8n-engine-config.js');
 const { createRunAccumulator, processStreamEvent } = await import('../dist/gateway/langgraph-events.js');
 
@@ -162,7 +161,6 @@ async function runProvider(provider) {
       provider,
       providerLabel: getProviderDisplayName(provider),
       chosenModel: getDefaultModelForProvider(provider),
-      toolingLevel: 'unknown',
       setup: serializeStep({ status: 'SKIP', note }),
       modelListing: serializeStep({ status: 'SKIP', note }),
       inference: serializeStep({ status: 'SKIP', note }),
@@ -258,7 +256,6 @@ async function runProvider(provider) {
   }, DEFAULT_TIMEOUT_MS);
 
   const chosenModel = chooseModel(setupRuntime?.models, modelListing.models, provider);
-  const toolingLevel = resolveModelCapabilityProfile({ provider, model: chosenModel }).toolCalling;
 
   const inference = await runStep(provider, 'inference', async () => {
     if (setup.status === 'SKIP') {
@@ -401,7 +398,6 @@ async function runProvider(provider) {
     provider,
     providerLabel: getProviderDisplayName(provider),
     chosenModel,
-    toolingLevel,
     setup: serializeStep(setup),
     modelListing: serializeStep(modelListing),
     inference: serializeStep(inference),
@@ -649,12 +645,11 @@ function toInt(input, fallback) {
 
 function printTable(rows) {
   const headers = advanced
-    ? ['Provider', 'Model', 'Tooling', 'Setup', 'Model Listing', 'Inference', 'Advanced Scenario']
-    : ['Provider', 'Model', 'Tooling', 'Setup', 'Model Listing', 'Inference'];
+    ? ['Provider', 'Model', 'Setup', 'Model Listing', 'Inference', 'Advanced Scenario']
+    : ['Provider', 'Model', 'Setup', 'Model Listing', 'Inference'];
   const renderedRows = rows.map((row) => ([
     `${row.providerLabel} (${row.provider})`,
     truncate(row.chosenModel || '', 38),
-    row.toolingLevel || '',
     formatCell(row.setup),
     formatCell(row.modelListing),
     formatCell(row.inference),
@@ -718,12 +713,12 @@ function writeMarkdownReport(rows, outputPath) {
     '## Provider Overview',
     '',
     ...(advanced
-      ? ['| Provider | Model | Tooling | Setup | Model Listing | Inference | Advanced Scenario |', '| --- | --- | --- | --- | --- | --- | --- |']
-      : ['| Provider | Model | Tooling | Setup | Model Listing | Inference |', '| --- | --- | --- | --- | --- | --- |']),
+      ? ['| Provider | Model | Setup | Model Listing | Inference | Advanced Scenario |', '| --- | --- | --- | --- | --- | --- |']
+      : ['| Provider | Model | Setup | Model Listing | Inference |', '| --- | --- | --- | --- | --- |']),
     ...rows.map((row) =>
       advanced
-        ? `| \`${escapeMd(`${row.providerLabel} (${row.provider})`)}\` | \`${escapeMd(row.chosenModel || '')}\` | \`${escapeMd(row.toolingLevel || '')}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} | ${formatMarkdownCell(row.advancedScenario)} |`
-        : `| \`${escapeMd(`${row.providerLabel} (${row.provider})`)}\` | \`${escapeMd(row.chosenModel || '')}\` | \`${escapeMd(row.toolingLevel || '')}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} |`),
+        ? `| \`${escapeMd(`${row.providerLabel} (${row.provider})`)}\` | \`${escapeMd(row.chosenModel || '')}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} | ${formatMarkdownCell(row.advancedScenario)} |`
+        : `| \`${escapeMd(`${row.providerLabel} (${row.provider})`)}\` | \`${escapeMd(row.chosenModel || '')}\` | ${formatMarkdownCell(row.setup)} | ${formatMarkdownCell(row.modelListing)} | ${formatMarkdownCell(row.inference)} |`),
     '',
     '## Detailed Results',
     '',
@@ -744,7 +739,6 @@ function renderMarkdownProviderSection(row) {
     `### ${row.providerLabel} (${row.provider})`,
     '',
     `- Model: \`${row.chosenModel || ''}\``,
-    `- Tooling level: \`${row.toolingLevel || ''}\``,
     `- Setup: **${row.setup.status}**`,
     `- Model listing: **${row.modelListing.status}**`,
     `- Inference: **${row.inference.status}**`,

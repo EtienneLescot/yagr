@@ -1,5 +1,4 @@
-import type { JSONSchema7 } from '@ai-sdk/provider';
-import type { LanguageModelV1FunctionTool, LanguageModelV1Prompt, LanguageModelV1ToolChoice } from '@ai-sdk/provider';
+import type { JSONSchema7, LanguageModelV1FunctionTool, LanguageModelV1Prompt, LanguageModelV1ToolChoice } from './provider-types.js';
 import { BaseChatModel, type BaseChatModelCallOptions, type BaseChatModelParams, type BindToolsInput } from '@langchain/core/language_models/chat_models';
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
 import type { ToolCall } from '@langchain/core/messages/tool';
@@ -8,7 +7,6 @@ import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager
 import type { Runnable } from '@langchain/core/runnables';
 import { z } from 'zod';
 import { createOpenAiAccountLanguageModel } from './openai-account.js';
-import type { YagrModelCapabilityProfile } from './model-capabilities.js';
 
 interface OpenAiAccountChatCallOptions extends BaseChatModelCallOptions {
   tools?: LanguageModelV1FunctionTool[];
@@ -21,16 +19,13 @@ export class OpenAiAccountChatModel extends BaseChatModel<OpenAiAccountChatCallO
 
   readonly model: string;
 
-  private readonly capabilityProfile?: YagrModelCapabilityProfile;
-
   private readonly boundTools?: LanguageModelV1FunctionTool[];
 
   private readonly boundCallOptions?: Partial<OpenAiAccountChatCallOptions>;
 
-  constructor(fields: BaseChatModelParams & { model: string; capabilityProfile?: YagrModelCapabilityProfile; boundTools?: LanguageModelV1FunctionTool[]; boundCallOptions?: Partial<OpenAiAccountChatCallOptions> }) {
+  constructor(fields: BaseChatModelParams & { model: string; boundTools?: LanguageModelV1FunctionTool[]; boundCallOptions?: Partial<OpenAiAccountChatCallOptions> }) {
     super(fields);
     this.model = fields.model;
-    this.capabilityProfile = fields.capabilityProfile;
     this.boundTools = fields.boundTools;
     this.boundCallOptions = fields.boundCallOptions;
   }
@@ -56,7 +51,6 @@ export class OpenAiAccountChatModel extends BaseChatModel<OpenAiAccountChatCallO
     };
     return new OpenAiAccountChatModel({
       model: this.model,
-      capabilityProfile: this.capabilityProfile,
       disableStreaming: this.disableStreaming,
       outputVersion: this.outputVersion,
       boundTools: normalizedTools,
@@ -72,7 +66,7 @@ export class OpenAiAccountChatModel extends BaseChatModel<OpenAiAccountChatCallO
     options: this['ParsedCallOptions'],
     _runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
-    const model = createOpenAiAccountLanguageModel(this.model, this.capabilityProfile);
+    const model = createOpenAiAccountLanguageModel(this.model);
     const boundToolChoice = this.boundCallOptions?.tool_choice;
     const result = await model.doGenerate({
       inputFormat: 'prompt',

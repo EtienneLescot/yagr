@@ -3,7 +3,6 @@ import qrcode from 'qrcode-terminal';
 import { Telegraf } from 'telegraf';
 import { YagrConfigService, type YagrConfigStoreLike, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
-import type { EngineRuntimePort } from '../engine/engine.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import type { YagrUserVisibleUpdate } from '../runtime/user-visible-updates.js';
@@ -215,7 +214,6 @@ export function resetTelegramGateway(configService = new YagrConfigService()): v
 }
 
 export function createTelegramGatewayRuntime(
-  engineResolver: () => Promise<EngineRuntimePort>,
   options: TelegramGatewayRuntimeOptions = {},
   configService = new YagrConfigService(),
 ): GatewayRuntimeHandle {
@@ -229,7 +227,7 @@ export function createTelegramGatewayRuntime(
   const linkedCount = status.linkedChats.length;
 
   return {
-    gateway: new TelegramGateway(engineResolver, options, configService, botToken, onboardingToken),
+    gateway: new TelegramGateway(options, configService, botToken, onboardingToken),
     startupMessages: [
       `Yagr Telegram gateway listening as @${status.botUsername}. ${formatLinkedChatCount(linkedCount)}.`,
       linkedCount === 0
@@ -246,12 +244,10 @@ class TelegramGateway implements Gateway {
   private readonly threadIds = new Map<string, string>();
   private readonly runningChats = new Set<string>();
   private readonly pendingApprovals = new Map<string, YagrRequiredAction[]>();
-  private enginePromise?: Promise<EngineRuntimePort>;
   private stopped = false;
   private readonly setupService: YagrSetupApplicationService;
 
   constructor(
-    private readonly engineResolver: () => Promise<EngineRuntimePort>,
     private readonly options: TelegramGatewayRuntimeOptions,
     private readonly configService: YagrConfigService,
     botToken: string,
@@ -462,13 +458,8 @@ class TelegramGateway implements Gateway {
     return this.setupService.isTelegramChatLinked(chatId);
   }
 
-  private async getEngine(): Promise<EngineRuntimePort> {
-    this.enginePromise ??= this.engineResolver();
-    return await this.enginePromise;
-  }
-
   private async resolveAgentHandle(): Promise<YagrDeepAgentHandle> {
-    this.agentHandlePromise ??= createYagrDeepAgent(await this.getEngine(), this.configService);
+    this.agentHandlePromise ??= createYagrDeepAgent(this.configService);
     return await this.agentHandlePromise;
   }
 
@@ -578,11 +569,10 @@ class TelegramGateway implements Gateway {
 }
 
 export async function runTelegramGateway(
-  engineResolver: () => Promise<EngineRuntimePort>,
   options: TelegramGatewayRuntimeOptions = {},
   configService = new YagrConfigService(),
 ): Promise<void> {
-  const runtime = createTelegramGatewayRuntime(engineResolver, options, configService);
+  const runtime = createTelegramGatewayRuntime(options, configService);
 
   for (const line of runtime.startupMessages) {
     process.stdout.write(`${line}\n`);

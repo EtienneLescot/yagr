@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { extractWorkflowMapHeader, resolveWorkflowDiagram } from '../dist/tools/present-workflow-result.js';
+import { extractWorkflowMapHeader, resolveWorkflowDiagram } from '../dist/manager-tooling/present-workflow.js';
 
 test('extractWorkflowMapHeader returns the workflow-map block when present', () => {
   const source = [

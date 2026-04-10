@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { tool } from 'ai';
+import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { emitToolEvent, type ToolExecutionObserver } from './observer.js';
 import { getYagrHomeDir } from '../config/yagr-home.js';
@@ -46,25 +46,26 @@ export function createRunScriptTool(observer?: ToolExecutionObserver, shellComma
     ? 'All shell commands are allowed (allow-all mode).'
     : `Only user-approved command prefixes are allowed (user-approved mode). Approved: ${(shellCommandsConfig?.approved ?? []).join(', ') || 'none configured'}.`;
 
-  return tool({
+  return new DynamicStructuredTool({
+    name: 'runScript',
     description:
       'Run a shell command from the Yagr home directory by default. ' +
       'Use this to build the project, run tests, inspect files, manage git, or execute any necessary tool. ' +
       modeDescription +
       ' Runs in the Yagr home directory unless cwd is provided.',
-    parameters: z.object({
+    schema: z.object({
       command: z.string().min(1).describe('Shell command to run.'),
       cwd: z.string().optional().describe('Working directory. Defaults to the active workspace root.'),
       timeoutMs: z.number().int().min(1_000).max(120_000).default(30_000).describe('Timeout in milliseconds (max 120s).'),
     }),
-    execute: async ({ command, cwd, timeoutMs }) => {
+    func: async ({ command, cwd, timeoutMs }) => {
       const check = isCommandAllowed(command, shellCommandsConfig);
       if (!check.allowed) {
-        return {
+        return JSON.stringify({
           ok: false,
           command,
           error: check.reason ?? 'Command not allowed.',
-        };
+        });
       }
 
       const workingDir = cwd ?? getYagrHomeDir();
@@ -133,7 +134,7 @@ export function createRunScriptTool(observer?: ToolExecutionObserver, shellComma
         });
 
         child.once('exit', (code) => finish(code));
-      });
+      }).then((result) => JSON.stringify(result));
     },
   });
 }
