@@ -148,17 +148,20 @@ export async function ensureYagrProxyCredential() {
     const patched = await patchN8nCredentialUrl(existing.id, effectiveRelayBaseUrl, cwd);
     if (patched) {
       (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
-      return {
-        credentialId: existing.id,
-        created: false,
-        reused: false,
-        baseUrl: effectiveRelayBaseUrl,
-        port: relay.port,
-      };
+    } else {
+      // Patch unavailable (n8n unreachable, missing API key, etc.).
+      // Keep the existing credential as-is — a stale URL is recoverable (the
+      // user can run setup again), but a new ID would silently break every
+      // workflow node that references this credential.
+      (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
     }
-
-    // Patch unavailable — fall back to delete+create.
-    await runN8nacCommand(['credential', 'delete', existing.id], cwd);
+    return {
+      credentialId: existing.id,
+      created: false,
+      reused: !patched,
+      baseUrl: effectiveRelayBaseUrl,
+      port: relay.port,
+    };
   }
 
   const credData = JSON.stringify({ apiKey: N8N_RELAY_FAKE_API_KEY, url: effectiveRelayBaseUrl });
