@@ -85,7 +85,7 @@ test('resolveLanguageModelConfig prefers stored credentials over ambient env by 
       provider: 'openai',
       model: 'gpt-5.4',
       apiKey: 'stored-openai-key',
-      baseUrl: undefined,
+      baseUrl: 'https://api.openai.com/v1',
     });
   });
 });
