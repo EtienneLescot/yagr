@@ -49,7 +49,7 @@ function resolveBundledManagerInstructionsPath(launchDir: string = getYagrLaunch
 
 function isManagedHomeInstructions(content: string): boolean {
   return content.includes('# Yagr Manager Instructions')
-    && content.includes('These instructions are managed by yagr-manager');
+    && content.includes('Manager-specific behaviors available in this environment:');
 }
 
 function ensureHomeInstructionsSeeded(paths: YagrPaths): void {

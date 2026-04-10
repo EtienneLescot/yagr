@@ -123,7 +123,7 @@ test('ensureYagrHomeDir refreshes an existing managed home AGENTS.md from the bu
     fs.mkdirSync(tempHome, { recursive: true });
     fs.writeFileSync(
       path.join(tempHome, 'AGENTS.md'),
-      '# Yagr Manager Instructions\n\nThese instructions are managed by yagr-manager and apply when the n8n engine is active.\n\nStale content.\n',
+      '# Yagr Manager Instructions\n\nManager-specific behaviors available in this environment:\n\nStale content.\n',
       'utf8',
     );
 
@@ -131,7 +131,9 @@ test('ensureYagrHomeDir refreshes an existing managed home AGENTS.md from the bu
 
     const content = fs.readFileSync(path.join(tempHome, 'AGENTS.md'), 'utf8');
     assert.match(content, /Yagr Manager Instructions/i);
-    assert.match(content, /When you need to configure an AI Agent \/ LangChain node/i);
+    assert.match(content, /enter `\.\/n8n-workspace` and read `\.\/n8n-workspace\/AGENTS\.md` before acting there/i);
+    assert.match(content, /`yagr presentWorkflowResult`/i);
+    assert.match(content, /`yagr yagrProxy`/i);
     assert.doesNotMatch(content, /Stale content\./i);
   } finally {
     if (previousYagrHome !== undefined) {
