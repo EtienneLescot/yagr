@@ -1,10 +1,12 @@
 /**
  * Yagr deep-agent factory.
  *
- * Keeps the Yagr runtime as close as possible to vanilla `createDeepAgent`:
+ * Keeps the Yagr runtime close to vanilla `createDeepAgent` while composing
+ * a clearly separated coding-oriented middleware overlay:
  *
- *   - `LocalShellBackend` — host-native filesystem I/O + shell execution
- *   - Deepagents native `memory` loading for manager and workspace AGENTS files
+ *   - pristine deepagents core: host-native backend + native memory loading
+ *   - coding-oriented overlay: a dedicated middleware layer with generic
+ *     coding guidance only
  *   - `MemorySaver` checkpointer so per-thread (=per-session) state is
  *     maintained within the process lifetime
  *
@@ -13,11 +15,13 @@
  *   // agentHandle.agent is a CompiledStateGraph — call streamEvents / invoke
  *   // with { configurable: { thread_id: sessionId } }
  */
-import { createDeepAgent, LocalShellBackend } from 'deepagents';
+import { createDeepAgent } from 'deepagents';
 import { MemorySaver } from '@langchain/langgraph';
 import type { EngineRuntimePort } from './engine/engine.js';
 import type { YagrConfigStoreLike } from './config/yagr-config-service.js';
 import { createLangChainModel } from './llm/create-langchain-model.js';
+import { getCodingOrientedDeepAgentMiddleware } from './deepagents/coding-orientation.js';
+import { buildPristineDeepAgentConfig, getPristineDeepAgentMemorySources } from './deepagents/pristine.js';
 
 /** Returned by `createYagrDeepAgent`. */
 export interface YagrDeepAgentHandle {
@@ -28,12 +32,7 @@ export interface YagrDeepAgentHandle {
   checkpointer: MemorySaver;
 }
 
-export function getYagrAgentMemorySources(): string[] {
-  return [
-    '/AGENTS.md',
-    '/n8n-workspace/AGENTS.md',
-  ];
-}
+export const getYagrAgentMemorySources = getPristineDeepAgentMemorySources;
 
 /**
  * Instantiate a Yagr-configured deep agent.
@@ -55,18 +54,14 @@ export async function createYagrDeepAgent(
 ): Promise<YagrDeepAgentHandle> {
   const model = await createLangChainModel(modelConfig, configStore);
   const checkpointer = new MemorySaver();
-  const rootDir = process.cwd();
 
   const agent = createDeepAgent({
-    model,
-    checkpointer,
-    memory: getYagrAgentMemorySources(),
-    backend: new LocalShellBackend({
-      rootDir,
-      inheritEnv: true,
-      // The Yagr home is the real cwd for both file tools and shell commands.
-      // Relative paths resolve from YAGR_HOME; absolute paths remain host paths.
+    ...buildPristineDeepAgentConfig({
+      model,
+      checkpointer,
+      rootDir: process.cwd(),
     }),
+    middleware: getCodingOrientedDeepAgentMiddleware(),
   });
 
   return { agent, checkpointer };

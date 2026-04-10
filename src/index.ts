@@ -58,6 +58,16 @@ export {
   runYagrSetup,
 } from './setup.js';
 export {
+  CODING_ORIENTATION_SYSTEM_PROMPT,
+  createCodingOrientationMiddleware,
+  getCodingOrientedDeepAgentMiddleware,
+} from './deepagents/coding-orientation.js';
+export {
+  buildPristineDeepAgentConfig,
+  createPristineDeepAgentBackend,
+  getPristineDeepAgentMemorySources,
+} from './deepagents/pristine.js';
+export {
   createYagrProxyTool,
 } from './tools/index.js';
 

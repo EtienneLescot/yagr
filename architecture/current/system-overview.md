@@ -180,18 +180,9 @@ flowchart LR
 **Outils generalistes (`src/tools/`) :**
 
 - `src/tools/*.ts` (FS, shell, HTTP, status)
-
-**Tooling manager (`src/manager-tooling/`) :**
-
-- `src/manager-tooling/present-workflow.ts` — logique et commande CLI `presentWorkflowResult`
-- `src/manager-tooling/yagr-proxy.ts` — logique et commande CLI `yagrProxy`
 - `src/manager-tooling/YAGENTS.md` — template source des instructions manager semees dans la home Yagr
 
 Responsabilite actuelle:
-
-- `src/tools/` : porter les outils generalistes directement exposes au deep-agent
-- `src/manager-tooling/` : comportements specifique yagr-manager reutilisables depuis des commandes CLI internes
-
 #### Doctrine d'outillage
 
 > Yagr est un agent generaliste de codage et d'orchestration, avec une fine surcouche d'outillage dediee a n8n.
@@ -200,12 +191,8 @@ La regle est simple : **qui peut le plus peut le moins**. Un agent capable de li
 
 Dans le modele cible et attendu, la racine operationnelle est la **home Yagr** (`YAGR_HOME`). Le dossier `n8n-workspace` est un sous-workspace de cette home, pas le root implicite du process.
 
-Les outils sont organises en trois couches :
-
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  COUCHE 1 — Capacites generalistes (src/tools/)                 │
-│                                                                 │
 │  readFile   grep   listDir                                      │
 │  ↳ lisent le FS visible depuis la home Yagr                    │
 │                                                                 │
@@ -213,18 +200,12 @@ Les outils sont organises en trois couches :
 │                                                                 │
 │  httpRequest   — appels HTTP arbitraires (API REST, relay…)    │
 │  runScript     — shell restraint (allowlist : build/test/git)  │
-│  runShell      — shell libre, opt-in via YAGR_ENABLE_SHELL=1   │
 │  reportProgress   requestRequiredAction                        │
 └─────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────┐
-│  COUCHE 2 — Orchestration n8n via n8nac (dependance externe)   │
-│                                                                 │
-│  npx n8nac <args>              — orchestration workspace       │
 └─────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────┐
 │  COUCHE 3 — Specificites Yagr (src/manager-tooling/)            │
-│                                                                 │
-│  yagr presentWorkflowResult — URL canonique + diagramme ASCII   │
 │  yagr yagrProxy — proxy LLM + credential n8n                    │
 │  YAGENTS.md — template manager pour la home Yagr               │
 └─────────────────────────────────────────────────────────────────┘
