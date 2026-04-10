@@ -518,9 +518,13 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   }
 
   const body = await readBody(req);
-  const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
-  const bodyWithModel = injectModel(normalizedBody, resolvedModel);
-  const targetUrl = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  // For transparent providers (openai, google, mistral, openrouter…) that natively support
+  // the Responses API, forward the request as-is to /responses. Only Anthropic and
+  // openai-proxy need the Responses→chat-completions translation (handled above).
+  const bodyWithModel = injectModel(body, resolvedModel);
+  const targetUrl = fromResponsesApi
+    ? `${baseUrl.replace(/\/+$/, '')}/responses`
+    : `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   const forwardHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
 
