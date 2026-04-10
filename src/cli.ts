@@ -4,7 +4,6 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createN8nEngineFromWorkspace } from './config/load-n8n-engine-config.js';
 import { buildYagrCleanupPlan, resetYagrLocalState, type YagrResetScope } from './config/local-state.js';
 import { YagrN8nConfigService } from './config/n8n-config-service.js';
 import { YagrConfigService } from './config/yagr-config-service.js';
@@ -580,7 +579,7 @@ async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigServi
   await refreshN8nWorkspaceInstructionsAtLaunch();
   await ensureRelayAtLaunch();
   await ensureTunnelAtLaunch();
-  await runGatewaySupervisor(async () => await createN8nEngineFromWorkspace(), {
+  await runGatewaySupervisor({
     provider: args.provider,
     model: args.model,
     maxSteps: args.maxSteps,
@@ -703,8 +702,7 @@ async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigS
 }
 
 async function runTui(args: ParsedArgs): Promise<void> {
-  const engine = await createN8nEngineFromWorkspace();
-  const handle = await createYagrDeepAgent(engine);
+  const handle = await createYagrDeepAgent();
   const { runCliGateway } = await import('./gateway/cli.js');
 
   await runCliGateway(handle, {
@@ -729,7 +727,7 @@ function readOptionalTextFile(filePath: string | undefined): string | undefined 
 }
 
 async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  await runGatewaySurfaces(['webui'], async () => await createN8nEngineFromWorkspace(), {
+  await runGatewaySurfaces(['webui'], {
     provider: args.provider,
     model: args.model,
     maxSteps: args.maxSteps,
@@ -1391,7 +1389,7 @@ async function main(): Promise<void> {
     await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
     await ensureRelayAtLaunch();
-    await runTelegramGateway(async () => await createN8nEngineFromWorkspace(), {
+    await runTelegramGateway({
       provider: args.provider,
       model: args.model,
       maxSteps: args.maxSteps,
@@ -1402,9 +1400,8 @@ async function main(): Promise<void> {
   await ensureManagedN8nAtLaunch();
   await refreshN8nWorkspaceInstructionsAtLaunch();
   await ensureRelayAtLaunch();
-  const engine = await createN8nEngineFromWorkspace();
 
-  const handle = await createYagrDeepAgent(engine);
+  const handle = await createYagrDeepAgent();
   const { runCliGateway } = await import('./gateway/cli.js');
 
   await runCliGateway(handle, {
