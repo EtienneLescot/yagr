@@ -338,11 +338,25 @@ async function runProvider(provider) {
     }
 
     /** Isolated home + snapshots — intentionally not counted against advanced-scenario runStep wall clock. */
-    let prelude = await buildAdvancedScenarioPrelude({
+    const buildPrelude = () => buildAdvancedScenarioPrelude({
       provider,
       model: chosenModel,
       prompt: advancedPrompt,
     });
+
+    let prelude;
+    try {
+      prelude = await buildPrelude();
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (isInfrastructureError(errMsg) && useManagedDocker) {
+        process.stdout.write(`${stamp()} [infra-retry] ${provider}: infrastructure error in prelude ("${errMsg}"), restarting Docker...\n`);
+        managedDockerRuntime = await ensureManagedDockerTestRuntime();
+        prelude = await buildPrelude();
+      } else {
+        throw err;
+      }
+    }
 
     const runAdvancedTimed = async () => {
       try {
@@ -358,11 +372,12 @@ async function runProvider(provider) {
       if (isInfrastructureError(result.error || '') && useManagedDocker) {
         process.stdout.write(`${stamp()} [infra-retry] ${provider}: infrastructure error detected ("${result.error}"), restarting Docker and retrying...\n`);
         managedDockerRuntime = await ensureManagedDockerTestRuntime();
-        prelude = await buildAdvancedScenarioPrelude({
-          provider,
-          model: chosenModel,
-          prompt: advancedPrompt,
-        });
+        try {
+          prelude = await buildPrelude();
+        } catch (preludeErr) {
+          const preludeErrMsg = preludeErr instanceof Error ? preludeErr.message : String(preludeErr);
+          return { ok: false, error: `Prelude failed after Docker restart: ${preludeErrMsg}` };
+        }
         result = await runAdvancedTimed();
       }
 
