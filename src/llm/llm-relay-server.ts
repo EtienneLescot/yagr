@@ -23,6 +23,7 @@ import { prepareProviderRuntime } from './proxy-runtime.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import type { YagrModelProvider } from './provider-registry.js';
 import { handleAnthropicRelay } from './anthropic-relay.js';
+import { handleOpenAiAccountRelay } from './openai-account-relay.js';
 import { resolveLanguageModelConfig } from './create-langchain-model.js';
 
 export const YAGR_LLM_RELAY_HOST_ENV = 'YAGR_LLM_RELAY_HOST';
@@ -459,6 +460,15 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
     const body = await readBody(req);
     const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
     await handleAnthropicRelay(req, res, normalizedBody, apiKey ?? '');
+    return;
+  }
+
+  // OpenAI account (openai-proxy) uses chatgpt.com/backend-api/codex/responses,
+  // not the standard /chat/completions endpoint — use the dedicated translation layer.
+  if (provider === 'openai-proxy') {
+    const body = await readBody(req);
+    const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
+    await handleOpenAiAccountRelay(req, res, normalizedBody);
     return;
   }
 
