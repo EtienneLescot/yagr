@@ -64,6 +64,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     id: 'openai',
     displayName: 'OpenAI',
     defaultModel: 'gpt-4o',
+    defaultBaseUrl: 'https://api.openai.com/v1',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: true,
     modelDiscovery: {
