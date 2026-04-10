@@ -498,11 +498,9 @@ function createIsolatedHome(testN8nRuntime) {
   const sourcePaths = getYagrPaths();
 
   writeIsolatedYagrConfig(tempHome);
-  copyIfExists(sourcePaths.homeInstructionsPath, path.join(tempHome, 'AGENTS.md'));
   copyIfExists(sourcePaths.n8nCredentialsPath, path.join(tempHome, 'n8n-credentials.json'));
   copyDirIfExists(sourcePaths.n8nWorkspaceDir, path.join(tempHome, 'n8n-workspace'));
   copyIfExists(sourcePaths.workspaceInstructionsPath, path.join(tempHome, 'n8n-workspace', 'AGENTS.md'));
-  seedHomeAgentsMd(tempHome);
 
   const { host, apiKey, projectId } = testN8nRuntime;
   if (host || apiKey || projectId) {
@@ -516,6 +514,10 @@ function createIsolatedHome(testN8nRuntime) {
 
   // Generate fresh AGENTS.md with current n8nac version
   generateTestAgentsMd(tempHome, testN8nRuntime);
+
+  // Register workspace AGENTS.md as a context memory source — mirrors what
+  // `yagr n8n context setup` / refreshN8nWorkspaceInstructionsFromSavedConfig does in production.
+  registerIsolatedContextSources(tempHome);
 
   return tempHome;
 }
@@ -1073,32 +1075,26 @@ function rawOutputToString(rawOutput) {
   }
 }
 
-function seedHomeAgentsMd(homeDir) {
-  const destPath = path.join(homeDir, 'AGENTS.md');
-  if (fs.existsSync(destPath)) {
+/**
+ * Register the workspace AGENTS.md as a context memory source in the isolated home.
+ * Mirrors what `yagr n8n context setup` / registerN8nContextSources() does in production.
+ * Manager instructions (YAGENTS.md) are injected via middleware and do NOT need a file entry.
+ */
+function registerIsolatedContextSources(homeDir) {
+  const workspaceAgentsMd = path.join(homeDir, 'n8n-workspace', 'AGENTS.md');
+  if (!fs.existsSync(workspaceAgentsMd)) {
     return;
   }
-
-  const launchDir = process.env.YAGR_LAUNCH_CWD || process.cwd();
-  const candidates = [
-    path.join(launchDir, 'node_modules', '@yagr', 'manager-tooling', 'YAGENTS.md'),
-    path.join(launchDir, 'src', 'manager-tooling', 'YAGENTS.md'),
-  ];
-
-  for (const candidate of candidates) {
-    if (!fs.existsSync(candidate)) {
-      continue;
-    }
-
-    try {
-      const content = fs.readFileSync(candidate, 'utf8').trim();
-      if (content) {
-        fs.writeFileSync(destPath, `${content}\n`);
-      }
-    } catch {
-      // Best effort only.
-    }
-    return;
+  const memorySources = path.join(homeDir, 'memory-sources.json');
+  const existing = (() => {
+    try { return JSON.parse(fs.readFileSync(memorySources, 'utf8')); } catch { return {}; }
+  })();
+  const contexts = existing.contexts ?? [];
+  if (!contexts.includes(workspaceAgentsMd)) {
+    fs.writeFileSync(
+      memorySources,
+      JSON.stringify({ ...existing, contexts: [...contexts, workspaceAgentsMd] }, null, 2),
+    );
   }
 }
 

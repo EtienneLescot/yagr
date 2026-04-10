@@ -174,6 +174,13 @@ test('resolveN8nTunnelTargetUrl uses the managed instance port when a managed in
   process.env.YAGR_HOME = tempHome;
 
   try {
+    // classifyConfiguredN8nInstance requires instanceProfile to identify the instance as managed.
+    const workspaceDir = path.join(tempHome, 'n8n-workspace');
+    fs.mkdirSync(workspaceDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workspaceDir, 'n8nac-config.json'),
+      JSON.stringify({ instanceProfile: 'yagr-managed-docker', host: 'http://127.0.0.1:5678' }, null, 2),
+    );
     const state = buildManagedN8nState({ image: '', port: 5678, status: 'ready', bootstrapStage: 'connected' });
     writeManagedN8nState(state);
     const targetUrl = resolveN8nTunnelTargetUrl();

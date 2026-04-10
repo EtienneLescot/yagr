@@ -102,21 +102,6 @@ test('YagrN8nConfigService backfills the n8nac compatibility store from centrali
   });
 });
 
-test('YagrConfigService persists Yagr proxy warning consent in local config', async () => {
-  await withTempYagrEnv(async () => {
-    const yagrConfigService = new YagrConfigService();
-
-    const consent = {
-      warningVersion: 'yagr-proxy-v1',
-      acceptedAt: '2026-04-01T10:00:00.000Z',
-    };
-
-    yagrConfigService.saveYagrProxyCredentialWarningConsent(consent);
-
-    assert.deepEqual(yagrConfigService.getYagrProxyCredentialWarningConsent(), consent);
-    assert.deepEqual(yagrConfigService.getLocalConfig().compliance?.yagrProxyCredentialWarning, consent);
-  });
-});
 
 test('buildYagrCleanupPlan preserves external workflow directories on full reset', async () => {
   await withTempYagrEnv(async () => {

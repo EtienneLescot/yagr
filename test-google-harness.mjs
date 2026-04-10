@@ -72,7 +72,6 @@ function copyDirIfExists(src, dst) {
 copyIfExists(sourcePaths.yagrConfigPath, path.join(tempHome, 'yagr-config.json'));
 copyIfExists(sourcePaths.yagrCredentialsPath, path.join(tempHome, 'credentials.json'));
 copyIfExists(sourcePaths.n8nCredentialsPath, path.join(tempHome, 'n8n-credentials.json'));
-copyIfExists(sourcePaths.homeInstructionsPath, path.join(tempHome, 'AGENTS.md'));
 copyDirIfExists(sourcePaths.n8nWorkspaceDir, path.join(tempHome, 'n8n-workspace'));
 
 const previousEnvs = {};
