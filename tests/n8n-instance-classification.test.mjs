@@ -6,7 +6,6 @@ import { classifyN8nInstanceCandidate } from '../dist/n8n-local/instance-classif
 test('classifyN8nInstanceCandidate marks Yagr-managed docker instances with YAGR_MANAGED and DOCKER tags', () => {
   const classification = classifyN8nInstanceCandidate({
     host: 'http://localhost:5678',
-    runtimeSource: 'managed-local',
     instanceProfile: 'yagr-managed-docker',
     managedState: {
       strategy: 'docker',
@@ -28,7 +27,6 @@ test('classifyN8nInstanceCandidate marks Yagr-managed docker instances with YAGR
 test('classifyN8nInstanceCandidate keeps unmanaged local instances out of managed-only features', () => {
   const classification = classifyN8nInstanceCandidate({
     host: 'http://localhost:5678',
-    runtimeSource: 'external',
     instanceProfile: 'custom-local-direct',
   });
 
@@ -41,7 +39,6 @@ test('classifyN8nInstanceCandidate keeps unmanaged local instances out of manage
 test('classifyN8nInstanceCandidate tags custom local docker instances with DOCKER', () => {
   const classification = classifyN8nInstanceCandidate({
     host: 'http://localhost:5678',
-    runtimeSource: 'external',
     instanceProfile: 'custom-local-docker',
   });
 
@@ -52,7 +49,6 @@ test('classifyN8nInstanceCandidate tags custom local docker instances with DOCKE
 test('classifyN8nInstanceCandidate marks cloud instances with CLOUD tag and tunnelled llm proxy capability', () => {
   const classification = classifyN8nInstanceCandidate({
     host: 'https://example.app.n8n.cloud',
-    runtimeSource: 'external',
     instanceProfile: 'custom-cloud',
   });
 
@@ -65,7 +61,6 @@ test('classifyN8nInstanceCandidate marks cloud instances with CLOUD tag and tunn
 test('classifyN8nInstanceCandidate prefers the persisted setup profile over host heuristics', () => {
   const classification = classifyN8nInstanceCandidate({
     host: 'http://localhost:5678',
-    runtimeSource: 'external',
     instanceProfile: 'custom-cloud',
   });
 

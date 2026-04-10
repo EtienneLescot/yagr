@@ -86,7 +86,6 @@ function createSetupCallbacks(
         apiKey: hostForKey ? n8nConfigService.getApiKey(hostForKey) : undefined,
         projectId: cfg.projectId,
         syncFolder: cfg.syncFolder,
-        runtimeSource: cfg.runtimeSource,
         instanceProfile: cfg.instanceProfile,
       };
     },
@@ -101,13 +100,12 @@ function createSetupCallbacks(
       return projects;
     },
 
-    async saveN8nConfig({ url, apiKey, project, syncFolder, runtimeSource, instanceProfile }) {
+    async saveN8nConfig({ url, apiKey, project, syncFolder, instanceProfile }) {
       const warning = await setupService.saveN8nConfig({
         host: url,
         apiKey,
         projectId: project.id,
         syncFolder,
-        runtimeSource,
         instanceProfile,
       });
       if (warning) {
@@ -200,8 +198,8 @@ function createSetupCallbacks(
       setupService.saveSurfaces({ surfaces, telegram });
     },
 
-    async setupLlmProxy(runtimeSource, n8nUrl) {
-      return setupService.setupLlmProxy(runtimeSource, n8nUrl);
+    async setupLlmProxy(n8nUrl, instanceProfile) {
+      return setupService.setupLlmProxy(n8nUrl, instanceProfile);
     },
 
     saveLlmProxyConfig(config) {

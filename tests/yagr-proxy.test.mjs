@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { resolveYagrProxyCredentialBaseUrl, resolveYagrProxyRuntimeSource } from '../dist/manager-tooling/yagr-proxy.js';
+import { resolveYagrProxyCredentialBaseUrl, resolveYagrProxyReachability } from '../dist/manager-tooling/yagr-proxy.js';
 import { YagrN8nConfigService } from '../dist/config/n8n-config-service.js';
 
 test('yagrProxy credential base url uses relay host url for managed-local runtime', async () => {
   const original = YagrN8nConfigService.prototype.getLocalConfig;
-  YagrN8nConfigService.prototype.getLocalConfig = () => ({ runtimeSource: 'managed-local', instanceProfile: 'yagr-managed-direct' });
+  YagrN8nConfigService.prototype.getLocalConfig = () => ({ instanceProfile: 'yagr-managed-direct' });
 
   try {
     const baseUrl = await resolveYagrProxyCredentialBaseUrl({
@@ -25,7 +25,7 @@ test('yagrProxy credential base url uses relay host url for managed-local runtim
 
 test('yagrProxy credential base url keeps configured relay url for external runtime', async () => {
   const original = YagrN8nConfigService.prototype.getLocalConfig;
-  YagrN8nConfigService.prototype.getLocalConfig = () => ({ runtimeSource: 'external', instanceProfile: 'custom-cloud' });
+  YagrN8nConfigService.prototype.getLocalConfig = () => ({ instanceProfile: 'custom-cloud' });
 
   try {
     const baseUrl = await resolveYagrProxyCredentialBaseUrl({
@@ -41,12 +41,12 @@ test('yagrProxy credential base url keeps configured relay url for external runt
   }
 });
 
-test('yagrProxy runtime source falls back to managed-local for localhost when runtimeSource is absent', () => {
+test('yagrProxy reachability resolves to local for localhost instances', () => {
   const original = YagrN8nConfigService.prototype.getLocalConfig;
   YagrN8nConfigService.prototype.getLocalConfig = () => ({ host: 'http://localhost:5678' });
 
   try {
-    assert.equal(resolveYagrProxyRuntimeSource(), 'managed-local');
+    assert.equal(resolveYagrProxyReachability(), 'local');
   } finally {
     YagrN8nConfigService.prototype.getLocalConfig = original;
   }
@@ -54,7 +54,7 @@ test('yagrProxy runtime source falls back to managed-local for localhost when ru
 
 test('yagrProxy credential base url uses docker host for custom local docker instances', async () => {
   const original = YagrN8nConfigService.prototype.getLocalConfig;
-  YagrN8nConfigService.prototype.getLocalConfig = () => ({ runtimeSource: 'external', instanceProfile: 'custom-local-docker', host: 'http://localhost:5678' });
+  YagrN8nConfigService.prototype.getLocalConfig = () => ({ instanceProfile: 'custom-local-docker', host: 'http://localhost:5678' });
 
   try {
     const baseUrl = await resolveYagrProxyCredentialBaseUrl({

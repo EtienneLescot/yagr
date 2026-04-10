@@ -40,7 +40,7 @@ test('getConfiguredManagedN8nState returns managed state when configured host ma
     syncFolder: 'workflows',
     projectId: 'p1',
     projectName: 'Demo',
-    runtimeSource: 'managed-local',
+    instanceProfile: 'yagr-managed-direct',
   });
 
   const state = getConfiguredManagedN8nState(configService);
@@ -85,7 +85,7 @@ test('getConfiguredManagedN8nState ignores configs without explicit managed clas
 
   const state = getConfiguredManagedN8nState(configService);
   assert.equal(state, undefined);
-  assert.equal(configService.getLocalConfig().runtimeSource, undefined);
+  assert.equal(configService.getLocalConfig().instanceProfile, undefined);
 });
 
 test('getConfiguredManagedN8nState ignores external configured instances even when the host matches', async (t) => {
@@ -120,7 +120,7 @@ test('getConfiguredManagedN8nState ignores external configured instances even wh
     syncFolder: 'workflows',
     projectId: 'p1',
     projectName: 'Demo',
-    runtimeSource: 'external',
+    instanceProfile: 'custom-local-direct',
   });
 
   const state = getConfiguredManagedN8nState(configService);
@@ -134,7 +134,7 @@ test('getConfiguredExternalN8nReachabilityWarning returns a warning for unreacha
     getLocalConfig() {
       return {
         host: 'http://127.0.0.1:1',
-        runtimeSource: 'external',
+        instanceProfile: 'custom-local-direct',
       };
     },
     getApiKey() {

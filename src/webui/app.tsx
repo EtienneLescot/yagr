@@ -899,6 +899,7 @@ function SetupPage({
   n8nApiKey,
   n8nProjectId,
   n8nSyncFolder,
+  n8nInstanceProfile,
   provider,
   llmApiKey,
   model,
@@ -909,6 +910,7 @@ function SetupPage({
   onN8nApiKeyChange,
   onN8nProjectIdChange,
   onN8nSyncFolderChange,
+  onN8nInstanceProfileChange,
   onProviderChange,
   onLlmApiKeyChange,
   onModelChange,
@@ -934,6 +936,7 @@ function SetupPage({
   n8nApiKey: string;
   n8nProjectId: string;
   n8nSyncFolder: string;
+  n8nInstanceProfile: 'custom-cloud' | 'custom-local-docker' | 'custom-local-direct';
   provider: string;
   llmApiKey: string;
   model: string;
@@ -944,6 +947,7 @@ function SetupPage({
   onN8nApiKeyChange: (value: string) => void;
   onN8nProjectIdChange: (value: string) => void;
   onN8nSyncFolderChange: (value: string) => void;
+  onN8nInstanceProfileChange: (value: 'custom-cloud' | 'custom-local-docker' | 'custom-local-direct') => void;
   onProviderChange: (value: string) => void;
   onLlmApiKeyChange: (value: string) => void;
   onModelChange: (value: string) => void;
@@ -994,6 +998,14 @@ function SetupPage({
                 <input value={n8nApiKey} onChange={(event) => onN8nApiKeyChange(event.target.value)} type="password" placeholder="Leave empty to reuse saved key" />
               </label>
               <label>
+                <span>Instance type</span>
+                <select value={n8nInstanceProfile} onChange={(event) => onN8nInstanceProfileChange(event.target.value as 'custom-cloud' | 'custom-local-docker' | 'custom-local-direct')}>
+                  <option value="custom-cloud">Cloud instance</option>
+                  <option value="custom-local-docker">Local instance running in Docker</option>
+                  <option value="custom-local-direct">Local instance not running in Docker</option>
+                </select>
+              </label>
+              <label>
                 <span>Project</span>
                 <select value={n8nProjectId} onChange={(event) => onN8nProjectIdChange(event.target.value)}>
                   <option value="">Load projects first</option>
@@ -1007,7 +1019,7 @@ function SetupPage({
                 <input value={n8nSyncFolder} onChange={(event) => onN8nSyncFolderChange(event.target.value)} type="text" placeholder="workflows" />
               </label>
               <button className="primaryButton" type="button" onClick={onSaveN8n}>Save orchestrator</button>
-              <p className="hint">This writes the current n8n connection used by onboarding and by the runtime.</p>
+              <p className="hint">This writes the current n8n connection and explicit instance type used by onboarding and by the runtime.</p>
             </section>
 
             <section className="panel formPanel">
@@ -1177,6 +1189,7 @@ function App() {
   const [n8nApiKey, setN8nApiKey] = React.useState('');
   const [n8nProjectId, setN8nProjectId] = React.useState('');
   const [n8nSyncFolder, setN8nSyncFolder] = React.useState('workflows');
+  const [n8nInstanceProfile, setN8nInstanceProfile] = React.useState<'custom-cloud' | 'custom-local-docker' | 'custom-local-direct'>('custom-cloud');
 
   const [provider, setProvider] = React.useState('openrouter');
   const [llmApiKey, setLlmApiKey] = React.useState('');
@@ -1241,6 +1254,7 @@ function App() {
     setN8nApiKey('');
     setN8nProjectId(nextSnapshot.n8n.projectId ?? '');
     setN8nSyncFolder(nextSnapshot.n8n.syncFolder ?? 'workflows');
+    setN8nInstanceProfile((nextSnapshot.n8n.instanceProfile as 'custom-cloud' | 'custom-local-docker' | 'custom-local-direct' | undefined) ?? 'custom-cloud');
     setProvider(nextSnapshot.yagr.provider ?? 'openrouter');
     setLlmApiKey('');
     setModel(nextSnapshot.yagr.model ?? '');
@@ -1408,7 +1422,7 @@ function App() {
     try {
       const result = await request<{ warning?: string; snapshot: ConfigSnapshot }>('/api/config/n8n', {
         method: 'POST',
-        body: JSON.stringify({ host: n8nHost, apiKey: n8nApiKey || undefined, projectId: n8nProjectId, syncFolder: n8nSyncFolder }),
+        body: JSON.stringify({ host: n8nHost, apiKey: n8nApiKey || undefined, projectId: n8nProjectId, syncFolder: n8nSyncFolder, instanceProfile: n8nInstanceProfile }),
       });
       hydrate(result.snapshot);
       notify(result.warning ?? 'Orchestrator connection saved.');
@@ -1767,6 +1781,7 @@ function App() {
         n8nApiKey={n8nApiKey}
         n8nProjectId={n8nProjectId}
         n8nSyncFolder={n8nSyncFolder}
+        n8nInstanceProfile={n8nInstanceProfile}
         provider={provider}
         llmApiKey={llmApiKey}
         model={model}
@@ -1777,6 +1792,7 @@ function App() {
         onN8nApiKeyChange={setN8nApiKey}
         onN8nProjectIdChange={setN8nProjectId}
         onN8nSyncFolderChange={setN8nSyncFolder}
+        onN8nInstanceProfileChange={setN8nInstanceProfile}
         onProviderChange={setProvider}
         onLlmApiKeyChange={setLlmApiKey}
         onModelChange={setModel}

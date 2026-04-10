@@ -15,7 +15,6 @@ export interface N8nInstanceCapabilities {
 export interface N8nInstanceClassification {
   kind: N8nInstanceKind;
   host?: string;
-  runtimeSource?: YagrN8nLocalConfig['runtimeSource'];
   instanceProfile?: YagrN8nInstanceProfile;
   tags: N8nInstanceTag[];
   managedState?: ManagedN8nInstanceState;
@@ -55,10 +54,6 @@ export function isLocalN8nUrl(urlString: string | undefined): boolean {
   }
 }
 
-export function inferRuntimeSourceFromHost(host: string | undefined): Exclude<YagrN8nLocalConfig['runtimeSource'], undefined> {
-  return isLocalN8nUrl(host) ? 'managed-local' : 'external';
-}
-
 function buildCapabilities(tags: readonly N8nInstanceTag[]): N8nInstanceCapabilities {
   const isManaged = tags.includes('YAGR_MANAGED');
   const isCloud = tags.includes('CLOUD');
@@ -73,7 +68,6 @@ function buildCapabilities(tags: readonly N8nInstanceTag[]): N8nInstanceCapabili
 
 export function resolveN8nInstanceProfile(input: {
   host?: string;
-  runtimeSource?: YagrN8nLocalConfig['runtimeSource'];
   instanceProfile?: YagrN8nInstanceProfile;
   managedState?: ManagedN8nInstanceState;
 }): YagrN8nInstanceProfile | undefined {
@@ -81,25 +75,11 @@ export function resolveN8nInstanceProfile(input: {
     return input.instanceProfile;
   }
 
-  if (input.runtimeSource === 'managed-local') {
-    if (input.managedState?.strategy === 'docker') {
-      return 'yagr-managed-docker';
-    }
-
-    if (input.managedState?.strategy === 'direct') {
-      return 'yagr-managed-direct';
-    }
+  if (!input.host) {
+    return undefined;
   }
 
-  if (input.runtimeSource === 'external') {
-    if (!input.host) {
-      return undefined;
-    }
-
-    return isLocalN8nUrl(input.host) ? 'custom-local-direct' : 'custom-cloud';
-  }
-
-  return undefined;
+  return isLocalN8nUrl(input.host) ? 'custom-local-direct' : 'custom-cloud';
 }
 
 function resolveTags(input: {
@@ -139,7 +119,6 @@ function resolveTags(input: {
 
 export function classifyN8nInstanceCandidate(input: {
   host?: string;
-  runtimeSource?: YagrN8nLocalConfig['runtimeSource'];
   instanceProfile?: YagrN8nInstanceProfile;
   managedState?: ManagedN8nInstanceState;
 }): N8nInstanceClassification {
@@ -147,7 +126,7 @@ export function classifyN8nInstanceCandidate(input: {
   const managedState = input.managedState;
   const instanceProfile = resolveN8nInstanceProfile(input);
   const isManagedFromProfile = instanceProfile === 'yagr-managed-docker' || instanceProfile === 'yagr-managed-direct';
-  const isManaged = isManagedFromProfile || input.runtimeSource === 'managed-local';
+  const isManaged = isManagedFromProfile;
 
   let kind: N8nInstanceKind;
   if (instanceProfile === 'custom-cloud') {
@@ -168,7 +147,6 @@ export function classifyN8nInstanceCandidate(input: {
   return {
     kind,
     host,
-    runtimeSource: input.runtimeSource,
     instanceProfile,
     tags,
     managedState: isManaged ? managedState : undefined,
@@ -182,7 +160,6 @@ export function classifyConfiguredN8nInstance(
   const localConfig = configService.getLocalConfig();
   return classifyN8nInstanceCandidate({
     host: localConfig.host,
-    runtimeSource: localConfig.runtimeSource,
     instanceProfile: localConfig.instanceProfile,
     managedState: readManagedN8nState(),
   });

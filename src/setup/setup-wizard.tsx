@@ -12,7 +12,6 @@ import {
   YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
 import type { ManagedN8nInstanceState } from '../n8n-local/state.js';
-import { inferRuntimeSourceFromHost } from '../n8n-local/instance-classification.js';
 import type { YagrN8nInstanceProfile } from '../config/n8n-config-service.js';
 import type { YagrLlmProxyConfig } from '../config/yagr-config-service.js';
 
@@ -44,9 +43,9 @@ const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: strin
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export interface SetupCallbacks {
-  getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string; runtimeSource?: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile };
+  getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string; instanceProfile?: YagrN8nInstanceProfile };
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
-  saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile }): Promise<void>;
+  saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string; instanceProfile?: YagrN8nInstanceProfile }): Promise<void>;
   installManagedLocalN8n(strategy: 'docker' | 'direct' | 'auto'): Promise<ManagedN8nInstanceState>;
   bootstrapManagedLocalN8n(url: string): Promise<{ mode: 'silent' | 'assisted'; apiKey?: string; reason?: string }>;
   openUrl(url: string): Promise<void>;
@@ -85,7 +84,7 @@ export interface SetupCallbacks {
   getTelegramToken(): string | undefined;
   setupTelegram(token: string): Promise<{ username: string }>;
   saveSurfaces(p: { surfaces: GatewaySurface[]; telegram?: { token: string; username: string } }): void;
-  setupLlmProxy(runtimeSource: 'managed-local' | 'external', n8nUrl: string): Promise<{
+  setupLlmProxy(n8nUrl: string, instanceProfile?: YagrN8nInstanceProfile): Promise<{
     mode: YagrLlmProxyConfig['mode'];
     credentialBaseUrl: string;
     dockerHostAddress?: string;
@@ -123,11 +122,11 @@ type Phase =
   | { kind: 'n8n-apikey'; url: string; err?: string }
   | { kind: 'n8n-instance-location'; url: string; apiKey: string; cursor: number }
   | { kind: 'n8n-local-runtime'; url: string; apiKey: string; cursor: number }
-  | { kind: 'n8n-connecting'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile }
-  | { kind: 'n8n-project'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile; projects: IProject[]; cursor: number }
-  | { kind: 'n8n-syncfolder'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile; project: IProject; def: string; err?: string }
-  | { kind: 'n8n-saving'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile; project: IProject; syncFolder: string; log?: string }
-  | { kind: 'llm-proxy-setup'; url: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile; status: 'detecting' | 'ready' | 'skipped' | 'failed'; mode?: YagrLlmProxyConfig['mode']; relayUrl?: string; err?: string; cursor: number }
+  | { kind: 'n8n-connecting'; url: string; apiKey: string; instanceProfile?: YagrN8nInstanceProfile }
+  | { kind: 'n8n-project'; url: string; apiKey: string; instanceProfile?: YagrN8nInstanceProfile; projects: IProject[]; cursor: number }
+  | { kind: 'n8n-syncfolder'; url: string; apiKey: string; instanceProfile?: YagrN8nInstanceProfile; project: IProject; def: string; err?: string }
+  | { kind: 'n8n-saving'; url: string; apiKey: string; instanceProfile?: YagrN8nInstanceProfile; project: IProject; syncFolder: string; log?: string }
+  | { kind: 'llm-proxy-setup'; url: string; instanceProfile?: YagrN8nInstanceProfile; status: 'detecting' | 'ready' | 'skipped' | 'failed'; mode?: YagrLlmProxyConfig['mode']; relayUrl?: string; err?: string; cursor: number }
   | { kind: 'n8n-local-installing'; startedAt: number; strategy: 'docker' | 'direct' | 'auto' }
   | { kind: 'n8n-local-ready'; url: string; instanceProfile: YagrN8nInstanceProfile; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
@@ -521,9 +520,7 @@ function SetupWizard({ callbacks, options, onDone }: {
   const [phase, setPhase] = useState<Phase>(() => {
     if (mode === 'proxy-only' || (mode === 'llm-only' && !callbacks.isLlmProxyEnabled() && n8nDef.projectId)) {
       const n8nUrl = n8nDef.url;
-      const runtimeSource = n8nDef.runtimeSource
-        ?? inferRuntimeSourceFromHost(n8nUrl);
-      return { kind: 'llm-proxy-setup', url: n8nUrl, runtimeSource, instanceProfile: n8nDef.instanceProfile, status: 'detecting', cursor: 0 };
+      return { kind: 'llm-proxy-setup', url: n8nUrl, instanceProfile: n8nDef.instanceProfile, status: 'detecting', cursor: 0 };
     }
 
     if (mode === 'llm-only') {
@@ -587,12 +584,12 @@ function SetupWizard({ callbacks, options, onDone }: {
         if (guard !== asyncGuard.current) return;
         const instanceProfile: YagrN8nInstanceProfile = phase.strategy === 'docker' ? 'yagr-managed-docker' : 'yagr-managed-direct';
         if (bootstrap.mode === 'silent' && bootstrap.apiKey) {
-          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: bootstrap.apiKey, runtimeSource: 'managed-local', instanceProfile });
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: bootstrap.apiKey, instanceProfile });
           return;
         }
         const existing = callbacks.getN8nDefaults(state.url).apiKey;
         if (existing) {
-          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: existing, runtimeSource: 'managed-local', instanceProfile });
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: existing, instanceProfile });
           return;
         }
         setPhase({
@@ -623,13 +620,13 @@ function SetupWizard({ callbacks, options, onDone }: {
         if (projects.length === 1) {
           setPhase({
             kind: 'n8n-syncfolder',
-            url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource, instanceProfile: phase.instanceProfile,
+            url: phase.url, apiKey: phase.apiKey, instanceProfile: phase.instanceProfile,
             project: projects[0],
             def: n8nDef.syncFolder ?? 'workflows',
           });
           setTextValue(n8nDef.syncFolder ?? 'workflows');
         } else {
-          setPhase({ kind: 'n8n-project', url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource, instanceProfile: phase.instanceProfile, projects, cursor: 0 });
+          setPhase({ kind: 'n8n-project', url: phase.url, apiKey: phase.apiKey, instanceProfile: phase.instanceProfile, projects, cursor: 0 });
         }
       } catch (err) {
         if (guard !== asyncGuard.current) return;
@@ -644,9 +641,9 @@ function SetupWizard({ callbacks, options, onDone }: {
     const guard = ++asyncGuard.current;
     void (async () => {
       try {
-        await callbacks.saveN8nConfig({ url: phase.url, apiKey: phase.apiKey, project: phase.project, syncFolder: phase.syncFolder, runtimeSource: phase.runtimeSource, instanceProfile: phase.instanceProfile });
+        await callbacks.saveN8nConfig({ url: phase.url, apiKey: phase.apiKey, project: phase.project, syncFolder: phase.syncFolder, instanceProfile: phase.instanceProfile });
         if (guard !== asyncGuard.current) return;
-        setPhase({ kind: 'llm-proxy-setup', url: phase.url, runtimeSource: phase.runtimeSource, instanceProfile: phase.instanceProfile, status: 'detecting', cursor: 0 });
+        setPhase({ kind: 'llm-proxy-setup', url: phase.url, instanceProfile: phase.instanceProfile, status: 'detecting', cursor: 0 });
       } catch (err) {
         if (guard !== asyncGuard.current) return;
         setPhase({ kind: 'error', message: (err as Error).message });
@@ -661,7 +658,7 @@ function SetupWizard({ callbacks, options, onDone }: {
     const guard = ++asyncGuard.current;
     void (async () => {
       try {
-        const result = await callbacks.setupLlmProxy(phase.runtimeSource, phase.url);
+        const result = await callbacks.setupLlmProxy(phase.url, phase.instanceProfile);
         if (guard !== asyncGuard.current) return;
         setPhase((p) => ({
           ...(p as Extract<Phase, { kind: 'llm-proxy-setup' }>),
@@ -775,10 +772,10 @@ function SetupWizard({ callbacks, options, onDone }: {
     setPhase({ kind: 'n8n-instance-location', url, apiKey: key, cursor: 0 });
   }, []);
 
-  const handleSyncFolderSubmit = useCallback((url: string, apiKey: string, runtimeSource: 'managed-local' | 'external', project: IProject, instanceProfile?: YagrN8nInstanceProfile) => (value: string) => {
+  const handleSyncFolderSubmit = useCallback((url: string, apiKey: string, project: IProject, instanceProfile?: YagrN8nInstanceProfile) => (value: string) => {
     const folder = value.trim();
     if (!folder) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'n8n-syncfolder' }>, err: 'Sync folder is required.' })); return; }
-    setPhase({ kind: 'n8n-saving', url, apiKey, runtimeSource, instanceProfile, project, syncFolder: folder });
+    setPhase({ kind: 'n8n-saving', url, apiKey, instanceProfile, project, syncFolder: folder });
   }, []);
 
   const handleBaseUrlSubmit = useCallback((provider: YagrModelProvider, apiKey: string, model: string) => (value: string) => {
@@ -880,7 +877,7 @@ function SetupWizard({ callbacks, options, onDone }: {
             }
             const existing = callbacks.getN8nDefaults(phase.url).apiKey;
             if (existing) {
-              setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: existing, runtimeSource: 'managed-local', instanceProfile: phase.instanceProfile });
+              setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: existing, instanceProfile: phase.instanceProfile });
               return;
             }
             setPhase({
@@ -915,7 +912,7 @@ function SetupWizard({ callbacks, options, onDone }: {
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
       else if (key.return) {
         if (phase.cursor === 0) {
-          setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: phase.apiKey, runtimeSource: 'external', instanceProfile: 'custom-cloud' });
+          setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: phase.apiKey, instanceProfile: 'custom-cloud' });
         } else {
           setPhase({ kind: 'n8n-local-runtime', url: phase.url, apiKey: phase.apiKey, cursor: 0 });
         }
@@ -924,14 +921,14 @@ function SetupWizard({ callbacks, options, onDone }: {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
       else if (key.return) {
-        setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: phase.apiKey, runtimeSource: 'external', instanceProfile: phase.cursor === 0 ? 'custom-local-docker' : 'custom-local-direct' });
+        setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: phase.apiKey, instanceProfile: phase.cursor === 0 ? 'custom-local-docker' : 'custom-local-direct' });
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'n8n-project') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(phase.projects.length - 1, phase.cursor + 1) });
       else if (key.return) {
         const project = phase.projects[phase.cursor];
-        setPhase({ kind: 'n8n-syncfolder', url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource, instanceProfile: phase.instanceProfile, project, def: n8nDef.syncFolder ?? 'workflows' });
+        setPhase({ kind: 'n8n-syncfolder', url: phase.url, apiKey: phase.apiKey, instanceProfile: phase.instanceProfile, project, def: n8nDef.syncFolder ?? 'workflows' });
         setTextValue(n8nDef.syncFolder ?? 'workflows');
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-reuse-config') {
@@ -1171,7 +1168,6 @@ function SetupWizard({ callbacks, options, onDone }: {
             setPhase({
               kind: 'llm-proxy-setup',
               url: phase.url,
-              runtimeSource: phase.runtimeSource,
               status: 'failed',
               err: error instanceof Error ? error.message : String(error),
               cursor: 0,
@@ -1421,7 +1417,7 @@ function SetupWizard({ callbacks, options, onDone }: {
               <WizardTextInput
                 value={textValue}
                 onChange={setTextValue}
-                onSubmit={handleSyncFolderSubmit(phase.url, phase.apiKey, phase.runtimeSource, phase.project, phase.instanceProfile)}
+                onSubmit={handleSyncFolderSubmit(phase.url, phase.apiKey, phase.project, phase.instanceProfile)}
                 placeholder="workflows"
               />
             </Box>

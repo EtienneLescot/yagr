@@ -53,7 +53,7 @@ test('resolveManagedN8nBootstrapStage returns connected for a configured managed
       syncFolder: 'workflows',
       projectId: 'personal',
       projectName: 'Personal',
-      runtimeSource: 'managed-local',
+      instanceProfile: 'yagr-managed-direct',
     });
 
     assert.equal(resolveManagedN8nBootstrapStage('http://127.0.0.1:5678'), 'connected');

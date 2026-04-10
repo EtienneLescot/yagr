@@ -240,11 +240,19 @@ class WebUiGateway implements Gateway {
 
     if (method === 'POST' && url.pathname === '/api/config/n8n') {
       const body = await this.readJson(request);
+      const instanceProfile = body.instanceProfile === 'yagr-managed-docker'
+        || body.instanceProfile === 'yagr-managed-direct'
+        || body.instanceProfile === 'custom-local-docker'
+        || body.instanceProfile === 'custom-local-direct'
+        || body.instanceProfile === 'custom-cloud'
+        ? body.instanceProfile
+        : undefined;
       const warning = await this.saveN8nConfig({
         host: String(body.host ?? ''),
         apiKey: body.apiKey ? String(body.apiKey) : undefined,
         projectId: String(body.projectId ?? ''),
         syncFolder: String(body.syncFolder ?? 'workflows'),
+        instanceProfile,
       });
       this.sendJson(response, 200, {
         warning,
@@ -517,7 +525,13 @@ class WebUiGateway implements Gateway {
     this.sendText(response, 200, session.payload.fallbackPage, 'text/html; charset=utf-8');
   }
 
-  private async saveN8nConfig(input: { host: string; apiKey?: string; projectId: string; syncFolder: string }): Promise<string | undefined> {
+  private async saveN8nConfig(input: {
+    host: string;
+    apiKey?: string;
+    projectId: string;
+    syncFolder: string;
+    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
+  }): Promise<string | undefined> {
     const warning = await this.setupService.saveN8nConfig(input);
     // Invalidate the cached engine and agent handle so the next request
     // picks up a fresh engine and model built from the new config.

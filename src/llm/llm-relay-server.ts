@@ -183,44 +183,7 @@ function buildRelayInfo(port: number): N8nRelayInfo {
     return { port, baseUrl: `http://${proxyConfig.dockerHostAddress}:${port}/v1`, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
   }
 
-  // No explicit mode configured — auto-detect a docker host address so n8n containers can reach us.
-  // resolveDockerHostAddress() is async; we use a synchronous best-effort here (host.docker.internal
-  // or docker0 bridge) rather than forcing all callers to be async.
-  const dockerHost = resolveDockerHostAddressSync();
-  if (dockerHost && dockerHost !== '127.0.0.1') {
-    return { port, baseUrl: `http://${dockerHost}:${port}/v1`, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
-  }
-
   return { port, baseUrl: hostBaseUrl, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
-}
-
-/**
- * Synchronous subset of resolveDockerHostAddress() for use in non-async contexts.
- * Checks host.docker.internal via /etc/hosts, then docker0 interface. Returns undefined if neither found.
- */
-function resolveDockerHostAddressSync(): string | undefined {
-  // Check /etc/hosts for host.docker.internal (always present in Docker Desktop / WSL2 mirrored networking)
-  try {
-    const hosts = fs.readFileSync('/etc/hosts', 'utf8');
-    if (/host\.docker\.internal/.test(hosts)) {
-      return 'host.docker.internal';
-    }
-  } catch {
-    // not available
-  }
-
-  // Try docker0 / docker bridge interface
-  const ifaces = os.networkInterfaces();
-  for (const name of Object.keys(ifaces)) {
-    if (!/docker/i.test(name)) continue;
-    for (const iface of ifaces[name] ?? []) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-
-  return undefined;
 }
 
 function spawnRelayProcess(): void {

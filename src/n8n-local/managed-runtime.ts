@@ -23,7 +23,7 @@ export interface ConfiguredN8nLaunchPreparation {
   warning?: string;
 }
 
-function resolveConfiguredRuntimeSource(configService: YagrN8nConfigService): {
+function resolveConfiguredRuntimeMode(configService: YagrN8nConfigService): {
   source: ConfiguredN8nRuntimeMode;
   localConfig: ReturnType<YagrN8nConfigService['getLocalConfig']>;
   managedState: ManagedN8nInstanceState | undefined;
@@ -53,7 +53,7 @@ function resolveConfiguredRuntimeSource(configService: YagrN8nConfigService): {
 export function getConfiguredManagedN8nState(
   configService = new YagrN8nConfigService(),
 ): ManagedN8nInstanceState | undefined {
-  return resolveConfiguredRuntimeSource(configService).managedState;
+  return resolveConfiguredRuntimeMode(configService).managedState;
 }
 
 export async function ensureConfiguredManagedN8nRunning(
@@ -84,7 +84,7 @@ export async function ensureConfiguredManagedN8nRunning(
 export async function getConfiguredExternalN8nReachabilityWarning(
   configService = new YagrN8nConfigService(),
 ): Promise<string | undefined> {
-  const { source, localConfig } = resolveConfiguredRuntimeSource(configService);
+  const { source, localConfig } = resolveConfiguredRuntimeMode(configService);
   if (source !== 'local' && source !== 'cloud') {
     return undefined;
   }
@@ -110,7 +110,7 @@ export async function getConfiguredExternalN8nReachabilityWarning(
 export async function prepareConfiguredN8nForLaunch(
   configService = new YagrN8nConfigService(),
 ): Promise<ConfiguredN8nLaunchPreparation> {
-  const { source } = resolveConfiguredRuntimeSource(configService);
+  const { source } = resolveConfiguredRuntimeMode(configService);
 
   if (source === 'yagr-managed-local') {
     const ensured = await ensureConfiguredManagedN8nRunning(configService);

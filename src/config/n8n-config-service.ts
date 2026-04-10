@@ -18,7 +18,6 @@ export interface YagrN8nLocalConfig {
   projectName?: string;
   instanceIdentifier?: string;
   customNodesPath?: string;
-  runtimeSource?: 'managed-local' | 'external';
   instanceProfile?: YagrN8nInstanceProfile;
 }
 
@@ -152,14 +151,12 @@ export class YagrN8nConfigService {
   saveBootstrapState(
     host: string,
     syncFolder = 'workflows',
-    runtimeSource: YagrN8nLocalConfig['runtimeSource'] = 'external',
     instanceProfile?: YagrN8nLocalConfig['instanceProfile'],
   ): void {
     const current = this.getLocalConfig();
     const bootstrapState: YagrN8nLocalConfig = {
       host,
       syncFolder,
-      runtimeSource,
       instanceProfile,
     };
 

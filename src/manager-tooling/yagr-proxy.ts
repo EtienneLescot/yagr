@@ -64,10 +64,10 @@ async function runN8nacCommand(args: string[], cwd: string): Promise<RunResult> 
   });
 }
 
-export function resolveYagrProxyRuntimeSource(): 'managed-local' | 'external' {
+export function resolveYagrProxyReachability(): 'local' | 'external' {
   const classification = classifyConfiguredN8nInstance(new YagrN8nConfigService());
   if (classification.kind === 'yagr-managed-local' || classification.kind === 'local') {
-    return 'managed-local';
+    return 'local';
   }
 
   return 'external';
