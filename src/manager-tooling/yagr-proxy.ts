@@ -7,10 +7,12 @@
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { getYagrN8nWorkspaceDir, getYagrPaths } from '../config/yagr-home.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { emitToolEvent, type ToolExecutionObserver } from '../tools/observer.js';
 import {
@@ -70,6 +72,56 @@ async function listYagrProxyCredentials(cwd: string): Promise<Array<{ id?: strin
     : [];
 }
 
+/**
+ * Resolve the active n8n host from the n8nac-config.json in the workspace.
+ */
+function resolveN8nHost(cwd: string): string | undefined {
+  const configPath = path.join(cwd, 'n8nac-config.json');
+  if (!fs.existsSync(configPath)) return undefined;
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      activeInstanceId?: string;
+      instances?: Array<{ id: string; host: string }>;
+    };
+    const instances = config.instances ?? [];
+    const active = instances.find((i) => i.id === config.activeInstanceId) ?? instances[0];
+    return active?.host;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Patch an existing n8n credential in-place via the REST API so that its
+ * base URL is updated without changing the credential ID.
+ *
+ * This preserves all workflow-node references to that credential, which are
+ * stored by ID in n8n — a delete+create would produce a new ID and break them.
+ *
+ * Returns true on success, false if the patch could not be performed (in which
+ * case the caller should fall back to delete+create).
+ */
+async function patchN8nCredentialUrl(credentialId: string, newBaseUrl: string, cwd: string): Promise<boolean> {
+  const n8nHost = resolveN8nHost(cwd);
+  if (!n8nHost) return false;
+  const apiKey = new YagrN8nConfigService().getApiKey(n8nHost);
+  if (!apiKey) return false;
+  try {
+    const response = await fetch(`${n8nHost}/api/v1/credentials/${credentialId}`, {
+      method: 'PATCH',
+      headers: { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: N8N_RELAY_CREDENTIAL_NAME,
+        type: 'openAiApi',
+        data: { apiKey: N8N_RELAY_FAKE_API_KEY, url: newBaseUrl, headerName: '', headerValue: '' },
+      }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function ensureYagrProxyCredential() {
   const cwd = getYagrN8nWorkspaceDir();
   const relay = await ensureN8nRelayServer();
@@ -91,6 +143,21 @@ export async function ensureYagrProxyCredential() {
       };
     }
 
+    // URL changed — patch in-place to preserve the credential ID so that
+    // existing workflow-node references (stored by ID in n8n) remain valid.
+    const patched = await patchN8nCredentialUrl(existing.id, effectiveRelayBaseUrl, cwd);
+    if (patched) {
+      (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
+      return {
+        credentialId: existing.id,
+        created: false,
+        reused: false,
+        baseUrl: effectiveRelayBaseUrl,
+        port: relay.port,
+      };
+    }
+
+    // Patch unavailable — fall back to delete+create.
     await runN8nacCommand(['credential', 'delete', existing.id], cwd);
   }
 
