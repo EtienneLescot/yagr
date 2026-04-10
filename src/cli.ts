@@ -42,7 +42,7 @@ import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { presentWorkflowResultCli } from './manager-tooling/present-workflow.js';
 import { runYagrProxyCli } from './manager-tooling/yagr-proxy.js';
 import { readManagedN8nState } from './n8n-local/state.js';
-import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrLlmSetup, runYagrLlmProxySetup, runYagrSetup } from './setup.js';
+import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, runYagrLlmSetup, runYagrLlmProxySetup, runYagrN8nSetup, runYagrSetup } from './setup.js';
 import { YagrSetupApplicationService } from './setup/application-services.js';
 import { openExternalUrl } from './system/open-external.js';
 import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
@@ -63,7 +63,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url' | 'presentWorkflowResult' | 'yagrProxy';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-setup' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url' | 'presentWorkflowResult' | 'yagrProxy';
   startTarget?: 'webui' | 'tui';
   n8nLocalRuntime?: 'docker' | 'direct';
   prompt?: string;
@@ -241,6 +241,11 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   if (argv[0] === 'n8n' && argv[1] === 'doctor') {
     parsed.command = 'n8n-doctor';
+    return parsed;
+  }
+
+  if (argv[0] === 'n8n' && argv[1] === 'setup') {
+    parsed.command = 'n8n-setup';
     return parsed;
   }
 
@@ -824,6 +829,7 @@ Usage: yagr <command> [options]
 
 Commands:
   setup                        Run the setup wizard
+  n8n setup                    Reconfigure only the n8n instance
   llm setup                    Run only the LLM setup wizard
   llm proxy setup              Configure the LLM proxy only
   start [tui|webui]            Start configured gateway(s), or a specific UI
@@ -1004,6 +1010,11 @@ async function main(): Promise<void> {
         process.stdout.write('──────────────────────────────────────────────────\n\n');
       }
       await runGatewayOrFallback(args, configService);
+      return;
+    }
+
+    if (args.command === 'n8n-setup') {
+      await runYagrN8nSetup(configService);
       return;
     }
 

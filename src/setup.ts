@@ -51,6 +51,15 @@ export async function runYagrSetup(
   return result.ok;
 }
 
+export async function runYagrN8nSetup(
+  yagrConfigService = new YagrConfigService(),
+  n8nConfigService = new YagrN8nConfigService(),
+): Promise<boolean> {
+  const callbacks = createSetupCallbacks(yagrConfigService, n8nConfigService);
+  const result = await runSetupWizard(callbacks, { mode: 'n8n-only' });
+  return result.ok;
+}
+
 export async function runYagrLlmSetup(
   yagrConfigService = new YagrConfigService(),
   n8nConfigService = new YagrN8nConfigService(),
