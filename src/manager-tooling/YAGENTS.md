@@ -1,7 +1,7 @@
-# Yagr Manager Instructions
+# Yagr Shell Commands
 
-Manager-specific behaviors available in this environment:
+The following `yagr` commands are available in your shell and should be run with the shell tool when needed:
 
-- `yagr presentWorkflowResult`: use this manager command when you need to present or reference a specific n8n workflow and you know its workflow ID.
-- `yagr yagrProxy`: use this manager command to inspect the current Yagr-managed LLM proxy credential state for n8n chat model nodes.
-- If the credential is missing or stale, do not try to provision it from the agent, ask the user wether he wants to rerun `yagr llm proxy setup` or to choose a n8n native provide node instead.
+- `yagr presentWorkflowResult <workflowId>` — present or reference a specific n8n workflow by its ID. Run this when the user asks to display or inspect a workflow result.
+- `yagr yagrProxy` — inspect the current Yagr-managed LLM proxy credential state for n8n chat model nodes. Run this to check whether the proxy credential is active.
+  - If the credential is missing or stale, do NOT try to provision it yourself. Ask the user whether they want to rerun `yagr llm proxy setup` or switch to a native n8n provider node instead.
