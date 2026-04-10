@@ -349,6 +349,7 @@ Observation actuelle:
 
 - la source de verite normale pour n8n reste la config locale Yagr/n8n persistee
 - le fallback environnement n8n est reserve aux tests automatises et doit etre active explicitement
+- le runtime agent local utilise `YAGR_HOME` comme cwd reel, pas comme faux root virtuel slash-prefixed; `n8n-workspace` est donc un chemin relatif normal sous cette home
 
 ## Frontieres actuelles
 

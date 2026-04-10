@@ -144,6 +144,7 @@ Observation:
 - le workspace n8n cadre l'usage des commandes `npx n8nac ...`, mais l'agent va lire ses instructions lorsqu'il entre dans `n8n-workspace`
 - le deep-agent ne recoit pas de tools manager ou n8nac injectes explicitement
 - la home Yagr reste la racine operationnelle; `n8n-workspace` est un sous-workspace metier, pas le cwd implicite du process
+- le backend deepagents principal est local host-native: le cwd shell reel est `YAGR_HOME`, les chemins relatifs partent de la home Yagr et les chemins absolus restent ceux du host
 - le runtime n8n utilise maintenant une resolution partagee de disponibilite (`config locale` par defaut, `env` seulement pour le harness automatise)
 - la presentation workflow ne doit plus exposer de diagramme brut infere: le diagramme doit passer par le parseur partage de `src/gateway/workflow-diagram.ts` avant d'etre emis puis rendu
 - cette separation doit rester visible dans `src/config/n8n-config-service.ts`, `src/manager-tooling/*`, `src/cli.ts` et `scripts/provider-integration-matrix.mjs`

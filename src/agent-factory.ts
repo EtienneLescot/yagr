@@ -4,7 +4,7 @@
  * Wraps `createDeepAgent` from the `deepagents` / LangGraph library with
  * Yagr-specific wiring:
  *
- *   - `SafeLocalShellBackend` — actual filesystem I/O + shell execution
+ *   - `LocalShellBackend` — host-native filesystem I/O + shell execution
  *     (provides `ls`, `read_file`, `write_file`, `edit_file`, `glob`,
  *      `grep`, `execute` as native tools)
  *   - Yagr-specific generic tools injected on top (httpRequest,
@@ -18,13 +18,12 @@
  *   // agentHandle.agent is a CompiledStateGraph — call streamEvents / invoke
  *   // with { configurable: { thread_id: sessionId } }
  */
-import { createDeepAgent } from 'deepagents';
+import { createDeepAgent, LocalShellBackend } from 'deepagents';
 import { MemorySaver } from '@langchain/langgraph';
 import type { EngineRuntimePort } from './engine/engine.js';
 import type { YagrConfigStoreLike } from './config/yagr-config-service.js';
 import { createLangChainModel } from './llm/create-langchain-model.js';
 import { buildSystemPrompt } from './prompt/build-system-prompt.js';
-import { SafeLocalShellBackend } from './tools/safe-local-shell-backend.js';
 import {
   httpRequestTool,
   requestRequiredActionTool,
@@ -44,7 +43,7 @@ export interface YagrDeepAgentHandle {
 
 /**
  * Build the list of Yagr-specific tools injected into the deep agent.
- * Tools already provided by `FilesystemMiddleware` + `SafeLocalShellBackend`
+ * Tools already provided by `FilesystemMiddleware` + `LocalShellBackend`
  * (ls, read_file, write_file, edit_file, glob, grep, execute) are NOT
  * included here to avoid duplication.
  */
@@ -86,11 +85,11 @@ export async function createYagrDeepAgent(
     tools: buildYagrTools(),
     systemPrompt,
     checkpointer,
-    backend: new SafeLocalShellBackend({
+    backend: new LocalShellBackend({
       rootDir,
       inheritEnv: true,
-      // Keep filesystem and shell semantics aligned: absolute paths should
-      // mean the same thing for read/glob/grep and execute.
+      // The Yagr home is the real cwd for both file tools and shell commands.
+      // Relative paths resolve from YAGR_HOME; absolute paths remain host paths.
     }),
   });
 

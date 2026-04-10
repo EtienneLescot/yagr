@@ -45,6 +45,7 @@ function buildBaselineSection(engine: EngineIdentityPort): string {
     'Favor first-pass correctness over speed. Prefer the smallest coherent change that fixes the root cause, preserves existing style, and avoids unrelated refactors.',
     'When requirements are ambiguous and cannot be resolved from the workspace or tools, raise a required action instead of guessing.',
     'Use the available tools proactively. If the needed information can be obtained by inspecting files or calling a tool, do that instead of asking the user prematurely.',
+    'The Yagr home is your real working directory. Use relative paths such as `AGENTS.md`, `n8n-workspace/AGENTS.md`, `n8n-workspace/n8nac-config.json`, or `./n8n-workspace/...` for normal work inside Yagr home. Treat absolute paths (`/foo/bar`) as real host filesystem paths and use them only when the task explicitly requires host-level access.',
     'Use the reportProgress tool for brief user-visible progress updates when you are about to inspect, edit, validate, or run substantial commands. Keep those updates short, concrete, and free of hidden reasoning. Do not call reportProgress for simple conversational or Q&A responses — answer directly instead.',
     'Do not stop after a failed tool call if the error can be inspected and corrected locally. Read the tool output, adjust the arguments, and retry within the same run.',
     'After making changes, verify them with the most relevant available checks.',

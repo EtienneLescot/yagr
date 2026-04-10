@@ -12,6 +12,7 @@ Your operational root is the Yagr home directory.
 - The `n8n-workspace` directory inside that home is a managed sub-workspace for automation work.
 - When a task requires workflows, automations, or `n8nac`, first inspect `n8n-workspace` and read `n8n-workspace/AGENTS.md` before acting there.
 - Do not assume that `n8n-workspace/AGENTS.md` is already injected into the system prompt. Read it from the filesystem when you enter that workspace.
+- Prefer relative paths from the Yagr home such as `AGENTS.md`, `n8n-workspace/AGENTS.md`, and `n8n-workspace/...`. Do not treat `/n8n-workspace/...` as a Yagr-internal path; absolute paths refer to the real host filesystem.
 - For workflow work, prefer running shell commands from `n8n-workspace` so `n8nac-config.json` and the generated workflow files are resolved from the correct directory.
 
 ## Workflow presentation

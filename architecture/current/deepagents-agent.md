@@ -16,6 +16,7 @@ Le modele d'architecture de reference est le suivant:
 3. Le `AGENTS.md` genere par `n8nac` constitue la deuxieme couche d'instructions metier pour le travail dans le workspace n8n, mais il est lu par l'agent quand celui-ci entre dans `n8n-workspace`; il n'est pas injecte d'office comme couche de system prompt.
 4. En parallele, `yagr-manager` porte sa propre couche infrastructure (n8n local, relay, proxy, setup, tunnel, etc.) sans melanger cette logique avec le coeur de `yagr-agent`.
 5. Les comportements manager specifiques passent par des commandes CLI internes (`yagr presentWorkflowResult`, `yagr yagrProxy`) executees via le shell, jamais par injection explicite de tools dans le deep-agent.
+6. Le backend deepagents principal est `LocalShellBackend` en mode host-native: les file tools et le shell partagent le meme cwd reel (`YAGR_HOME`) et la meme semantique de chemins.
 
 ```mermaid
 flowchart TD
@@ -55,6 +56,7 @@ Contraintes d'architecture:
 - `src/manager-tooling/YAGENTS.md` est le template source maintenu par `yagr-manager` pour semer ce `AGENTS.md` de home.
 - le comportement metier n8n de premier niveau est porte par le `AGENTS.md` genere dans `n8n-workspace`.
 - la home Yagr reste la racine operationnelle; `n8n-workspace` est un sous-workspace, pas le cwd implicite du process.
+- le backend ne fournit pas de faux root virtuel commun. Les chemins relatifs sont resolus depuis `YAGR_HOME`; les chemins absolus restent les chemins absolus reels du host.
 - la couche infrastructure manager reste separee des couches d'instructions exposees a l'agent de codage.
 
 ```mermaid
@@ -120,7 +122,8 @@ Responsabilités :
 2. Construit le `systemPrompt` via `buildSystemPrompt(engine, configService, ...)`
 3. Assemble les tools LangChain agnostiques (`src/tools/langchain/*`)
 4. Configure un `MemorySaver` (checkpointer en mémoire, par thread)
-5. Appelle `createDeepAgent({ model, tools, systemPrompt, checkpointer })`
+5. Instancie `LocalShellBackend({ rootDir: getYagrHomeDir(), virtualMode: false, inheritEnv: true })`
+6. Appelle `createDeepAgent({ model, tools, systemPrompt, checkpointer, backend })`
 
 Clarification importante:
 
@@ -129,6 +132,18 @@ Clarification importante:
 - le `AGENTS.md` de home apprend a l'agent a utiliser les commandes CLI internes `yagr presentWorkflowResult` et `yagr yagrProxy` via le shell
 - les instructions shell `n8nac` de premier niveau proviennent du `AGENTS.md` genere par `n8nac` dans `n8n-workspace`, que l'agent lit lorsqu'il entre dans ce sous-workspace
 - `src/manager-tooling/YAGENTS.md` ne doit pas dupliquer ces instructions; il ne porte que les comportements specifiques a yagr-manager
+- les instructions doivent parler en chemins relatifs a la home Yagr (`n8n-workspace/...`, `./n8n-workspace/...`) et non en faux chemins absolus de type `/n8n-workspace/...`
+
+## Contrat backend
+
+Le backend principal actuel est `LocalShellBackend` de deepagents en mode local host-native.
+
+Implications:
+
+- le cwd shell et la base des chemins relatifs pointent tous deux vers `YAGR_HOME`
+- les outils fichier et `execute` doivent partager la meme semantique de chemins pour eviter les divergences de comportement
+- `virtualMode` ne doit pas etre active dans ce mode, car deepagents documente explicitement qu'il ne virtualise que les operations filesystem et pas le shell
+- si un jour Yagr a besoin d'un vrai root virtuel commun aux file tools et a `execute`, il faudra utiliser un vrai backend sandbox de deepagents, pas `LocalShellBackend`
 
 ## Persistance de session
 

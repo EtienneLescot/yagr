@@ -25,6 +25,13 @@ Pour les fichiers d'instructions runtime, la convention Yagr a retenir est:
 - `AGENTS.md` est le format canonique pour la home Yagr et les workspaces geres.
 - `AGENT.md` reste supporte pour compatibilite et pour certains repos existants, mais ce n'est pas le nom a privilegier pour la home/runtime Yagr.
 
+Pour le contrat de chemins runtime, la convention Yagr a retenir est:
+
+- le backend principal est host-native: le cwd de l'agent est la home Yagr reelle sur la machine de l'utilisateur.
+- les chemins relatifs sont resolus a partir de cette home Yagr reelle.
+- les chemins absolus (`/foo/bar`) designent le vrai filesystem de l'hote, jamais un faux root virtuel Yagr.
+- `n8n-workspace` est un sous-dossier metier de la home Yagr; on y accede normalement via `n8n-workspace/...` ou `./n8n-workspace/...`.
+
 Quand une responsabilite change, il faut mettre a jour:
 
 - le graphe concerne
