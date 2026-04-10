@@ -1179,8 +1179,6 @@ function SetupWizard({ callbacks, options, onDone }: {
             confirmedCredentialBaseUrl: phase.relayUrl,
             dockerHostAddress: (phase.mode === 'docker') ? phase.relayUrl.replace(/^http:\/\//, '').replace(/:\d+.*/, '') : undefined,
             tunnelUrl: (phase.mode === 'tunnel') ? phase.relayUrl.replace(/\/v1$/, '') : undefined,
-            consentVersion: '1',
-            consentAcceptedAt: new Date().toISOString(),
           });
           setPhase({
             kind: 'llm-proxy-setup',
@@ -1487,8 +1485,7 @@ function SetupWizard({ callbacks, options, onDone }: {
                 : <>
                     <Text dimColor>  Yagr can run a local OpenAI-compatible relay so n8n Chat Model nodes use</Text>
                     <Text dimColor>  your configured provider without requiring a separate API key in n8n.</Text>
-                    <Text dimColor>  Mode detected: <Text bold>{phase.mode ? modeLabel[phase.mode] : '?'}</Text>  ·  URL: <Text bold>{phase.relayUrl}</Text></Text>
-                    <Text dimColor>  Consent is stored in ~/.yagr/yagr-config.json and never shared.</Text>
+                    <Text dimColor>  Mode: <Text bold>{phase.mode ? modeLabel[phase.mode] : '?'}</Text>  ·  URL: <Text bold>{phase.relayUrl}</Text></Text>
                     <SelectList
                       options={['Enable Yagr LLM Proxy', 'Skip'] as const}
                       cursor={phase.cursor}

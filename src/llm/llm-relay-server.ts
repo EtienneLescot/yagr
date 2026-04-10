@@ -170,7 +170,7 @@ export async function ensureN8nRelayServer(): Promise<N8nRelayInfo> {
   return buildRelayInfo(state.port);
 }
 
-function buildRelayInfo(port: number): N8nRelayInfo {
+export function buildRelayInfo(port: number): N8nRelayInfo {
   const configService = new YagrConfigService();
   const proxyConfig = configService.getLocalConfig().llmProxy;
   const hostBaseUrl = `http://127.0.0.1:${port}/v1`;

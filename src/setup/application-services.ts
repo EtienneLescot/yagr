@@ -443,6 +443,21 @@ export class YagrSetupApplicationService {
     dockerHostAddress?: string;
     tunnelUrl?: string;
   }> {
+    const relay = await ensureN8nRelayServer();
+
+    // When the proxy was already configured, reuse the stored mode and host.
+    // relay.baseUrl reflects the current relay port with the stored host address.
+    const existingProxyConfig = this.yagrConfigService.getLocalConfig().llmProxy;
+    if (existingProxyConfig?.enabled && existingProxyConfig.mode) {
+      return {
+        mode: existingProxyConfig.mode,
+        credentialBaseUrl: relay.baseUrl,
+        dockerHostAddress: existingProxyConfig.dockerHostAddress,
+        tunnelUrl: existingProxyConfig.tunnelUrl,
+      };
+    }
+
+    // First-time setup: derive mode from instance profile.
     const classification = classifyN8nInstanceCandidate({
       host: n8nUrl,
       instanceProfile: instanceProfile ?? this.n8nConfigService.getLocalConfig().instanceProfile,
@@ -450,12 +465,10 @@ export class YagrSetupApplicationService {
 
     if (hasN8nInstanceTag(classification, 'CLOUD')) {
       // Cloud/external n8n cannot reach loopback; spawn a Cloudflare tunnel.
-      const relay = await ensureN8nRelayServer();
       const tunnel = await this.startCloudflareTunnel(relay.hostBaseUrl);
       return { mode: 'tunnel', credentialBaseUrl: `${tunnel}/v1`, tunnelUrl: tunnel };
     }
 
-    const relay = await ensureN8nRelayServer();
     if (hasN8nInstanceTag(classification, 'DOCKER')) {
       const dockerHost = await resolveDockerHostAddress();
       return {

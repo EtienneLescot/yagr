@@ -39,15 +39,6 @@ export interface YagrGatewayConfig {
   };
 }
 
-export interface YagrComplianceConsentRecord {
-  warningVersion: string;
-  acceptedAt: string;
-}
-
-export interface YagrComplianceConfig {
-  yagrProxyCredentialWarning?: YagrComplianceConsentRecord;
-}
-
 export type YagrLlmProxyMode = 'local' | 'docker' | 'tunnel';
 
 export interface YagrLlmProxyConfig {
@@ -61,8 +52,6 @@ export interface YagrLlmProxyConfig {
   dockerHostAddress?: string;
   /** Cloudflare tunnel URL, only set when mode=tunnel */
   tunnelUrl?: string;
-  consentVersion: string;
-  consentAcceptedAt: string;
 }
 
 export interface N8nTunnelConfig {
@@ -89,7 +78,6 @@ export interface YagrLocalConfig {
   baseUrl?: string;
   gateway?: YagrGatewayConfig;
   telegram?: YagrTelegramConfig;
-  compliance?: YagrComplianceConfig;
   llmProxy?: YagrLlmProxyConfig;
   shellCommands?: YagrShellCommandsConfig;
   n8nTunnel?: N8nTunnelConfig;
@@ -108,8 +96,6 @@ export interface YagrConfigStoreLike {
   getTelegramBotToken(): string | undefined;
   saveTelegramBotToken(botToken: string): void;
   clearTelegramBotToken(): void;
-  getYagrProxyCredentialWarningConsent(): YagrComplianceConsentRecord | undefined;
-  saveYagrProxyCredentialWarningConsent(record: YagrComplianceConsentRecord): YagrLocalConfig;
   getLlmProxyConfig(): YagrLlmProxyConfig | undefined;
   isLlmProxyEnabled(): boolean;
   saveLlmProxyConfig(config: YagrLlmProxyConfig): YagrLocalConfig;
@@ -237,20 +223,6 @@ export class YagrConfigService {
 
   clearTelegramBotToken(): void {
     this.globalStore.delete('telegram.botToken');
-  }
-
-  getYagrProxyCredentialWarningConsent(): YagrComplianceConsentRecord | undefined {
-    return this.getLocalConfig().compliance?.yagrProxyCredentialWarning;
-  }
-
-  saveYagrProxyCredentialWarningConsent(record: YagrComplianceConsentRecord): YagrLocalConfig {
-    return this.updateLocalConfig((localConfig) => ({
-      ...localConfig,
-      compliance: {
-        ...localConfig.compliance,
-        yagrProxyCredentialWarning: record,
-      },
-    }));
   }
 
   getLlmProxyConfig(): YagrLlmProxyConfig | undefined {
