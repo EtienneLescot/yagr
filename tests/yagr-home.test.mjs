@@ -98,6 +98,8 @@ test('ensureYagrHomeDir seeds the home AGENTS.md from the bundled manager templa
     assert.ok(fs.existsSync(paths.homeInstructionsPath));
     const content = fs.readFileSync(paths.homeInstructionsPath, 'utf8');
     assert.match(content, /Yagr Manager Instructions/i);
+    assert.match(content, /Backend working directory:/i);
+    assert.match(content, /Canonical n8n workspace absolute path:/i);
   } finally {
     if (previousYagrHome !== undefined) {
       process.env.YAGR_HOME = previousYagrHome;
@@ -131,9 +133,11 @@ test('ensureYagrHomeDir refreshes an existing managed home AGENTS.md from the bu
 
     const content = fs.readFileSync(path.join(tempHome, 'AGENTS.md'), 'utf8');
     assert.match(content, /Yagr Manager Instructions/i);
-    assert.match(content, /enter `\.\/n8n-workspace` and read `\.\/n8n-workspace\/AGENTS\.md` before acting there/i);
+    assert.match(content, /use the real absolute path to the `n8n-workspace` directory inside that Yagr home and read its `AGENTS\.md` before acting there/i);
     assert.match(content, /`yagr presentWorkflowResult`/i);
     assert.match(content, /`yagr yagrProxy`/i);
+    assert.match(content, /Canonical n8n workspace absolute path:/i);
+    assert.match(content, /Never invent synthetic filesystem roots such as \/n8n-workspace/i);
     assert.doesNotMatch(content, /Stale content\./i);
   } finally {
     if (previousYagrHome !== undefined) {

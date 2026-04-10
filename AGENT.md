@@ -7,9 +7,10 @@ Il complete la documentation architecturale situee dans [architecture/README.md]
 Avant tout changement structurel, lire en priorite:
 
 1. [architecture/current/system-overview.md](./architecture/current/system-overview.md)
-2. [architecture/current/module-map.md](./architecture/current/module-map.md)
-3. [architecture/current/runtime-flows.md](./architecture/current/runtime-flows.md)
-4. [architecture/target/backlog.md](./architecture/target/backlog.md)
+2. [architecture/current/deepagents-agent.md](./architecture/current/deepagents-agent.md)
+3. [architecture/current/module-map.md](./architecture/current/module-map.md)
+4. [architecture/current/runtime-flows.md](./architecture/current/runtime-flows.md)
+5. [architecture/target/backlog.md](./architecture/target/backlog.md)
 
 ## Principes directeurs
 

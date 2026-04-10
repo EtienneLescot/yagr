@@ -52,6 +52,18 @@ function isManagedHomeInstructions(content: string): boolean {
     && content.includes('Manager-specific behaviors available in this environment:');
 }
 
+function buildManagedHomeInstructionsContent(bundledContent: string, paths: YagrPaths): string {
+  const runtimeContext = [
+    '',
+    'Runtime-specific path anchors for this environment:',
+    '',
+    `- Backend working directory: ${paths.homeDir}`,
+    '',
+  ].join('\n');
+
+  return `${bundledContent.trim()}\n${runtimeContext}`;
+}
+
 function ensureHomeInstructionsSeeded(paths: YagrPaths): void {
   const bundledInstructionsPath = resolveBundledManagerInstructionsPath(paths.launchDir);
   if (!bundledInstructionsPath) {
@@ -64,7 +76,7 @@ function ensureHomeInstructionsSeeded(paths: YagrPaths): void {
       return;
     }
 
-    const nextContent = `${bundledContent}\n`;
+    const nextContent = buildManagedHomeInstructionsContent(bundledContent, paths);
 
     if (!fs.existsSync(paths.homeInstructionsPath)) {
       fs.writeFileSync(paths.homeInstructionsPath, nextContent);

@@ -1,6 +1,7 @@
 # Yagr Manager Instructions
 
-- When the user asks about workflows, automations, n8n, webhooks, `n8nac`, workflow tests, workflow execution, or workflow deployment, enter `./n8n-workspace` and read `./n8n-workspace/AGENTS.md` before acting there.
+- When the user asks about workflows, automations, n8n, webhooks, `n8nac`, workflow tests, workflow execution, or workflow deployment, first resolve the Yagr home as the backend working directory, then use the real absolute path to the `n8n-workspace` directory inside that Yagr home and read its `AGENTS.md` before acting there.
+- Never invent synthetic filesystem roots such as `/n8n-workspace`, `/n8n-credentials.json`, or `/credentials.json`.
 
 Manager-specific behaviors available in this environment:
 
