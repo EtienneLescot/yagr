@@ -331,6 +331,10 @@ async function handleModels(res: http.ServerResponse): Promise<void> {
 }
 
 function extractResponsesTextContent(content: unknown, type: 'input_text' | 'output_text'): string {
+  // Plain string content (e.g. n8n sends content as a string, not an array)
+  if (typeof content === 'string') {
+    return content;
+  }
   if (!Array.isArray(content)) {
     return '';
   }
@@ -354,8 +358,26 @@ export function translateResponsesRequestToChatCompletionsBody(body: Buffer): Bu
     return body;
   }
 
-  const input = Array.isArray(payload.input) ? payload.input : [];
   const messages: Array<Record<string, unknown>> = [];
+
+  // Handle string input: treat as a single user message
+  if (typeof payload.input === 'string' && (payload.input as string).trim().length > 0) {
+    if (typeof payload.instructions === 'string' && payload.instructions.trim().length > 0) {
+      messages.push({ role: 'system', content: payload.instructions });
+    }
+    messages.push({ role: 'user', content: (payload.input as string).trim() });
+    const translated: Record<string, unknown> = {
+      model: payload.model,
+      messages,
+      stream: payload.stream ?? false,
+    };
+    if (typeof payload.max_output_tokens === 'number') {
+      translated.max_tokens = payload.max_output_tokens;
+    }
+    return Buffer.from(JSON.stringify(translated), 'utf-8');
+  }
+
+  const input = Array.isArray(payload.input) ? payload.input : [];
 
   if (typeof payload.instructions === 'string' && payload.instructions.trim().length > 0) {
     messages.push({ role: 'system', content: payload.instructions });
@@ -455,8 +477,8 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
 
   const { baseUrl, apiKey, provider, extraHeaders } = result.runtime;
 
-  // Anthropic is not OpenAI-compatible — use the dedicated translation layer.
-  if (provider === 'anthropic-proxy') {
+  // Anthropic (both direct API key and account session) — use the dedicated translation layer.
+  if (provider === 'anthropic' || provider === 'anthropic-proxy') {
     const body = await readBody(req);
     const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
     await handleAnthropicRelay(req, res, normalizedBody, apiKey ?? '');

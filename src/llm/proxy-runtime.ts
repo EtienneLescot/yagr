@@ -126,6 +126,29 @@ export async function prepareProviderRuntime(
     };
   }
 
+  if (provider === 'anthropic') {
+    const resolvedApiKey = options.apiKey?.trim();
+    if (!resolvedApiKey) {
+      return {
+        ready: false,
+        reason: 'No Anthropic API key configured. Add your API key in Yagr setup.',
+        notes: [],
+      };
+    }
+    return {
+      ready: true,
+      runtime: {
+        provider,
+        baseUrl: '',
+        apiKey: resolvedApiKey,
+        models: [],
+        notes: [],
+        autoStarted: false,
+      },
+      notes: [],
+    };
+  }
+
   if (provider === 'anthropic-proxy') {
     const manualCredential = options.apiKey?.trim();
     const session = await ensureAnthropicAccountSession();
