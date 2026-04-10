@@ -6,9 +6,10 @@
  */
 
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
+import { getYagrN8nWorkspaceDir, getYagrPaths } from '../config/yagr-home.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { emitToolEvent, type ToolExecutionObserver } from '../tools/observer.js';
@@ -161,6 +162,26 @@ export async function getYagrProxyStatus() {
 
 export async function runYagrProxyCli() {
   return getYagrProxyStatus();
+}
+
+/**
+ * Syncs the n8n "Yagr LLM Proxy" credential whenever the LLM config or relay
+ * state may have changed (e.g. after `yagr llm setup`, or at startup when the
+ * relay restarted on a different port).
+ *
+ * Guards:
+ *  1. llmProxy.enabled must be true (user opted in).
+ *  2. The n8nac workspace must be initialised (n8nac-config.json present) so
+ *     that credential CLI commands have a valid target.
+ *
+ * Always resolves — callers should NOT propagate errors from this function.
+ */
+export async function syncProxyCredentialIfEnabled(): Promise<void> {
+  const configService = new YagrConfigService();
+  if (!configService.getLocalConfig().llmProxy?.enabled) return;
+  const { n8nConfigPath } = getYagrPaths();
+  if (!fs.existsSync(n8nConfigPath)) return;
+  await ensureYagrProxyCredential();
 }
 
 export function createYagrProxyTool(observer?: ToolExecutionObserver) {

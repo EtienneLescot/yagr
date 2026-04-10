@@ -40,7 +40,7 @@ import {
 } from './n8n-local/managed-runtime.js';
 import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { presentWorkflowResultCli } from './manager-tooling/present-workflow.js';
-import { runYagrProxyCli } from './manager-tooling/yagr-proxy.js';
+import { runYagrProxyCli, syncProxyCredentialIfEnabled } from './manager-tooling/yagr-proxy.js';
 import { readManagedN8nState } from './n8n-local/state.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, registerN8nContextSources, runYagrLlmSetup, runYagrLlmProxySetup, runYagrN8nSetup, runYagrSetup } from './setup.js';
 import { YagrSetupApplicationService } from './setup/application-services.js';
@@ -770,6 +770,9 @@ async function ensureRelayAtLaunch(): Promise<void> {
   if (!llmProxy?.enabled) return;
   try {
     await ensureN8nRelayServer();
+    // Sync the n8n credential after the relay is up. This self-heals stale or
+    // missing credentials caused by relay port changes between restarts.
+    await syncProxyCredentialIfEnabled();
   } catch (error) {
     process.stderr.write(`Warning: LLM relay server failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
   }
@@ -1035,6 +1038,8 @@ async function main(): Promise<void> {
         process.env.YAGR_DEBUG_MODEL_DISCOVERY = '1';
       }
       await runYagrLlmSetup(configService);
+      // Re-sync the proxy credential after LLM config changes (best-effort).
+      await syncProxyCredentialIfEnabled().catch(() => {});
       return;
     }
 
