@@ -8,11 +8,18 @@
 import { spawn } from 'node:child_process';
 import { tool } from 'ai';
 import { z } from 'zod';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { emitToolEvent, type ToolExecutionObserver } from '../tools/observer.js';
-import { ensureN8nRelayServer, N8N_RELAY_CREDENTIAL_NAME, N8N_RELAY_FAKE_API_KEY } from '../llm/llm-relay-server.js';
+import {
+  ensureN8nRelayServer,
+  N8N_RELAY_CREDENTIAL_NAME,
+  N8N_RELAY_FAKE_API_KEY,
+  resolveDockerHostAddress,
+  type N8nRelayInfo,
+} from '../llm/llm-relay-server.js';
 import { parseJsonPayload } from '../tools/fs-utils.js';
 
 type RunResult = { stdout: string; stderr: string; exitCode: number };
@@ -55,10 +62,24 @@ async function runN8nacCommand(args: string[], cwd: string): Promise<RunResult> 
   });
 }
 
+export async function resolveYagrProxyCredentialBaseUrl(relay: N8nRelayInfo): Promise<string> {
+  const runtimeSource = new YagrN8nConfigService().getLocalConfig().runtimeSource;
+
+  if (runtimeSource === 'managed-local') {
+    const dockerHost = await resolveDockerHostAddress();
+    if (dockerHost && dockerHost !== '127.0.0.1') {
+      return `http://${dockerHost}:${relay.port}/v1`;
+    }
+    return relay.hostBaseUrl;
+  }
+
+  return relay.baseUrl;
+}
+
 export async function runYagrProxyCli() {
   const cwd = getYagrN8nWorkspaceDir();
   const relay = await ensureN8nRelayServer();
-  const effectiveRelayBaseUrl = relay.baseUrl;
+  const effectiveRelayBaseUrl = await resolveYagrProxyCredentialBaseUrl(relay);
 
   const listResult = await runN8nacCommand(['credential', 'list', '--json'], cwd);
   const existingList = parseJsonPayload(listResult.stdout);
