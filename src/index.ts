@@ -62,6 +62,7 @@ export {
   createCodingOrientationMiddleware,
   getCodingOrientedDeepAgentMiddleware,
 } from './deepagents/coding-orientation.js';
+export { createInjectMemoryMiddleware } from './deepagents/inject-memory.js';
 export {
   buildPristineDeepAgentConfig,
   createPristineDeepAgentBackend,

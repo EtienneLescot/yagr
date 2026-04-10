@@ -1,6 +1,6 @@
 # Yagr Manager Instructions
 
-- When the user asks about workflows, automations, n8n, webhooks, `n8nac`, workflow tests, workflow execution, or workflow deployment, first resolve the Yagr home as the backend working directory, then use the real absolute path to the `n8n-workspace` directory inside that Yagr home and read its `AGENTS.md` before acting there.
+If the user's request involves workflows, automations, n8n, webhooks, `n8nac`, or any automation task, and `<injected_context>` is not yet in your context: call `inject_memory` once with `<cwd>/n8n-workspace/AGENTS.md`, then proceed with the task.
 
 Manager-specific behaviors available in this environment:
 

@@ -1,4 +1,5 @@
 import { createMiddleware, SystemMessage } from 'langchain';
+import { createInjectMemoryMiddleware } from './inject-memory.js';
 
 export const CODING_ORIENTATION_SYSTEM_PROMPT = [
   'Operate as a coding-focused agent.',
@@ -25,5 +26,8 @@ export function createCodingOrientationMiddleware(
 }
 
 export function getCodingOrientedDeepAgentMiddleware() {
-  return [createCodingOrientationMiddleware()];
+  return [
+    createCodingOrientationMiddleware(),
+    createInjectMemoryMiddleware(),
+  ];
 }
