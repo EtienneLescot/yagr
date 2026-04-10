@@ -48,7 +48,15 @@ const markdownDisabled = args.has('--no-markdown');
 const debug = args.has('--debug') || process.env.YAGR_IT_DEBUG === '1';
 const keepTemp = args.has('--keep-temp') || process.env.YAGR_IT_KEEP_TEMP === '1';
 const failFast = args.has('--fail-fast') || process.env.YAGR_IT_FAIL_FAST === '1';
-const useManagedDocker = args.has('--managed-docker') || process.env.YAGR_IT_USE_MANAGED_DOCKER === '1';
+/** Default: isolated managed Docker n8n (see test-managed-n8n-runtime). Opt out: --no-managed-docker or YAGR_IT_USE_MANAGED_DOCKER=0 */
+const useManagedDocker = (() => {
+  if (args.has('--no-managed-docker')) return false;
+  if (args.has('--managed-docker')) return true;
+  const v = String(process.env.YAGR_IT_USE_MANAGED_DOCKER ?? '').trim().toLowerCase();
+  if (v === '0' || v === 'false' || v === 'no' || v === 'off') return false;
+  if (v === '1' || v === 'true' || v === 'yes' || v === 'on') return true;
+  return true;
+})();
 const keepManagedDocker = args.has('--keep-managed-docker') || process.env.YAGR_IT_KEEP_MANAGED_DOCKER === '1';
 const heartbeatMs = toInt(process.env.YAGR_IT_HEARTBEAT_MS, 15_000);
 const advancedIdleTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_IDLE_TIMEOUT_MS, 20_000);
@@ -57,6 +65,11 @@ const advanced = args.has('--advanced') || process.env.YAGR_IT_ADVANCED === '1';
 const advancedPrompt = process.env.YAGR_IT_ADVANCED_PROMPT
   || 'Create a minimal n8n workflow with exactly two nodes: a Manual Trigger followed by a Set node that defines status=\"ok\". Do not ask any questions. Save the workflow and push it.';
 const advancedTimeoutMs = toInt(process.env.YAGR_IT_ADVANCED_TIMEOUT_MS, 90_000);
+/** Wall-clock for the timed advanced sub-step only (agent + validation + local teardown). Prelude (isolated home, n8nac, snapshots) runs *before* this timer. */
+const advancedStepTimeoutMs = toInt(
+  process.env.YAGR_IT_ADVANCED_STEP_TIMEOUT_MS,
+  advancedTimeoutMs + 20_000,
+);
 const forcedModel = String(process.env.YAGR_IT_FORCE_MODEL || '').trim();
 const disabledProviderTests = new Set(
   String(process.env.YAGR_IT_DISABLED_PROVIDERS || 'anthropic-proxy')
@@ -83,7 +96,13 @@ const results = [];
 let managedDockerRuntime;
 if (useManagedDocker) {
   managedDockerRuntime = await ensureManagedDockerTestRuntime();
-  process.stdout.write(`${stamp()} managed docker n8n: ${managedDockerRuntime.host}\n`);
+  process.stdout.write(`${stamp()} managed docker n8n (isolated test runtime): ${managedDockerRuntime.host}\n`);
+} else {
+  const envHost = String(process.env.N8N_HOST || process.env.YAGR_IT_N8N_HOST || '').trim();
+  process.stdout.write(
+    `${stamp()} n8n for tests: managed Docker disabled — using env (N8N_HOST / YAGR_IT_N8N_HOST)${envHost ? ` → ${envHost}` : ' — not set; advanced steps may skip or fail'}. ` +
+      `Default is isolated managed Docker; re-enable with unset YAGR_IT_USE_MANAGED_DOCKER or remove --no-managed-docker.\n`,
+  );
 }
 
 try {
@@ -284,7 +303,7 @@ async function runProvider(provider) {
     };
   }, INFERENCE_TIMEOUT_MS + 5_000);
 
-  const advancedScenario = await runStep(provider, 'advanced-scenario', async () => {
+  const advancedScenario = await (async () => {
     if (!advanced) {
       return {
         status: 'SKIP',
@@ -321,47 +340,62 @@ async function runProvider(provider) {
       };
     }
 
-    const runAdvanced = async () => {
+    /** Isolated home + snapshots — intentionally not counted against advanced-scenario runStep wall clock. */
+    let prelude = await buildAdvancedScenarioPrelude({
+      provider,
+      model: chosenModel,
+      prompt: advancedPrompt,
+    });
+
+    const runAdvancedTimed = async () => {
       try {
-        return await runYagrAdvancedScenario({ provider, model: chosenModel, prompt: advancedPrompt, timeoutMs: advancedTimeoutMs });
+        return await runYagrAdvancedScenarioWithPrelude(prelude, advancedTimeoutMs);
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
     };
-    let result = await runAdvanced();
 
-    // Retry once on infrastructure errors (socket hang up, connection refused) by
-    // restarting the managed Docker runtime before the retry.
-    if (isInfrastructureError(result.error || '') && useManagedDocker) {
-      process.stdout.write(`${stamp()} [infra-retry] ${provider}: infrastructure error detected ("${result.error}"), restarting Docker and retrying...\n`);
-      managedDockerRuntime = await ensureManagedDockerTestRuntime();
-      result = await runAdvanced();
-    }
+    const stepResult = await runStep(provider, 'advanced-scenario', async () => {
+      let result = await runAdvancedTimed();
 
-    const checklistNote = formatAdvancedChecklistNote(result.checklist);
-    if (result.ok) {
+      if (isInfrastructureError(result.error || '') && useManagedDocker) {
+        process.stdout.write(`${stamp()} [infra-retry] ${provider}: infrastructure error detected ("${result.error}"), restarting Docker and retrying...\n`);
+        managedDockerRuntime = await ensureManagedDockerTestRuntime();
+        prelude = await buildAdvancedScenarioPrelude({
+          provider,
+          model: chosenModel,
+          prompt: advancedPrompt,
+        });
+        result = await runAdvancedTimed();
+      }
+
+      const checklistNote = formatAdvancedChecklistNote(result.checklist);
+      if (result.ok) {
+        return {
+          status: 'PASS',
+          note: checklistNote
+            ? `CLI scenario succeeded with model ${chosenModel}. ${checklistNote}`
+            : `CLI scenario succeeded with model ${chosenModel}.`,
+          response: result.assistantResponse || '',
+          checklist: result.checklist,
+        };
+      }
+      if (isTransientRateLimit(result.error || '')) {
+        return {
+          status: 'SKIP',
+          note: `Transient provider rate limit: ${truncate(result.error || '', 180)}`,
+        };
+      }
       return {
-        status: 'PASS',
-        note: checklistNote
-          ? `CLI scenario succeeded with model ${chosenModel}. ${checklistNote}`
-          : `CLI scenario succeeded with model ${chosenModel}.`,
+        status: 'FAIL',
+        note: checklistNote ? `${result.error} ${checklistNote}` : result.error,
         response: result.assistantResponse || '',
         checklist: result.checklist,
       };
-    }
-    if (isTransientRateLimit(result.error || '')) {
-      return {
-        status: 'SKIP',
-        note: `Transient provider rate limit: ${truncate(result.error || '', 180)}`,
-      };
-    }
-    return {
-      status: 'FAIL',
-      note: checklistNote ? `${result.error} ${checklistNote}` : result.error,
-      response: result.assistantResponse || '',
-      checklist: result.checklist,
-    };
-  }, advancedTimeoutMs + 5_000);
+    }, advancedStepTimeoutMs);
+
+    return stepResult;
+  })();
 
   return {
     provider,
@@ -670,7 +704,7 @@ function writeMarkdownReport(rows, outputPath) {
     `- Generated at: ${new Date().toISOString()}`,
     `- Providers: ${rows.map((row) => `\`${row.providerLabel} (${row.provider})\``).join(', ')}`,
     `- Timeouts: setup/model=${DEFAULT_TIMEOUT_MS}ms, inference=${INFERENCE_TIMEOUT_MS}ms`,
-    `- Advanced scenario: ${advanced ? `enabled (timeout=${advancedTimeoutMs}ms)` : 'disabled'}`,
+    `- Advanced scenario: ${advanced ? `enabled (agent=${advancedTimeoutMs}ms, step=${advancedStepTimeoutMs}ms)` : 'disabled'}`,
     '',
     '## Summary',
     '',
@@ -784,20 +818,14 @@ async function runYagrAdvancedScenario({
   prompt,
   timeoutMs,
 }) {
-  return await runYagrAdvancedScenarioAttempt({
-    provider,
-    model,
-    prompt,
-    timeoutMs,
-  });
+  const prelude = await buildAdvancedScenarioPrelude({ provider, model, prompt });
+  return await runYagrAdvancedScenarioWithPrelude(prelude, timeoutMs);
 }
 
-async function runYagrAdvancedScenarioAttempt({
-  provider,
-  model,
-  prompt,
-  timeoutMs,
-}) {
+/**
+ * Creates isolated YAGR_HOME + workspace snapshots (not timed by advanced-scenario runStep).
+ */
+async function buildAdvancedScenarioPrelude({ provider, model, prompt }) {
   const testN8nRuntime = resolveTestN8nRuntime();
   const isolatedHome = createAdvancedScenarioHome(provider, model, testN8nRuntime);
   const workspaceScanDir = path.join(isolatedHome, 'n8n-workspace');
@@ -812,6 +840,36 @@ async function runYagrAdvancedScenarioAttempt({
     logDebug(provider, `active workflow dir: ${workflowDir || '(unknown)'}`);
     logDebug(provider, `prompt: ${truncate(singleLine(effectivePrompt), 220)}`);
   }
+
+  return {
+    provider,
+    model,
+    prompt,
+    testN8nRuntime,
+    isolatedHome,
+    workspaceScanDir,
+    beforeSnapshot,
+    beforeRemoteSnapshot,
+    beforeRemoteDetails,
+    effectivePrompt,
+    workflowDir,
+  };
+}
+
+async function runYagrAdvancedScenarioWithPrelude(prelude, timeoutMs) {
+  const {
+    provider,
+    model,
+    prompt,
+    isolatedHome,
+    workspaceScanDir,
+    beforeSnapshot,
+    beforeRemoteSnapshot,
+    beforeRemoteDetails,
+    effectivePrompt,
+    workflowDir,
+    testN8nRuntime,
+  } = prelude;
 
   try {
     const execution = await runAdvancedAgentInProcess({
@@ -901,6 +959,16 @@ async function runYagrAdvancedScenarioAttempt({
       cleanupAdvancedScenarioHome(isolatedHome);
     }
   }
+}
+
+async function runYagrAdvancedScenarioAttempt({
+  provider,
+  model,
+  prompt,
+  timeoutMs,
+}) {
+  const prelude = await buildAdvancedScenarioPrelude({ provider, model, prompt });
+  return await runYagrAdvancedScenarioWithPrelude(prelude, timeoutMs);
 }
 
 async function validateAdvancedScenarioResult({
@@ -1217,7 +1285,9 @@ function printRunBanner() {
   process.stdout.write(`${stamp()} providers: ${providers.join(', ')}\n`);
   process.stdout.write(`${stamp()} advanced: ${advanced ? 'on' : 'off'} | debug: ${debug ? 'on' : 'off'} | keep-temp: ${(keepTemp || debug) ? 'on' : 'off'}\n`);
   if (advanced) {
-    process.stdout.write(`${stamp()} advanced timeouts: total=${advancedTimeoutMs}ms idle=${advancedIdleTimeoutMs}ms\n`);
+    process.stdout.write(
+      `${stamp()} advanced timeouts: agent=${advancedTimeoutMs}ms step=${advancedStepTimeoutMs}ms idle=${advancedIdleTimeoutMs}ms\n`,
+    );
   }
 }
 
@@ -1758,8 +1828,10 @@ function copyIfExists(source, destination) {
 async function listRemoteWorkflows() {
   const runtime = resolveTestN8nRuntime();
   const host = runtime.host;
-  const projectId = runtime.projectId;
-  if (!host || !projectId) {
+  // Default matches typical n8n single-user project when env omits N8N_PROJECT_ID — without this,
+  // listRemoteWorkflows returns [] and advanced validation never sees new remote workflows.
+  const projectId = String(runtime.projectId || 'personal').trim();
+  if (!host) {
     return [];
   }
 

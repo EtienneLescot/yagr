@@ -24,9 +24,11 @@
  *   YAGR_SCN_TIMEOUT_MS                  Timeout for Q&A scenarios (default: 60000)
  *   YAGR_SCN_CREATION_TIMEOUT_MS         Timeout for creation scenarios (default: 180000)
  *   YAGR_SCN_MARKDOWN_PATH               Markdown report output path
- *   N8N_HOST / YAGR_IT_N8N_HOST          n8n host for workflow tests
+ *   N8N_HOST / YAGR_IT_N8N_HOST          n8n host for workflow tests (when managed Docker is off)
  *   N8N_API_KEY / YAGR_IT_N8N_API_KEY    n8n API key for workflow tests
  *   N8N_PROJECT_ID / YAGR_IT_N8N_PROJECT_ID  n8n project ID
+ *   YAGR_IT_USE_MANAGED_DOCKER           Default on (1): isolated test n8n via Docker. Set 0 to use env n8n only.
+ *   --no-managed-docker / --managed-docker  CLI overrides (same semantics)
  */
 
 import process from 'node:process';
@@ -76,7 +78,15 @@ const CREATION_TIMEOUT_MS = toInt(process.env.YAGR_SCN_CREATION_TIMEOUT_MS, 240_
 const markdownDisabled = process.argv.includes('--no-markdown') || process.env.YAGR_SCN_NO_MARKDOWN === '1';
 const debug = process.argv.includes('--debug') || process.env.YAGR_SCN_DEBUG === '1';
 const keepTemp = process.argv.includes('--keep-temp') || process.env.YAGR_SCN_KEEP_TEMP === '1';
-const useManagedDocker = process.argv.includes('--managed-docker') || process.env.YAGR_IT_USE_MANAGED_DOCKER === '1';
+/** Default: isolated managed Docker n8n. Opt out: --no-managed-docker or YAGR_IT_USE_MANAGED_DOCKER=0 */
+const useManagedDocker = (() => {
+  if (process.argv.includes('--no-managed-docker')) return false;
+  if (process.argv.includes('--managed-docker')) return true;
+  const v = String(process.env.YAGR_IT_USE_MANAGED_DOCKER ?? '').trim().toLowerCase();
+  if (v === '0' || v === 'false' || v === 'no' || v === 'off') return false;
+  if (v === '1' || v === 'true' || v === 'yes' || v === 'on') return true;
+  return true;
+})();
 const keepManagedDocker = process.argv.includes('--keep-managed-docker') || process.env.YAGR_IT_KEEP_MANAGED_DOCKER === '1';
 const MANAGED_DOCKER_TIMEOUT_BONUS_MS = toInt(
   process.env.YAGR_SCN_MANAGED_DOCKER_TIMEOUT_BONUS_MS,
