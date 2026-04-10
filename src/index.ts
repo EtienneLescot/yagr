@@ -9,9 +9,13 @@ export {
 export { YagrN8nConfigService } from './config/n8n-config-service.js';
 export { YagrConfigService } from './config/yagr-config-service.js';
 export {
+  getActiveMemorySourcePaths,
   getYagrHomeDir,
   getYagrLaunchDir,
   getYagrPaths,
+  registerContextMemorySource,
+  registerCoreMemorySource,
+  resolveBundledManagerInstructionsPath,
   resolveLegacyConfStorePath,
   resolveYagrHomeDir,
 } from './config/yagr-home.js';
@@ -55,12 +59,14 @@ export { getProviderPlugin } from './llm/provider-plugin.js';
 export {
   buildYagrSetupStatus,
   getYagrSetupStatus,
+  registerN8nContextSources,
   runYagrSetup,
 } from './setup.js';
 export {
   CODING_ORIENTATION_SYSTEM_PROMPT,
   createCodingOrientationMiddleware,
   getCodingOrientedDeepAgentMiddleware,
+  getRuntimePathAnchorPrompt,
 } from './deepagents/coding-orientation.js';
 export { createInjectMemoryMiddleware } from './deepagents/inject-memory.js';
 export {

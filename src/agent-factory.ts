@@ -22,6 +22,7 @@ import type { YagrConfigStoreLike } from './config/yagr-config-service.js';
 import { createLangChainModel } from './llm/create-langchain-model.js';
 import { getCodingOrientedDeepAgentMiddleware } from './deepagents/coding-orientation.js';
 import { buildPristineDeepAgentConfig, getPristineDeepAgentMemorySources } from './deepagents/pristine.js';
+import { getYagrHomeDir } from './config/yagr-home.js';
 
 /** Returned by `createYagrDeepAgent`. */
 export interface YagrDeepAgentHandle {
@@ -59,7 +60,11 @@ export async function createYagrDeepAgent(
     ...buildPristineDeepAgentConfig({
       model,
       checkpointer,
-      rootDir: process.cwd(),
+      // Use the yagr home directory as the shell root so the agent starts
+      // in the same directory that the runtime path anchor advertises.
+      // This avoids the mismatch where the anchor says ~/.yagr but the shell
+      // was actually at process.cwd() (the yagr launch directory).
+      rootDir: getYagrHomeDir(),
     }),
     middleware: getCodingOrientedDeepAgentMiddleware(),
   });

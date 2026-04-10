@@ -6,10 +6,13 @@ import test from 'node:test';
 
 import {
   ensureYagrHomeDir,
+  getActiveMemorySourcePaths,
   getYagrHomeDir,
   getYagrLaunchDir,
   getYagrN8nWorkspaceDir,
   getYagrPaths,
+  registerContextMemorySource,
+  registerCoreMemorySource,
   resolveLegacyConfStorePath,
   resolveYagrHomeDir,
 } from '../dist/config/yagr-home.js';
@@ -69,7 +72,7 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
     assert.equal(paths.homeDir, path.resolve(getYagrLaunchDir(), '.yagr-test-workspace'));
     assert.equal(paths.n8nWorkspaceDir, path.join(paths.homeDir, 'n8n-workspace'));
     assert.equal(paths.managedN8nDir, path.join(paths.homeDir, 'n8n'));
-    assert.equal(paths.homeInstructionsPath, path.join(paths.homeDir, 'AGENTS.md'));
+    assert.equal(paths.memorySources, path.join(paths.homeDir, 'memory-sources.json'));
     assert.equal(paths.workspaceInstructionsPath, path.join(paths.n8nWorkspaceDir, 'AGENTS.md'));
     assert.equal(paths.yagrConfigPath, path.join(paths.homeDir, 'yagr-config.json'));
     assert.equal(paths.yagrCredentialsPath, path.join(paths.homeDir, 'credentials.json'));
@@ -84,61 +87,23 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
   }
 });
 
-test('ensureYagrHomeDir seeds the home AGENTS.md from the bundled manager template when missing', () => {
+test('ensureYagrHomeDir creates all required directories', () => {
   const previousYagrHome = process.env.YAGR_HOME;
-  const previousLaunchDir = process.env.YAGR_LAUNCH_CWD;
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-seed-'));
-  const emptyLaunchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-launch-empty-'));
   process.env.YAGR_HOME = tempHome;
-  process.env.YAGR_LAUNCH_CWD = emptyLaunchDir;
 
   try {
     ensureYagrHomeDir();
     const paths = getYagrPaths();
-    assert.ok(fs.existsSync(paths.homeInstructionsPath));
-    const content = fs.readFileSync(paths.homeInstructionsPath, 'utf8');
-    assert.match(content, /Yagr Manager Instructions/i);
-    assert.match(content, /Backend working directory:/i);
-    assert.match(content, /Canonical n8n workspace absolute path:/i);
-  } finally {
-    if (previousYagrHome !== undefined) {
-      process.env.YAGR_HOME = previousYagrHome;
-    } else {
-      delete process.env.YAGR_HOME;
-    }
-    if (previousLaunchDir !== undefined) {
-      process.env.YAGR_LAUNCH_CWD = previousLaunchDir;
-    } else {
-      delete process.env.YAGR_LAUNCH_CWD;
-    }
-    fs.rmSync(tempHome, { recursive: true, force: true });
-    fs.rmSync(emptyLaunchDir, { recursive: true, force: true });
-  }
-});
 
-test('ensureYagrHomeDir refreshes an existing managed home AGENTS.md from the bundled template', () => {
-  const previousYagrHome = process.env.YAGR_HOME;
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-refresh-'));
-  process.env.YAGR_HOME = tempHome;
+    assert.ok(fs.existsSync(paths.homeDir), 'homeDir created');
+    assert.ok(fs.existsSync(paths.n8nWorkspaceDir), 'n8nWorkspaceDir created');
+    assert.ok(fs.existsSync(paths.managedN8nDir), 'managedN8nDir created');
+    assert.ok(fs.existsSync(paths.proxyRuntimeDir), 'proxyRuntimeDir created');
+    assert.ok(fs.existsSync(paths.accountAuthDir), 'accountAuthDir created');
 
-  try {
-    fs.mkdirSync(tempHome, { recursive: true });
-    fs.writeFileSync(
-      path.join(tempHome, 'AGENTS.md'),
-      '# Yagr Manager Instructions\n\nManager-specific behaviors available in this environment:\n\nStale content.\n',
-      'utf8',
-    );
-
-    ensureYagrHomeDir();
-
-    const content = fs.readFileSync(path.join(tempHome, 'AGENTS.md'), 'utf8');
-    assert.match(content, /Yagr Manager Instructions/i);
-    assert.match(content, /use the real absolute path to the `n8n-workspace` directory inside that Yagr home and read its `AGENTS\.md` before acting there/i);
-    assert.match(content, /`yagr presentWorkflowResult`/i);
-    assert.match(content, /`yagr yagrProxy`/i);
-    assert.match(content, /Canonical n8n workspace absolute path:/i);
-    assert.match(content, /Never invent synthetic filesystem roots such as \/n8n-workspace/i);
-    assert.doesNotMatch(content, /Stale content\./i);
+    // Manager instructions are injected via middleware (no file written, no memory-sources entry).
+    assert.ok(!fs.existsSync(path.join(tempHome, 'AGENTS.md')), 'no AGENTS.md written — manager content goes via middleware injection');
   } finally {
     if (previousYagrHome !== undefined) {
       process.env.YAGR_HOME = previousYagrHome;
@@ -149,26 +114,53 @@ test('ensureYagrHomeDir refreshes an existing managed home AGENTS.md from the bu
   }
 });
 
-test('ensureYagrHomeDir preserves a custom home AGENTS.md that is not manager-managed', () => {
-  const previousYagrHome = process.env.YAGR_HOME;
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-custom-'));
-  process.env.YAGR_HOME = tempHome;
+test('registerCoreMemorySource and registerContextMemorySource persist correctly', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-mem-'));
+  const memFile = path.join(tempHome, 'memory-sources.json');
+  const corePath = path.join(tempHome, 'YAGENTS.md');
+  const ctxPath = path.join(tempHome, 'n8n-workspace', 'AGENTS.md');
 
   try {
-    const customContent = '# Personal Notes\n\nDo not overwrite this file.\n';
-    fs.mkdirSync(tempHome, { recursive: true });
-    fs.writeFileSync(path.join(tempHome, 'AGENTS.md'), customContent, 'utf8');
+    // Start empty — registerCoreMemorySource should create the file.
+    registerCoreMemorySource(corePath, memFile);
+    let raw = JSON.parse(fs.readFileSync(memFile, 'utf8'));
+    assert.equal(raw.core, corePath);
+    assert.deepEqual(raw.contexts ?? [], []);
 
-    ensureYagrHomeDir();
+    // Idempotent: calling again with same path must not change the file.
+    const before = fs.readFileSync(memFile, 'utf8');
+    registerCoreMemorySource(corePath, memFile);
+    assert.equal(fs.readFileSync(memFile, 'utf8'), before);
 
-    const content = fs.readFileSync(path.join(tempHome, 'AGENTS.md'), 'utf8');
-    assert.equal(content, customContent);
+    // Register a context source.
+    registerContextMemorySource(ctxPath, memFile);
+    raw = JSON.parse(fs.readFileSync(memFile, 'utf8'));
+    assert.deepEqual(raw.contexts, [ctxPath]);
+
+    // Idempotent: registering same context twice must not duplicate it.
+    registerContextMemorySource(ctxPath, memFile);
+    raw = JSON.parse(fs.readFileSync(memFile, 'utf8'));
+    assert.deepEqual(raw.contexts, [ctxPath]);
   } finally {
-    if (previousYagrHome !== undefined) {
-      process.env.YAGR_HOME = previousYagrHome;
-    } else {
-      delete process.env.YAGR_HOME;
-    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('getActiveMemorySourcePaths returns only paths that exist on disk', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-active-'));
+  const memFile = path.join(tempHome, 'memory-sources.json');
+  const existingCore = path.join(tempHome, 'YAGENTS.md');
+  const missingCtx = path.join(tempHome, 'n8n-workspace', 'AGENTS.md');
+
+  try {
+    fs.writeFileSync(existingCore, '# Manager\n');
+    registerCoreMemorySource(existingCore, memFile);
+    registerContextMemorySource(missingCtx, memFile);
+
+    const active = getActiveMemorySourcePaths(memFile);
+    assert.ok(active.includes(existingCore), 'existing core path included');
+    assert.ok(!active.includes(missingCtx), 'missing context path excluded');
+  } finally {
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
 });

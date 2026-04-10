@@ -1,11 +1,10 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { MemorySaver } from '@langchain/langgraph';
 import { LocalShellBackend } from 'deepagents';
+import { getActiveMemorySourcePaths } from '../config/yagr-home.js';
 
 export function getPristineDeepAgentMemorySources(): string[] {
-  return [
-    'AGENTS.md',
-  ];
+  return getActiveMemorySourcePaths();
 }
 
 export function createPristineDeepAgentBackend(rootDir: string = process.cwd()) {

@@ -1,7 +1,5 @@
 # Yagr Manager Instructions
 
-If the user's request involves workflows, automations, n8n, webhooks, `n8nac`, or any automation task, and `<injected_context>` is not yet in your context: call `inject_memory` once with `<cwd>/n8n-workspace/AGENTS.md`, then proceed with the task.
-
 Manager-specific behaviors available in this environment:
 
 - `yagr presentWorkflowResult`: use this manager command when you need to present or reference a specific n8n workflow and you know its workflow ID.

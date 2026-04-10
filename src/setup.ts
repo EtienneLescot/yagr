@@ -18,6 +18,7 @@ import {
 } from './setup/status.js';
 import { runSetupWizard, type SetupCallbacks } from './setup/setup-wizard.js';
 import { openExternalUrl } from './system/open-external.js';
+import { getYagrPaths, registerContextMemorySource } from './config/yagr-home.js';
 
 export type { YagrSetupStatus };
 
@@ -229,7 +230,21 @@ function createSetupCallbacks(
 export async function refreshN8nWorkspaceInstructionsFromSavedConfig(
   n8nConfigService = new YagrN8nConfigService(),
 ): Promise<boolean> {
-  return new YagrSetupApplicationService(new YagrConfigService(), n8nConfigService).refreshN8nWorkspaceInstructionsFromSavedConfig();
+  const ok = await new YagrSetupApplicationService(new YagrConfigService(), n8nConfigService).refreshN8nWorkspaceInstructionsFromSavedConfig();
+  if (ok) {
+    registerN8nContextSources();
+  }
+  return ok;
+}
+
+/**
+ * Register n8n workspace context files in ~/.yagr/memory-sources.json.
+ * Called automatically at the end of refreshN8nWorkspaceInstructionsFromSavedConfig,
+ * and exposed for standalone use via `yagr n8n context setup`.
+ */
+export function registerN8nContextSources(): void {
+  const paths = getYagrPaths();
+  registerContextMemorySource(paths.workspaceInstructionsPath);
 }
 
 function sanitizeInputValue(value: string | undefined): string | undefined {

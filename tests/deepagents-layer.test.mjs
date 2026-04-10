@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   CODING_ORIENTATION_SYSTEM_PROMPT,
+  getRuntimePathAnchorPrompt,
   getCodingOrientedDeepAgentMiddleware,
 } from '../dist/deepagents/coding-orientation.js';
 import { createInjectMemoryMiddleware } from '../dist/deepagents/inject-memory.js';
@@ -11,10 +12,13 @@ import {
   getPristineDeepAgentMemorySources,
 } from '../dist/deepagents/pristine.js';
 
-test('pristine deepagents memory sources stay limited to AGENTS files', () => {
-  assert.deepEqual(getPristineDeepAgentMemorySources(), [
-    'AGENTS.md',
-  ]);
+test('pristine deepagents memory sources are loaded from active-memory-sources (array)', () => {
+  const sources = getPristineDeepAgentMemorySources();
+  assert.ok(Array.isArray(sources), 'memory sources should be an array');
+  // Sources come from ~/.yagr/memory-sources.json; empty array is valid in a fresh env.
+  for (const src of sources) {
+    assert.equal(typeof src, 'string', 'each source should be a string path');
+  }
 });
 
 test('coding-oriented overlay includes both coding orientation and inject-memory middleware', () => {
@@ -27,6 +31,15 @@ test('coding-oriented overlay includes both coding orientation and inject-memory
   const names = middleware.map((m) => m.name);
   assert.ok(names.includes('YagrCodingOrientationMiddleware'), 'coding orientation middleware present');
   assert.ok(names.includes('YagrInjectMemoryMiddleware'), 'inject-memory middleware present');
+});
+
+test('runtime path anchor points to the yagr home directory (not process.cwd)', async () => {
+  const anchor = getRuntimePathAnchorPrompt();
+  assert.match(anchor, /Backend working directory:/);
+  // The anchor must reference the yagr home (e.g. ~/.yagr), not the process
+  // launch directory, so the agent navigates to the right n8n-workspace.
+  const { getYagrHomeDir } = await import('../dist/config/yagr-home.js');
+  assert.ok(anchor.includes(getYagrHomeDir()), 'anchor should point to the yagr home directory');
 });
 
 test('inject-memory middleware exposes inject_memory tool', () => {

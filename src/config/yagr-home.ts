@@ -12,8 +12,8 @@ export interface YagrPaths {
   managedN8nDir: string;
   proxyRuntimeDir: string;
   accountAuthDir: string;
-  homeInstructionsPath: string;
   workspaceInstructionsPath: string;
+  memorySources: string;
   yagrConfigPath: string;
   yagrCredentialsPath: string;
   proxyRuntimeStatePath: string;
@@ -27,13 +27,14 @@ export interface YagrPaths {
   legacyN8nCredentialsPath: string;
 }
 
-function resolveBundledManagerInstructionsPath(launchDir: string = getYagrLaunchDir()): string | undefined {
-  const moduleRelativeCandidates = [
+// ---------------------------------------------------------------------------
+// Bundled manager instructions path resolution
+// ---------------------------------------------------------------------------
+
+export function resolveBundledManagerInstructionsPath(launchDir: string = getYagrLaunchDir()): string | undefined {
+  const candidates = [
     fileURLToPath(new URL('../manager-tooling/YAGENTS.md', import.meta.url)),
     fileURLToPath(new URL('../src/manager-tooling/YAGENTS.md', import.meta.url)),
-  ];
-  const candidates = [
-    ...moduleRelativeCandidates,
     path.join(launchDir, 'node_modules', '@yagr', 'manager-tooling', 'YAGENTS.md'),
     path.join(launchDir, 'src', 'manager-tooling', 'YAGENTS.md'),
   ];
@@ -47,54 +48,87 @@ function resolveBundledManagerInstructionsPath(launchDir: string = getYagrLaunch
   return undefined;
 }
 
-function isManagedHomeInstructions(content: string): boolean {
-  return content.includes('# Yagr Manager Instructions')
-    && content.includes('Manager-specific behaviors available in this environment:');
+// ---------------------------------------------------------------------------
+// memory-sources.json — persistent list of context files injected into the
+// agent's system prompt at every session start.
+//
+// Schema:
+//   {
+//     "core": "/abs/path/to/YAGENTS.md",     // manager instructions — updated on every startup
+//     "contexts": ["/abs/path/to/..."]        // user-registered workspace contexts
+//   }
+// ---------------------------------------------------------------------------
+
+interface MemorySourcesFile {
+  core?: string;
+  contexts?: string[];
 }
 
-function buildManagedHomeInstructionsContent(bundledContent: string, paths: YagrPaths): string {
-  const runtimeContext = [
-    '',
-    'Runtime-specific path anchors for this environment:',
-    '',
-    `- Backend working directory: ${paths.homeDir}`,
-    '',
-  ].join('\n');
-
-  return `${bundledContent.trim()}\n${runtimeContext}`;
-}
-
-function ensureHomeInstructionsSeeded(paths: YagrPaths): void {
-  const bundledInstructionsPath = resolveBundledManagerInstructionsPath(paths.launchDir);
-  if (!bundledInstructionsPath) {
-    return;
-  }
-
+function readMemorySourcesFile(memorySources: string): MemorySourcesFile {
   try {
-    const bundledContent = fs.readFileSync(bundledInstructionsPath, 'utf8').trim();
-    if (!bundledContent) {
-      return;
+    if (!fs.existsSync(memorySources)) return {};
+    const raw = fs.readFileSync(memorySources, 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed === 'object' && parsed !== null) {
+      return parsed as MemorySourcesFile;
     }
+    return {};
+  } catch {
+    return {};
+  }
+}
 
-    const nextContent = buildManagedHomeInstructionsContent(bundledContent, paths);
-
-    if (!fs.existsSync(paths.homeInstructionsPath)) {
-      fs.writeFileSync(paths.homeInstructionsPath, nextContent);
-      return;
-    }
-
-    const existingContent = fs.readFileSync(paths.homeInstructionsPath, 'utf8');
-    if (!isManagedHomeInstructions(existingContent)) {
-      return;
-    }
-
-    if (existingContent !== nextContent) {
-      fs.writeFileSync(paths.homeInstructionsPath, nextContent);
-    }
+function writeMemorySourcesFile(memorySources: string, data: MemorySourcesFile): void {
+  try {
+    fs.writeFileSync(memorySources, JSON.stringify(data, null, 2));
   } catch {
     // Best effort only.
   }
 }
+
+/**
+ * Returns all active memory source paths in load order:
+ *   1. core (manager instructions)
+ *   2. registered contexts (e.g. n8n-workspace/AGENTS.md)
+ * Only paths that exist on disk are returned.
+ */
+export function getActiveMemorySourcePaths(memorySources?: string): string[] {
+  const filePath = memorySources ?? path.join(getYagrHomeDir(), 'memory-sources.json');
+  const data = readMemorySourcesFile(filePath);
+
+  const candidates = [
+    data.core,
+    ...(data.contexts ?? []),
+  ].filter((p): p is string => typeof p === 'string' && p.length > 0);
+
+  return candidates.filter((p) => fs.existsSync(p));
+}
+
+/**
+ * Register or update the core manager instructions source.
+ * Called on every startup from ensureYagrHomeDir so the path
+ * stays current after package updates.
+ */
+export function registerCoreMemorySource(absolutePath: string, memorySources?: string): void {
+  const filePath = memorySources ?? path.join(getYagrHomeDir(), 'memory-sources.json');
+  const data = readMemorySourcesFile(filePath);
+  if (data.core === absolutePath) return;
+  writeMemorySourcesFile(filePath, { ...data, core: absolutePath });
+}
+
+/**
+ * Register a workspace context file (e.g. n8n-workspace/AGENTS.md).
+ * Idempotent: calling it twice with the same path is a no-op.
+ */
+export function registerContextMemorySource(absolutePath: string, memorySources?: string): void {
+  const filePath = memorySources ?? path.join(getYagrHomeDir(), 'memory-sources.json');
+  const data = readMemorySourcesFile(filePath);
+  const contexts = data.contexts ?? [];
+  if (contexts.includes(absolutePath)) return;
+  writeMemorySourcesFile(filePath, { ...data, contexts: [...contexts, absolutePath] });
+}
+
+// ---------------------------------------------------------------------------
 
 if (!process.env.YAGR_LAUNCH_CWD) {
   process.env.YAGR_LAUNCH_CWD = initialLaunchDir;
@@ -195,8 +229,8 @@ export function getYagrPaths(): YagrPaths {
     managedN8nDir,
     proxyRuntimeDir,
     accountAuthDir,
-    homeInstructionsPath: path.join(homeDir, 'AGENTS.md'),
     workspaceInstructionsPath: path.join(n8nWorkspaceDir, 'AGENTS.md'),
+    memorySources: path.join(homeDir, 'memory-sources.json'),
     yagrConfigPath: path.join(homeDir, 'yagr-config.json'),
     yagrCredentialsPath: path.join(homeDir, 'credentials.json'),
     proxyRuntimeStatePath: path.join(proxyRuntimeDir, 'state.json'),
@@ -218,6 +252,5 @@ export function ensureYagrHomeDir(): string {
   fs.mkdirSync(paths.managedN8nDir, { recursive: true });
   fs.mkdirSync(paths.proxyRuntimeDir, { recursive: true });
   fs.mkdirSync(paths.accountAuthDir, { recursive: true });
-  ensureHomeInstructionsSeeded(paths);
   return paths.homeDir;
 }
