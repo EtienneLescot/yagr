@@ -4,8 +4,7 @@ import { LocalShellBackend } from 'deepagents';
 
 export function getPristineDeepAgentMemorySources(): string[] {
   return [
-    '/AGENTS.md',
-    '/n8n-workspace/AGENTS.md',
+    'AGENTS.md',
   ];
 }
 

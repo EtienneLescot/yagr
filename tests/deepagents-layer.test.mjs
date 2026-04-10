@@ -12,8 +12,7 @@ import {
 
 test('pristine deepagents memory sources stay limited to AGENTS files', () => {
   assert.deepEqual(getPristineDeepAgentMemorySources(), [
-    '/AGENTS.md',
-    '/n8n-workspace/AGENTS.md',
+    'AGENTS.md',
   ]);
 });
 

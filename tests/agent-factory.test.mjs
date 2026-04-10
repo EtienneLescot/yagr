@@ -6,8 +6,7 @@ import * as publicApi from '../dist/index.js';
 
 test('agent factory uses deepagents native AGENTS memory sources', () => {
   assert.deepEqual(getYagrAgentMemorySources(), [
-    '/AGENTS.md',
-    '/n8n-workspace/AGENTS.md',
+    'AGENTS.md',
   ]);
 });
 
