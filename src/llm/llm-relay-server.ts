@@ -276,14 +276,26 @@ async function startRelayInProcess(): Promise<number> {
 
 // ─── HTTP request handling ────────────────────────────────────────────────────
 
-async function resolveProviderRuntime() {
+async function resolveProviderRuntime(): Promise<import('./proxy-runtime.js').PrepareProviderRuntimeResult & { resolvedModel: string }> {
   const configService = new YagrConfigService();
   const config = configService.getLocalConfig();
   const resolved = resolveLanguageModelConfig({ provider: config.provider ?? 'openai' }, configService);
-  return prepareProviderRuntime(resolved.provider as YagrModelProvider, {
+  const runtime = await prepareProviderRuntime(resolved.provider as YagrModelProvider, {
     apiKey: resolved.apiKey,
     baseUrl: resolved.baseUrl,
   });
+  return { ...runtime, resolvedModel: resolved.model };
+}
+
+/** Replace the `model` field in a JSON body buffer with the Yagr-configured model. */
+function injectModel(body: Buffer, model: string): Buffer {
+  try {
+    const parsed = JSON.parse(body.toString('utf-8')) as Record<string, unknown>;
+    parsed.model = model;
+    return Buffer.from(JSON.stringify(parsed), 'utf-8');
+  } catch {
+    return body;
+  }
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -476,12 +488,13 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   }
 
   const { baseUrl, apiKey, provider, extraHeaders } = result.runtime;
+  const { resolvedModel } = result;
 
   // Anthropic (both direct API key and account session) — use the dedicated translation layer.
   if (provider === 'anthropic' || provider === 'anthropic-proxy') {
     const body = await readBody(req);
     const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
-    await handleAnthropicRelay(req, res, normalizedBody, apiKey ?? '');
+    await handleAnthropicRelay(req, res, injectModel(normalizedBody, resolvedModel), apiKey ?? '');
     return;
   }
 
@@ -490,7 +503,7 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   if (provider === 'openai-proxy') {
     const body = await readBody(req);
     const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
-    await handleOpenAiAccountRelay(req, res, normalizedBody);
+    await handleOpenAiAccountRelay(req, res, injectModel(normalizedBody, resolvedModel));
     return;
   }
 
@@ -506,6 +519,7 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
 
   const body = await readBody(req);
   const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
+  const bodyWithModel = injectModel(normalizedBody, resolvedModel);
   const targetUrl = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   const forwardHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -529,7 +543,7 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   const upstream = await fetch(targetUrl, {
     method: 'POST',
     headers: forwardHeaders,
-    body: normalizedBody.buffer.slice(normalizedBody.byteOffset, normalizedBody.byteOffset + normalizedBody.byteLength) as ArrayBuffer,
+    body: bodyWithModel.buffer.slice(bodyWithModel.byteOffset, bodyWithModel.byteOffset + bodyWithModel.byteLength) as ArrayBuffer,
   });
 
   res.writeHead(upstream.status, {
