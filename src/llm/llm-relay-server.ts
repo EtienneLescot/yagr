@@ -25,6 +25,13 @@ import type { YagrModelProvider } from './provider-registry.js';
 import { handleAnthropicRelay } from './anthropic-relay.js';
 import { handleOpenAiAccountRelay } from './openai-account-relay.js';
 import { resolveLanguageModelConfig } from './create-langchain-model.js';
+import { translateChatCompletionToResponsesApi, pipeChatCompletionsSseAsResponsesApi } from './responses-api-relay.js';
+
+/**
+ * Providers that natively support the OpenAI Responses API (/v1/responses).
+ * All others use a round-trip translation (Responses ↔ chat completions).
+ */
+const PROVIDERS_WITH_NATIVE_RESPONSES_API = new Set<string>(['openai', 'openrouter']);
 
 export const YAGR_LLM_RELAY_HOST_ENV = 'YAGR_LLM_RELAY_HOST';
 
@@ -287,11 +294,19 @@ async function resolveProviderRuntime(): Promise<import('./proxy-runtime.js').Pr
   return { ...runtime, resolvedModel: resolved.model };
 }
 
-/** Replace the `model` field in a JSON body buffer with the Yagr-configured model. */
+/**
+ * Replace the `model` field and strip OpenAI-specific fields not supported by
+ * all providers (e.g. stream_options causes Mistral 422).
+ */
+const OPENAI_SPECIFIC_FIELDS = ['stream_options', 'store', 'metadata', 'service_tier', 'reasoning_effort'];
+
 function injectModel(body: Buffer, model: string): Buffer {
   try {
     const parsed = JSON.parse(body.toString('utf-8')) as Record<string, unknown>;
     parsed.model = model;
+    for (const field of OPENAI_SPECIFIC_FIELDS) {
+      delete parsed[field];
+    }
     return Buffer.from(JSON.stringify(parsed), 'utf-8');
   } catch {
     return body;
@@ -494,7 +509,7 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   if (provider === 'anthropic' || provider === 'anthropic-proxy') {
     const body = await readBody(req);
     const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
-    await handleAnthropicRelay(req, res, injectModel(normalizedBody, resolvedModel), apiKey ?? '');
+    await handleAnthropicRelay(req, res, injectModel(normalizedBody, resolvedModel), apiKey ?? '', { fromResponsesApi });
     return;
   }
 
@@ -503,7 +518,7 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   if (provider === 'openai-proxy') {
     const body = await readBody(req);
     const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
-    await handleOpenAiAccountRelay(req, res, injectModel(normalizedBody, resolvedModel));
+    await handleOpenAiAccountRelay(req, res, injectModel(normalizedBody, resolvedModel), { fromResponsesApi });
     return;
   }
 
@@ -518,31 +533,56 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   }
 
   const body = await readBody(req);
-  // For transparent providers (openai, google, mistral, openrouter…) that natively support
-  // the Responses API, forward the request as-is to /responses. Only Anthropic and
-  // openai-proxy need the Responses→chat-completions translation (handled above).
   const bodyWithModel = injectModel(body, resolvedModel);
-  const targetUrl = fromResponsesApi
-    ? `${baseUrl.replace(/\/+$/, '')}/responses`
-    : `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   const forwardHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-
   if (apiKey) {
     forwardHeaders['Authorization'] = `Bearer ${apiKey}`;
   }
-
-  // Add provider-specific required headers (e.g. Editor-Version for Copilot).
   if (extraHeaders) {
     Object.assign(forwardHeaders, extraHeaders);
   }
-
   for (const [key, value] of Object.entries(req.headers)) {
     const lower = key.toLowerCase();
     if (lower.startsWith('openai-') || lower.startsWith('anthropic-') || lower.startsWith('x-')) {
       forwardHeaders[key] = String(value);
     }
   }
+
+  // Providers that don't support /responses natively need a round-trip translation:
+  // Responses request → chat/completions → translate response back to Responses format.
+  if (fromResponsesApi && !PROVIDERS_WITH_NATIVE_RESPONSES_API.has(provider)) {
+    const chatBody = translateResponsesRequestToChatCompletionsBody(bodyWithModel);
+    const chatUrl = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const upstreamChat = await fetch(chatUrl, {
+      method: 'POST',
+      headers: forwardHeaders,
+      body: chatBody.buffer.slice(chatBody.byteOffset, chatBody.byteOffset + chatBody.byteLength) as ArrayBuffer,
+    });
+
+    if (!upstreamChat.ok || !upstreamChat.body) {
+      const errText = await upstreamChat.text().catch(() => '');
+      res.writeHead(upstreamChat.status, { 'Content-Type': 'application/json' });
+      res.end(errText || JSON.stringify({ error: { message: `Upstream error: HTTP ${upstreamChat.status}`, type: 'server_error' } }));
+      return;
+    }
+
+    const contentType = upstreamChat.headers.get('content-type') ?? '';
+    if (contentType.includes('text/event-stream')) {
+      await pipeChatCompletionsSseAsResponsesApi(upstreamChat, res, resolvedModel);
+    } else {
+      const chatCompletion = (await upstreamChat.json()) as Record<string, unknown>;
+      const responsesApiBody = translateChatCompletionToResponsesApi(chatCompletion, resolvedModel);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(responsesApiBody));
+    }
+    return;
+  }
+
+  // Native transparent proxy: forward to /responses or /chat/completions as-is.
+  const targetUrl = fromResponsesApi
+    ? `${baseUrl.replace(/\/+$/, '')}/responses`
+    : `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   const upstream = await fetch(targetUrl, {
     method: 'POST',

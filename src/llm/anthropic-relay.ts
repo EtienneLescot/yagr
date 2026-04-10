@@ -14,6 +14,11 @@
 
 import http from 'node:http';
 
+import {
+  translateChatCompletionToResponsesApi,
+  pipeChatCompletionsSseAsResponsesApi,
+} from './responses-api-relay.js';
+
 export const ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 const ANTHROPIC_VERSION = '2023-06-01';
 const ANTHROPIC_DEFAULT_MAX_TOKENS = 8096;
@@ -392,12 +397,16 @@ export function createAnthropicSseTranslationState(model: string): AnthropicSseT
  * Handles an incoming OpenAI Chat Completions request by translating it to
  * the Anthropic Messages API, forwarding it, and streaming/returning the
  * translated response.
+ *
+ * When `options.fromResponsesApi` is true the response is re-translated into
+ * OpenAI Responses API format so n8n receives the format it expects.
  */
 export async function handleAnthropicRelay(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   body: Buffer,
   apiKey: string,
+  options?: { fromResponsesApi?: boolean },
 ): Promise<void> {
   let payload: OpenAIChatCompletionsRequest;
   try {
@@ -431,13 +440,27 @@ export async function handleAnthropicRelay(
 
   if (!isStreaming) {
     const responseJson = (await upstream.json()) as AnthropicNonStreamResponse;
-    const translated = translateAnthropicResponseToChatCompletions(responseJson);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(translated));
+    const chatCompletion = translateAnthropicResponseToChatCompletions(responseJson);
+    if (options?.fromResponsesApi) {
+      const responsesApiBody = translateChatCompletionToResponsesApi(chatCompletion, payload.model);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(responsesApiBody));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(chatCompletion));
+    }
     return;
   }
 
-  // Streaming: translate Anthropic SSE → OpenAI SSE
+  if (options?.fromResponsesApi) {
+    // Translate Anthropic SSE → chat completions SSE intermediately,
+    // then re-emit as Responses API SSE by proxying through a transform.
+    // We build the chat completions SSE in memory and pipe via our utility.
+    await pipeAnthropicSseAsResponsesApiSse(upstream, res, payload.model);
+    return;
+  }
+
+  // Default streaming: translate Anthropic SSE → OpenAI chat completions SSE
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -478,3 +501,161 @@ export async function handleAnthropicRelay(
 
   res.end();
 }
+
+/**
+ * Translates an Anthropic SSE stream directly into OpenAI Responses API SSE
+ * events, bypassing the intermediate chat completions format.
+ */
+async function pipeAnthropicSseAsResponsesApiSse(
+  upstream: Response,
+  res: http.ServerResponse,
+  model: string,
+): Promise<void> {
+  const responseId = `resp_${Date.now()}`;
+  const messageId = `msg_${Date.now()}`;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  res.write(
+    `data: ${JSON.stringify({ type: 'response.created', response: { id: responseId, object: 'response', model, output: [] } })}\n\n`,
+  );
+
+  let text = '';
+  let emittedMessageHeader = false;
+  const toolItems = new Map<number, { id: string; name: string; args: string }>();
+  let buffer = '';
+  let currentEvent = '';
+
+  try {
+    for await (const rawChunk of upstream.body as AsyncIterable<Uint8Array>) {
+      buffer += Buffer.from(rawChunk).toString('utf-8');
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice('event: '.length).trim();
+          continue;
+        }
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice('data: '.length).trim();
+        if (!raw || raw === '[DONE]') continue;
+
+        let data: Record<string, unknown>;
+        try {
+          data = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+
+        switch (currentEvent) {
+          case 'content_block_start': {
+            const block = data.content_block as Record<string, unknown> | undefined;
+            const blockIndex = typeof data.index === 'number' ? data.index : 0;
+            if (block?.type === 'text') {
+              if (!emittedMessageHeader) {
+                emittedMessageHeader = true;
+                res.write(
+                  `data: ${JSON.stringify({ type: 'response.output_item.added', output_index: 0, item: { type: 'message', id: messageId, role: 'assistant', content: [], status: 'in_progress' } })}\n\n`,
+                );
+                res.write(
+                  `data: ${JSON.stringify({ type: 'response.content_part.added', output_index: 0, content_index: 0, part: { type: 'output_text', text: '' } })}\n\n`,
+                );
+              }
+            } else if (block?.type === 'tool_use') {
+              const callId = block.id as string;
+              const outputIdx = (emittedMessageHeader ? 1 : 0) + blockIndex;
+              toolItems.set(blockIndex, { id: callId, name: block.name as string, args: '' });
+              res.write(
+                `data: ${JSON.stringify({ type: 'response.output_item.added', output_index: outputIdx, item: { type: 'function_call', id: callId, call_id: callId, name: block.name, arguments: '', status: 'in_progress' } })}\n\n`,
+              );
+            }
+            break;
+          }
+
+          case 'content_block_delta': {
+            const delta = data.delta as Record<string, unknown> | undefined;
+            const blockIndex = typeof data.index === 'number' ? data.index : 0;
+            if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
+              text += delta.text;
+              res.write(
+                `data: ${JSON.stringify({ type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: delta.text })}\n\n`,
+              );
+            } else if (delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
+              const existing = toolItems.get(blockIndex);
+              if (existing) {
+                existing.args += delta.partial_json as string;
+                res.write(
+                  `data: ${JSON.stringify({ type: 'response.function_call_arguments.delta', item_id: existing.id, call_id: existing.id, delta: delta.partial_json })}\n\n`,
+                );
+              }
+            }
+            break;
+          }
+
+          case 'content_block_stop': {
+            const blockIndex = typeof data.index === 'number' ? data.index : 0;
+            if (blockIndex === 0 && emittedMessageHeader) {
+              res.write(
+                `data: ${JSON.stringify({ type: 'response.output_text.done', output_index: 0, content_index: 0, text })}\n\n`,
+              );
+            } else {
+              const tc = toolItems.get(blockIndex);
+              if (tc) {
+                res.write(
+                  `data: ${JSON.stringify({ type: 'response.function_call_arguments.done', item_id: tc.id, call_id: tc.id, arguments: tc.args })}\n\n`,
+                );
+              }
+            }
+            break;
+          }
+
+          case 'message_delta': {
+            const d = data.delta as Record<string, unknown> | undefined;
+            const stopReason = d?.stop_reason as string | undefined;
+            if (emittedMessageHeader) {
+              res.write(
+                `data: ${JSON.stringify({ type: 'response.output_item.done', output_index: 0, item: { type: 'message', id: messageId, role: 'assistant', content: [{ type: 'output_text', text }], status: 'completed', stop_reason: stopReason } })}\n\n`,
+              );
+            }
+            for (const [idx, tc] of toolItems) {
+              const outputIdx = (emittedMessageHeader ? 1 : 0) + idx;
+              res.write(
+                `data: ${JSON.stringify({ type: 'response.output_item.done', output_index: outputIdx, item: { type: 'function_call', id: tc.id, call_id: tc.id, name: tc.name, arguments: tc.args, status: 'completed' } })}\n\n`,
+              );
+            }
+            break;
+          }
+
+          case 'message_stop': {
+            const responseOutput: Array<Record<string, unknown>> = [];
+            if (emittedMessageHeader) {
+              responseOutput.push({ type: 'message', id: messageId, role: 'assistant', content: [{ type: 'output_text', text }], status: 'completed' });
+            }
+            for (const tc of toolItems.values()) {
+              responseOutput.push({ type: 'function_call', id: tc.id, call_id: tc.id, name: tc.name, arguments: tc.args, status: 'completed' });
+            }
+            res.write(
+              `data: ${JSON.stringify({ type: 'response.completed', response: { id: responseId, object: 'response', model, output: responseOutput } })}\n\n`,
+            );
+            break;
+          }
+        }
+
+        currentEvent = '';
+      }
+    }
+  } catch (err) {
+    res.write(`data: ${JSON.stringify({ type: 'error', message: String(err) })}\n\n`);
+  }
+
+  res.end();
+}
+
+// Re-export for use in llm-relay-server when it needs to post-process
+// a chat completions response into Responses API format.
+export { translateChatCompletionToResponsesApi, pipeChatCompletionsSseAsResponsesApi };

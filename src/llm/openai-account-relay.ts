@@ -16,6 +16,7 @@
 import http from 'node:http';
 import os from 'node:os';
 import { OPENAI_ACCOUNT_BASE_URL, ensureOpenAiAccountSession } from './openai-account.js';
+import { translateChatCompletionToResponsesApi, pipeChatCompletionsSseAsResponsesApi } from './responses-api-relay.js';
 
 const CODEX_RESPONSES_PATH = '/codex/responses';
 const JWT_ACCOUNT_CLAIM = 'https://api.openai.com/auth';
@@ -393,11 +394,15 @@ function buildNonStreamingResponse(state: CodexSseTranslationState): Record<stri
  * Handles an incoming OpenAI Chat Completions request by translating it to
  * the Codex Responses API, forwarding it with ChatGPT session headers, and
  * streaming/returning the translated response.
+ *
+ * When `options.fromResponsesApi` is true the response is re-translated into
+ * OpenAI Responses API format so n8n receives the format it expects.
  */
 export async function handleOpenAiAccountRelay(
   _req: http.IncomingMessage,
   res: http.ServerResponse,
   body: Buffer,
+  options?: { fromResponsesApi?: boolean },
 ): Promise<void> {
   const session = await ensureOpenAiAccountSession();
   if (!session) {
@@ -470,6 +475,25 @@ export async function handleOpenAiAccountRelay(
   const state = createCodexSseState(payload.model);
 
   if (isStreaming) {
+    if (options?.fromResponsesApi) {
+      // Accumulate Codex SSE → build chat completions SSE in memory → pipe as Responses API SSE.
+      // We generate a synthetic Response-like object from the accumulated state.
+      try {
+        for await (const event of parseCodexSSE(upstream.body as ReadableStream<Uint8Array>)) {
+          translateCodexSseEvent(event, state);
+        }
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: String(err), type: 'server_error' } }));
+        return;
+      }
+      const chatCompletion = buildNonStreamingResponse(state);
+      const responsesApiBody = translateChatCompletionToResponsesApi(chatCompletion, payload.model);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(responsesApiBody));
+      return;
+    }
+
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -502,6 +526,14 @@ export async function handleOpenAiAccountRelay(
     return;
   }
 
+  const chatCompletion = buildNonStreamingResponse(state);
+  if (options?.fromResponsesApi) {
+    const responsesApiBody = translateChatCompletionToResponsesApi(chatCompletion, payload.model);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(responsesApiBody));
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(buildNonStreamingResponse(state)));
+  res.end(JSON.stringify(chatCompletion));
 }
