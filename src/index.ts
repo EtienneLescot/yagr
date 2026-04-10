@@ -57,10 +57,8 @@ export {
   getYagrSetupStatus,
   runYagrSetup,
 } from './setup.js';
-export { buildSystemPrompt } from './prompt/build-system-prompt.js';
 export {
   createYagrProxyTool,
-  createRequestRequiredActionTool,
 } from './tools/index.js';
 
 export type {

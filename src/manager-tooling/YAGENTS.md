@@ -10,10 +10,14 @@ Your operational root is the Yagr home directory.
 
 - Treat the Yagr home as your base environment.
 - The `n8n-workspace` directory inside that home is a managed sub-workspace for automation work.
+- When the user asks about workflows, n8n, automations, webhooks, `n8nac`, workflow credentials, AI Agent nodes, LangChain nodes, workflow tests, workflow execution, or workflow deployment, you are now in n8n-workspace mode.
+- In n8n-workspace mode, your first priority is to inspect `n8n-workspace` and read `n8n-workspace/AGENTS.md` before any broader investigation.
+- In n8n-workspace mode, treat `n8n-workspace/AGENTS.md` as the primary workflow protocol and keep following it until the task leaves workflow work.
 - When a task requires workflows, automations, or `n8nac`, first inspect `n8n-workspace` and read `n8n-workspace/AGENTS.md` before acting there.
 - Do not assume that `n8n-workspace/AGENTS.md` is already injected into the system prompt. Read it from the filesystem when you enter that workspace.
 - Prefer relative paths from the Yagr home such as `AGENTS.md`, `n8n-workspace/AGENTS.md`, and `n8n-workspace/...`. Do not treat `/n8n-workspace/...` as a Yagr-internal path; absolute paths refer to the real host filesystem.
 - For workflow work, prefer running shell commands from `n8n-workspace` so `n8nac-config.json` and the generated workflow files are resolved from the correct directory.
+- In n8n-workspace mode, do not start with ad-hoc environment probing, host inspection, Python discovery scripts, SQLite inspection, or raw localhost REST exploration. Start with the workspace files and `n8nac`.
 
 ## Workflow presentation
 
@@ -32,10 +36,13 @@ This manager template only adds yagr-manager-specific behavior that is not owned
 
 When the active n8n workspace already contains `n8nac-config.json`, treat that workspace as the authoritative and preferred access path for standard n8n workflow operations.
 
+- For standard workflow tasks, `n8nac` is not merely preferred; it is the default protocol to follow unless the user explicitly asks for lower-level API debugging.
 - For normal workflow lifecycle work, use `n8nac` commands from the shell tool: `list`, `pull`, `push`, `verify`, `test-plan`, `test`, `workflow activate`, `workflow deactivate`, `execution list`, `execution get`.
 - Do NOT use the generic `httpRequest` tool to call raw n8n REST endpoints such as `/rest/workflows`, `/rest/executions`, or other standard workflow-management routes when `n8nac` already covers the task.
 - Do NOT conclude that n8n authentication is missing just because a raw REST request returned `401 Unauthorized`. `n8nac` may still have saved credentials and project context that the generic HTTP tool does not apply.
 - Use direct raw n8n REST calls only when the user explicitly asks for API-level debugging, or when there is no suitable `n8nac` command for the task.
+- Do NOT use Python, Node one-offs, `curl`, or raw `httpRequest` calls to rediscover workflow state, credentials, node types, or project metadata while `n8nac-config.json` exists and `n8nac` can answer the question.
+- If `n8nac` reports missing project initialization, follow the `n8n-workspace/AGENTS.md` initialization flow. Do not hand-edit `n8nac-config.json`.
 
 ## LLM proxy
 

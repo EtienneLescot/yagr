@@ -1,17 +1,12 @@
 /**
  * Yagr deep-agent factory.
  *
- * Wraps `createDeepAgent` from the `deepagents` / LangGraph library with
- * Yagr-specific wiring:
+ * Keeps the Yagr runtime as close as possible to vanilla `createDeepAgent`:
  *
  *   - `LocalShellBackend` — host-native filesystem I/O + shell execution
- *     (provides `ls`, `read_file`, `write_file`, `edit_file`, `glob`,
- *      `grep`, `execute` as native tools)
- *   - Yagr-specific generic tools injected on top (httpRequest,
- *     requestRequiredAction, reportProgress, moveFile, deleteFile)
+ *   - Deepagents native `memory` loading for manager and workspace AGENTS files
  *   - `MemorySaver` checkpointer so per-thread (=per-session) state is
  *     maintained within the process lifetime
- *   - System prompt built from the current engine / config / workspace context
  *
  * Usage:
  *   const agentHandle = await createYagrDeepAgent(engine, configService);
@@ -23,14 +18,6 @@ import { MemorySaver } from '@langchain/langgraph';
 import type { EngineRuntimePort } from './engine/engine.js';
 import type { YagrConfigStoreLike } from './config/yagr-config-service.js';
 import { createLangChainModel } from './llm/create-langchain-model.js';
-import { buildSystemPrompt } from './prompt/build-system-prompt.js';
-import {
-  httpRequestTool,
-  requestRequiredActionTool,
-  reportProgressTool,
-  moveFileTool,
-  deleteFileTool,
-} from './tools/langchain/index.js';
 
 /** Returned by `createYagrDeepAgent`. */
 export interface YagrDeepAgentHandle {
@@ -41,19 +28,10 @@ export interface YagrDeepAgentHandle {
   checkpointer: MemorySaver;
 }
 
-/**
- * Build the list of Yagr-specific tools injected into the deep agent.
- * Tools already provided by `FilesystemMiddleware` + `LocalShellBackend`
- * (ls, read_file, write_file, edit_file, glob, grep, execute) are NOT
- * included here to avoid duplication.
- */
-function buildYagrTools() {
+export function getYagrAgentMemorySources(): string[] {
   return [
-    httpRequestTool,
-    requestRequiredActionTool,
-    reportProgressTool,
-    moveFileTool,
-    deleteFileTool,
+    '/AGENTS.md',
+    '/n8n-workspace/AGENTS.md',
   ];
 }
 
@@ -71,20 +49,18 @@ function buildYagrTools() {
  * @param modelConfig Optional explicit model overrides (provider, model, apiKey, baseUrl).
  */
 export async function createYagrDeepAgent(
-  engine: EngineRuntimePort,
+  _engine: EngineRuntimePort,
   configStore?: YagrConfigStoreLike,
   modelConfig?: { provider?: string; model?: string; apiKey?: string; baseUrl?: string },
 ): Promise<YagrDeepAgentHandle> {
   const model = await createLangChainModel(modelConfig, configStore);
-  const systemPrompt = buildSystemPrompt(engine);
   const checkpointer = new MemorySaver();
   const rootDir = process.cwd();
 
   const agent = createDeepAgent({
     model,
-    tools: buildYagrTools(),
-    systemPrompt,
     checkpointer,
+    memory: getYagrAgentMemorySources(),
     backend: new LocalShellBackend({
       rootDir,
       inheritEnv: true,

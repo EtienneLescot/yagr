@@ -9,13 +9,8 @@ function readRepoFile(relativePath) {
   return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
 }
 
-test('core system prompt source stays free of manager-specific n8n rules', () => {
-  const content = readRepoFile('src/prompt/build-system-prompt.ts');
-
-  assert.doesNotMatch(content, /yagr yagrProxy/i);
-  assert.doesNotMatch(content, /presentWorkflowResult/i);
-  assert.doesNotMatch(content, /n8nac/i);
-  assert.doesNotMatch(content, /n8n AI Agent or LangChain workflow/i);
+test('custom runtime system prompt layer has been removed', () => {
+  assert.equal(fs.existsSync(path.join(REPO_ROOT, 'src/prompt/build-system-prompt.ts')), false);
 });
 
 test('agent factory source stays free of manager-specific wording', () => {
@@ -54,6 +49,16 @@ test('root package exports do not advertise legacy workspace-scoped file tools',
 
 test('legacy workspace-root standalone tool layer has been removed', () => {
   for (const relativePath of [
+    'src/tools/http-request.ts',
+    'src/tools/report-progress.ts',
+    'src/tools/request-required-action.ts',
+    'src/tools/langchain/http-request.ts',
+    'src/tools/langchain/report-progress.ts',
+    'src/tools/langchain/request-required-action.ts',
+    'src/tools/langchain/move-file.ts',
+    'src/tools/langchain/delete-file.ts',
+    'src/tools/langchain/index.ts',
+    'tests/http-request.test.mjs',
     'src/tools/workspace-utils.ts',
     'src/tools/list-directory.ts',
     'src/tools/read-workspace-file.ts',
