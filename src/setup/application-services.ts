@@ -24,6 +24,9 @@ import { resolveModelProvider } from '../llm/create-langchain-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
 import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';
+import { ensureYagrProxyCredential } from '../manager-tooling/yagr-proxy.js';
+import { classifyConfiguredN8nInstance, classifyN8nInstanceCandidate, hasN8nInstanceTag, resolveN8nInstanceProfile } from '../n8n-local/instance-classification.js';
+import { readManagedN8nState } from '../n8n-local/state.js';
 import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
 import { installCloudflaredIfNeeded, startProxyTunnel } from '../n8n-local/n8n-tunnel.js';
 
@@ -49,10 +52,16 @@ interface YagrN8nConfigStoreLike {
     instanceIdentifier?: string;
     customNodesPath?: string;
     runtimeSource?: 'managed-local' | 'external';
+    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   };
   getApiKey(host: string): string | undefined;
   saveApiKey(host: string, apiKey: string): void;
-  saveBootstrapState(host: string, syncFolder?: string, runtimeSource?: 'managed-local' | 'external'): void;
+  saveBootstrapState(
+    host: string,
+    syncFolder?: string,
+    runtimeSource?: 'managed-local' | 'external',
+    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud',
+  ): void;
   getOrCreateInstanceIdentifier(host: string): Promise<string>;
   saveLocalConfig(config: {
     host?: string;
@@ -62,6 +71,7 @@ interface YagrN8nConfigStoreLike {
     instanceIdentifier?: string;
     customNodesPath?: string;
     runtimeSource?: 'managed-local' | 'external';
+    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   }): void;
 }
 
@@ -430,24 +440,28 @@ export class YagrSetupApplicationService {
     this.yagrConfigService.setEnabledGatewaySurfaces(input.surfaces);
   }
 
-  async setupLlmProxy(runtimeSource: 'managed-local' | 'external', _n8nUrl: string): Promise<{
+  async setupLlmProxy(runtimeSource: 'managed-local' | 'external', n8nUrl: string): Promise<{
     mode: YagrLlmProxyConfig['mode'];
     credentialBaseUrl: string;
     dockerHostAddress?: string;
     tunnelUrl?: string;
   }> {
-    if (runtimeSource === 'external') {
+    const classification = classifyN8nInstanceCandidate({
+      host: n8nUrl,
+      runtimeSource,
+      instanceProfile: this.n8nConfigService.getLocalConfig().instanceProfile,
+    });
+
+    if (hasN8nInstanceTag(classification, 'CLOUD')) {
       // Cloud/external n8n cannot reach loopback; spawn a Cloudflare tunnel.
       const relay = await ensureN8nRelayServer();
       const tunnel = await this.startCloudflareTunnel(relay.hostBaseUrl);
       return { mode: 'tunnel', credentialBaseUrl: `${tunnel}/v1`, tunnelUrl: tunnel };
     }
 
-    // Managed-local: detect Docker bridge or fall back to loopback.
-    const dockerHost = await resolveDockerHostAddress();
-    const isDocker = dockerHost !== '127.0.0.1';
     const relay = await ensureN8nRelayServer();
-    if (isDocker) {
+    if (hasN8nInstanceTag(classification, 'DOCKER')) {
+      const dockerHost = await resolveDockerHostAddress();
       return {
         mode: 'docker',
         credentialBaseUrl: `http://${dockerHost}:${relay.port}/v1`,
@@ -464,6 +478,15 @@ export class YagrSetupApplicationService {
 
   saveLlmProxyConfig(config: YagrLlmProxyConfig): void {
     this.yagrConfigService.saveLlmProxyConfig(config);
+  }
+
+  async provisionLlmProxyCredential(): Promise<void> {
+    const classification = classifyConfiguredN8nInstance(this.n8nConfigService);
+    if (!classification.capabilities.shouldProvisionYagrLlmProxy) {
+      return;
+    }
+
+    await ensureYagrProxyCredential();
   }
 
   isLlmProxyEnabled(): boolean {
@@ -582,6 +605,7 @@ export class YagrSetupApplicationService {
     projectId: string;
     syncFolder: string;
     runtimeSource?: 'managed-local' | 'external';
+    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   }): Promise<string | undefined> {
     const host = input.host.trim();
     const projectId = input.projectId.trim();
@@ -607,7 +631,12 @@ export class YagrSetupApplicationService {
     }
 
     this.n8nConfigService.saveApiKey(host, apiKey);
-    this.n8nConfigService.saveBootstrapState(host, syncFolder, runtimeSource);
+    const instanceProfile = input.instanceProfile ?? resolveN8nInstanceProfile({
+      host,
+      runtimeSource,
+      managedState: runtimeSource === 'managed-local' ? readManagedN8nState() : undefined,
+    });
+    this.n8nConfigService.saveBootstrapState(host, syncFolder, runtimeSource, instanceProfile);
     const instanceIdentifier = await this.n8nConfigService.getOrCreateInstanceIdentifier(host);
     const currentConfig = this.n8nConfigService.getLocalConfig();
     const projectName = getDisplayProjectName(selectedProject);
@@ -619,6 +648,7 @@ export class YagrSetupApplicationService {
       instanceIdentifier,
       customNodesPath: currentConfig.customNodesPath,
       runtimeSource,
+      instanceProfile,
     });
 
     const workflowDir = resolveWorkflowDir({ syncFolder, instanceIdentifier, projectName });

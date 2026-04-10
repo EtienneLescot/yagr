@@ -7,13 +7,14 @@ import {
   getManagedDockerN8nStatus,
   startManagedDockerN8n,
 } from './docker-manager.js';
-import { readManagedN8nState, type ManagedN8nInstanceState } from './state.js';
+import type { ManagedN8nInstanceState } from './state.js';
+import { classifyConfiguredN8nInstance } from './instance-classification.js';
 
 export type ConfiguredN8nRuntimeMode =
   | 'unconfigured'
-  | 'managed-local'
-  | 'legacy-managed-match'
-  | 'external';
+  | 'yagr-managed-local'
+  | 'local'
+  | 'cloud';
 
 export interface ConfiguredN8nLaunchPreparation {
   mode: ConfiguredN8nRuntimeMode;
@@ -22,76 +23,37 @@ export interface ConfiguredN8nLaunchPreparation {
   warning?: string;
 }
 
-function normalizeUrlOrigin(url: string | undefined): string | undefined {
-  if (!url) {
-    return undefined;
-  }
-
-  try {
-    return new URL(url).origin;
-  } catch {
-    return url.replace(/\/$/, '');
-  }
-}
-
 function resolveConfiguredRuntimeSource(configService: YagrN8nConfigService): {
   source: ConfiguredN8nRuntimeMode;
   localConfig: ReturnType<YagrN8nConfigService['getLocalConfig']>;
   managedState: ManagedN8nInstanceState | undefined;
 } {
   const localConfig = configService.getLocalConfig();
-  const managedState = readManagedN8nState();
+  const classification = classifyConfiguredN8nInstance(configService);
 
   if (!localConfig.host) {
     return {
       source: 'unconfigured',
       localConfig,
-      managedState,
-    };
-  }
-
-  if (localConfig.runtimeSource) {
-    return {
-      source: localConfig.runtimeSource,
-      localConfig,
-      managedState,
-    };
-  }
-
-  const configuredHost = normalizeUrlOrigin(localConfig.host);
-  const managedHost = normalizeUrlOrigin(managedState?.url);
-
-  if (configuredHost && managedHost && configuredHost === managedHost) {
-    return {
-      source: 'legacy-managed-match',
-      localConfig,
-      managedState,
+      managedState: classification.managedState,
     };
   }
 
   return {
-    source: 'external',
+    source: classification.kind === 'yagr-managed-local'
+      ? 'yagr-managed-local'
+      : classification.kind === 'local'
+        ? 'local'
+        : 'cloud',
     localConfig,
-    managedState,
+    managedState: classification.managedState,
   };
 }
 
 export function getConfiguredManagedN8nState(
   configService = new YagrN8nConfigService(),
 ): ManagedN8nInstanceState | undefined {
-  const { source, localConfig, managedState } = resolveConfiguredRuntimeSource(configService);
-  if (source !== 'managed-local' && source !== 'legacy-managed-match') {
-    return undefined;
-  }
-
-  const configuredHost = normalizeUrlOrigin(localConfig.host);
-  if (!configuredHost || !managedState) {
-    return undefined;
-  }
-
-  return normalizeUrlOrigin(managedState.url) === configuredHost
-    ? managedState
-    : undefined;
+  return resolveConfiguredRuntimeSource(configService).managedState;
 }
 
 export async function ensureConfiguredManagedN8nRunning(
@@ -123,7 +85,7 @@ export async function getConfiguredExternalN8nReachabilityWarning(
   configService = new YagrN8nConfigService(),
 ): Promise<string | undefined> {
   const { source, localConfig } = resolveConfiguredRuntimeSource(configService);
-  if (source !== 'external') {
+  if (source !== 'local' && source !== 'cloud') {
     return undefined;
   }
 
@@ -150,7 +112,7 @@ export async function prepareConfiguredN8nForLaunch(
 ): Promise<ConfiguredN8nLaunchPreparation> {
   const { source } = resolveConfiguredRuntimeSource(configService);
 
-  if (source === 'managed-local' || source === 'legacy-managed-match') {
+  if (source === 'yagr-managed-local') {
     const ensured = await ensureConfiguredManagedN8nRunning(configService);
     return {
       mode: source,
@@ -159,7 +121,7 @@ export async function prepareConfiguredN8nForLaunch(
     };
   }
 
-  if (source === 'external') {
+  if (source === 'local' || source === 'cloud') {
     return {
       mode: source,
       started: false,

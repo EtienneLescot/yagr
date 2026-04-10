@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
-import { readManagedN8nState } from './state.js';
+import { classifyConfiguredN8nInstance, isLocalN8nUrl } from './instance-classification.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -495,7 +495,7 @@ export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: strin
  * configured at all.
  */
 export function resolveN8nTunnelTargetUrl(): string {
-  const managedState = readManagedN8nState();
+  const managedState = classifyConfiguredN8nInstance().managedState;
   if (managedState && managedState.status !== 'stopped') {
     return `http://127.0.0.1:${managedState.port}`;
   }
@@ -510,19 +510,4 @@ export function resolveN8nTunnelTargetUrl(): string {
  * Returns true when the given URL string resolves to a local or private-network address.
  * Covers: localhost, ::1, 127.x, 10.x, 192.168.x, 172.16–31.x
  */
-export function isLocalUrl(urlString: string): boolean {
-  try {
-    const { hostname } = new URL(urlString);
-    return (
-      hostname === 'localhost' ||
-      hostname === '[::1]' ||
-      hostname === '::1' ||
-      /^127\./.test(hostname) ||
-      /^10\./.test(hostname) ||
-      /^192\.168\./.test(hostname) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
-    );
-  } catch {
-    return false;
-  }
-}
+export const isLocalUrl = isLocalN8nUrl;

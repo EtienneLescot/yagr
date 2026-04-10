@@ -36,6 +36,7 @@ import {
 import { formatLocalN8nBootstrapAssessment, inspectLocalN8nBootstrap } from './n8n-local/detect.js';
 import {
   prepareConfiguredN8nForLaunch,
+  getConfiguredManagedN8nState,
 } from './n8n-local/managed-runtime.js';
 import { createN8nBootstrapPlan } from './n8n-local/plan.js';
 import { presentWorkflowResultCli } from './manager-tooling/present-workflow.js';
@@ -791,7 +792,7 @@ async function ensureTunnelAtLaunch(): Promise<void> {
  * tunnel state, so we just need to trigger a stop → start cycle.
  */
 async function restartManagedN8nForTunnel(publicUrl: string): Promise<void> {
-  const managedState = readManagedN8nState();
+  const managedState = getConfiguredManagedN8nState();
   if (!managedState || managedState.status === 'stopped') return;
 
   process.stdout.write(`\nRestarting managed n8n so it picks up N8N_WEBHOOK_URL=${publicUrl}…\n`);
@@ -855,7 +856,7 @@ Commands:
   n8n tunnel status            Show tunnel status (JSON)
   n8n tunnel url               Print the current public tunnel URL
   presentWorkflowResult        Internal manager command for workflow presentation JSON
-  yagrProxy                    Internal manager command for LLM proxy/credential JSON
+  yagrProxy                    Internal manager command for LLM proxy status JSON
 
   config show                  Show current configuration (JSON)
   config reset                 Clear all configuration and stored credentials
@@ -979,7 +980,7 @@ async function main(): Promise<void> {
         return;
       }
       // After onboarding, if n8n is a Yagr-managed instance and no tunnel is configured yet, offer tunnel setup.
-      const managedN8nState = readManagedN8nState();
+      const managedN8nState = getConfiguredManagedN8nState();
       const tunnelCfg = configService.getN8nTunnelConfig();
       if (managedN8nState && managedN8nState.status !== 'stopped' && !tunnelCfg?.enabled) {
         process.stdout.write('\n──────────────────────────────────────────────────\n');

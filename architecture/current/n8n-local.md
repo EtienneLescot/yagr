@@ -15,6 +15,42 @@ Le principe durable conserve des anciens plans est le suivant:
 - Yagr ne doit pas faire d'install machine intrusive en silence
 - la decision Docker vs runtime direct doit rester explicite, testable, et basee sur la detection d'environnement
 
+## Matrice d'instances
+
+Le wizard est la source canonique du type d'instance n8n. Il persiste un `instanceProfile` explicite au lieu de laisser cette decision a des heuristiques reseau.
+
+| Choix wizard | Profil persiste | Tags | Redemarrage/sante geres par Yagr | Tunnel n8n | URL LLM proxy attendue |
+|---|---|---|---|---|---|
+| Instance Yagr-managed avec Docker | `yagr-managed-docker` | `YAGR_MANAGED`, `DOCKER` | oui | oui | `docker` |
+| Instance Yagr-managed sans Docker | `yagr-managed-direct` | `YAGR_MANAGED` | oui | oui | `local` |
+| Instance existante cloud | `custom-cloud` | `CLOUD` | non | non | `tunnel` |
+| Instance existante locale dans Docker | `custom-local-docker` | `DOCKER` | non | non | `docker` |
+| Instance existante locale hors Docker | `custom-local-direct` | aucun | non | non | `local` |
+
+## Matrice LLM proxy
+
+Le LLM proxy doit choisir son URL en fonction de la reachability de n8n vers l'hote Yagr, pas en fonction de la simple presence de Docker sur la machine.
+
+| Profil n8n | Type d'URL LLM proxy | Exemple |
+|---|---|---|
+| `yagr-managed-direct` | `local` | `http://127.0.0.1:11437/v1` |
+| `yagr-managed-docker` | `docker` | `http://host.docker.internal:11437/v1` |
+| `custom-local-direct` | `local` | `http://127.0.0.1:11437/v1` |
+| `custom-local-docker` | `docker` | `http://host.docker.internal:11437/v1` |
+| `custom-cloud` | `tunnel` | `https://xxxxx.trycloudflare.com/v1` |
+
+## Wizard didactique
+
+Le flux n8n cible est volontairement pedagogique:
+
+1. `Disposez-vous deja d'une instance n8n ?`
+2. si non: `Souhaitez-vous installer une instance avec Docker ?`
+3. si oui: `URL` puis `cle API`
+4. puis: `S'agit-il d'une instance cloud ?`
+5. si non: `Cette instance locale tourne-t-elle dans Docker ?`
+
+Ce flux doit rester la seule source canonique pour distinguer `custom-local-docker` et `custom-local-direct`.
+
 ## Blocs actuels
 
 - [bootstrap.ts](/home/etienne/repos/yagr/src/n8n-local/bootstrap.ts)
@@ -126,8 +162,9 @@ interface N8nTunnelState {
 
 ### Regles de conception
 
-- Le tunnel ne s'applique qu'aux instances **locales** (Yagr-managed). Les instances cloud/distante sont deja publiques.
+- Le tunnel n8n ne s'applique qu'aux instances **Yagr-managed**.
 - Deux tunnels coexistent : Tunnel A (LLM Proxy) et Tunnel B (N8N Webhook Exposure).
+- Le tunnel du LLM proxy ne s'applique qu'aux profils `custom-cloud`.
 - Les URL `trycloudflare.com` changent a chaque restart — le systeme supporte `refresh` manuel.
 - `N8N_WEBHOOK_URL` est positionne au demarrage n8n ; un refresh tunnel propose un redemarrage explicite.
 - Le tunnel expose une surface **non authentifiee** par defaut pour les webhooks.

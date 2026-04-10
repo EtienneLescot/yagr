@@ -87,6 +87,7 @@ function createSetupCallbacks(
         projectId: cfg.projectId,
         syncFolder: cfg.syncFolder,
         runtimeSource: cfg.runtimeSource,
+        instanceProfile: cfg.instanceProfile,
       };
     },
 
@@ -100,13 +101,14 @@ function createSetupCallbacks(
       return projects;
     },
 
-    async saveN8nConfig({ url, apiKey, project, syncFolder, runtimeSource }) {
+    async saveN8nConfig({ url, apiKey, project, syncFolder, runtimeSource, instanceProfile }) {
       const warning = await setupService.saveN8nConfig({
         host: url,
         apiKey,
         projectId: project.id,
         syncFolder,
         runtimeSource,
+        instanceProfile,
       });
       if (warning) {
         process.stderr.write(`Warning: ${warning}\n`);
@@ -204,6 +206,10 @@ function createSetupCallbacks(
 
     saveLlmProxyConfig(config) {
       setupService.saveLlmProxyConfig(config);
+    },
+
+    async provisionLlmProxyCredential() {
+      await setupService.provisionLlmProxyCredential();
     },
 
     isLlmProxyEnabled() {

@@ -12,6 +12,8 @@ import {
   YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
 import type { ManagedN8nInstanceState } from '../n8n-local/state.js';
+import { inferRuntimeSourceFromHost } from '../n8n-local/instance-classification.js';
+import type { YagrN8nInstanceProfile } from '../config/n8n-config-service.js';
 import type { YagrLlmProxyConfig } from '../config/yagr-config-service.js';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -42,9 +44,9 @@ const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: strin
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export interface SetupCallbacks {
-  getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string; runtimeSource?: 'managed-local' | 'external' };
+  getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string; runtimeSource?: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile };
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
-  saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string; runtimeSource: 'managed-local' | 'external' }): Promise<void>;
+  saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile }): Promise<void>;
   installManagedLocalN8n(strategy: 'docker' | 'direct' | 'auto'): Promise<ManagedN8nInstanceState>;
   bootstrapManagedLocalN8n(url: string): Promise<{ mode: 'silent' | 'assisted'; apiKey?: string; reason?: string }>;
   openUrl(url: string): Promise<void>;
@@ -90,6 +92,7 @@ export interface SetupCallbacks {
     tunnelUrl?: string;
   }>;
   saveLlmProxyConfig(config: YagrLlmProxyConfig): void;
+  provisionLlmProxyCredential(): Promise<void>;
   isLlmProxyEnabled(): boolean;
 }
 
@@ -114,16 +117,19 @@ export function runSetupWizard(callbacks: SetupCallbacks, options: SetupWizardOp
 
 type Phase =
   | { kind: 'n8n-mode'; cursor: number; err?: string }
+  | { kind: 'n8n-managed-runtime'; cursor: number; err?: string }
   | { kind: 'n8n-url'; def: string; err?: string }
   | { kind: 'n8n-reuse-apikey'; url: string; existing: string; cursor: number }
   | { kind: 'n8n-apikey'; url: string; err?: string }
-  | { kind: 'n8n-connecting'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external' }
-  | { kind: 'n8n-project'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; projects: IProject[]; cursor: number }
-  | { kind: 'n8n-syncfolder'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; project: IProject; def: string; err?: string }
-  | { kind: 'n8n-saving'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; project: IProject; syncFolder: string; log?: string }
-  | { kind: 'llm-proxy-setup'; url: string; runtimeSource: 'managed-local' | 'external'; status: 'detecting' | 'ready' | 'skipped' | 'failed'; mode?: YagrLlmProxyConfig['mode']; relayUrl?: string; err?: string; cursor: number }
+  | { kind: 'n8n-instance-location'; url: string; apiKey: string; cursor: number }
+  | { kind: 'n8n-local-runtime'; url: string; apiKey: string; cursor: number }
+  | { kind: 'n8n-connecting'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile }
+  | { kind: 'n8n-project'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile; projects: IProject[]; cursor: number }
+  | { kind: 'n8n-syncfolder'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile; project: IProject; def: string; err?: string }
+  | { kind: 'n8n-saving'; url: string; apiKey: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile; project: IProject; syncFolder: string; log?: string }
+  | { kind: 'llm-proxy-setup'; url: string; runtimeSource: 'managed-local' | 'external'; instanceProfile?: YagrN8nInstanceProfile; status: 'detecting' | 'ready' | 'skipped' | 'failed'; mode?: YagrLlmProxyConfig['mode']; relayUrl?: string; err?: string; cursor: number }
   | { kind: 'n8n-local-installing'; startedAt: number; strategy: 'docker' | 'direct' | 'auto' }
-  | { kind: 'n8n-local-ready'; url: string; cursor: number; note?: string }
+  | { kind: 'n8n-local-ready'; url: string; instanceProfile: YagrN8nInstanceProfile; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
   | { kind: 'llm-oauth-reuse'; provider: YagrModelProvider; cursor: number }
@@ -515,10 +521,9 @@ function SetupWizard({ callbacks, options, onDone }: {
   const [phase, setPhase] = useState<Phase>(() => {
     if (mode === 'proxy-only' || (mode === 'llm-only' && !callbacks.isLlmProxyEnabled() && n8nDef.projectId)) {
       const n8nUrl = n8nDef.url;
-      // Default to managed-local for localhost URLs when runtimeSource not saved
       const runtimeSource = n8nDef.runtimeSource
-        ?? (n8nUrl.includes('localhost') || n8nUrl.includes('127.0.0.1') ? 'managed-local' : 'external');
-      return { kind: 'llm-proxy-setup', url: n8nUrl, runtimeSource, status: 'detecting', cursor: 0 };
+        ?? inferRuntimeSourceFromHost(n8nUrl);
+      return { kind: 'llm-proxy-setup', url: n8nUrl, runtimeSource, instanceProfile: n8nDef.instanceProfile, status: 'detecting', cursor: 0 };
     }
 
     if (mode === 'llm-only') {
@@ -580,18 +585,20 @@ function SetupWizard({ callbacks, options, onDone }: {
         if (guard !== asyncGuard.current) return;
         const bootstrap = await callbacks.bootstrapManagedLocalN8n(state.url);
         if (guard !== asyncGuard.current) return;
+        const instanceProfile: YagrN8nInstanceProfile = phase.strategy === 'docker' ? 'yagr-managed-docker' : 'yagr-managed-direct';
         if (bootstrap.mode === 'silent' && bootstrap.apiKey) {
-          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: bootstrap.apiKey, runtimeSource: 'managed-local' });
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: bootstrap.apiKey, runtimeSource: 'managed-local', instanceProfile });
           return;
         }
         const existing = callbacks.getN8nDefaults(state.url).apiKey;
         if (existing) {
-          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: existing, runtimeSource: 'managed-local' });
+          setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: existing, runtimeSource: 'managed-local', instanceProfile });
           return;
         }
         setPhase({
           kind: 'n8n-local-ready',
           url: state.url,
+          instanceProfile,
           cursor: 0,
           note: bootstrap.reason ? `Silent bootstrap fallback: ${bootstrap.reason}` : undefined,
         });
@@ -616,13 +623,13 @@ function SetupWizard({ callbacks, options, onDone }: {
         if (projects.length === 1) {
           setPhase({
             kind: 'n8n-syncfolder',
-            url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource,
+            url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource, instanceProfile: phase.instanceProfile,
             project: projects[0],
             def: n8nDef.syncFolder ?? 'workflows',
           });
           setTextValue(n8nDef.syncFolder ?? 'workflows');
         } else {
-          setPhase({ kind: 'n8n-project', url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource, projects, cursor: 0 });
+          setPhase({ kind: 'n8n-project', url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource, instanceProfile: phase.instanceProfile, projects, cursor: 0 });
         }
       } catch (err) {
         if (guard !== asyncGuard.current) return;
@@ -637,9 +644,9 @@ function SetupWizard({ callbacks, options, onDone }: {
     const guard = ++asyncGuard.current;
     void (async () => {
       try {
-        await callbacks.saveN8nConfig({ url: phase.url, apiKey: phase.apiKey, project: phase.project, syncFolder: phase.syncFolder, runtimeSource: phase.runtimeSource });
+        await callbacks.saveN8nConfig({ url: phase.url, apiKey: phase.apiKey, project: phase.project, syncFolder: phase.syncFolder, runtimeSource: phase.runtimeSource, instanceProfile: phase.instanceProfile });
         if (guard !== asyncGuard.current) return;
-        setPhase({ kind: 'llm-proxy-setup', url: phase.url, runtimeSource: phase.runtimeSource, status: 'detecting', cursor: 0 });
+        setPhase({ kind: 'llm-proxy-setup', url: phase.url, runtimeSource: phase.runtimeSource, instanceProfile: phase.instanceProfile, status: 'detecting', cursor: 0 });
       } catch (err) {
         if (guard !== asyncGuard.current) return;
         setPhase({ kind: 'error', message: (err as Error).message });
@@ -765,13 +772,13 @@ function SetupWizard({ callbacks, options, onDone }: {
   const handleN8nApiKeySubmit = useCallback((url: string) => (value: string) => {
     const key = value.trim();
     if (!key) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'n8n-apikey' }>, err: 'API key is required.' })); return; }
-    setPhase({ kind: 'n8n-connecting', url, apiKey: key, runtimeSource: 'external' });
+    setPhase({ kind: 'n8n-instance-location', url, apiKey: key, cursor: 0 });
   }, []);
 
-  const handleSyncFolderSubmit = useCallback((url: string, apiKey: string, runtimeSource: 'managed-local' | 'external', project: IProject) => (value: string) => {
+  const handleSyncFolderSubmit = useCallback((url: string, apiKey: string, runtimeSource: 'managed-local' | 'external', project: IProject, instanceProfile?: YagrN8nInstanceProfile) => (value: string) => {
     const folder = value.trim();
     if (!folder) { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'n8n-syncfolder' }>, err: 'Sync folder is required.' })); return; }
-    setPhase({ kind: 'n8n-saving', url, apiKey, runtimeSource, project, syncFolder: folder });
+    setPhase({ kind: 'n8n-saving', url, apiKey, runtimeSource, instanceProfile, project, syncFolder: folder });
   }, []);
 
   const handleBaseUrlSubmit = useCallback((provider: YagrModelProvider, apiKey: string, model: string) => (value: string) => {
@@ -845,16 +852,20 @@ function SetupWizard({ callbacks, options, onDone }: {
   const handleSelectKey = useCallback((input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean; escape: boolean }) => {
     if (phase.kind === 'n8n-mode') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1), err: undefined });
-      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(2, phase.cursor + 1), err: undefined });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1), err: undefined });
       else if (key.return) {
         if (phase.cursor === 0) {
-          setPhase({ kind: 'n8n-local-installing', startedAt: Date.now(), strategy: 'docker' });
-        } else if (phase.cursor === 1) {
-          setPhase({ kind: 'n8n-local-installing', startedAt: Date.now(), strategy: 'direct' });
-        } else {
           setPhase({ kind: 'n8n-url', def: n8nDef.url });
           setTextValue(n8nDef.url);
+        } else {
+          setPhase({ kind: 'n8n-managed-runtime', cursor: 0 });
         }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'n8n-managed-runtime') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1), err: undefined });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1), err: undefined });
+      else if (key.return) {
+        setPhase({ kind: 'n8n-local-installing', startedAt: Date.now(), strategy: phase.cursor === 0 ? 'docker' : 'direct' });
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'n8n-local-ready') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
@@ -869,7 +880,7 @@ function SetupWizard({ callbacks, options, onDone }: {
             }
             const existing = callbacks.getN8nDefaults(phase.url).apiKey;
             if (existing) {
-              setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: existing, runtimeSource: 'managed-local' });
+              setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: existing, runtimeSource: 'managed-local', instanceProfile: phase.instanceProfile });
               return;
             }
             setPhase({
@@ -893,18 +904,34 @@ function SetupWizard({ callbacks, options, onDone }: {
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
       else if (key.return) {
         if (phase.cursor === 0) {
-          setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: phase.existing, runtimeSource: 'external' });
+          setPhase({ kind: 'n8n-instance-location', url: phase.url, apiKey: phase.existing, cursor: 0 });
         } else {
           setPhase({ kind: 'n8n-apikey', url: phase.url });
           setTextValue('');
         }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'n8n-instance-location') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      else if (key.return) {
+        if (phase.cursor === 0) {
+          setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: phase.apiKey, runtimeSource: 'external', instanceProfile: 'custom-cloud' });
+        } else {
+          setPhase({ kind: 'n8n-local-runtime', url: phase.url, apiKey: phase.apiKey, cursor: 0 });
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'n8n-local-runtime') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      else if (key.return) {
+        setPhase({ kind: 'n8n-connecting', url: phase.url, apiKey: phase.apiKey, runtimeSource: 'external', instanceProfile: phase.cursor === 0 ? 'custom-local-docker' : 'custom-local-direct' });
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'n8n-project') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(phase.projects.length - 1, phase.cursor + 1) });
       else if (key.return) {
         const project = phase.projects[phase.cursor];
-        setPhase({ kind: 'n8n-syncfolder', url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource, project, def: n8nDef.syncFolder ?? 'workflows' });
+        setPhase({ kind: 'n8n-syncfolder', url: phase.url, apiKey: phase.apiKey, runtimeSource: phase.runtimeSource, instanceProfile: phase.instanceProfile, project, def: n8nDef.syncFolder ?? 'workflows' });
         setTextValue(n8nDef.syncFolder ?? 'workflows');
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-reuse-config') {
@@ -1134,12 +1161,22 @@ function SetupWizard({ callbacks, options, onDone }: {
             enabled: true,
             mode: phase.mode,
             credentialBaseUrl: phase.relayUrl,
+            confirmedCredentialBaseUrl: phase.relayUrl,
             dockerHostAddress: (phase.mode === 'docker') ? phase.relayUrl.replace(/^http:\/\//, '').replace(/:\d+.*/, '') : undefined,
             tunnelUrl: (phase.mode === 'tunnel') ? phase.relayUrl.replace(/\/v1$/, '') : undefined,
             consentVersion: '1',
             consentAcceptedAt: new Date().toISOString(),
           });
-          goToLlm();
+          callbacks.provisionLlmProxyCredential().then(goToLlm, (error) => {
+            setPhase({
+              kind: 'llm-proxy-setup',
+              url: phase.url,
+              runtimeSource: phase.runtimeSource,
+              status: 'failed',
+              err: error instanceof Error ? error.message : String(error),
+              cursor: 0,
+            });
+          });
         } else {
           // Skip
           goToLlm();
@@ -1148,7 +1185,7 @@ function SetupWizard({ callbacks, options, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-project', 'llm-provider', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-mode', 'n8n-managed-runtime', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-instance-location', 'n8n-local-runtime', 'n8n-project', 'llm-provider', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'llm-model' && phase.models.length > 0)
     || (phase.kind === 'llm-proxy-setup' && (phase.status === 'ready' || phase.status === 'failed'));
 
@@ -1169,26 +1206,41 @@ function SetupWizard({ callbacks, options, onDone }: {
       case 'n8n-mode':
         return (
           <Box flexDirection="column">
-            <FieldLabel label="n8n setup path" />
-            <Text dimColor>  Choose the lowest-friction way to connect Yagr to n8n.</Text>
+            <FieldLabel label="Disposez-vous deja d'une instance n8n ?" />
             <SelectList
               options={[
-                'Install a Yagr-managed n8n with Docker',
-                'Install a Yagr-managed local n8n',
-                'Use an existing n8n instance and API key',
+                'Oui, j ai deja une instance n8n',
+                'Non, je veux que Yagr en installe une',
               ] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
               getHint={(v) => {
-                if (v === 'Install a Yagr-managed n8n with Docker') {
-                  return 'Recommended if Docker is installed and running';
-                }
-                if (v === 'Install a Yagr-managed local n8n') {
-                  return 'Managed local runtime without Docker';
-                }
-                return 'Cloud or self-managed n8n';
+                if (v.startsWith('Oui')) return 'Connexion a une instance existante via URL et cle API';
+                return 'Yagr installera et gerera une instance locale pour vous';
               }}
               maxVisibleRows={getListViewportHeight(terminalRows, 13)}
+              maxLineWidth={listLineWidth}
+            />
+            {phase.err ? <ErrorLine message={phase.err} /> : null}
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
+      case 'n8n-managed-runtime':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="Souhaitez-vous installer l'instance n8n avec Docker ?" />
+            <SelectList
+              options={[
+                'Oui',
+                'Non',
+              ] as const}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              getHint={(v) => v === 'Oui'
+                ? 'Recommande si Docker est disponible sur votre machine'
+                : 'Utilise un runtime local direct sans Docker'}
+              maxVisibleRows={getListViewportHeight(terminalRows, 12)}
               maxLineWidth={listLineWidth}
             />
             {phase.err ? <ErrorLine message={phase.err} /> : null}
@@ -1233,6 +1285,7 @@ function SetupWizard({ callbacks, options, onDone }: {
         return (
           <Box flexDirection="column">
             <FieldLabel label="n8n API key" />
+            <Text dimColor>  Dans n8n: Settings → n8n API → Create API key.</Text>
             <Box marginLeft={2}>
               <WizardTextInput
                 value={textValue}
@@ -1244,6 +1297,38 @@ function SetupWizard({ callbacks, options, onDone }: {
             </Box>
             {phase.err ? <ErrorLine message={phase.err} /> : null}
             <HintBar hints={['Enter ↵  confirm', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
+      case 'n8n-instance-location':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="S'agit-il d'une instance cloud ?" />
+            <Text dimColor>  Choisissez cloud si votre n8n est heberge a distance et accessible publiquement.</Text>
+            <SelectList
+              options={['Oui, instance cloud', 'Non, instance locale'] as const}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              maxVisibleRows={getListViewportHeight(terminalRows, 12)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
+      case 'n8n-local-runtime':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="Cette instance locale tourne-t-elle dans Docker ?" />
+            <SelectList
+              options={['Oui', 'Non'] as const}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              getHint={(v) => v === 'Oui' ? 'Le LLM proxy utilisera une URL reachable depuis un conteneur' : 'Le LLM proxy utilisera le loopback local'}
+              maxVisibleRows={getListViewportHeight(terminalRows, 12)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
 
@@ -1336,7 +1421,7 @@ function SetupWizard({ callbacks, options, onDone }: {
               <WizardTextInput
                 value={textValue}
                 onChange={setTextValue}
-                onSubmit={handleSyncFolderSubmit(phase.url, phase.apiKey, phase.runtimeSource, phase.project)}
+                onSubmit={handleSyncFolderSubmit(phase.url, phase.apiKey, phase.runtimeSource, phase.project, phase.instanceProfile)}
                 placeholder="workflows"
               />
             </Box>

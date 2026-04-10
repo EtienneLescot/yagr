@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
+import { classifyConfiguredN8nInstance, normalizeN8nUrlOrigin } from './instance-classification.js';
 
 export interface ManagedN8nInstanceState {
   strategy: 'docker' | 'direct';
@@ -131,11 +132,12 @@ export function markManagedN8nBootstrapStage(
 export function resolveManagedN8nBootstrapStage(url: string): ManagedN8nInstanceState['bootstrapStage'] {
   const configService = new YagrN8nConfigService();
   const localConfig = configService.getLocalConfig();
-  const configuredHost = normalizeUrlOrigin(localConfig.host);
-  const managedHost = normalizeUrlOrigin(url);
+  const classification = classifyConfiguredN8nInstance(configService);
+  const configuredHost = normalizeN8nUrlOrigin(localConfig.host);
+  const managedHost = normalizeN8nUrlOrigin(url);
 
   if (
-    localConfig.runtimeSource === 'managed-local'
+    classification.kind === 'yagr-managed-local'
     && configuredHost
     && managedHost
     && configuredHost === managedHost
@@ -147,16 +149,4 @@ export function resolveManagedN8nBootstrapStage(url: string): ManagedN8nInstance
   }
 
   return readManagedN8nState()?.bootstrapStage ?? 'owner-pending';
-}
-
-function normalizeUrlOrigin(url: string | undefined): string | undefined {
-  if (!url) {
-    return undefined;
-  }
-
-  try {
-    return new URL(url).origin;
-  } catch {
-    return url.replace(/\/$/, '');
-  }
 }

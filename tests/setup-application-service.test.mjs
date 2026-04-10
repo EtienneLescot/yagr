@@ -88,11 +88,12 @@ function createN8nConfigStore(initialConfig = {}) {
     saveApiKey(host, apiKey) {
       apiKeys.set(host, apiKey);
     },
-    saveBootstrapState(host, syncFolder = 'workflows', runtimeSource = 'external') {
+    saveBootstrapState(host, syncFolder = 'workflows', runtimeSource = 'external', instanceProfile) {
       localConfig = {
         host,
         syncFolder,
         runtimeSource,
+        instanceProfile,
       };
     },
     async getOrCreateInstanceIdentifier() {

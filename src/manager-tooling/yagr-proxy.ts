@@ -11,10 +11,12 @@ import { z } from 'zod';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
+import { classifyConfiguredN8nInstance, hasN8nInstanceTag } from '../n8n-local/instance-classification.js';
 import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
 import { emitToolEvent, type ToolExecutionObserver } from '../tools/observer.js';
 import {
   ensureN8nRelayServer,
+  getN8nRelayState,
   N8N_RELAY_CREDENTIAL_NAME,
   N8N_RELAY_FAKE_API_KEY,
   resolveDockerHostAddress,
@@ -62,50 +64,55 @@ async function runN8nacCommand(args: string[], cwd: string): Promise<RunResult> 
   });
 }
 
-export async function resolveYagrProxyCredentialBaseUrl(relay: N8nRelayInfo): Promise<string> {
-  const runtimeSource = new YagrN8nConfigService().getLocalConfig().runtimeSource;
-
-  if (runtimeSource === 'managed-local') {
-    const dockerHost = await resolveDockerHostAddress();
-    if (dockerHost && dockerHost !== '127.0.0.1') {
-      return `http://${dockerHost}:${relay.port}/v1`;
-    }
-    return relay.hostBaseUrl;
+export function resolveYagrProxyRuntimeSource(): 'managed-local' | 'external' {
+  const classification = classifyConfiguredN8nInstance(new YagrN8nConfigService());
+  if (classification.kind === 'yagr-managed-local' || classification.kind === 'local') {
+    return 'managed-local';
   }
 
-  return relay.baseUrl;
+  return 'external';
 }
 
-export async function runYagrProxyCli() {
+export async function resolveYagrProxyCredentialBaseUrl(relay: N8nRelayInfo): Promise<string> {
+  const classification = classifyConfiguredN8nInstance(new YagrN8nConfigService());
+  if (hasN8nInstanceTag(classification, 'CLOUD')) {
+    return relay.baseUrl;
+  }
+
+  if (hasN8nInstanceTag(classification, 'DOCKER')) {
+    const dockerHost = await resolveDockerHostAddress();
+    return `http://${dockerHost}:${relay.port}/v1`;
+  }
+
+  return relay.hostBaseUrl;
+}
+
+async function listYagrProxyCredentials(cwd: string): Promise<Array<{ id?: string; name?: string; type?: string }>> {
+  const listResult = await runN8nacCommand(['credential', 'list', '--json'], cwd);
+  const existingList = parseJsonPayload(listResult.stdout);
+  return Array.isArray(existingList)
+    ? existingList as Array<{ id?: string; name?: string; type?: string }>
+    : [];
+}
+
+export async function ensureYagrProxyCredential() {
   const cwd = getYagrN8nWorkspaceDir();
   const relay = await ensureN8nRelayServer();
   const effectiveRelayBaseUrl = await resolveYagrProxyCredentialBaseUrl(relay);
-
-  const listResult = await runN8nacCommand(['credential', 'list', '--json'], cwd);
-  const existingList = parseJsonPayload(listResult.stdout);
-  const existingCredentials = Array.isArray(existingList)
-    ? existingList as Array<{ id?: string; name?: string; type?: string }>
-    : [];
+  const existingCredentials = await listYagrProxyCredentials(cwd);
   const existing = existingCredentials.find(
     (c) => c.name === N8N_RELAY_CREDENTIAL_NAME && c.type === 'openAiApi',
   );
 
   if (existing?.id) {
     const confirmedUrl = (new YagrConfigService()).getLocalConfig().llmProxy?.confirmedCredentialBaseUrl;
-    const urlIsStale = confirmedUrl !== effectiveRelayBaseUrl;
-
-    if (!urlIsStale) {
+    if (confirmedUrl === effectiveRelayBaseUrl) {
       return {
-        operation: 'yagrProxy',
-        success: true,
-        port: relay.port,
-        baseUrl: effectiveRelayBaseUrl,
         credentialId: existing.id,
-        credentialName: N8N_RELAY_CREDENTIAL_NAME,
-        credentialType: 'openAiApi',
         created: false,
         reused: true,
-        next: `Relay is running. Reusing existing credential "${N8N_RELAY_CREDENTIAL_NAME}" (id: ${existing.id}). Assign it to the node.`,
+        baseUrl: effectiveRelayBaseUrl,
+        port: relay.port,
       };
     }
 
@@ -119,43 +126,86 @@ export async function runYagrProxyCli() {
   );
   const created = parseJsonPayload(createResult.stdout) as Record<string, unknown> | undefined;
 
-  if (createResult.exitCode === 0) {
-    (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
+  if (createResult.exitCode !== 0) {
+    throw new Error(createResult.stderr || `Failed to create ${N8N_RELAY_CREDENTIAL_NAME} credential.`);
   }
+
+  (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
+  return {
+    credentialId: (created?.id as string | undefined) ?? null,
+    created: true,
+    reused: false,
+    baseUrl: effectiveRelayBaseUrl,
+    port: relay.port,
+  };
+}
+
+export async function getYagrProxyStatus() {
+  const cwd = getYagrN8nWorkspaceDir();
+  const relayState = getN8nRelayState();
+  const proxyConfig = new YagrConfigService().getLocalConfig().llmProxy;
+  const existingCredentials = await listYagrProxyCredentials(cwd);
+  const existing = existingCredentials.find(
+    (c) => c.name === N8N_RELAY_CREDENTIAL_NAME && c.type === 'openAiApi',
+  );
+
+  let expectedBaseUrl: string | undefined;
+  if (relayState?.port && proxyConfig?.enabled) {
+    expectedBaseUrl = await resolveYagrProxyCredentialBaseUrl({
+      port: relayState.port,
+      baseUrl: proxyConfig.credentialBaseUrl,
+      hostBaseUrl: `http://127.0.0.1:${relayState.port}/v1`,
+      apiKey: N8N_RELAY_FAKE_API_KEY,
+    });
+  }
+
+  const confirmedBaseUrl = proxyConfig?.confirmedCredentialBaseUrl;
+  const credentialStatus = !existing?.id
+    ? 'missing'
+    : expectedBaseUrl && confirmedBaseUrl && expectedBaseUrl !== confirmedBaseUrl
+      ? 'stale'
+      : 'ready';
 
   return {
     operation: 'yagrProxy',
-    success: createResult.exitCode === 0,
-    exitCode: createResult.exitCode,
-    port: relay.port,
-    baseUrl: effectiveRelayBaseUrl,
-    credentialId: (created?.id as string | undefined) ?? null,
+    success: true,
+    relayRunning: Boolean(relayState),
+    relayPort: relayState?.port ?? null,
+    configured: Boolean(proxyConfig?.enabled),
+    expectedBaseUrl: expectedBaseUrl ?? null,
+    confirmedBaseUrl: confirmedBaseUrl ?? null,
+    credentialFound: Boolean(existing?.id),
+    credentialId: existing?.id ?? null,
     credentialName: N8N_RELAY_CREDENTIAL_NAME,
     credentialType: 'openAiApi',
-    created: createResult.exitCode === 0,
-    reused: false,
-    createExitCode: createResult.exitCode,
-    createStderr: createResult.stderr || null,
-    next: createResult.exitCode === 0
-      ? `Relay is running and credential "${N8N_RELAY_CREDENTIAL_NAME}" created (id: ${created?.id ?? '?'}). Assign it to the node.`
-      : `Relay is running but credential creation failed (exit ${createResult.exitCode}). Inspect createStderr and fix before assigning.`,
+    credentialStatus,
+    next: !proxyConfig?.enabled
+      ? 'LLM proxy is not configured. Run `yagr llm proxy setup`.'
+      : !relayState
+        ? 'LLM proxy is configured but the relay is not running. Start Yagr or rerun setup.'
+        : credentialStatus === 'missing'
+          ? 'Credential is missing. Rerun `yagr llm proxy setup` to provision it.'
+          : credentialStatus === 'stale'
+            ? 'Credential base URL is stale. Rerun `yagr llm proxy setup` to reprovision it.'
+            : `Credential "${N8N_RELAY_CREDENTIAL_NAME}" is ready to assign to the node.`,
   };
+}
+
+export async function runYagrProxyCli() {
+  return getYagrProxyStatus();
 }
 
 export function createYagrProxyTool(observer?: ToolExecutionObserver) {
   return tool({
     description:
-      'Starts the Yagr LLM relay server and creates (or reuses) the openAiApi credential in n8n. '
-      + 'Call this when you need to configure an AI Agent / LangChain node with a Yagr-managed LLM credential. '
-      + 'Returns the credentialId ready to assign to the node.',
+      'Reads the current Yagr LLM proxy status and returns the provisioned openAiApi credential when available. '
+      + 'Call this when you need to inspect which Yagr-managed LLM credential should be assigned to an n8n node.',
     parameters: z.object({}),
     execute: async () => {
-      const relay = await ensureN8nRelayServer();
-
       await emitToolEvent(observer, {
         type: 'status',
         toolName: 'yagrProxy',
-        message: `Relay running at ${relay.baseUrl}`,
+        message: 'Inspecting Yagr LLM proxy status',
       });
       return runYagrProxyCli();
     },

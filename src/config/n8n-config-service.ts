@@ -4,6 +4,13 @@ import path from 'node:path';
 import { createFallbackInstanceIdentifier, createProjectSlug, resolveInstanceIdentifier } from 'n8nac';
 import { ensureYagrHomeDir, getYagrN8nWorkspaceDir, getYagrPaths } from './yagr-home.js';
 
+export type YagrN8nInstanceProfile =
+  | 'yagr-managed-docker'
+  | 'yagr-managed-direct'
+  | 'custom-local-docker'
+  | 'custom-local-direct'
+  | 'custom-cloud';
+
 export interface YagrN8nLocalConfig {
   host?: string;
   syncFolder?: string;
@@ -12,6 +19,7 @@ export interface YagrN8nLocalConfig {
   instanceIdentifier?: string;
   customNodesPath?: string;
   runtimeSource?: 'managed-local' | 'external';
+  instanceProfile?: YagrN8nInstanceProfile;
 }
 
 export interface YagrResolvedN8nRuntimeState {
@@ -145,12 +153,14 @@ export class YagrN8nConfigService {
     host: string,
     syncFolder = 'workflows',
     runtimeSource: YagrN8nLocalConfig['runtimeSource'] = 'external',
+    instanceProfile?: YagrN8nLocalConfig['instanceProfile'],
   ): void {
     const current = this.getLocalConfig();
     const bootstrapState: YagrN8nLocalConfig = {
       host,
       syncFolder,
       runtimeSource,
+      instanceProfile,
     };
 
     if (current.customNodesPath) {

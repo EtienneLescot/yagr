@@ -49,7 +49,7 @@ test('getConfiguredManagedN8nState returns managed state when configured host ma
   assert.equal(state?.url, 'http://127.0.0.1:5678');
 });
 
-test('getConfiguredManagedN8nState accepts legacy configs without runtimeSource when host matches managed n8n', async (t) => {
+test('getConfiguredManagedN8nState ignores configs without explicit managed classification', async (t) => {
   const previousHome = process.env.YAGR_HOME;
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-managed-runtime-'));
   process.env.YAGR_HOME = tempHome;
@@ -84,7 +84,7 @@ test('getConfiguredManagedN8nState accepts legacy configs without runtimeSource 
   });
 
   const state = getConfiguredManagedN8nState(configService);
-  assert.ok(state);
+  assert.equal(state, undefined);
   assert.equal(configService.getLocalConfig().runtimeSource, undefined);
 });
 
