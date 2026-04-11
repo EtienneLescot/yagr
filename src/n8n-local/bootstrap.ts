@@ -7,7 +7,28 @@ const LOGIN_PATH = '/rest/login';
 const API_KEYS_PATH = '/rest/api-keys';
 const SURVEY_PATH = '/rest/me/survey';
 const COMMUNITY_LICENSE_PATH = '/rest/license/enterprise/community-registered';
-const DEFAULT_API_KEY_SCOPES = ['workflow:read'];
+/**
+ * Scopes for the auto-created n8n API key during managed local bootstrap.
+ * Must cover n8nac usage: project listing, workflow sync, execution inspection,
+ * and Yagr LLM Proxy provisioning (`n8nac credential list|create` + PATCH credential URL).
+ */
+const DEFAULT_API_KEY_SCOPES = [
+  'user:read',
+  'user:list',
+  'project:list',
+  'workflow:read',
+  'workflow:list',
+  'workflow:create',
+  'workflow:update',
+  'workflow:delete',
+  'workflow:activate',
+  'workflow:deactivate',
+  'credential:list',
+  'credential:create',
+  'credential:update',
+  'execution:read',
+  'execution:list',
+];
 const DEFAULT_BOOTSTRAP_TIMEOUT_MS = 45_000;
 const DEFAULT_RETRY_DELAY_MS = 1_500;
 

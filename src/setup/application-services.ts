@@ -60,6 +60,8 @@ interface YagrN8nConfigStoreLike {
     instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud',
   ): void;
   getOrCreateInstanceIdentifier(host: string): Promise<string>;
+  /** Optional: mirrors API key into n8nac CLI instanceProfiles so subprocesses authenticate. */
+  syncN8nacCliApiKey?(): void;
   saveLocalConfig(config: {
     host?: string;
     syncFolder?: string;
@@ -653,6 +655,8 @@ export class YagrSetupApplicationService {
       customNodesPath: currentConfig.customNodesPath,
       instanceProfile,
     });
+
+    this.n8nConfigService.syncN8nacCliApiKey?.();
 
     const workflowDir = resolveWorkflowDir({ syncFolder, instanceIdentifier, projectName });
     if (workflowDir) {

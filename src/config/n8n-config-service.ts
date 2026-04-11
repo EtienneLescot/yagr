@@ -1,7 +1,12 @@
 import Conf from 'conf';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createFallbackInstanceIdentifier, createProjectSlug, resolveInstanceIdentifier } from 'n8nac';
+import {
+  ConfigService,
+  createFallbackInstanceIdentifier,
+  createProjectSlug,
+  resolveInstanceIdentifier,
+} from 'n8nac';
 import { ensureYagrHomeDir, getYagrN8nWorkspaceDir, getYagrPaths } from './yagr-home.js';
 
 export type YagrN8nInstanceProfile =
@@ -186,6 +191,43 @@ export class YagrN8nConfigService {
     compatibilityCredentials[normalizedHost] = apiKey;
     this.globalStore.set('hosts', credentials);
     this.compatibilityStore.set('hosts', compatibilityCredentials);
+  }
+
+  /**
+   * n8nac resolves API keys with instanceProfiles[activeInstanceId] before hosts[].
+   * Yagr only wrote `hosts`, so a stale per-instance secret (e.g. from an older CLI init)
+   * could shadow the current key and make `npx n8nac credential …` return 401.
+   * Mirror the active instance key into n8nac's ConfigService store.
+   */
+  syncN8nacCliApiKey(): void {
+    ensureYagrHomeDir();
+    const workspaceDir = getYagrN8nWorkspaceDir();
+    const n8nacConfigPath = path.join(workspaceDir, 'n8nac-config.json');
+    if (!fs.existsSync(n8nacConfigPath)) {
+      return;
+    }
+
+    const host = String(this.getLocalConfig().host ?? '').trim();
+    if (!host) {
+      return;
+    }
+
+    const apiKey = this.getApiKey(host);
+    if (!apiKey) {
+      return;
+    }
+
+    try {
+      const n8nacWorkspace = new ConfigService(workspaceDir);
+      const workspace = n8nacWorkspace.getWorkspaceConfig();
+      const activeId = workspace.activeInstanceId;
+      if (typeof activeId !== 'string' || !activeId) {
+        return;
+      }
+      n8nacWorkspace.saveApiKey(host, apiKey, activeId);
+    } catch {
+      /* best effort */
+    }
   }
 
   clearLocalConfig(): void {

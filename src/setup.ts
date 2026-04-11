@@ -156,6 +156,7 @@ function createSetupCallbacks(
       const result = await bootstrapManagedLocalN8n({ url });
       if (result.apiKey) {
         n8nConfigService.saveApiKey(url, result.apiKey);
+        n8nConfigService.syncN8nacCliApiKey?.();
       }
       return result;
     },

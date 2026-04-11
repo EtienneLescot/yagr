@@ -124,6 +124,9 @@ async function patchN8nCredentialUrl(credentialId: string, newBaseUrl: string, c
 
 export async function ensureYagrProxyCredential() {
   const cwd = getYagrN8nWorkspaceDir();
+  // Align n8nac's instance-scoped API key with Yagr's store before spawning the CLI
+  // (n8nac prefers instanceProfiles[id] over hosts[], which caused 401s after managed bootstrap).
+  new YagrN8nConfigService().syncN8nacCliApiKey();
   const relay = await ensureN8nRelayServer();
   const effectiveRelayBaseUrl = relay.baseUrl;
   const existingCredentials = await listYagrProxyCredentials(cwd);
