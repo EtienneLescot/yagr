@@ -21,6 +21,9 @@ import {
   runHomeBootstrap,
 } from './test-bootstrap/index.mjs';
 
+/** Isolated home profile — initialized before the top-level provider loop (advanced prelude needs it). */
+const PROVIDER_MATRIX_BOOTSTRAP_PROFILE = defaultProfilePath('provider-matrix.yaml');
+
 dotenvConfig({ path: '.env', quiet: true, override: true });
 dotenvConfig({ path: '.env.test', quiet: true, override: true });
 
@@ -843,8 +846,6 @@ async function runYagrAdvancedScenario({
 /**
  * Creates isolated YAGR_HOME + workspace snapshots (not timed by advanced-scenario runStep).
  */
-const PROVIDER_MATRIX_BOOTSTRAP_PROFILE = defaultProfilePath('provider-matrix.yaml');
-
 async function buildAdvancedScenarioPrelude({ provider, model, prompt }) {
   const testN8nRuntime = resolveTestN8nRuntime();
   const { homeDir: isolatedHome } = await runHomeBootstrap(PROVIDER_MATRIX_BOOTSTRAP_PROFILE, {
