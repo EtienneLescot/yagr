@@ -5,7 +5,7 @@ description: "Unit tests, integration tests, and provider matrix — how to run 
 
 # Testing
 
-Yagr has three distinct test levels, each with a different scope and a different cost.
+Yagr groups tests by cost: **unit** (`tests/*.test.mjs`), **integration bas niveau** (`tests/integration/`, lancé explicitement), **integration scénarios** (`test:integration`), **provider matrix** (`test:providers`).
 
 ## Unit tests
 
@@ -15,7 +15,41 @@ npm test
 npm run test:unit
 ```
 
-Runs all files matching `tests/*.test.mjs`. Fast, no external dependencies, no LLM calls. These are the tests to run after every code change.
+Runs all files matching `tests/*.test.mjs` only (not `tests/integration/`). Fast, no external dependencies, no LLM calls, no real provider. These are the tests to run after every code change.
+
+### Test bootstrap profiles (YAML)
+
+Isolated `YAGR_HOME` setup for scenario integration and provider-matrix tests is driven by YAML profiles under `scripts/test-bootstrap/profiles/` (`scenario-integration.yaml`, `provider-matrix.yaml`). The runner (`scripts/test-bootstrap/runner.mjs`) executes named phases in order with structured logging when `YAGR_TEST_BOOTSTRAP_LOG=1` or when the suite’s debug flag is on.
+
+Validate profiles locally (no build required):
+
+```bash
+npm run test:bootstrap-profiles
+```
+
+### Intégration bas niveau (`tests/integration/`)
+
+Ces fichiers **ne font pas partie** de `npm run test:unit` : ils peuvent appeler le réseau, un fournisseur LLM réel, etc.
+
+#### LLM relay smoke (sans n8n)
+
+Inférence minimale via le relay HTTP local (`POST /v1/chat/completions`) vers le fournisseur configuré dans `YAGR_HOME`. Rapide ; **sauté** automatiquement si aucune clé OpenRouter n’est définie (ex. CI).
+
+```bash
+npm run test:relay-inference
+```
+
+Fichier : `tests/integration/llm-relay-inference.test.mjs`. Il charge `.env` et `.env.test` à la racine du dépôt (comme le scénario d’intégration), pas seulement les variables déjà exportées dans le shell. Variable optionnelle : `YAGR_TEST_RELAY_MODEL` (défaut : `openai/gpt-4o-mini` côté OpenRouter).
+
+Pour **inspecter le JSON d’exécutions n8n** après `yagr-proxy-workflow` (sans supprimer le workflow sur l’instance) :
+
+```bash
+YAGR_IT_KEEP_MANAGED_DOCKER=1 YAGR_SCN_SKIP_REMOTE_WORKFLOW_CLEANUP=1 YAGR_SCN_SCENARIOS=yagr-proxy-workflow npm run test:integration
+# Reprendre l’id sur la ligne « skip remote workflow cleanup » puis :
+node scripts/dump-n8n-executions-for-workflow.mjs '<workflowId>'
+```
+
+Le fichier `reports/last-n8n-executions-dump.json` est sous `reports/` (déjà ignoré par git). Le script cible par défaut `http://127.0.0.1:5678` pour la clé du home Docker géré (évite une confusion avec `N8N_HOST=http://localhost:5678` dans `.env`).
 
 ## Integration tests
 

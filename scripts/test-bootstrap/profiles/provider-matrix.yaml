@@ -1,0 +1,14 @@
+version: 1
+profile: provider-matrix
+temp:
+  baseDir: yagr-provider-advanced
+homePhases:
+  - allocate_temp_home
+  - write_yagr_llm_config
+  - init_n8n_workspace
+  - workspace_symlink_compat
+  - write_n8n_host_credentials
+  - seed_home_agents_md
+  - n8nac_init_auth_and_agents_md
+  - reconcile_n8nac_workflow_dirs
+agentPrepPhases: []

@@ -245,6 +245,33 @@ export async function ensureN8nRelayServerInProcess(): Promise<N8nRelayInfo> {
   return buildRelayInfo(port);
 }
 
+/**
+ * Stops the in-process relay and clears relay state when this process owns it.
+ * For tests only — production uses a detached relay child.
+ */
+export function closeN8nRelayServerInProcessForTests(): void {
+  if (activeServer) {
+    try {
+      activeServer.closeAllConnections?.();
+      activeServer.close();
+    } catch {
+      // best effort
+    }
+    activeServer = undefined;
+  }
+  try {
+    const state = getN8nRelayState();
+    if (state?.pid === process.pid) {
+      const statePath = getYagrPaths().n8nRelayStatePath;
+      if (fs.existsSync(statePath)) {
+        fs.unlinkSync(statePath);
+      }
+    }
+  } catch {
+    // best effort
+  }
+}
+
 async function attemptListen(server: http.Server, port: number): Promise<number> {
   return new Promise<number>((resolve, reject) => {
     server.once('listening', () => {

@@ -31,6 +31,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate integration test bootstrap profiles
+        run: npm run test:bootstrap-profiles
+
       - name: Run unit tests
         run: npm run test:unit
 

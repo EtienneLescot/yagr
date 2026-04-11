@@ -14,6 +14,8 @@
     "clean:yagr:all": "node scripts/clean-yagr-local.mjs",
     "test": "npm run test:unit",
     "test:unit": "npm run build && node --test tests/*.test.mjs",
+    "test:bootstrap-profiles": "node scripts/test-bootstrap/validate-profiles.mjs",
+    "test:relay-inference": "npm run build && node --test tests/integration/llm-relay-inference.test.mjs",
     "test:integration": "npm run build && node scripts/run-scenario-integration.mjs",
     "test:integration:debug": "npm run build && node scripts/run-scenario-integration.mjs --debug --keep-temp",
     "test:providers": "npm run build && YAGR_IT_ADVANCED=1 node scripts/provider-integration-matrix.mjs --strict",
@@ -70,7 +72,8 @@
     "@types/react-dom": "^19.2.3",
     "esbuild": "^0.25.3",
     "testcontainers": "^11.13.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "yaml": "^2.8.3"
   },
   "files": [
     "dist/"

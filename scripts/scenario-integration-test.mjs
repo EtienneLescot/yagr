@@ -30,7 +30,7 @@
  *   YAGR_IT_USE_MANAGED_DOCKER           Default on (1): isolated test n8n via Docker. Set 0 to use env n8n only.
  *   --no-managed-docker / --managed-docker  CLI overrides (same semantics)
  *
- * Isolated YAGR_HOME creation: scripts/test-isolated-bootstrap.mjs → createIsolatedTestHome().
+ * Isolated YAGR_HOME: scripts/test-bootstrap/profiles/scenario-integration.yaml via runHomeBootstrap().
  */
 
 import process from 'node:process';
@@ -45,11 +45,12 @@ import {
   stopManagedDockerTestRuntime,
 } from './test-managed-n8n-runtime.mjs';
 import {
-  appendYagrScenarioTestWorkspaceClarification,
-  createIsolatedTestHome,
+  defaultProfilePath,
   getIsolatedWorkspaceDir,
   readJsonIfExists,
-} from './test-isolated-bootstrap.mjs';
+  runAgentPrepPhases,
+  runHomeBootstrap,
+} from './test-bootstrap/index.mjs';
 
 dotenvConfig({ path: '.env', quiet: true, override: true });
 dotenvConfig({ path: '.env.test', quiet: true, override: true });
@@ -92,6 +93,8 @@ const useManagedDocker = (() => {
   return true;
 })();
 const keepManagedDocker = process.argv.includes('--keep-managed-docker') || process.env.YAGR_IT_KEEP_MANAGED_DOCKER === '1';
+/** Do not DELETE workflows on n8n after a scenario (for API / UI inspection). Local temp home still removed unless keep-temp. */
+const skipRemoteWorkflowCleanup = process.env.YAGR_SCN_SKIP_REMOTE_WORKFLOW_CLEANUP === '1';
 const MANAGED_DOCKER_TIMEOUT_BONUS_MS = toInt(
   process.env.YAGR_SCN_MANAGED_DOCKER_TIMEOUT_BONUS_MS,
   useManagedDocker ? 60_000 : 0,
@@ -378,41 +381,69 @@ const SCENARIOS = [
 
   {
     id: 'yagr-proxy-workflow',
-    name: 'Workflow AI Agent via Yagr LLM Proxy (création + exécution)',
+    name: 'Workflow géographique : webhook + agent IA (preuve dans les exécutions n8n)',
     prompt:
-      'Est-ce que tu pourrais créer un workflow tout simple avec un agent géographique IA qui donne la capitale des pays ? '
-      + 'Il faudrait un webhook trigger qui passe la variable country à cet agent. '
-      + 'Est-ce que tu peux créer ce workflow et l\'exécuter en passant par exemple le payload France et me donner la réponse de l\'agent ?',
+      'Crée un workflow n8n minimal : Webhook qui reçoit par exemple `country` (ex. « France ») ou une question '
+      + 'du type « capitale de la France » **sans** inclure le nom « Paris » dans le payload de test — le corps '
+      + 'd’entrée ne doit parler que du pays / de la question. '
+      + 'C’est un **agent IA** dans le workflow qui doit produire la réponse renvoyée au client — pas du code '
+      + 'statique, une simple règle métier ni une phrase écrite à la main. '
+      + 'Pour ta réponse à l’utilisateur, base-toi sur la **réponse HTTP** du webhook / la sortie visible de '
+      + '`n8nac test`. Tu n’as **pas** besoin de télécharger les exécutions via l’API (le test le fait déjà '
+      + 'lui-même côté harness). Ne présente pas le nom de la capitale comme un fait si tu ne t’appuies pas sur '
+      + 'cette sortie concrète du workflow.',
     maxSteps: 40,
     timeoutMs: CREATION_TIMEOUT_MS,
     n8nRequired: true,
-    assert(result, outcome) {
+    async assert(result, outcome, _toolEvents, testN8nRuntime, _isolatedHome, workflowIds) {
       const text = String(result.text || '');
-      const mentionsCapital = /paris|capital/i.test(text);
-      const usedRelayTool = outcome.usedYagrProxyTool;
       const relayExecutionConfirmed = outcome.relayExecutionConfirmed;
 
-      if (outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0 && usedRelayTool && relayExecutionConfirmed) {
+      // Preuve serveur : le harness appelle directement l’API n8n (includeData) — sans demander à l’agent de
+      // consulter les exécutions. Le payload de test ne nomme en principe pas « Paris » (seulement France /
+      // capitale) ; si « Paris » apparaît dans les données d’exécution, c’est très probablement la réponse de
+      // l’**agent IA** (via le proxy), pas le texte d’entrée du webhook.
+      const parisInN8nExecutions = testN8nRuntime?.configured && workflowIds?.length
+        ? await n8nExecutionJsonContainsMatch(testN8nRuntime, workflowIds, /paris/i)
+        : false;
+
+      if (!relayExecutionConfirmed) {
+        if (!outcome.hasWorkflowWrites) {
+          return { pass: false, note: `Workflow non créé ou preuve relay absente. Réponse: ${text.slice(0, 150)}` };
+        }
         return {
-          pass: true,
-          note: `Proxy LLM confirmé par exécution relay — workflow créé et déployé${mentionsCapital ? ', résultat mentionne Paris/capital' : ''}.`,
+          pass: false,
+          note: `Workflow créé mais relay non confirmé (credential Yagr LLM Proxy / traces d’exécution n8n). Réponse: ${text.slice(0, 150)}`,
         };
       }
 
-      if (!outcome.hasWorkflowWrites && outcome.successfulScriptRuns > 0 && usedRelayTool && relayExecutionConfirmed && mentionsCapital) {
+      if (!outcome.hasWorkflowWrites || outcome.successfulScriptRuns <= 0) {
         return {
-          pass: true,
-          note: `Workflow réutilisé, relay confirmé à l'exécution, résultat mentionne Paris/capital.`,
+          pass: false,
+          note: `Écriture workflow ou exécutions shell insuffisantes (writes=${outcome.hasWorkflowWrites}, scripts=${outcome.successfulScriptRuns}).`,
         };
       }
 
-      if (!outcome.hasWorkflowWrites) {
-        return { pass: false, note: `Workflow non créé ou preuve relay absente. Réponse: ${text.slice(0, 150)}` };
+      if (!parisInN8nExecutions) {
+        return {
+          pass: false,
+          note:
+            `« Paris » absent des données d'exécution n8n (API harness, includeData) — attendu surtout comme sortie de l’agent IA puisque le payload ne doit pas le contenir. Réponse agent: ${text.slice(0, 140)}`,
+        };
+      }
+
+      if (!/paris|capitale/i.test(text)) {
+        return {
+          pass: false,
+          note:
+            `Paris figure dans les exécutions n8n mais pas dans ta synthèse utilisateur — cite explicitement le résultat du workflow. Réponse: ${text.slice(0, 160)}`,
+        };
       }
 
       return {
-        pass: false,
-        note: `Workflow créé mais preuve d'appel effectif au relay absente. Réponse: ${text.slice(0, 150)}`,
+        pass: true,
+        note:
+          'Proxy confirmé + « Paris » dans les exécutions n8n (harness API) et dans la synthèse — cohérent avec une réponse d’agent IA côté graphe (payload de test sans « Paris »).',
       };
     },
   },
@@ -463,20 +494,22 @@ function resolveTestN8nRuntime() {
 // Isolated home setup
 // ---------------------------------------------------------------------------
 
-function createIsolatedHome(testN8nRuntime) {
-  const tempHome = createIsolatedTestHome({
+const SCENARIO_BOOTSTRAP_PROFILE = defaultProfilePath('scenario-integration.yaml');
+
+async function createIsolatedHome(testN8nRuntime) {
+  const { homeDir } = await runHomeBootstrap(SCENARIO_BOOTSTRAP_PROFILE, {
     provider: PROVIDER,
     model: MODEL,
     testN8nRuntime,
-    tempBaseDir: 'yagr-scenario-test',
-    agentsMdOptions: {
+    useManagedDocker,
+    verbose: debug,
+    n8nRequired: false,
+    agentsMd: {
       onUpdateAiFailure: (msg) => console.warn(msg),
-      afterSuccess: (workspaceDir) => appendYagrScenarioTestWorkspaceClarification(workspaceDir),
     },
   });
-
-  registerIsolatedContextSources(tempHome);
-  return tempHome;
+  registerIsolatedContextSources(homeDir);
+  return homeDir;
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +557,27 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
           lastActivityAt = Date.now();
         }
       }, heartbeatMs);
+    }
+
+    if (scenario.n8nRequired && testN8nRuntime.configured) {
+      try {
+        await runAgentPrepPhases(SCENARIO_BOOTSTRAP_PROFILE, {
+          homeDir: isolatedHome,
+          provider: PROVIDER,
+          model: MODEL,
+          testN8nRuntime,
+          useManagedDocker,
+          verbose: debug,
+          n8nRequired: true,
+          agentsMd: {},
+        });
+        if (debug) {
+          logDebug(`scenario ${scenario.id}: LLM proxy bootstrap (relay + yagr-config + credential) done`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logProgress(`scenario ${scenario.id}: LLM proxy bootstrap failed (non-fatal): ${truncate(singleLine(msg), 220)}`);
+      }
     }
 
     try {
@@ -626,12 +680,21 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
         steps: journal.length,
         journal,
       };
-      const outcome = buildScenarioOutcome(toolEvents, isolatedHome);
-      const assertion = await Promise.resolve(scenario.assert(result, outcome, toolEvents, testN8nRuntime));
-      const createdWorkflowIds = (accumulator.workflowEmbeds || [])
+      const embedWorkflowIds = (accumulator.workflowEmbeds || [])
         .filter((e) => e.workflowId)
-        .map((e) => e.workflowId)
-        .filter((id, i, arr) => arr.indexOf(id) === i);
+        .map((e) => e.workflowId);
+      const diskWorkflowIds = collectWorkflowIdsFromWorkflowTs(getIsolatedWorkspaceDir(isolatedHome));
+      const workflowIdsForOutcome = [...new Set([...embedWorkflowIds, ...diskWorkflowIds])];
+      const outcome = await buildScenarioOutcome(
+        toolEvents,
+        isolatedHome,
+        testN8nRuntime,
+        workflowIdsForOutcome,
+      );
+      const assertion = await Promise.resolve(
+        scenario.assert(result, outcome, toolEvents, testN8nRuntime, isolatedHome, workflowIdsForOutcome),
+      );
+      const createdWorkflowIds = workflowIdsForOutcome;
       return {
         status: assertion.pass ? 'PASS' : 'FAIL',
         note: assertion.note,
@@ -713,7 +776,13 @@ async function prepareManagedDockerScenario() {
 async function cleanupScenarioAttempt(result, isolatedHome, testN8nRuntime) {
   const createdWorkflowIds = result?.createdWorkflowIds ?? [];
   if (createdWorkflowIds.length > 0) {
-    await cleanupWorkflows(createdWorkflowIds, isolatedHome, testN8nRuntime);
+    if (skipRemoteWorkflowCleanup) {
+      process.stdout.write(
+        `${stamp()} skip remote workflow cleanup (YAGR_SCN_SKIP_REMOTE_WORKFLOW_CLEANUP=1) — ids: ${createdWorkflowIds.join(', ')}\n`,
+      );
+    } else {
+      await cleanupWorkflows(createdWorkflowIds, isolatedHome, testN8nRuntime);
+    }
   }
   if (keepTemp || debug) {
     process.stdout.write(`${stamp()} isolated home preserved: ${isolatedHome}\n`);
@@ -728,7 +797,7 @@ async function runScenarioWithRetries(scenario) {
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const testN8nRuntime = _testN8nRuntime;
-    const isolatedHome = createIsolatedHome(testN8nRuntime);
+    const isolatedHome = await createIsolatedHome(testN8nRuntime);
     let result;
     try {
       result = await runScenario(scenario, isolatedHome, testN8nRuntime);
@@ -752,7 +821,7 @@ async function runScenarioWithRetries(scenario) {
   return lastResult;
 }
 
-function buildScenarioOutcome(toolEvents, isolatedHome) {
+async function buildScenarioOutcome(toolEvents, isolatedHome, testN8nRuntime, workflowIdsForLookup = []) {
   const events = toolEvents || [];
   const scriptEnds = events.filter((event) => event.type === 'command-end');
   const successfulScriptRuns = scriptEnds.filter((event) => Number(event.exitCode ?? 0) === 0).length;
@@ -763,9 +832,12 @@ function buildScenarioOutcome(toolEvents, isolatedHome) {
   const usedYagrProxyTool = events.some((event) => event.toolName === 'yagrProxy')
     || events.some((event) => event.type === 'command-start' && /(^|\s)(?:npx\s+)?yagr\s+yagrProxy(\s|$)/.test(String(event.command || '')));
   const successfulProdTestRuns = countSuccessfulProdTests(events);
-  const relayExecutionConfirmed = detectRelayExecution(isolatedHome)
-    || (usedYagrProxyTool && successfulProdTestRuns > 0)
+  const fromCliSignals = (usedYagrProxyTool && successfulProdTestRuns > 0)
     || (successfulProdTestRuns > 0 && hasYagrProxyCredentialReference(isolatedHome));
+  const fromN8nApi = testN8nRuntime?.configured
+    ? await relayConfirmedViaN8nExecutions(isolatedHome, testN8nRuntime, workflowIdsForLookup)
+    : false;
+  const relayExecutionConfirmed = fromCliSignals || fromN8nApi;
 
   return {
     successfulScriptRuns,
@@ -782,7 +854,7 @@ function countSuccessfulProdTests(events) {
 
   for (let index = 0; index < events.length; index += 1) {
     const event = events[index];
-    if (event?.type !== 'command-start') {
+    if (event?.type !== 'command-start' || event.toolName !== 'execute') {
       continue;
     }
     const command = String(event.command || '');
@@ -790,7 +862,8 @@ function countSuccessfulProdTests(events) {
       continue;
     }
 
-    const nextEnd = events.slice(index + 1).find((candidate) => candidate?.type === 'command-end');
+    const nextEnd = events.slice(index + 1).find((candidate) =>
+      candidate?.type === 'command-end' && candidate.toolName === 'execute');
     if (Number(nextEnd?.exitCode ?? 1) === 0) {
       count += 1;
     }
@@ -799,30 +872,131 @@ function countSuccessfulProdTests(events) {
   return count;
 }
 
-function detectRelayExecution(isolatedHome) {
-  try {
-    const workspaceDir = getIsolatedWorkspaceDir(isolatedHome);
-    const relayBaseUrls = collectConfirmedRelayBaseUrls(isolatedHome);
-    if (relayBaseUrls.length === 0) {
-      return false;
+/**
+ * Scans pushed/synced `.workflow.ts` files for the remote workflow id (n8n-as-code @workflow block).
+ */
+function collectWorkflowIdsFromWorkflowTs(workspaceDir) {
+  const ids = [];
+  const workflowsRoot = path.join(workspaceDir, 'workflows');
+  if (!workspaceDir || !fs.existsSync(workflowsRoot)) {
+    return ids;
+  }
+
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
     }
-
-    const execFiles = fs.readdirSync(workspaceDir)
-      .filter((name) => /^exec_\d+\.json$/.test(name))
-      .sort();
-
-    for (const execFile of execFiles) {
-      const payload = JSON.parse(fs.readFileSync(path.join(workspaceDir, execFile), 'utf-8'));
-      const serialized = JSON.stringify(payload);
-      if (relayBaseUrls.some((baseUrl) => serialized.includes(baseUrl))) {
-        return true;
+    for (const ent of entries) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!ent.isFile() || !ent.name.endsWith('.workflow.ts')) {
+        continue;
+      }
+      try {
+        const content = fs.readFileSync(full, 'utf8');
+        const match = content.match(/@workflow\s*\(\s*\{[\s\S]*?\bid:\s*['"]([^'"]+)['"]/);
+        if (match?.[1]) {
+          ids.push(match[1]);
+        }
+      } catch {
+        // best effort
       }
     }
+  };
 
-    return false;
-  } catch {
+  walk(workflowsRoot);
+  return ids;
+}
+
+/**
+ * Confirms the LLM relay was hit by inspecting recent server-side executions (n8nac does not write local exec_*.json).
+ */
+async function relayConfirmedViaN8nExecutions(isolatedHome, testN8nRuntime, workflowIds) {
+  const host = String(testN8nRuntime?.host || '').replace(/\/+$/, '');
+  const apiKey = String(testN8nRuntime?.apiKey || '').trim();
+  if (!host || !apiKey || !workflowIds?.length) {
     return false;
   }
+
+  const relayUrls = collectConfirmedRelayBaseUrls(isolatedHome);
+  const urlHints = new Set();
+  for (const u of relayUrls) {
+    if (!u) continue;
+    const trimmed = u.replace(/\/+$/, '');
+    urlHints.add(trimmed);
+    urlHints.add(trimmed.replace(/^http:\/\/127\.0\.0\.1/i, 'http://localhost'));
+  }
+
+  const headers = { 'X-N8N-API-KEY': apiKey, Accept: 'application/json' };
+
+  for (const wfId of workflowIds) {
+    try {
+      const url = `${host}/api/v1/executions?workflowId=${encodeURIComponent(wfId)}&limit=10&includeData=true`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        continue;
+      }
+      const body = await res.json();
+      const serialized = JSON.stringify(body);
+      for (const hint of urlHints) {
+        if (hint && serialized.includes(hint)) {
+          return true;
+        }
+      }
+      if (serialized.includes('Yagr LLM Proxy')) {
+        return true;
+      }
+    } catch {
+      // try next workflow id
+    }
+  }
+
+  return false;
+}
+
+/**
+ * True if `needle` matches anywhere in recent execution payloads for the given workflows (includeData).
+ * `needle`: literal substring, or RegExp (e.g. /paris/i) tested on JSON.stringify(execution response).
+ */
+async function n8nExecutionJsonContainsMatch(testN8nRuntime, workflowIds, needle) {
+  const host = String(testN8nRuntime?.host || '').replace(/\/+$/, '');
+  const apiKey = String(testN8nRuntime?.apiKey || '').trim();
+  if (!host || !apiKey || !workflowIds?.length) {
+    return false;
+  }
+  if (typeof needle === 'string' && !needle) {
+    return false;
+  }
+
+  const headers = { 'X-N8N-API-KEY': apiKey, Accept: 'application/json' };
+
+  for (const wfId of workflowIds) {
+    try {
+      const url = `${host}/api/v1/executions?workflowId=${encodeURIComponent(wfId)}&limit=12&includeData=true`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        continue;
+      }
+      const body = await res.json();
+      const serialized = JSON.stringify(body);
+      const hit = typeof needle === 'string'
+        ? serialized.includes(needle)
+        : needle instanceof RegExp && needle.test(serialized);
+      if (hit) {
+        return true;
+      }
+    } catch {
+      // next id
+    }
+  }
+
+  return false;
 }
 
 function collectConfirmedRelayBaseUrls(isolatedHome) {
@@ -896,9 +1070,28 @@ function extractToolExitCode(toolName, parsedOutput, rawOutput) {
     return undefined;
   }
 
-  const text = rawOutputToString(rawOutput).trimEnd();
-  const exitMatch = text.match(/\[Command (?:succeeded|failed) with exit code (\d+)\]\s*$/);
-  return exitMatch ? Number.parseInt(exitMatch[1], 10) : undefined;
+  const candidates = [
+    rawOutputToString(rawOutput),
+    typeof parsedOutput?.text === 'string' ? parsedOutput.text : '',
+    typeof parsedOutput?.stdout === 'string' ? parsedOutput.stdout : '',
+    typeof parsedOutput?.stderr === 'string' ? parsedOutput.stderr : '',
+  ];
+  if (rawOutput && typeof rawOutput === 'object' && typeof rawOutput !== 'string') {
+    try {
+      candidates.push(JSON.stringify(rawOutput));
+    } catch {
+      // ignore
+    }
+  }
+
+  for (const block of candidates) {
+    const text = String(block || '');
+    const exitMatch = text.match(/\[Command (?:succeeded|failed) with exit code (\d+)\]/);
+    if (exitMatch) {
+      return Number.parseInt(exitMatch[1], 10);
+    }
+  }
+  return undefined;
 }
 
 function rawOutputToString(rawOutput) {

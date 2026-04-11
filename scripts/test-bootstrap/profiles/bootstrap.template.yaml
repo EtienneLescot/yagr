@@ -1,0 +1,19 @@
+# Reference profile: every supported phase id (do not run as-is — copy into a suite profile).
+# Real suites: scenario-integration.yaml, provider-matrix.yaml
+version: 1
+profile: template
+temp:
+  baseDir: yagr-test-template
+homePhases:
+  - allocate_temp_home
+  - write_yagr_llm_config
+  - init_n8n_workspace
+  - workspace_symlink_compat
+  - write_n8n_host_credentials
+  - seed_home_agents_md
+  - n8nac_init_auth_and_agents_md
+  - append_scenario_n8n_workspace_note
+  - reconcile_n8nac_workflow_dirs
+agentPrepPhases:
+  - id: llm_proxy_onboarding
+    when: n8n_required

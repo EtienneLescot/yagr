@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Isolated YAGR_HOME + n8n-workspace setup for advanced tests: scripts/test-isolated-bootstrap.mjs
+ * Isolated YAGR_HOME: scripts/test-bootstrap/profiles/provider-matrix.yaml via runHomeBootstrap().
  */
 import process from 'node:process';
 import os from 'node:os';
@@ -16,9 +16,10 @@ import {
 } from './test-managed-n8n-runtime.mjs';
 import {
   copyIfExists,
-  createIsolatedTestHome,
+  defaultProfilePath,
   getIsolatedWorkspaceDir,
-} from './test-isolated-bootstrap.mjs';
+  runHomeBootstrap,
+} from './test-bootstrap/index.mjs';
 
 dotenvConfig({ path: '.env', quiet: true, override: true });
 dotenvConfig({ path: '.env.test', quiet: true, override: true });
@@ -842,13 +843,18 @@ async function runYagrAdvancedScenario({
 /**
  * Creates isolated YAGR_HOME + workspace snapshots (not timed by advanced-scenario runStep).
  */
+const PROVIDER_MATRIX_BOOTSTRAP_PROFILE = defaultProfilePath('provider-matrix.yaml');
+
 async function buildAdvancedScenarioPrelude({ provider, model, prompt }) {
   const testN8nRuntime = resolveTestN8nRuntime();
-  const isolatedHome = createIsolatedTestHome({
+  const { homeDir: isolatedHome } = await runHomeBootstrap(PROVIDER_MATRIX_BOOTSTRAP_PROFILE, {
     provider,
     model,
     testN8nRuntime,
-    agentsMdOptions: {
+    useManagedDocker,
+    verbose: debug,
+    n8nRequired: false,
+    agentsMd: {
       onUpdateAiFailure: debug ? (msg) => logDebug('SETUP', msg) : undefined,
     },
   });
