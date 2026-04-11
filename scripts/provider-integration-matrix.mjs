@@ -1,9 +1,12 @@
 #!/usr/bin/env node
+/**
+ * Isolated YAGR_HOME + n8n-workspace setup for advanced tests: scripts/test-isolated-bootstrap.mjs
+ */
 import process from 'node:process';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { config as dotenvConfig } from 'dotenv';
 import { N8nApiClient } from 'n8nac';
 import {
@@ -11,6 +14,11 @@ import {
   ensureManagedDockerTestRuntime,
   stopManagedDockerTestRuntime,
 } from './test-managed-n8n-runtime.mjs';
+import {
+  copyIfExists,
+  createIsolatedTestHome,
+  getIsolatedWorkspaceDir,
+} from './test-isolated-bootstrap.mjs';
 
 dotenvConfig({ path: '.env', quiet: true, override: true });
 dotenvConfig({ path: '.env.test', quiet: true, override: true });
@@ -836,7 +844,14 @@ async function runYagrAdvancedScenario({
  */
 async function buildAdvancedScenarioPrelude({ provider, model, prompt }) {
   const testN8nRuntime = resolveTestN8nRuntime();
-  const isolatedHome = createAdvancedScenarioHome(provider, model, testN8nRuntime);
+  const isolatedHome = createIsolatedTestHome({
+    provider,
+    model,
+    testN8nRuntime,
+    agentsMdOptions: {
+      onUpdateAiFailure: debug ? (msg) => logDebug('SETUP', msg) : undefined,
+    },
+  });
   const workspaceScanDir = path.join(isolatedHome, 'n8n-workspace');
   const beforeSnapshot = snapshotWorkflowFiles(workspaceScanDir);
   const beforeRemoteSnapshot = await listRemoteWorkflows();
@@ -1561,277 +1576,12 @@ function buildWorkspaceContext(isolatedHome) {
   }
 }
 
-/**
- * Regenerate AGENTS.md in an isolated test home using n8nac update-ai.
- * This ensures each test environment has fresh, up-to-date instructions.
- */
-function seedHomeAgentsMd(homeDir) {
-  // Mirrors ensureHomeInstructionsSeeded from src/config/yagr-home.ts:
-  // seed homeDir/AGENTS.md from the bundled YAGENTS.md template if not already present.
-  const destPath = path.join(homeDir, 'AGENTS.md');
-  if (fs.existsSync(destPath)) {
-    return;
-  }
-
-  const launchDir = process.env.YAGR_LAUNCH_CWD || process.cwd();
-  const candidates = [
-    path.join(launchDir, 'node_modules', '@yagr', 'manager-tooling', 'YAGENTS.md'),
-    path.join(launchDir, 'src', 'manager-tooling', 'YAGENTS.md'),
-  ];
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      try {
-        const content = fs.readFileSync(candidate, 'utf8').trim();
-        if (content) {
-          fs.writeFileSync(destPath, `${content}\n`);
-        }
-      } catch {
-        // Best effort only.
-      }
-      return;
-    }
-  }
-}
-
-function generateTestAgentsMd(homeDir, testN8nRuntime = {}) {
-  // Resolve n8nac package based on YAGR_N8NAC_VERSION
-  const version = String(process.env.YAGR_N8NAC_VERSION || '').trim();
-  let n8nacPackage = 'n8nac@next';
-  if (version) {
-    n8nacPackage = version.startsWith('@') ? `n8nac${version}` : `n8nac@${version}`;
-  }
-
-  const sharedEnv = {
-    ...process.env,
-    ...(testN8nRuntime.host ? { N8N_HOST: String(testN8nRuntime.host) } : {}),
-    ...(testN8nRuntime.apiKey ? { N8N_API_KEY: String(testN8nRuntime.apiKey) } : {}),
-    ...(testN8nRuntime.projectId ? { N8N_PROJECT_ID: String(testN8nRuntime.projectId) } : {}),
-  };
-
-  // Ensure n8nac's global Conf store has the correct API key for this host.
-  // When the managed docker runtime is re-bootstrapped, a new key is generated and stored
-  // in Yagr's n8n-credentials.json, but n8nac's own globalStore may have a stale key.
-  // Running init-auth here updates the Conf store so n8nac can authenticate correctly.
-  if (testN8nRuntime.host && testN8nRuntime.apiKey) {
-    spawnSync(
-      'npx',
-      ['--yes', n8nacPackage, 'init-auth', '--host', String(testN8nRuntime.host), '--api-key', String(testN8nRuntime.apiKey)],
-      {
-        cwd: path.join(homeDir, 'n8n-workspace'),
-        env: sharedEnv,
-        stdio: 'pipe',
-        encoding: 'utf8',
-      },
-    );
-  }
-
-  // Call n8nac update-ai to regenerate AGENTS.md in the n8n-workspace directory
-  const result = spawnSync('npx', ['--yes', n8nacPackage, 'update-ai', '--silent'], {
-    cwd: path.join(homeDir, 'n8n-workspace'),
-    env: sharedEnv,
-    stdio: 'pipe',
-    encoding: 'utf8',
-  });
-
-  if ((result.status ?? 1) !== 0) {
-    const stderr = String(result.stderr || '').trim();
-    const stdout = String(result.stdout || '').trim();
-    // Log warning but don't fail — tests can continue even if update-ai fails
-    if (debug) {
-      logDebug('SETUP', `Warning: n8nac update-ai failed for ${homeDir}: ${stderr || stdout || `exit ${result.status ?? 1}`}`);
-    }
-  }
-}
-
-/**
- * After n8nac update-ai rewrites n8nac-config.json with the real instanceIdentifier,
- * ensure the correct workflow directory exists and remove the provisional 'test/' scaffold.
- */
-function reconcileWorkflowDirs(n8nWorkspaceDir) {
-  const configPath = path.join(n8nWorkspaceDir, 'n8nac-config.json');
-  if (!fs.existsSync(configPath)) return;
-  try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    const workflowDir = config.workflowDir;
-    if (workflowDir) {
-      fs.mkdirSync(path.join(n8nWorkspaceDir, workflowDir), { recursive: true });
-    }
-    // Remove the provisional 'test/' directory created by initializeTestN8nConfig if it still exists
-    const provisionalDir = path.join(n8nWorkspaceDir, 'workflows', 'test');
-    if (fs.existsSync(provisionalDir) && workflowDir && !workflowDir.startsWith('workflows/test')) {
-      fs.rmSync(provisionalDir, { recursive: true, force: true });
-    }
-  } catch {
-    // best effort
-  }
-}
-
-function createAdvancedScenarioHome(provider, model, testN8nRuntime = {}) {
-  const baseDir = path.join(os.tmpdir(), 'yagr-provider-advanced');
-  fs.mkdirSync(baseDir, { recursive: true });
-  const tempHome = fs.mkdtempSync(path.join(baseDir, `${provider.replace(/[^a-z0-9]+/gi, '-')}-`));
-
-  // Create isolated Yagr home structure from scratch
-  const n8nWorkspaceDir = path.join(tempHome, 'n8n-workspace');
-  fs.mkdirSync(n8nWorkspaceDir, { recursive: true });
-
-  // Write Yagr config
-  writeIsolatedYagrConfig(tempHome, provider, model);
-
-  // Initialize n8nac config from scratch with test instance
-  initializeTestN8nConfig(n8nWorkspaceDir, testN8nRuntime);
-  ensureIsolatedHomeProjectCompatibility(tempHome);
-
-  // Persist credentials inside the isolated YAGR_HOME so runtime/config resolution is self-contained.
-  writeIsolatedN8nCredentials(tempHome, testN8nRuntime);
-
-  // Seed homeDir/AGENTS.md from the bundled YAGENTS.md template (mirrors ensureHomeInstructionsSeeded in production).
-  seedHomeAgentsMd(tempHome);
-
-  // Generate fresh n8n-workspace/AGENTS.md with current n8nac version (mirrors refreshAiContext in production).
-  generateTestAgentsMd(tempHome, testN8nRuntime);
-
-  // After generateTestAgentsMd, n8nac update-ai may have rewritten n8nac-config.json with the real
-  // instanceIdentifier (e.g. '127_0_0_1:5678_yagr_l'). Ensure the correct workflow directory exists
-  // and remove the provisional 'test/' scaffold created by initializeTestN8nConfig.
-  reconcileWorkflowDirs(n8nWorkspaceDir);
-
-  return tempHome;
-}
-
-function getIsolatedWorkspaceDir(homeDir) {
-  return path.join(homeDir, 'n8n-workspace');
-}
-
-function initializeTestN8nConfig(n8nWorkspaceDir, testN8nRuntime = {}) {
-  const configPath = path.join(n8nWorkspaceDir, 'n8nac-config.json');
-  const host = String(testN8nRuntime.host || '').trim() || 'http://127.0.0.1:5678';
-  const projectId = String(testN8nRuntime.projectId || '').trim() || 'personal';
-  const projectName = projectId === 'personal' ? 'Personal' : projectId;
-
-  const config = {
-    version: 2,
-    activeInstanceId: 'test-local',
-    instances: [
-      {
-        id: 'test-local',
-        name: 'test-local',
-        host,
-        syncFolder: 'workflows',
-        projectId,
-        projectName,
-        instanceIdentifier: 'test',
-        verification: {
-          status: 'verified',
-          normalizedHost: host,
-          userId: 'test-user',
-          userName: 'test-user',
-          userEmail: 'test@local.yagr',
-          lastCheckedAt: new Date().toISOString(),
-        },
-      },
-    ],
-    host,
-    syncFolder: 'workflows',
-    projectId,
-    projectName,
-    instanceIdentifier: 'test',
-  };
-
-  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-
-  // Create the workflow directory structure
-  const workflowDir = path.join(n8nWorkspaceDir, 'workflows', 'test', projectId.toLowerCase().replace(/\s+/g, '-'));
-  fs.mkdirSync(workflowDir, { recursive: true });
-}
-
-function ensureIsolatedHomeProjectCompatibility(homeDir) {
-  const workspaceDir = path.join(homeDir, 'n8n-workspace');
-  const workspaceConfigPath = path.join(workspaceDir, 'n8nac-config.json');
-  const rootConfigPath = path.join(homeDir, 'n8nac-config.json');
-  const workspaceWorkflowsDir = path.join(workspaceDir, 'workflows');
-  const rootWorkflowsDir = path.join(homeDir, 'workflows');
-
-  const config = readJsonIfExists(workspaceConfigPath);
-  if (config) {
-    fs.writeFileSync(rootConfigPath, `${JSON.stringify(config, null, 2)}\n`);
-  }
-
-  try {
-    if (fs.existsSync(rootWorkflowsDir)) {
-      const stat = fs.lstatSync(rootWorkflowsDir);
-      if (stat.isSymbolicLink() || stat.isDirectory()) {
-        fs.rmSync(rootWorkflowsDir, { recursive: true, force: true });
-      }
-    }
-    fs.symlinkSync(workspaceWorkflowsDir, rootWorkflowsDir, 'dir');
-  } catch {
-    fs.mkdirSync(rootWorkflowsDir, { recursive: true });
-  }
-}
-
-function writeIsolatedN8nCredentials(homeDir, testN8nRuntime = {}) {
-  const host = String(testN8nRuntime.host || '').trim();
-  const apiKey = String(testN8nRuntime.apiKey || '').trim();
-  if (!host || !apiKey) {
-    return;
-  }
-
-  const normalizedHost = normalizeHost(host);
-  const credentialsPath = path.join(homeDir, 'n8n-credentials.json');
-  const payload = { hosts: { [normalizedHost]: apiKey } };
-  fs.writeFileSync(credentialsPath, `${JSON.stringify(payload, null, 2)}\n`);
-}
-
-function normalizeHost(host) {
-  try {
-    return new URL(host).origin;
-  } catch {
-    return String(host || '').trim().replace(/\/$/, '');
-  }
-}
-
 function cleanupAdvancedScenarioHome(tempHome) {
   try {
     fs.rmSync(tempHome, { recursive: true, force: true });
   } catch {
     // Best effort cleanup only.
   }
-}
-
-function writeIsolatedYagrConfig(tempHome, provider, model) {
-  const configPath = path.join(tempHome, 'yagr-config.json');
-  const baseUrl = getProviderBaseUrl(provider);
-  const localConfig = {
-    provider,
-    model,
-    ...(baseUrl ? { baseUrl } : {}),
-  };
-
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, `${JSON.stringify(localConfig, null, 2)}\n`);
-}
-
-function readJsonIfExists(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function copyIfExists(source, destination) {
-  if (!source || !fs.existsSync(source)) {
-    return;
-  }
-
-  fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.copyFileSync(source, destination);
 }
 
 async function listRemoteWorkflows() {
