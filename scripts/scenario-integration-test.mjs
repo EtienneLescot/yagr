@@ -29,6 +29,9 @@
  *   N8N_PROJECT_ID / YAGR_IT_N8N_PROJECT_ID  n8n project ID
  *   YAGR_IT_USE_MANAGED_DOCKER           Default on (1): isolated test n8n via Docker. Set 0 to use env n8n only.
  *   --no-managed-docker / --managed-docker  CLI overrides (same semantics)
+ *   YAGR_SCN_N8N_EXEC_POLL_LIMIT         Max executions per GET (default 40, max 250)
+ *   YAGR_SCN_N8N_EXEC_POLL_ATTEMPTS      Retries when polling includeData (default 6)
+ *   YAGR_SCN_N8N_EXEC_POLL_DELAY_MS      Delay between polls in ms (default 1200)
  *
  * Isolated YAGR_HOME: scripts/test-bootstrap/profiles/scenario-integration.yaml via runHomeBootstrap().
  */
@@ -103,6 +106,13 @@ const SCENARIO_MAX_RETRIES = Math.max(0, toInt(process.env.YAGR_SCN_MAX_RETRIES,
 const heartbeatMs = toInt(process.env.YAGR_SCN_HEARTBEAT_MS, 15_000);
 const markdownPath = process.env.YAGR_SCN_MARKDOWN_PATH
   || path.join(process.cwd(), 'reports', 'scenario-integration-report.md');
+
+/** n8n GET /executions?includeData=true often lags right after a prod run; relay + harness checks poll before failing. */
+const N8N_EXECUTION_INCLUDE_DATA_POLL = Object.freeze({
+  limit: Math.min(250, Math.max(1, toInt(process.env.YAGR_SCN_N8N_EXEC_POLL_LIMIT, 40))),
+  attempts: Math.max(1, toInt(process.env.YAGR_SCN_N8N_EXEC_POLL_ATTEMPTS, 6)),
+  attemptDelayMs: Math.max(0, toInt(process.env.YAGR_SCN_N8N_EXEC_POLL_DELAY_MS, 1_200)),
+});
 
 const requestedScenarioIds = (scenarioCliArg || process.env.YAGR_SCN_SCENARIOS || '')
   .split(',')
@@ -403,8 +413,9 @@ const SCENARIOS = [
       // consulter les exécutions. Le payload de test ne nomme en principe pas « Paris » (seulement France /
       // capitale) ; si « Paris » apparaît dans les données d’exécution, c’est très probablement la réponse de
       // l’**agent IA** (via le proxy), pas le texte d’entrée du webhook.
+      // n8n peut persister includeData avec un léger délai ; on réessaie pour éviter les faux négatifs.
       const parisInN8nExecutions = testN8nRuntime?.configured && workflowIds?.length
-        ? await n8nExecutionJsonContainsMatch(testN8nRuntime, workflowIds, /paris/i)
+        ? await n8nExecutionJsonContainsMatch(testN8nRuntime, workflowIds, /paris|parís/i)
         : false;
 
       if (!relayExecutionConfirmed) {
@@ -934,26 +945,42 @@ async function relayConfirmedViaN8nExecutions(isolatedHome, testN8nRuntime, work
   }
 
   const headers = { 'X-N8N-API-KEY': apiKey, Accept: 'application/json' };
+  const { limit, attempts, attemptDelayMs } = N8N_EXECUTION_INCLUDE_DATA_POLL;
 
-  for (const wfId of workflowIds) {
-    try {
-      const url = `${host}/api/v1/executions?workflowId=${encodeURIComponent(wfId)}&limit=10&includeData=true`;
-      const res = await fetch(url, { headers });
-      if (!res.ok) {
-        continue;
-      }
-      const body = await res.json();
-      const serialized = JSON.stringify(body);
-      for (const hint of urlHints) {
-        if (hint && serialized.includes(hint)) {
-          return true;
-        }
-      }
-      if (serialized.includes('Yagr LLM Proxy')) {
+  const serializedMatchesRelayProof = (serialized) => {
+    for (const hint of urlHints) {
+      if (hint && serialized.includes(hint)) {
         return true;
       }
-    } catch {
-      // try next workflow id
+    }
+    return serialized.includes('Yagr LLM Proxy');
+  };
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0 && attemptDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, attemptDelayMs));
+    }
+
+    for (const wfId of workflowIds) {
+      try {
+        const url = `${host}/api/v1/executions?workflowId=${encodeURIComponent(wfId)}&limit=${limit}&includeData=true`;
+        const res = await fetch(url, { headers });
+        if (!res.ok) {
+          continue;
+        }
+        const body = await res.json();
+        let serialized = JSON.stringify(body);
+        try {
+          serialized = serialized.normalize('NFC');
+        } catch {
+          // ignore
+        }
+        if (serializedMatchesRelayProof(serialized)) {
+          return true;
+        }
+      } catch {
+        // try next workflow id
+      }
     }
   }
 
@@ -963,8 +990,11 @@ async function relayConfirmedViaN8nExecutions(isolatedHome, testN8nRuntime, work
 /**
  * True if `needle` matches anywhere in recent execution payloads for the given workflows (includeData).
  * `needle`: literal substring, or RegExp (e.g. /paris/i) tested on JSON.stringify(execution response).
+ *
+ * @param {{ limit?: number, attempts?: number, attemptDelayMs?: number }} [opts]
+ *   Overrides for poll behaviour (defaults: N8N_EXECUTION_INCLUDE_DATA_POLL).
  */
-async function n8nExecutionJsonContainsMatch(testN8nRuntime, workflowIds, needle) {
+async function n8nExecutionJsonContainsMatch(testN8nRuntime, workflowIds, needle, opts = {}) {
   const host = String(testN8nRuntime?.host || '').replace(/\/+$/, '');
   const apiKey = String(testN8nRuntime?.apiKey || '').trim();
   if (!host || !apiKey || !workflowIds?.length) {
@@ -974,25 +1004,40 @@ async function n8nExecutionJsonContainsMatch(testN8nRuntime, workflowIds, needle
     return false;
   }
 
+  const limit = opts.limit ?? N8N_EXECUTION_INCLUDE_DATA_POLL.limit;
+  const attempts = opts.attempts ?? N8N_EXECUTION_INCLUDE_DATA_POLL.attempts;
+  const attemptDelayMs = opts.attemptDelayMs ?? N8N_EXECUTION_INCLUDE_DATA_POLL.attemptDelayMs;
+
   const headers = { 'X-N8N-API-KEY': apiKey, Accept: 'application/json' };
 
-  for (const wfId of workflowIds) {
-    try {
-      const url = `${host}/api/v1/executions?workflowId=${encodeURIComponent(wfId)}&limit=12&includeData=true`;
-      const res = await fetch(url, { headers });
-      if (!res.ok) {
-        continue;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0 && attemptDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, attemptDelayMs));
+    }
+
+    for (const wfId of workflowIds) {
+      try {
+        const url = `${host}/api/v1/executions?workflowId=${encodeURIComponent(wfId)}&limit=${limit}&includeData=true`;
+        const res = await fetch(url, { headers });
+        if (!res.ok) {
+          continue;
+        }
+        const body = await res.json();
+        let serialized = JSON.stringify(body);
+        try {
+          serialized = serialized.normalize('NFC');
+        } catch {
+          // ignore if normalize unavailable
+        }
+        const hit = typeof needle === 'string'
+          ? serialized.includes(needle)
+          : needle instanceof RegExp && needle.test(serialized);
+        if (hit) {
+          return true;
+        }
+      } catch {
+        // next id
       }
-      const body = await res.json();
-      const serialized = JSON.stringify(body);
-      const hit = typeof needle === 'string'
-        ? serialized.includes(needle)
-        : needle instanceof RegExp && needle.test(serialized);
-      if (hit) {
-        return true;
-      }
-    } catch {
-      // next id
     }
   }
 
