@@ -10,15 +10,19 @@ export function buildManagedN8nWorkflowOpenPage(input: {
   const escapedLoginUrl = escapeHtml(input.loginUrl);
   const escapedEmail = escapeHtml(input.credentials.email);
   const escapedPassword = escapeHtml(input.credentials.password);
+  const encodedTargetUrl = JSON.stringify(input.targetUrl);
+  const encodedLoginUrl = JSON.stringify(input.loginUrl);
 
-  // Use meta-refresh for redirect: works even when the page shows JSON from the login response.
-  // The form submits in the main window (setting cookies), then meta-refresh redirects to workflow.
+  // The login must happen in a top-level browsing context for the target origin.
+  // Browsers increasingly block cookies set from hidden third-party iframes,
+  // especially when the opener is a `data:` URL. A small helper window keeps the
+  // login request first-party for the tunnel domain, then the current tab moves
+  // to the workflow once the session cookie is set.
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta http-equiv="refresh" content="2;url=${escapedTargetUrl}" />
     <title>${pageTitle}</title>
     <style>
       :root { color-scheme: dark; --bg: #101418; --panel: #171d23; --text: #eef3f7; --muted: #9aa7b3; --accent: #ff6d5a; --accent-strong: #ff8d6b; --border: rgba(255,255,255,0.08); }
@@ -43,19 +47,15 @@ export function buildManagedN8nWorkflowOpenPage(input: {
       <p>Yagr is signing you into n8n, then opening the workflow.</p>
       <div class="status" id="status">Signing in…</div>
       <div class="actions">
-        <a class="primary" href="${escapedTargetUrl}" id="open-link">Open workflow now</a>
+        <button class="primary" type="button" id="continue">Continue</button>
+        <a class="secondary hidden" href="${escapedTargetUrl}" id="open-link">Open workflow directly</a>
         <button class="secondary" type="button" id="show-creds">Show credentials</button>
       </div>
       <section class="secret hidden" id="credentials">
         <p>Email<br /><code>${escapedEmail}</code></p>
         <p>Password<br /><code>${escapedPassword}</code></p>
       </section>
-      <!-- The form targets a hidden iframe: the main page (and its meta-refresh) stays
-           alive while the iframe absorbs the JSON login response. The Set-Cookie header
-           from n8n is stored for the tunnel domain by the browser. When the meta-refresh
-           fires (top-level GET navigation), the SameSite=Lax cookie is sent → authenticated. -->
-      <iframe name="login-frame" style="display:none" aria-hidden="true"></iframe>
-      <form id="login-form" method="post" action="${escapedLoginUrl}" target="login-frame" style="display:none">
+      <form id="login-form" method="post" action="${escapedLoginUrl}" target="yagr-login-window" style="display:none">
         <input type="hidden" name="emailOrLdapLoginId" value="${escapedEmail}" />
         <input type="hidden" name="password" value="${escapedPassword}" />
       </form>
@@ -66,9 +66,67 @@ export function buildManagedN8nWorkflowOpenPage(input: {
         var status = document.getElementById('status');
         var creds = document.getElementById('credentials');
         var btn = document.getElementById('show-creds');
+        var continueBtn = document.getElementById('continue');
+        var openLink = document.getElementById('open-link');
+        var targetUrl = ${encodedTargetUrl};
+        var loginUrl = ${encodedLoginUrl};
+        var helperWindow = null;
+
         btn && btn.addEventListener('click', function() { creds && creds.classList.remove('hidden'); });
-        try { form.submit(); }
-        catch(e) { status.textContent = e.message || 'Sign-in failed.'; creds && creds.classList.remove('hidden'); }
+
+        function revealFallback(message) {
+          if (status) status.textContent = message;
+          if (creds) creds.classList.remove('hidden');
+          if (openLink) openLink.classList.remove('hidden');
+        }
+
+        function redirectToWorkflow() {
+          window.location.replace(targetUrl);
+        }
+
+        function startLogin() {
+          try {
+            helperWindow = window.open('about:blank', 'yagr-login-window', 'popup,width=520,height=640');
+          } catch (e) {
+            helperWindow = null;
+          }
+
+          if (!helperWindow) {
+            revealFallback('Browser blocked the helper window. Click Continue to allow sign-in, or open the workflow directly and use the credentials below.');
+            return false;
+          }
+
+          try {
+            helperWindow.document.write('<!doctype html><title>Signing in…</title><body style="font: 16px system-ui; padding: 24px;">Signing you into n8n…</body>');
+            helperWindow.document.close();
+          } catch (e) {
+            // Ignore: the helper may already be navigating.
+          }
+
+          if (status) status.textContent = 'Signing in via the helper window…';
+
+          try {
+            form.submit();
+          } catch (e) {
+            revealFallback((e && e.message) || 'Sign-in failed.');
+            return false;
+          }
+
+          window.setTimeout(function() {
+            try { helperWindow.close(); } catch (e) { /* ignore */ }
+            redirectToWorkflow();
+          }, 1200);
+
+          return true;
+        }
+
+        continueBtn && continueBtn.addEventListener('click', function() {
+          startLogin();
+        });
+
+        if (!startLogin() && status) {
+          status.textContent = 'Automatic sign-in needs a top-level helper window. Click Continue.';
+        }
       })();
     </script>
   </body>
