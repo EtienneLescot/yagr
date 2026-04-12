@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { Box, Static, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
@@ -6,9 +5,11 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
+import { getYagrDeepAgentSessionsDir } from '../config/yagr-home.js';
 import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, ensureWorkflowPresentation, processStreamEvent } from './langgraph-events.js';
+import { DeepAgentSessionStore } from '../session/deepagent-sessions.js';
 import {
   formatTerminalLink,
   formatWorkflowLinkTerminal,
@@ -39,6 +40,7 @@ type InteractiveAppProps = {
   agent: YagrDeepAgentHandle['agent'];
   threadIdRef: { current: string };
   options: YagrRunOptions;
+  createSessionId: () => string;
 };
 
 function stateColor(state: YagrAgentState): string {
@@ -159,7 +161,7 @@ function RequiredActionList({ actions }: { actions: YagrRequiredAction[] }): JSX
   );
 }
 
-function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps) {
+function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: InteractiveAppProps) {
   const app = useApp();
   const { stdout } = useStdout();
   const [inputVersion, setInputVersion] = useState(0);
@@ -442,7 +444,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
     }
 
     if (prompt === '/reset') {
-      threadIdRef.current = randomUUID();
+      threadIdRef.current = createSessionId();
       setFeed([]);
       setPendingRequiredActions([]);
       setCurrentState('idle');
@@ -622,8 +624,11 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
 
 export async function runInteractiveGateway(handle: YagrDeepAgentHandle, options: YagrRunOptions): Promise<void> {
   await ensureLocalWorkflowOpenBridgeRunning();
-  const threadIdRef = { current: randomUUID() };
-  const ink = render(<YagrInteractiveApp agent={handle.agent} threadIdRef={threadIdRef} options={options} />, {
+  const sessionStore = new DeepAgentSessionStore(getYagrDeepAgentSessionsDir());
+  const createSessionId = () => sessionStore.create({ title: 'Interactive session' }).id;
+  const session = { id: createSessionId() };
+  const threadIdRef = { current: session.id };
+  const ink = render(<YagrInteractiveApp agent={handle.agent} threadIdRef={threadIdRef} options={options} createSessionId={createSessionId} />, {
     exitOnCtrlC: false,
   });
 

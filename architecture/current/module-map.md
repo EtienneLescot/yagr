@@ -106,10 +106,11 @@ Note: `create-language-model.ts` (factory Vercel AI SDK) **supprimé**. Les fonc
 
 Fichiers clefs:
 
+- `deepagent-sessions.ts` — store bas niveau des sessions Deepagents (`thread_id`, scopes façade, rotation/reset)
 - `webui-sessions.ts` — `WebUiSessionRegistry` : registre fichier des sessions WebUI (metadata + display messages)
 - `session-types.ts` — types partages minimaux (`SessionMessage`, `SerializedChatMessage`, `SessionSummary`)
 
-Note: `session-store.ts` (`SessionStore`) **supprimé**. La persistance de l'historique de conversation est assurée par le checkpointer LangGraph (`MemorySaver`) dans deepagentsjs. `WebUiSessionRegistry` ne stocke que les metadonnees UI et les display messages.
+Note: `session-store.ts` (`SessionStore`) **supprimé**. La persistance de l'historique de conversation reste assurée par le checkpointer LangGraph (`MemorySaver`) dans deepagentsjs. `deepagent-sessions.ts` ajoute le registre de sessions bas niveau, agnostique des facades, autour des `thread_id`. `WebUiSessionRegistry` ne stocke que les metadonnees UI et les display messages.
 
 ### `src/tools/`
 
@@ -159,5 +160,5 @@ Role actuel:
 - Tooling manager: `src/manager-tooling/*`
 - Facades: `src/gateway/*`
 - Setup: `src/setup.ts`, `src/setup/*`, `src/n8n-local/*`
-- Sessions UI: `src/session/webui-sessions.ts`
+- Sessions Deepagents + UI: `src/session/deepagent-sessions.ts`, `src/session/webui-sessions.ts`
 - Memoire cross-session: `src/memory/*`

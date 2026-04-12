@@ -7,11 +7,12 @@ import {
   getDisplayProjectName,
   type IProject,
 } from 'n8nac';
-import { getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
+import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
 import { MemoryStore } from '../memory/memory-store.js';
 import { extractSessionMemory } from '../memory/extract-session-memory.js';
 import { WebUiSessionRegistry } from '../session/webui-sessions.js';
 import type { SerializedChatMessage, SessionSummary } from '../session/session-types.js';
+import { buildDeepAgentSessionConfig, DeepAgentSessionStore, deriveSessionTitle } from '../session/deepagent-sessions.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService, type YagrConfigStoreLike } from '../config/yagr-config-service.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
@@ -147,6 +148,7 @@ class WebUiGateway implements Gateway {
   private agentHandlePromise?: Promise<YagrDeepAgentHandle>;
   private readonly setupService: YagrSetupApplicationService;
   private readonly sessionRegistry = new WebUiSessionRegistry(getYagrSessionsDir());
+  private readonly deepAgentSessions = new DeepAgentSessionStore(getYagrDeepAgentSessionsDir());
   private readonly memoryStore = new MemoryStore(getYagrMemoriesDir());
 
   constructor(
@@ -330,9 +332,13 @@ class WebUiGateway implements Gateway {
       }
 
       const { agent } = await this.resolveAgentHandle();
+      this.deepAgentSessions.ensure(sessionId, {
+        scope: { kind: 'webui', key: sessionId },
+        title: deriveSessionTitle(message),
+      });
       const result = await agent.invoke(
         { messages: [{ role: 'user', content: message }] },
-        { configurable: { thread_id: sessionId } },
+        buildDeepAgentSessionConfig(sessionId),
       );
 
       const lastMessage = extractLastAiMessage(result);
@@ -362,10 +368,15 @@ class WebUiGateway implements Gateway {
       const body = await this.readJson(request);
       const sessionId = String(body.sessionId ?? '');
       if (sessionId && isValidSessionId(sessionId)) {
-        // Thread state in MemorySaver is abandoned (no delete API); the
-        // session ID itself is removed so the frontend creates a new thread.
+        // Remove both the UI-level session metadata and the underlying
+        // Deepagents thread state for this WebUI conversation.
         this.sessionRegistry.delete(sessionId);
+        this.deepAgentSessions.delete(sessionId);
         this.memoryStore.delete(sessionId);
+        if (this.agentHandlePromise) {
+          const { checkpointer } = await this.resolveAgentHandle();
+          await this.deepAgentSessions.deleteThread(checkpointer, sessionId);
+        }
       }
       this.sendJson(response, 200, { ok: true });
       return;
@@ -403,6 +414,10 @@ class WebUiGateway implements Gateway {
       if (!this.sessionRegistry.get(newId)) {
         this.sessionRegistry.createEmpty(newId);
       }
+      this.deepAgentSessions.ensure(newId, {
+        scope: { kind: 'webui', key: newId },
+        title: 'New conversation',
+      });
       this.sendJson(response, 201, { id: newId });
       return;
     }
@@ -429,7 +444,12 @@ class WebUiGateway implements Gateway {
         return;
       }
       this.sessionRegistry.delete(sessionId);
+      this.deepAgentSessions.delete(sessionId);
       this.memoryStore.delete(sessionId);
+      if (this.agentHandlePromise) {
+        const { checkpointer } = await this.resolveAgentHandle();
+        await this.deepAgentSessions.deleteThread(checkpointer, sessionId);
+      }
       this.sendJson(response, 200, { ok: true });
       return;
     }
@@ -616,15 +636,15 @@ class WebUiGateway implements Gateway {
       writeEvent({ type: 'start', sessionId, message: 'Run started.' });
 
       const { agent } = await this.resolveAgentHandle();
+      this.deepAgentSessions.ensure(sessionId, {
+        scope: { kind: 'webui', key: sessionId },
+        title: deriveSessionTitle(message),
+      });
       const accumulator = createRunAccumulator();
 
       const stream = agent.streamEvents(
         { messages: [{ role: 'user', content: message }] },
-        {
-          configurable: { thread_id: sessionId },
-          signal: abortController.signal,
-          version: 'v2',
-        },
+        { ...buildDeepAgentSessionConfig(sessionId), signal: abortController.signal },
       );
 
       const lastProgressKeys = new Set<string>();
