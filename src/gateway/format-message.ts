@@ -3,11 +3,7 @@
  * Single source of truth for workflow banner rendering and markdown-to-surface conversion.
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import type { YagrToolEvent } from '../types.js';
-import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import { buildLocalWorkflowOpenBridgeUrl } from './local-open-bridge.js';
 
 // ---------------------------------------------------------------------------
@@ -60,10 +56,13 @@ export function formatWorkflowLinkHtml(embed: WorkflowEmbed): string {
   return `🔗 <a href="${escapeHtml(embed.url)}">${label}</a>`;
 }
 
+export function formatTerminalLink(label: string, url: string): string {
+  return `\x1b]8;;${url}\x07${label}\x1b]8;;\x07`;
+}
+
 export function formatWorkflowLinkTerminal(embed: WorkflowEmbed): string {
   const label = embed.title ?? `Workflow ${embed.workflowId}`;
-  const terminalUrl = resolveTerminalWorkflowOpenUrl(embed);
-  return `🔗 ${label}\n${terminalUrl}`;
+  return `🔗 ${formatTerminalLink(label, resolveTerminalWorkflowOpenUrl(embed))}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,28 +101,7 @@ export function escapeHtml(text: string): string {
 }
 
 export function resolveTerminalWorkflowOpenUrl(embed: WorkflowEmbed): string {
-  if (embed.url.startsWith('data:text/html')) {
-    return buildLocalWorkflowOpenBridgeUrl(embed.url);
-  }
-
-  return embed.url;
-}
-
-function materializeDataUrlAsLocalFile(workflowId: string, dataUrl: string): string {
-  const paths = getYagrPaths();
-  ensureYagrHomeDir();
-  const dir = path.join(paths.homeDir, 'open-links');
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-
-  const encoded = dataUrl.split(',', 2)[1] ?? '';
-  const html = decodeURIComponent(encoded);
-  const filePath = path.join(dir, `${sanitizeFileName(workflowId)}.html`);
-  fs.writeFileSync(filePath, html, { mode: 0o600 });
-  return pathToFileURL(filePath).toString();
-}
-
-function sanitizeFileName(value: string): string {
-  return value.replace(/[^A-Za-z0-9._-]/g, '_');
+  return buildLocalWorkflowOpenBridgeUrl(embed.url);
 }
 
 function dedupeWorkflowEmbeds(embeds: WorkflowEmbed[]): WorkflowEmbed[] {

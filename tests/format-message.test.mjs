@@ -9,6 +9,7 @@ import {
   extractWorkflowEmbed,
   formatWorkflowLinkHtml,
   formatWorkflowLinkPlain,
+  formatTerminalLink,
   formatWorkflowLinkTerminal,
   markdownToTelegramHtml,
 } from '../dist/gateway/format-message.js';
@@ -85,17 +86,24 @@ test('formatWorkflowLinkHtml escapes HTML in title', () => {
   assert.ok(result.includes('&lt;script&gt;'));
 });
 
-test('formatWorkflowLinkTerminal shows a visible open URL', () => {
+test('formatTerminalLink produces an OSC 8 alias link', () => {
+  const result = formatTerminalLink('click here', 'https://example.com/workflow/abc');
+  assert.ok(result.includes('\x1b]8;;https://example.com/workflow/abc\x07'));
+  assert.ok(result.includes('click here'));
+  assert.ok(result.includes('\x1b]8;;\x07'));
+});
+
+test('formatWorkflowLinkTerminal renders an alias label', () => {
   const result = formatWorkflowLinkTerminal({
     workflowId: 'abc',
     url: 'https://n8n.example.com/workflow/abc',
     title: 'Test WF',
   });
   assert.ok(result.includes('Test WF'));
-  assert.ok(result.includes('https://n8n.example.com/workflow/abc'));
+  assert.ok(result.includes('\x1b]8;;http://127.0.0.1:'));
 });
 
-test('formatWorkflowLinkTerminal shows target URL when Yagr auth bridge is used', () => {
+test('formatWorkflowLinkTerminal always aliases the embed url through the local bridge', () => {
   const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent('<html><body>hello</body></html>')}`;
   const result = formatWorkflowLinkTerminal({
     workflowId: 'abc',
@@ -103,7 +111,7 @@ test('formatWorkflowLinkTerminal shows target URL when Yagr auth bridge is used'
     targetUrl: 'http://127.0.0.1:5678/workflow/abc',
     title: 'Test WF',
   });
-  assert.match(result, /http:\/\/127\.0\.0\.1:\d+\/open\/n8n-workflow\/[0-9a-f]{16}/);
+  assert.match(result, /\x1b]8;;http:\/\/127\.0\.0\.1:\d+\/open\/n8n-workflow\/[0-9a-f]{16}\x07/);
   assert.ok(!result.includes('data:text/html'));
 });
 

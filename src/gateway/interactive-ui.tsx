@@ -10,6 +10,7 @@ import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, ensureWorkflowPresentation, processStreamEvent } from './langgraph-events.js';
 import {
+  formatTerminalLink,
   formatWorkflowLinkTerminal,
   type WorkflowEmbed,
   resolveTerminalWorkflowOpenUrl,
@@ -602,7 +603,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
             ? 'Ctrl+O to open the latest workflow.'
             : ' '}
         </Text>
-        {latestWorkflowOpenUrl ? <Text dimColor>Latest open link: {latestWorkflowOpenUrl}</Text> : null}
+        {latestWorkflowOpenUrl ? <Text dimColor>Latest workflow: {formatTerminalLink('click here to view the workflow', latestWorkflowOpenUrl)}</Text> : null}
       </Box>
 
       <Box marginTop={1} width="100%">
