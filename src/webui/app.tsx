@@ -1344,7 +1344,6 @@ function App() {
       try {
         // Server creates the session file immediately → it appears in the list right away.
         const { id } = await request<{ id: string }>('/api/sessions', { method: 'POST' });
-        void request('/api/state', { method: 'PUT', body: JSON.stringify({ activeSessionId: id }) });
         switchSession(id);
         setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'New conversation. How can Yagr help?', progress: [] }]);
         void refreshSessions();
@@ -1382,7 +1381,6 @@ function App() {
 
     // No active stream — hard-switch as before.
     switchSession(targetId);
-    void request('/api/state', { method: 'PUT', body: JSON.stringify({ activeSessionId: targetId }) });
 
     void (async () => {
       try {
