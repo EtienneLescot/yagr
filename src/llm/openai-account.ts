@@ -33,6 +33,17 @@ export type CodexReasoningEffort = typeof CODEX_REASONING_EFFORT_OPTIONS[number]
 
 /** Endpoint path for Codex responses on the ChatGPT backend. */
 const CODEX_RESPONSES_PATH = '/codex/responses';
+const CODEX_MODELS_PATH = '/codex/models';
+
+/** In-memory cache for model discovery with ETag support. */
+interface ModelDiscoveryCache {
+  models: string[];
+  etag: string | null;
+  timestamp: number;
+}
+
+let modelDiscoveryCache: ModelDiscoveryCache | null = null;
+const MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /** JWT claim namespace used by OpenAI to embed ChatGPT account metadata. */
 const JWT_ACCOUNT_CLAIM = 'https://api.openai.com/auth';
@@ -374,12 +385,63 @@ export function getOpenAiAccountSession(): OpenAiAccountSession | undefined {
 
 // ─── Model discovery ───────────────────────────────────────────────────────────
 
-/** Returns the static list of models available on the ChatGPT Codex backend.
- *  The backend-api has no public `/models` endpoint, so the list is hardcoded
- *  from the known model registry. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function fetchOpenAiAccountModels(_accessToken: string): Promise<string[]> {
-  return [...KNOWN_CODEX_MODELS];
+/** Fetches available models from the ChatGPT Codex backend with ETag caching.
+ *  Uses `/codex/models` endpoint with conditional requests to minimize API calls.
+ *  Falls back to cached models on network failure or 304 Not Modified responses. */
+export async function fetchOpenAiAccountModels(accessToken: string): Promise<string[]> {
+  const now = Date.now();
+
+  // Return cached data if still valid (within TTL and have ETag for conditional request)
+  if (modelDiscoveryCache && (now - modelDiscoveryCache.timestamp) < MODEL_CACHE_TTL_MS) {
+    return modelDiscoveryCache.models;
+  }
+
+  try {
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    };
+
+    // Include If-None-Match if we have an ETag from previous request
+    if (modelDiscoveryCache?.etag) {
+      headers['If-None-Match'] = modelDiscoveryCache.etag;
+    }
+
+    const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_MODELS_PATH}`, { headers });
+
+    if (response.status === 304 && modelDiscoveryCache) {
+      // Not modified - update timestamp and return cached data
+      modelDiscoveryCache.timestamp = now;
+      return modelDiscoveryCache.models;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Model discovery failed: ${response.status} ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as { data?: Array<{ id?: string }> };
+    const models = data.data?.map((m) => m.id).filter((id): id is string => typeof id === 'string') ?? [];
+
+    if (models.length === 0) {
+      // API returned empty model list, don't overwrite cache
+      return modelDiscoveryCache?.models ?? [...KNOWN_CODEX_MODELS];
+    }
+
+    // Update cache
+    modelDiscoveryCache = {
+      models,
+      etag: response.headers.get('ETag') ?? modelDiscoveryCache?.etag ?? null,
+      timestamp: now,
+    };
+
+    return models;
+  } catch (error) {
+    // On error, return cached data if available, otherwise fall back to known models
+    if (modelDiscoveryCache?.models.length) {
+      return modelDiscoveryCache.models;
+    }
+    return [...KNOWN_CODEX_MODELS];
+  }
 }
 
 // ─── Runtime validation ─────────────────────────────────────────────────────────

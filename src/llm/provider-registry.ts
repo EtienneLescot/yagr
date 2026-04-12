@@ -121,7 +121,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     usesOpenAiCompatibleApi: true,
     setupHint: 'ChatGPT subscription, no API key required',
     modelDiscovery: {
-      buildUrl: () => `${OPENAI_ACCOUNT_BASE_URL}/models`,
+      buildUrl: () => `${OPENAI_ACCOUNT_BASE_URL}/codex/models`,
       authMode: 'bearer-required',
       mapResponse: MODEL_LIST_MAPPER,
     },
