@@ -39,5 +39,5 @@ jobs:
                   llm-base-url: ${{ vars.OPENHANDS_LLM_BASE_URL || 'https://llm-proxy.app.all-hands.dev' }}
                   review-style: ${{ vars.OPENHANDS_REVIEW_STYLE || 'roasted' }}
                   llm-api-key: ${{ secrets.LLM_API_KEY }}
-                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  github-token: ${{ secrets.PAT_TOKEN }}
                   lmnr-api-key: ${{ secrets.LMNR_SKILLS_API_KEY }}
