@@ -96,8 +96,6 @@ export class WebUiSessionRegistry {
       title: session.title,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
-      gateway: 'webui',
-      gatewayKey: session.id,
       messageCount: session.displayMessages?.length ?? 0,
     };
   }
