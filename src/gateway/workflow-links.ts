@@ -38,12 +38,18 @@ export function resolveWorkflowOpenLink(
   const resolvedTarget = normalizeUrl(resolvedTargetUrl)!;
 
   const ownerCredentialService = options.ownerCredentialService ?? new ManagedN8nOwnerCredentialService();
+  const configuredHostOrigin = options.n8nConfigService
+    ? normalizeUrl(options.n8nConfigService.getLocalConfig().host ?? '')?.origin
+    : undefined;
+  const shouldUseConfiguredHostFallback = Boolean(options.n8nTunnelPublicUrl && configuredHostOrigin);
 
   // Look up owner credentials: try the resolved origin first (tunnel), then fall back
-  // to the original origin (local n8n) since credentials are stored against the local URL.
+  // to the original origin (local n8n) and the configured local host since credentials
+  // are stored against the local URL even when the active instance host is tunnelized.
   const ownerCredentials =
     ownerCredentialService.get(resolvedTarget.origin) ??
-    ownerCredentialService.get(targetUrl.origin);
+    ownerCredentialService.get(targetUrl.origin) ??
+    (shouldUseConfiguredHostFallback ? ownerCredentialService.get(configuredHostOrigin!) : undefined);
 
   // If we have credentials, generate the self-contained auth URL.
   // The data: URI contains a form that POSTs directly to the tunnel domain

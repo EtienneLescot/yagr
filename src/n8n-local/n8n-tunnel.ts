@@ -487,15 +487,27 @@ export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: strin
  * Resolves the local n8n URL that should be used as the tunnel target.
  *
  * Precedence:
- *   1. Yagr-managed instance state (always local, port known by Yagr).
- *   2. Externally-configured host — accepted only if it is a local/private URL.
+ *   1. Yagr-managed instance (determined by instanceProfile in localConfig).
+ *   2. ManagedN8nInstanceState file (fallback for running managed instances).
+ *   3. Externally-configured host — accepted only if it is a local/private URL.
  *
  * Throws a descriptive error if the configured instance is a remote/cloud URL
  * (already publicly reachable, tunneling makes no sense) or if nothing is
  * configured at all.
  */
 export function resolveN8nTunnelTargetUrl(): string {
-  const managedState = classifyConfiguredN8nInstance().managedState;
+  const classification = classifyConfiguredN8nInstance();
+
+  // Check if instanceProfile indicates Yagr-managed (authoritative source after wizard setup)
+  const isYagrManaged = classification.instanceProfile === 'yagr-managed-docker'
+    || classification.instanceProfile === 'yagr-managed-direct';
+
+  if (isYagrManaged && classification.host) {
+    return classification.host;
+  }
+
+  // Fallback: use managedState if available and running
+  const managedState = classification.managedState;
   if (managedState && managedState.status !== 'stopped') {
     return `http://127.0.0.1:${managedState.port}`;
   }

@@ -99,7 +99,7 @@ function createN8nConfigStore(initialConfig = {}) {
       return 'instance_test';
     },
     saveLocalConfig(config) {
-      localConfig = { ...config };
+      localConfig = { ...localConfig, ...config };
     },
   };
 }
@@ -137,6 +137,45 @@ test('saveN8nConfig persists host project and workflow workspace and returns ref
   assert.equal(n8nConfigStore.getLocalConfig().instanceIdentifier, 'instance_test');
   assert.equal(ensuredDirs.length, 1);
   assert.match(ensuredDirs[0], /workflows/);
+});
+
+test('saveN8nConfig reapplies instanceProfile after n8nac refresh rewrites the workspace config', async () => {
+  const yagrConfigStore = createYagrConfigStore();
+  const n8nConfigStore = createN8nConfigStore({ customNodesPath: '/tmp/custom-nodes' });
+
+  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
+    createN8nClient: () => ({
+      async testConnection() { return true; },
+      async getProjects() {
+        return [{ id: 'proj_1', name: 'Primary Project' }];
+      },
+    }),
+    async refreshAiContext() {
+      n8nConfigStore.saveLocalConfig({
+        version: 2,
+        activeInstanceId: 'instance_test',
+        instances: [{ id: 'instance_test', host: 'http://localhost:5678' }],
+        host: 'http://localhost:5678',
+        syncFolder: 'workflows',
+        projectId: 'proj_1',
+        projectName: 'Primary Project',
+        instanceIdentifier: 'instance_test',
+      });
+    },
+  });
+
+  await service.saveN8nConfig({
+    host: 'http://localhost:5678',
+    apiKey: 'n8n-key',
+    projectId: 'proj_1',
+    syncFolder: 'workflows',
+    instanceProfile: 'yagr-managed-direct',
+  });
+
+  const saved = n8nConfigStore.getLocalConfig();
+  assert.equal(saved.instanceProfile, 'yagr-managed-direct');
+  assert.equal(saved.version, 2);
+  assert.equal(saved.activeInstanceId, 'instance_test');
 });
 
 test('saveLlmConfig writes provider model baseUrl and api key through the shared service', () => {

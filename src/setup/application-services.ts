@@ -646,7 +646,7 @@ export class YagrSetupApplicationService {
     const instanceIdentifier = await this.n8nConfigService.getOrCreateInstanceIdentifier(host);
     const currentConfig = this.n8nConfigService.getLocalConfig();
     const projectName = getDisplayProjectName(selectedProject);
-    this.n8nConfigService.saveLocalConfig({
+    const persistedConfig = {
       host,
       syncFolder,
       projectId: selectedProject.id,
@@ -654,7 +654,8 @@ export class YagrSetupApplicationService {
       instanceIdentifier,
       customNodesPath: currentConfig.customNodesPath,
       instanceProfile,
-    });
+    };
+    this.n8nConfigService.saveLocalConfig(persistedConfig);
 
     this.n8nConfigService.syncN8nacCliApiKey?.();
 
@@ -665,8 +666,12 @@ export class YagrSetupApplicationService {
 
     try {
       await this.refreshAiContextRunner({ host, apiKey });
+      // `n8nac update-ai` rewrites `n8nac-config.json`; re-apply Yagr metadata so
+      // later commands keep the instance classification chosen during setup.
+      this.n8nConfigService.saveLocalConfig(persistedConfig);
       return undefined;
     } catch (error) {
+      this.n8nConfigService.saveLocalConfig(persistedConfig);
       return `Workspace saved, but the n8n workspace instructions refresh failed: ${error instanceof Error ? error.message : String(error)}`;
     }
   }

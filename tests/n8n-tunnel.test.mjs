@@ -192,6 +192,35 @@ test('resolveN8nTunnelTargetUrl uses the managed instance port when a managed in
   }
 });
 
+test('resolveN8nTunnelTargetUrl accepts legacy custom-local profiles when the managed runtime matches the host', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-tunnel-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const workspaceDir = path.join(tempHome, 'n8n-workspace');
+    fs.mkdirSync(workspaceDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workspaceDir, 'n8nac-config.json'),
+      JSON.stringify({ instanceProfile: 'custom-local-direct', host: 'http://127.0.0.1:5678' }, null, 2),
+    );
+    const state = buildManagedN8nState({
+      strategy: 'docker',
+      image: '',
+      port: 5678,
+      status: 'ready',
+      bootstrapStage: 'connected',
+    });
+    writeManagedN8nState(state);
+    const targetUrl = resolveN8nTunnelTargetUrl();
+    assert.equal(targetUrl, 'http://127.0.0.1:5678');
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
 test('resolveN8nTunnelTargetUrl throws for non-managed instances', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-tunnel-'));
   const previousHome = process.env.YAGR_HOME;

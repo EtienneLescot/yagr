@@ -26,6 +26,16 @@ export interface YagrN8nLocalConfig {
   instanceProfile?: YagrN8nInstanceProfile;
 }
 
+const YAGR_LOCAL_CONFIG_KEYS = new Set([
+  'host',
+  'syncFolder',
+  'projectId',
+  'projectName',
+  'instanceIdentifier',
+  'customNodesPath',
+  'instanceProfile',
+]);
+
 export interface YagrResolvedN8nRuntimeState {
   host?: string;
   apiKey?: string;
@@ -150,7 +160,15 @@ export class YagrN8nConfigService {
   }
 
   saveLocalConfig(config: YagrN8nLocalConfig): void {
-    fs.writeFileSync(this.localConfigPath, JSON.stringify(config, null, 2));
+    const existing = this.readRawLocalConfig();
+    for (const key of YAGR_LOCAL_CONFIG_KEYS) {
+      delete existing[key];
+    }
+
+    fs.writeFileSync(this.localConfigPath, JSON.stringify({
+      ...existing,
+      ...config,
+    }, null, 2));
   }
 
   saveBootstrapState(
@@ -321,6 +339,22 @@ export class YagrN8nConfigService {
       return url.origin;
     } catch {
       return host.replace(/\/$/, '');
+    }
+  }
+
+  private readRawLocalConfig(): Record<string, unknown> {
+    if (!fs.existsSync(this.localConfigPath)) {
+      return {};
+    }
+
+    try {
+      const content = fs.readFileSync(this.localConfigPath, 'utf-8');
+      const parsed = JSON.parse(content) as unknown;
+      return typeof parsed === 'object' && parsed !== null
+        ? { ...(parsed as Record<string, unknown>) }
+        : {};
+    } catch {
+      return {};
     }
   }
 

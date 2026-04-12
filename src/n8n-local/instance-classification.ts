@@ -33,6 +33,15 @@ export function normalizeN8nUrlOrigin(url: string | undefined): string | undefin
   }
 }
 
+function doesManagedStateMatchHost(
+  managedState: ManagedN8nInstanceState | undefined,
+  host: string | undefined,
+): boolean {
+  const managedOrigin = normalizeN8nUrlOrigin(managedState?.url);
+  const hostOrigin = normalizeN8nUrlOrigin(host);
+  return Boolean(managedOrigin && hostOrigin && managedOrigin === hostOrigin);
+}
+
 export function isLocalN8nUrl(urlString: string | undefined): boolean {
   if (!urlString) {
     return false;
@@ -71,6 +80,22 @@ export function resolveN8nInstanceProfile(input: {
   instanceProfile?: YagrN8nInstanceProfile;
   managedState?: ManagedN8nInstanceState;
 }): YagrN8nInstanceProfile | undefined {
+  const managedStateMatchesHost = doesManagedStateMatchHost(input.managedState, input.host);
+
+  if (managedStateMatchesHost) {
+    const managedProfile = input.managedState?.strategy === 'docker'
+      ? 'yagr-managed-docker'
+      : 'yagr-managed-direct';
+
+    if (
+      !input.instanceProfile
+      || input.instanceProfile === 'custom-local-docker'
+      || input.instanceProfile === 'custom-local-direct'
+    ) {
+      return managedProfile;
+    }
+  }
+
   if (input.instanceProfile) {
     return input.instanceProfile;
   }
