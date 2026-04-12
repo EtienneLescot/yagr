@@ -567,9 +567,7 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
 }
 
 function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
-  const resolvedUrl = embed.targetUrl
-    ? `/open/n8n-workflow?target=${encodeURIComponent(embed.targetUrl)}`
-    : embed.url;
+  const resolvedUrl = `/open/n8n-workflow?url=${encodeURIComponent(embed.url)}`;
 
   const exec = embed.executionResult;
   const execStatusClass = exec

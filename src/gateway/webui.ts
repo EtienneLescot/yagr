@@ -63,6 +63,11 @@ export interface WebUiGatewayStatus {
   url: string;
 }
 
+function decodeHtmlDataUrl(dataUrl: string): string {
+  const encoded = dataUrl.split(',', 2)[1] ?? '';
+  return decodeURIComponent(encoded);
+}
+
 interface WebUiConfigPayload {
   host?: string;
   port?: number;
@@ -473,14 +478,14 @@ class WebUiGateway implements Gateway {
     }
 
     if (method === 'GET' && url.pathname === '/api/n8n/workflow-session') {
-      const target = String(url.searchParams.get('target') ?? '').trim();
-      await this.sendManagedN8nWorkflowSession(response, target);
+      const workflowUrl = String(url.searchParams.get('url') ?? url.searchParams.get('target') ?? '').trim();
+      await this.sendManagedN8nWorkflowSession(response, workflowUrl);
       return;
     }
 
     if (method === 'GET' && url.pathname === '/open/n8n-workflow') {
-      const target = String(url.searchParams.get('target') ?? '').trim();
-      await this.openManagedN8nWorkflow(response, target);
+      const workflowUrl = String(url.searchParams.get('url') ?? url.searchParams.get('target') ?? '').trim();
+      await this.openManagedN8nWorkflow(response, workflowUrl);
       return;
     }
 
@@ -496,8 +501,13 @@ class WebUiGateway implements Gateway {
     });
   }
 
-  private async sendManagedN8nWorkflowSession(response: ServerResponse, target: string): Promise<void> {
-    const session = resolveManagedN8nWorkflowOpen(target);
+  private async sendManagedN8nWorkflowSession(response: ServerResponse, workflowUrl: string): Promise<void> {
+    if (workflowUrl.startsWith('data:text/html')) {
+      this.sendJson(response, 200, { mode: 'managed', targetUrl: workflowUrl, fallbackPage: decodeHtmlDataUrl(workflowUrl) });
+      return;
+    }
+
+    const session = resolveManagedN8nWorkflowOpen(workflowUrl);
     if (!session.ok) {
       this.sendJson(response, session.statusCode, { error: session.error });
       return;
@@ -506,8 +516,13 @@ class WebUiGateway implements Gateway {
     this.sendJson(response, 200, session.payload);
   }
 
-  private async openManagedN8nWorkflow(response: ServerResponse, target: string): Promise<void> {
-    const session = resolveManagedN8nWorkflowOpen(target);
+  private async openManagedN8nWorkflow(response: ServerResponse, workflowUrl: string): Promise<void> {
+    if (workflowUrl.startsWith('data:text/html')) {
+      this.sendText(response, 200, decodeHtmlDataUrl(workflowUrl), 'text/html; charset=utf-8');
+      return;
+    }
+
+    const session = resolveManagedN8nWorkflowOpen(workflowUrl);
     if (!session.ok) {
       this.sendText(response, session.statusCode, session.error, 'text/plain; charset=utf-8');
       return;
