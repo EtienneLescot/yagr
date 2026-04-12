@@ -12,6 +12,7 @@ import {
   formatWorkflowLinkTerminal,
   markdownToTelegramHtml,
 } from '../dist/gateway/format-message.js';
+import { enrichWorkflowEmbed } from '../dist/gateway/n8n-workflow-middleware.js';
 
 // ---------------------------------------------------------------------------
 // extractWorkflowEmbed
@@ -84,15 +85,14 @@ test('formatWorkflowLinkHtml escapes HTML in title', () => {
   assert.ok(result.includes('&lt;script&gt;'));
 });
 
-test('formatWorkflowLinkTerminal uses OSC 8 escape sequences', () => {
+test('formatWorkflowLinkTerminal shows a visible open URL', () => {
   const result = formatWorkflowLinkTerminal({
     workflowId: 'abc',
     url: 'https://n8n.example.com/workflow/abc',
     title: 'Test WF',
   });
-  assert.ok(result.includes('\x1b]8;;https://n8n.example.com/workflow/abc\x07'));
   assert.ok(result.includes('Test WF'));
-  assert.ok(result.includes('\x1b]8;;\x07'));
+  assert.ok(result.includes('https://n8n.example.com/workflow/abc'));
 });
 
 test('formatWorkflowLinkTerminal shows target URL when Yagr auth bridge is used', () => {
@@ -102,8 +102,22 @@ test('formatWorkflowLinkTerminal shows target URL when Yagr auth bridge is used'
     targetUrl: 'http://127.0.0.1:5678/workflow/abc',
     title: 'Test WF',
   });
-  assert.match(result, /\x1b]8;;http:\/\/127\.0\.0\.1:3791\/open\/n8n-workflow\?target=/);
-  assert.ok(!result.includes('http://127.0.0.1:5678/workflow/abc'));
+  assert.match(result, /http:\/\/127\.0\.0\.1:3791\/open\/n8n-workflow\/[0-9a-f]{16}/);
+  assert.ok(!result.includes('data:text/html'));
+});
+
+test('enrichWorkflowEmbed preserves an already-resolved workflow target', () => {
+  const result = enrichWorkflowEmbed({
+    type: 'embed',
+    toolName: 'presentWorkflowResult',
+    kind: 'workflow',
+    workflowId: 'abc',
+    url: 'data:text/html,stub',
+    targetUrl: 'https://example.com/workflow/abc',
+    via: 'self-contained-auth',
+  });
+  assert.equal(result.url, 'data:text/html,stub');
+  assert.equal(result.targetUrl, 'https://example.com/workflow/abc');
 });
 
 // ---------------------------------------------------------------------------

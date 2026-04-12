@@ -90,3 +90,15 @@ test('makeToolEndOperationEvent preserves full execute output for shell logs', (
   assert.match(event.summary, /^exit 0/);
 });
 
+test('makeToolEndOperationEvent suppresses workflow embed JSON for execute output', () => {
+  const event = makeToolEndOperationEvent(
+    'tool:execute:test',
+    'execute',
+    `{"__type":"workflow-embed","workflowId":"wf-123","url":"data:text/html,stub"}\n[Command succeeded with exit code 0]`,
+    Date.now() - 100,
+  );
+
+  assert.equal(event.status, 'done');
+  assert.equal(event.body, '');
+  assert.equal(event.summary, 'Workflow ready  wf-123');
+});

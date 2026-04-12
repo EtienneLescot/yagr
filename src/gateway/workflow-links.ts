@@ -15,6 +15,8 @@ export function resolveWorkflowOpenLink(
     ownerCredentialService?: ManagedN8nOwnerCredentialService;
     /** When set, the public Cloudflare tunnel URL replaces the local origin in openUrl. */
     n8nTunnelPublicUrl?: string;
+    /** Local n8n origin behind the tunnel, used to recover owner credentials. */
+    n8nTunnelTargetUrl?: string;
   } = {},
 ): WorkflowOpenLink {
   const targetUrl = normalizeUrl(workflowUrl);
@@ -41,14 +43,18 @@ export function resolveWorkflowOpenLink(
   const configuredHostOrigin = options.n8nConfigService
     ? normalizeUrl(options.n8nConfigService.getLocalConfig().host ?? '')?.origin
     : undefined;
+  const tunnelTargetOrigin = options.n8nTunnelTargetUrl
+    ? normalizeUrl(options.n8nTunnelTargetUrl)?.origin
+    : undefined;
   const shouldUseConfiguredHostFallback = Boolean(options.n8nTunnelPublicUrl && configuredHostOrigin);
 
   // Look up owner credentials: try the resolved origin first (tunnel), then fall back
-  // to the original origin (local n8n) and the configured local host since credentials
+  // to the original origin (local n8n), the tunnel target origin, and the configured local host since credentials
   // are stored against the local URL even when the active instance host is tunnelized.
   const ownerCredentials =
     ownerCredentialService.get(resolvedTarget.origin) ??
     ownerCredentialService.get(targetUrl.origin) ??
+    (tunnelTargetOrigin ? ownerCredentialService.get(tunnelTargetOrigin) : undefined) ??
     (shouldUseConfiguredHostFallback ? ownerCredentialService.get(configuredHostOrigin!) : undefined);
 
   // If we have credentials, generate the self-contained auth URL.

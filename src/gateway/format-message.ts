@@ -63,7 +63,7 @@ export function formatWorkflowLinkHtml(embed: WorkflowEmbed): string {
 export function formatWorkflowLinkTerminal(embed: WorkflowEmbed): string {
   const label = embed.title ?? `Workflow ${embed.workflowId}`;
   const terminalUrl = resolveTerminalWorkflowOpenUrl(embed);
-  return `🔗 \x1b]8;;${terminalUrl}\x07${label}\x1b]8;;\x07`;
+  return `🔗 ${label}\n${terminalUrl}`;
 }
 
 // ---------------------------------------------------------------------------

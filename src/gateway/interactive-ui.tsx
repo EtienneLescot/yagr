@@ -10,6 +10,7 @@ import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, ensureWorkflowPresentation, processStreamEvent } from './langgraph-events.js';
 import {
+  formatWorkflowLinkTerminal,
   type WorkflowEmbed,
   resolveTerminalWorkflowOpenUrl,
   workflowEmbedKey,
@@ -363,9 +364,8 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
                 ? prev
                 : [...prev, w]
             ));
-            const label = w.title ? `${w.title} — ${w.url}` : w.url;
-            pushEntry('result', 'Workflow available', label, 'strong');
-            setActiveOperationText(`Workflow ready: ${w.url}`);
+            pushEntry('result', 'Workflow available', formatWorkflowLinkTerminal(w), 'strong');
+            setActiveOperationText(`Workflow ready: ${w.targetUrl ?? w.url}`);
           },
         });
       }
@@ -385,9 +385,8 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
               ? prev
               : [...prev, w]
           ));
-          const label = w.title ? `${w.title} — ${w.url}` : w.url;
-          pushEntry('result', 'Workflow available', label, 'strong');
-          setActiveOperationText(`Workflow ready: ${w.url}`);
+          pushEntry('result', 'Workflow available', formatWorkflowLinkTerminal(w), 'strong');
+          setActiveOperationText(`Workflow ready: ${w.targetUrl ?? w.url}`);
         },
       });
 
@@ -556,7 +555,8 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
 
   const idleIcon = currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
   const statusText = isRunning ? activeOperationText : phaseStatusText;
-  const latestWorkflowTarget = workflowEmbeds.length > 0 ? (workflowEmbeds[workflowEmbeds.length - 1]?.targetUrl ?? workflowEmbeds[workflowEmbeds.length - 1]?.url) : undefined;
+  const latestWorkflow = workflowEmbeds.length > 0 ? workflowEmbeds[workflowEmbeds.length - 1] : undefined;
+  const latestWorkflowOpenUrl = latestWorkflow ? resolveTerminalWorkflowOpenUrl(latestWorkflow) : undefined;
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0} width="100%">
@@ -598,11 +598,11 @@ function YagrInteractiveApp({ agent, threadIdRef, options }: InteractiveAppProps
         {liveAssistantText ? <Text color="green">Assistant: {liveAssistantText}</Text> : null}
         {pendingRequiredActions.length > 0 ? <RequiredActionList actions={pendingRequiredActions} /> : null}
         <Text dimColor>
-          {latestWorkflowTarget
+          {latestWorkflowOpenUrl
             ? 'Ctrl+O to open the latest workflow.'
             : ' '}
         </Text>
-        {latestWorkflowTarget ? <Text dimColor>Latest workflow: {latestWorkflowTarget}</Text> : null}
+        {latestWorkflowOpenUrl ? <Text dimColor>Latest open link: {latestWorkflowOpenUrl}</Text> : null}
       </Box>
 
       <Box marginTop={1} width="100%">

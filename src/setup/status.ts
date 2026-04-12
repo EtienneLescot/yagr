@@ -49,12 +49,23 @@ export function getYagrSetupStatus(
   const gatewayStatus = getGatewaySupervisorStatus(yagrConfigService);
   const activeSurfaces = normalizeGatewaySurfaces(options.activeSurfaces);
 
+  const configuredN8nApiKey = n8nConfig.host
+    ? (
+        n8nConfigService.getApiKey(n8nConfig.host)
+        ?? (
+          yagrConfig.n8nTunnel?.enabled && yagrConfig.n8nTunnel.targetUrl
+            ? n8nConfigService.getApiKey(yagrConfig.n8nTunnel.targetUrl)
+            : undefined
+        )
+      )
+    : undefined;
+
   const n8nConfigured = Boolean(
     n8nConfig.host
     && n8nConfig.syncFolder
     && n8nConfig.projectId
     && n8nConfig.projectName
-    && n8nConfigService.getApiKey(n8nConfig.host),
+    && configuredN8nApiKey,
   );
 
   let llmConfigured = false;

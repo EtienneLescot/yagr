@@ -227,3 +227,45 @@ test('resolveWorkflowOpenLink still uses self-contained auth when the workflow U
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
 });
+
+test('resolveWorkflowOpenLink can recover local owner credentials from the tunnel target URL when configured host is already tunnelized', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-workflow-link-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const workspaceDir = path.join(tempHome, 'n8n-workspace');
+    fs.mkdirSync(workspaceDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workspaceDir, 'n8nac-config.json'),
+      JSON.stringify({
+        host: 'https://example-tunnel.trycloudflare.com',
+      }, null, 2),
+    );
+
+    const n8nConfigService = new YagrN8nConfigService();
+    const ownerCredentialService = new ManagedN8nOwnerCredentialService();
+    ownerCredentialService.save({
+      url: 'http://127.0.0.1:5678',
+      email: 'owner@local.yagr',
+      password: 'Password1A',
+      firstName: 'Yagr',
+      lastName: 'Local',
+      createdAt: new Date().toISOString(),
+    });
+
+    const result = resolveWorkflowOpenLink('https://example-tunnel.trycloudflare.com/workflow/abc', {
+      n8nConfigService,
+      ownerCredentialService,
+      n8nTunnelPublicUrl: 'https://example-tunnel.trycloudflare.com',
+      n8nTunnelTargetUrl: 'http://127.0.0.1:5678',
+    });
+
+    assert.equal(result.via, 'self-contained-auth');
+    assert.equal(result.targetUrl, 'https://example-tunnel.trycloudflare.com/workflow/abc');
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});

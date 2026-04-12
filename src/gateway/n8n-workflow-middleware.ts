@@ -52,6 +52,14 @@ export function enrichWorkflowEmbed(event: YagrToolEvent): YagrToolEvent {
   const rawUrl = event.url;
   if (!rawUrl) return event;
 
+  // `presentWorkflowResultCli()` already resolves workflow links at the source.
+  // If the embed already carries a resolved `targetUrl` or `via`, do not run
+  // the deprecated compatibility enrichment again or we may clobber the
+  // canonical target with the self-contained `data:` URL.
+  if (typeof event.targetUrl === 'string' || typeof event.via === 'string') {
+    return event;
+  }
+
   const n8nTunnelPublicUrl = getActiveTunnelState()?.publicUrl;
   const workflowLink = resolveWorkflowOpenLink(rawUrl, { n8nTunnelPublicUrl });
 

@@ -207,13 +207,15 @@ export async function presentWorkflowResultCli({
 }: PresentWorkflowCliInput) {
   const resolvedDiagram = resolveWorkflowDiagram(workflowId, diagram);
   const canonicalUrl = resolveWorkflowUrl(workflowId, workflowUrl);
-  const tunnelUrl = getActiveTunnelState()?.publicUrl;
+  const tunnelState = getActiveTunnelState();
+  const tunnelUrl = tunnelState?.publicUrl;
   const n8nConfigService = new YagrN8nConfigService();
   const ownerCredentialService = new ManagedN8nOwnerCredentialService();
   const workflowLink = resolveWorkflowOpenLink(canonicalUrl, {
     n8nConfigService,
     ownerCredentialService,
     n8nTunnelPublicUrl: tunnelUrl,
+    n8nTunnelTargetUrl: tunnelState?.targetUrl,
   });
 
   return {

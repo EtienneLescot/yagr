@@ -129,3 +129,49 @@ test('getYagrSetupStatus accepts proxy-based llm providers without api keys', ()
   assert.equal(status.llmConfigured, true);
   assert.equal(status.ready, true);
 });
+
+test('getYagrSetupStatus treats n8n as configured when the active host is tunnelized but the API key is stored on the local target URL', () => {
+  const yagrConfigService = {
+    getLocalConfig() {
+      return {
+        provider: 'google',
+        model: 'gemini-3-flash-preview',
+        n8nTunnel: {
+          enabled: true,
+          publicUrl: 'https://example.trycloudflare.com',
+          targetUrl: 'http://127.0.0.1:5678',
+        },
+        gateway: {
+          enabledSurfaces: ['telegram'],
+        },
+      };
+    },
+    getEnabledGatewaySurfaces() {
+      return ['telegram'];
+    },
+    getApiKey(provider) {
+      return provider === 'google' ? 'test-google-key' : undefined;
+    },
+    getTelegramBotToken() {
+      return 'telegram-token';
+    },
+  };
+
+  const n8nConfigService = {
+    getLocalConfig() {
+      return {
+        host: 'https://example.trycloudflare.com',
+        syncFolder: '/tmp/yagr-sync',
+        projectId: 'proj_123',
+        projectName: 'Test Project',
+      };
+    },
+    getApiKey(host) {
+      return host === 'http://127.0.0.1:5678' ? 'test-n8n-key' : undefined;
+    },
+  };
+
+  const status = getYagrSetupStatus(yagrConfigService, n8nConfigService);
+  assert.equal(status.n8nConfigured, true);
+  assert.equal(status.ready, true);
+});

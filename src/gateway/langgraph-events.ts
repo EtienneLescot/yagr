@@ -359,6 +359,17 @@ async function handleToolEnd(
       break;
     }
 
+    case 'runScript':
+    case 'runShell': {
+      if (output?.__type === WORKFLOW_EMBED_TYPE) {
+        const embed = output as unknown as WorkflowEmbedPayload;
+        const enriched = enrichWorkflowEmbedPayload(embed);
+        accumulator.workflowEmbeds.push(enriched);
+        await callbacks.onWorkflowEmbed?.(enriched);
+      }
+      break;
+    }
+
     case 'reportProgress': {
       const message = output?.message;
       if (typeof message === 'string') {
@@ -513,44 +524,152 @@ function parseToolOutput(raw: unknown): Record<string, unknown> | undefined {
   }
 
   if (typeof raw === 'string') {
-    const executePayload = parseExecuteJsonPayload(raw);
-    if (executePayload) {
-      return executePayload;
-    }
-
-    try {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
-    } catch {
+    const parsed = parseJsonObjectFromText(raw);
+    if (!parsed) {
       return undefined;
     }
+
+    const stdout = parsed.stdout;
+    if (typeof stdout === 'string') {
+      const parsedStdout = parseJsonObjectFromText(stdout);
+      if (parsedStdout) {
+        return parsedStdout;
+      }
+    }
+
+    return parsed;
   }
 
   if (typeof raw === 'object') {
-    return raw as Record<string, unknown>;
+    const obj = raw as Record<string, unknown>;
+    const kwargs = obj.kwargs;
+    if (obj.type === 'constructor' && kwargs && typeof kwargs === 'object') {
+      return parseToolOutput(kwargs as Record<string, unknown>);
+    }
+
+    const content = obj.content;
+    if (typeof content === 'string') {
+      const parsedContent = parseJsonObjectFromText(content);
+      if (parsedContent) {
+        return parsedContent;
+      }
+    }
+
+    const result = obj.result;
+    if (typeof result === 'string') {
+      const parsedResult = parseJsonObjectFromText(result);
+      if (parsedResult) {
+        return parsedResult;
+      }
+    }
+
+    const output = obj.output;
+    if (typeof output === 'string') {
+      const parsedOutput = parseJsonObjectFromText(output);
+      if (parsedOutput) {
+        return parsedOutput;
+      }
+    }
+
+    const stdout = obj.stdout;
+    if (typeof stdout === 'string') {
+      const parsedStdout = parseJsonObjectFromText(stdout);
+      if (parsedStdout) {
+        return parsedStdout;
+      }
+    }
+
+    return obj;
+  }
+
+  return undefined;
+}
+
+function parseJsonObjectFromText(raw: string): Record<string, unknown> | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const exact = tryParseJsonObject(trimmed);
+  if (exact) {
+    return exact;
+  }
+
+  const executePayload = parseExecuteJsonPayload(trimmed);
+  if (executePayload) {
+    return executePayload;
+  }
+
+  const embedded = extractLeadingJsonObject(trimmed);
+  if (embedded) {
+    return embedded;
   }
 
   return undefined;
 }
 
 function parseExecuteJsonPayload(raw: string): Record<string, unknown> | undefined {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return undefined;
-  }
+  const exitMatch = raw.match(/\n\[Command (?:succeeded|failed) with exit code \d+\]\s*$/);
+  const body = exitMatch ? raw.slice(0, exitMatch.index).trim() : raw;
+  return tryParseJsonObject(body) ?? extractLeadingJsonObject(body);
+}
 
-  const exitMatch = trimmed.match(/\n\[Command (?:succeeded|failed) with exit code \d+\]\s*$/);
-  const body = exitMatch ? trimmed.slice(0, exitMatch.index).trim() : trimmed;
-  if (!body.startsWith('{') || !body.endsWith('}')) {
+function tryParseJsonObject(raw: string): Record<string, unknown> | undefined {
+  if (!raw.startsWith('{') || !raw.endsWith('}')) {
     return undefined;
   }
 
   try {
-    const parsed = JSON.parse(body);
+    const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : undefined;
   } catch {
     return undefined;
   }
+}
+
+function extractLeadingJsonObject(raw: string): Record<string, unknown> | undefined {
+  if (!raw.startsWith('{')) {
+    return undefined;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaping = false;
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+      } else if (ch === '\\') {
+        escaping = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return tryParseJsonObject(raw.slice(0, i + 1));
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function isRequiredAction(obj: Record<string, unknown>): boolean {
