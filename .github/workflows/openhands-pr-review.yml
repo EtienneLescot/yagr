@@ -22,7 +22,7 @@ jobs:
                     github.event.action == 'review_requested' &&
                     (
                         github.event.requested_reviewer.login == 'openhands-agent' ||
-                        github.event.requested_reviewer.login == 'all-hands-bot'
+                        github.event.requested.reviewer.login == 'all-hands-bot'
                     )
                 )
             )
@@ -30,6 +30,7 @@ jobs:
             group: pr-review-${{ github.event.pull_request.number }}
             cancel-in-progress: true
         runs-on: ubuntu-24.04
+        environment: prod
         steps:
             - name: Run PR Review
               uses: OpenHands/extensions/plugins/pr-review@main
