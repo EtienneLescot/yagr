@@ -32,6 +32,14 @@ jobs:
         runs-on: ubuntu-24.04
         environment: prod
         steps:
+            - name: Debug environment
+              run: |
+                  echo "LLM_MODEL: ${{ vars.OPENHANDS_LLM_MODEL }}"
+                  echo "LLM_BASE_URL: ${{ vars.OPENHANDS_LLM_BASE_URL }}"
+                  echo "REVIEW_STYLE: ${{ vars.OPENHANDS_REVIEW_STYLE || 'roasted' }}"
+                  echo "HAS_LLM_API_KEY: ${{ secrets.LLM_API_KEY != '' }}"
+                  echo "HAS_PAT_TOKEN: ${{ secrets.PAT_TOKEN != '' }}"
+                  echo "HAS_LMNR_KEY: ${{ secrets.LMNR_SKILLS_API_KEY != '' }}"
             - name: Run PR Review
               uses: OpenHands/extensions/plugins/pr-review@main
               with:
@@ -40,4 +48,3 @@ jobs:
                   review-style: ${{ vars.OPENHANDS_REVIEW_STYLE || 'roasted' }}
                   llm-api-key: ${{ secrets.LLM_API_KEY }}
                   github-token: ${{ secrets.PAT_TOKEN }}
-                  lmnr-api-key: ${{ secrets.LMNR_SKILLS_API_KEY }}
