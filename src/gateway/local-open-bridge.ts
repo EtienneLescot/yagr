@@ -1,13 +1,69 @@
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
+import path from 'node:path';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
+import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 
 const DEFAULT_LOCAL_BRIDGE_HOST = '127.0.0.1';
 const DEFAULT_LOCAL_BRIDGE_PORT = 3791;
 
 let serverPromise: Promise<void> | undefined;
 let server: Server | undefined;
+let activePort = DEFAULT_LOCAL_BRIDGE_PORT;
 const targetByToken = new Map<string, string>();
+
+function getOpenLinksDir(): string {
+  ensureYagrHomeDir();
+  return path.join(getYagrPaths().homeDir, 'open-links');
+}
+
+function getBridgeTargetsPath(): string {
+  return path.join(getOpenLinksDir(), 'bridge-targets.json');
+}
+
+function readPersistedTargets(): Record<string, string> {
+  try {
+    const filePath = getBridgeTargetsPath();
+    if (!fs.existsSync(filePath)) {
+      return {};
+    }
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, string> : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistTarget(token: string, targetUrl: string): void {
+  try {
+    const dir = getOpenLinksDir();
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const next = {
+      ...readPersistedTargets(),
+      [token]: targetUrl,
+    };
+    fs.writeFileSync(getBridgeTargetsPath(), JSON.stringify(next, null, 2), { mode: 0o600 });
+  } catch {
+    // best effort
+  }
+}
+
+function resolveTargetFromToken(token: string): string {
+  const inMemory = targetByToken.get(token);
+  if (inMemory) {
+    return inMemory;
+  }
+
+  const persisted = readPersistedTargets()[token];
+  if (typeof persisted === 'string') {
+    targetByToken.set(token, persisted);
+    return persisted;
+  }
+
+  return '';
+}
 
 export async function ensureLocalWorkflowOpenBridgeRunning(): Promise<void> {
   if (serverPromise) {
@@ -16,33 +72,45 @@ export async function ensureLocalWorkflowOpenBridgeRunning(): Promise<void> {
   }
 
   serverPromise = new Promise<void>((resolve, reject) => {
-    const nextServer = createServer((request, response) => {
-      void handleRequest(request, response);
-    });
+    const tryListen = (preferredPort: number) => {
+      const nextServer = createServer((request, response) => {
+        void handleRequest(request, response);
+      });
 
-    nextServer.once('error', (error) => {
-      serverPromise = undefined;
-      server = undefined;
-      reject(error);
-    });
-    nextServer.listen(DEFAULT_LOCAL_BRIDGE_PORT, DEFAULT_LOCAL_BRIDGE_HOST, () => {
-      server = nextServer;
-      resolve();
-    });
+      nextServer.once('error', (error) => {
+        server = undefined;
+        if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE' && preferredPort !== 0) {
+          tryListen(0);
+          return;
+        }
+        serverPromise = undefined;
+        reject(error);
+      });
+
+      nextServer.listen(preferredPort, DEFAULT_LOCAL_BRIDGE_HOST, () => {
+        const address = nextServer.address();
+        activePort = typeof address === 'object' && address ? address.port : preferredPort;
+        server = nextServer;
+        resolve();
+      });
+    };
+
+    tryListen(DEFAULT_LOCAL_BRIDGE_PORT);
   });
 
   await serverPromise;
 }
 
-export function buildLocalWorkflowOpenBridgeUrl(targetUrl: string): string {
-  const token = createHash('sha256').update(targetUrl).digest('hex').slice(0, 16);
-  targetByToken.set(token, targetUrl);
-  return `http://${DEFAULT_LOCAL_BRIDGE_HOST}:${DEFAULT_LOCAL_BRIDGE_PORT}/open/n8n-workflow/${token}`;
+export function buildLocalWorkflowOpenBridgeUrl(target: string): string {
+  const token = createHash('sha256').update(target).digest('hex').slice(0, 16);
+  targetByToken.set(token, target);
+  persistTarget(token, target);
+  return `http://${DEFAULT_LOCAL_BRIDGE_HOST}:${activePort}/open/n8n-workflow/${token}`;
 }
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const method = request.method ?? 'GET';
-  const url = new URL(request.url ?? '/', `http://${DEFAULT_LOCAL_BRIDGE_HOST}:${DEFAULT_LOCAL_BRIDGE_PORT}`);
+  const url = new URL(request.url ?? '/', `http://${DEFAULT_LOCAL_BRIDGE_HOST}:${activePort}`);
 
   if (method !== 'GET' || !(url.pathname === '/open/n8n-workflow' || url.pathname.startsWith('/open/n8n-workflow/'))) {
     response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
@@ -53,7 +121,15 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   const token = url.pathname.startsWith('/open/n8n-workflow/')
     ? decodeURIComponent(url.pathname.slice('/open/n8n-workflow/'.length)).trim()
     : '';
-  const target = String(token ? (targetByToken.get(token) ?? '') : (url.searchParams.get('target') ?? '')).trim();
+  const target = String(token ? resolveTargetFromToken(token) : (url.searchParams.get('target') ?? '')).trim();
+  if (target.startsWith('data:text/html')) {
+    const encoded = target.split(',', 2)[1] ?? '';
+    const html = decodeURIComponent(encoded);
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(html);
+    return;
+  }
+
   const resolution = resolveManagedN8nWorkflowOpen(target);
   if (!resolution.ok) {
     response.writeHead(resolution.statusCode, { 'content-type': 'text/plain; charset=utf-8' });

@@ -96,13 +96,14 @@ test('formatWorkflowLinkTerminal shows a visible open URL', () => {
 });
 
 test('formatWorkflowLinkTerminal shows target URL when Yagr auth bridge is used', () => {
+  const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent('<html><body>hello</body></html>')}`;
   const result = formatWorkflowLinkTerminal({
     workflowId: 'abc',
-    url: `data:text/html;charset=utf-8,${encodeURIComponent('<html><body>hello</body></html>')}`,
+    url: dataUrl,
     targetUrl: 'http://127.0.0.1:5678/workflow/abc',
     title: 'Test WF',
   });
-  assert.match(result, /http:\/\/127\.0\.0\.1:3791\/open\/n8n-workflow\/[0-9a-f]{16}/);
+  assert.match(result, /http:\/\/127\.0\.0\.1:\d+\/open\/n8n-workflow\/[0-9a-f]{16}/);
   assert.ok(!result.includes('data:text/html'));
 });
 

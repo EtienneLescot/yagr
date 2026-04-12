@@ -102,15 +102,11 @@ export function escapeHtml(text: string): string {
 }
 
 export function resolveTerminalWorkflowOpenUrl(embed: WorkflowEmbed): string {
-  if (embed.targetUrl && embed.url.startsWith('data:text/html')) {
-    return buildLocalWorkflowOpenBridgeUrl(embed.targetUrl);
+  if (embed.url.startsWith('data:text/html')) {
+    return buildLocalWorkflowOpenBridgeUrl(embed.url);
   }
 
-  if (!embed.url.startsWith('data:text/html')) {
-    return embed.url;
-  }
-
-  return materializeDataUrlAsLocalFile(embed.workflowId, embed.url);
+  return embed.url;
 }
 
 function materializeDataUrlAsLocalFile(workflowId: string, dataUrl: string): string {

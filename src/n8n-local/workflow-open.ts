@@ -38,6 +38,7 @@ export function resolveManagedN8nWorkflowOpen(target: string): ManagedWorkflowOp
 
   // Check if the target URL matches the configured n8n host or the active tunnel.
   const tunnelPublicUrl = getActiveTunnelState()?.publicUrl;
+  const tunnelTargetUrl = getActiveTunnelState()?.targetUrl;
   const tunnelOrigin = tunnelPublicUrl ? new URL(tunnelPublicUrl).origin : null;
   const isLocalTarget = targetUrl.origin === configuredHost.origin;
   const isTunnelTarget = tunnelOrigin && targetUrl.origin === tunnelOrigin;
@@ -46,8 +47,25 @@ export function resolveManagedN8nWorkflowOpen(target: string): ManagedWorkflowOp
     return { ok: false, statusCode: 400, error: 'Workflow target URL does not match the configured n8n host.' };
   }
 
-  // Look up owner credentials for the local n8n instance (credentials are always stored against the local URL).
-  const ownerCredentials = new ManagedN8nOwnerCredentialService().get(configuredHost.origin);
+  // Look up owner credentials for the local n8n instance. When the configured
+  // host is already tunnelized, the credentials may still be stored against the
+  // tunnel target's local origin.
+  const credentialLookupOrigins = new Set<string>([configuredHost.origin]);
+  if (tunnelTargetUrl) {
+    try {
+      credentialLookupOrigins.add(new URL(tunnelTargetUrl).origin);
+    } catch {
+      // ignore invalid persisted tunnel target
+    }
+  }
+
+  let ownerCredentials: ManagedN8nOwnerCredentials | undefined;
+  for (const origin of credentialLookupOrigins) {
+    ownerCredentials = new ManagedN8nOwnerCredentialService().get(origin);
+    if (ownerCredentials) {
+      break;
+    }
+  }
   if (!ownerCredentials) {
     return {
       ok: true,
