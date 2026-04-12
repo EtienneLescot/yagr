@@ -164,10 +164,10 @@ export class YagrSetupApplicationService {
 
   async startAccountAuth(provider: YagrModelProvider) {
     if (provider === 'openai-proxy') {
-      const session = await ensureOpenAiAccountSession();
-      if (session) {
-        return { kind: 'none' as const };
-      }
+      // Always start a fresh Codex OAuth flow when the user explicitly asks to sign in.
+      // Do NOT check for an existing session here — that check lives in hasAccountSession
+      // and determines whether to show the reuse screen. Once the user is on the auth
+      // screen they have chosen to (re)authenticate, so always proceed.
       const challenge = await beginCodexAuth();
       const callbackHint = challenge.callbackServerStarted
         ? 'After signing in, Yagr captures the callback automatically.'
