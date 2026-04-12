@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.17](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.16...yagr@v0.2.17) (2026-04-12)
+
+
+### Features
+
+* add debug environment step to OpenHands PR review workflow ([943f9a3](https://github.com/EtienneLescot/yagr/commit/943f9a3e3e56bcd1ca23e248ecef7716f3e99bfc))
+* implement deep agent session management and integrate with existing workflows ([8fc5e4d](https://github.com/EtienneLescot/yagr/commit/8fc5e4d9f13e4304bcf070ce7849a0748c412145))
+* update workflow URL handling to support data URLs in WebUiGateway ([c79e4da](https://github.com/EtienneLescot/yagr/commit/c79e4da8d94978b61741fe1c1d9665994ffddd99))
+
+
+### Bug Fixes
+
+* remove cloudflared unit test that causes inconsistent CI results ([7d8cc49](https://github.com/EtienneLescot/yagr/commit/7d8cc499ee73273a12b0706e2285d075a3c2a8ae))
+* **tests:** update cloudflared error message regex in tunnel test ([4f3f5bd](https://github.com/EtienneLescot/yagr/commit/4f3f5bd3d7d1a86ddfda04bfef6875c4007f8562))
+* update GitHub token secret from GITHUB_TOKEN to PAT_TOKEN in PR review workflow ([ec909af](https://github.com/EtienneLescot/yagr/commit/ec909af87498a96fb61a675a127ae7738adb632c))
+
 ## [0.2.16](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.15...yagr@v0.2.16) (2026-04-12)
 
 
