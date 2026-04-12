@@ -18,6 +18,19 @@ import { normalizeFunctionToolParametersSchema } from './tool-schema.js';
 export const OPENAI_ACCOUNT_BASE_URL = 'https://chatgpt.com/backend-api';
 export const OPENAI_ACCOUNT_DEFAULT_MODEL = 'gpt-5.1-codex-mini';
 
+/**
+ * Reasoning effort level for Codex responses API.
+ * Corresponds to the `reasoning_effort` parameter accepted by the API.
+ * - 'none': No reasoning (fastest)
+ * - 'minimal': Minimal reasoning (~5-10% of budget)
+ * - 'low': Low reasoning (~10-20% of max_completion_tokens)
+ * - 'medium': Medium reasoning (~50% of max_completion_tokens) — default
+ * - 'high': High reasoning (~80% of max_completion_tokens)
+ * - 'xhigh': Extra high reasoning (~95% of max_completion_tokens)
+ */
+export const CODEX_REASONING_EFFORT_OPTIONS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+export type CodexReasoningEffort = typeof CODEX_REASONING_EFFORT_OPTIONS[number];
+
 /** Endpoint path for Codex responses on the ChatGPT backend. */
 const CODEX_RESPONSES_PATH = '/codex/responses';
 
@@ -259,13 +272,103 @@ function readCodexSession(): OpenAiAccountSession | undefined {
   }
 }
 
+// ─── Token refresh ──────────────────────────────────────────────────────────────
+
+/** Returns the expiry time (in seconds since epoch) from an access token's JWT payload. */
+function getTokenExpiry(accessToken: string): number | undefined {
+  try {
+    const parts = accessToken.split('.');
+    if (parts.length !== 3) return undefined;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8')) as Record<string, unknown>;
+    const exp = payload['exp'];
+    return typeof exp === 'number' ? exp : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Returns true when the token expires within `minValiditySeconds` from now. */
+function isTokenExpiringSoon(accessToken: string, minValiditySeconds = 60): boolean {
+  const expiry = getTokenExpiry(accessToken);
+  if (expiry === undefined) return false;
+  return Date.now() / 1000 + minValiditySeconds > expiry;
+}
+
+/** Refreshes the access token using the stored refresh token.
+ *  Updates ~/.codex/auth.json with the new tokens. */
+async function refreshCodexToken(refreshToken: string): Promise<OpenAiAccountSession> {
+  const body = new URLSearchParams();
+  body.set('grant_type', 'refresh_token');
+  body.set('refresh_token', refreshToken);
+  body.set('client_id', CODEX_CLIENT_ID);
+
+  const res = await fetch(`${CODEX_ISSUER}/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Token refresh failed: HTTP ${res.status}`);
+  }
+
+  const tokens = await res.json() as {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+  };
+
+  if (!tokens.access_token) {
+    throw new Error('Token refresh returned no access_token.');
+  }
+
+  // Persist updated tokens to ~/.codex/auth.json
+  const authPath = getCodexAuthPath();
+  const existing: CodexAuthFile = fs.existsSync(authPath)
+    ? JSON.parse(fs.readFileSync(authPath, 'utf8')) as CodexAuthFile
+    : { tokens: {} };
+
+  existing.tokens = {
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token ?? refreshToken,
+    account_id: existing.tokens?.account_id,
+  };
+  existing.last_refresh = new Date().toISOString();
+
+  fs.mkdirSync(path.dirname(authPath), { recursive: true });
+  fs.writeFileSync(authPath, JSON.stringify(existing, null, 2), { mode: 0o600 });
+
+  return {
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token ?? refreshToken,
+    source: 'codex',
+  };
+}
+
+/** Reads the session and automatically refreshes if the access token is expiring soon. */
+export async function ensureOpenAiAccountSession(): Promise<OpenAiAccountSession | undefined> {
+  const session = readCodexSession();
+  if (!session) return undefined;
+
+  // Check if token is expired or about to expire (within 60s)
+  if (isTokenExpiringSoon(session.accessToken)) {
+    if (session.refreshToken) {
+      try {
+        return await refreshCodexToken(session.refreshToken);
+      } catch {
+        // Refresh failed — return stale session and let the API call fail naturally
+      }
+    }
+    // If refresh failed or no refresh token, still return the session
+    // The API call will fail naturally if the token is truly expired
+  }
+
+  return session;
+}
+
 // ─── Public session API ────────────────────────────────────────────────────────
 
 export function getOpenAiAccountSession(): OpenAiAccountSession | undefined {
-  return readCodexSession();
-}
-
-export async function ensureOpenAiAccountSession(): Promise<OpenAiAccountSession | undefined> {
   return readCodexSession();
 }
 
@@ -318,6 +421,7 @@ export async function validateOpenAiAccountRuntime(modelId = OPENAI_ACCOUNT_DEFA
 
 export function createOpenAiAccountLanguageModel(
   modelId: string,
+  reasoningEffort: CodexReasoningEffort = 'medium',
 ): LanguageModelV1 {
   return {
     specificationVersion: 'v1',
@@ -327,7 +431,7 @@ export function createOpenAiAccountLanguageModel(
     supportsImageUrls: false,
     supportsStructuredOutputs: false,
     async doGenerate(options) {
-      const execution = await runOpenAiAccountCompletion(modelId, options);
+      const execution = await runOpenAiAccountCompletion(modelId, options, reasoningEffort);
       return {
         text: execution.text,
         finishReason: execution.finishReason,
@@ -345,27 +449,136 @@ export function createOpenAiAccountLanguageModel(
       };
     },
     async doStream(options) {
-      const execution = await runOpenAiAccountCompletion(modelId, options);
+      const session = await ensureOpenAiAccountSession();
+      if (!session) {
+        throw new Error('OpenAI account session not found. Run `codex --login` to sign in.');
+      }
+
+      const regularMode = options.mode.type === 'regular' ? options.mode : undefined;
+      const tools = getFunctionTools(options.mode);
+      const accountId = extractChatGptAccountId(session.accessToken);
+      const { instructions, input } = convertPromptToCodexInput(options.prompt);
+
+      const body = {
+        model: modelId,
+        store: false,
+        stream: true,
+        instructions: instructions || 'You are a helpful assistant.',
+        input,
+        thinking: { budget: 4096 },
+        ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice), parallel_tool_calls: true } : { tool_choice: 'auto' }),
+      };
+
+      const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.accessToken}`,
+          'chatgpt-account-id': accountId,
+          'OpenAI-Beta': 'responses=experimental',
+          'originator': 'pi',
+          'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
+          'accept': 'text/event-stream',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: options.abortSignal,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText.trim() || `Codex completion failed: HTTP ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error('Codex completion returned empty response body.');
+      }
+
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown' = 'unknown';
+      const toolCalls = new Map<string, LanguageModelV1FunctionToolCall>();
+
       const stream = new ReadableStream<LanguageModelV1StreamPart>({
-        start(controller) {
-          if (execution.text) {
-            controller.enqueue({ type: 'text-delta', textDelta: execution.text });
+        async pull(controller) {
+          for await (const event of parseCodexSSE(response.body!)) {
+            const type = typeof event.type === 'string' ? event.type : undefined;
+            if (!type) continue;
+
+            if (type === 'response.output_text.delta') {
+              if (typeof event.delta === 'string') {
+                controller.enqueue({ type: 'text-delta', textDelta: event.delta });
+              }
+            } else if (type === 'response.output_item.added' || type === 'response.output_item.done') {
+              const item = readResponseOutputItem(event);
+              const toolCall = extractCodexToolCallFromItem(item, toolCalls.size);
+              if (toolCall) {
+                toolCalls.set(toolCall.toolCallId, toolCall);
+                controller.enqueue({
+                  type: 'tool-call-delta',
+                  toolCallType: 'function',
+                  toolCallId: toolCall.toolCallId,
+                  toolName: toolCall.toolName,
+                  argsTextDelta: toolCall.args,
+                });
+              }
+            } else if (type === 'response.function_call_arguments.delta') {
+              const itemId = readOptionalString(event.item_id) || readOptionalString(event.call_id);
+              if (!itemId) continue;
+              const existing = toolCalls.get(itemId);
+              if (!existing || typeof event.delta !== 'string') continue;
+              const newArgs = `${existing.args}${event.delta}`;
+              toolCalls.set(itemId, { ...existing, args: newArgs });
+              controller.enqueue({
+                type: 'tool-call-delta',
+                toolCallType: 'function',
+                toolCallId: itemId,
+                toolName: existing.toolName,
+                argsTextDelta: newArgs,
+              });
+            } else if (type === 'response.function_call_arguments.done') {
+              const itemId = readOptionalString(event.item_id) || readOptionalString(event.call_id);
+              if (!itemId) continue;
+              const existing = toolCalls.get(itemId);
+              if (!existing) continue;
+              const finalArgs = readOptionalString(event.arguments) ?? existing.args;
+              toolCalls.set(itemId, { ...existing, args: finalArgs });
+            } else if (type === 'response.completed') {
+              const resp = event.response as {
+                usage?: { input_tokens?: number; output_tokens?: number };
+                output?: unknown[];
+              } | undefined;
+              inputTokens = resp?.usage?.input_tokens ?? 0;
+              outputTokens = resp?.usage?.output_tokens ?? 0;
+              for (const item of Array.isArray(resp?.output) ? resp.output : []) {
+                const toolCall = extractCodexToolCallFromItem(item, toolCalls.size);
+                if (toolCall) toolCalls.set(toolCall.toolCallId, toolCall);
+              }
+            } else if (type === 'response.failed') {
+              const resp = event.response as { error?: { message?: string } } | undefined;
+              throw new Error(resp?.error?.message || 'Codex response failed.');
+            } else if (type === 'error') {
+              const msg = typeof event.message === 'string' ? event.message : '';
+              throw new Error(msg || 'Codex stream error.');
+            }
           }
+
+          finishReason = toolCalls.size > 0 ? 'tool-calls' : 'stop';
           controller.enqueue({
             type: 'finish',
-            finishReason: execution.finishReason,
-            usage: execution.usage,
+            finishReason,
+            usage: { promptTokens: inputTokens, completionTokens: outputTokens },
           });
           controller.close();
         },
       });
+
       return {
         stream,
         rawCall: {
           rawPrompt: options.prompt,
           rawSettings: { modelId },
         },
-        warnings: execution.warnings,
+        warnings: [],
       };
     },
   };
@@ -376,6 +589,7 @@ export function createOpenAiAccountLanguageModel(
 async function runOpenAiAccountCompletion(
   modelId: string,
   options: Pick<LanguageModelV1CallOptions, 'prompt' | 'mode' | 'inputFormat'>,
+  reasoningEffort: CodexReasoningEffort = 'medium',
 ): Promise<{
   text: string;
   finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown';
@@ -401,9 +615,7 @@ async function runOpenAiAccountCompletion(
     // The Codex backend requires a non-empty instructions field.
     instructions: instructions || 'You are a helpful assistant.',
     input,
-    text: { verbosity: 'medium' },
-    ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice) } : { tool_choice: 'auto' }),
-    parallel_tool_calls: false,
+    ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice), parallel_tool_calls: true } : { tool_choice: 'auto' }),
   };
 
   const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {

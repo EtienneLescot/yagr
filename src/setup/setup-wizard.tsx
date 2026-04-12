@@ -139,6 +139,7 @@ type Phase =
   | { kind: 'llm-apikey'; provider: YagrModelProvider; err?: string }
   | { kind: 'llm-models-loading'; provider: YagrModelProvider; apiKey: string; defModel: string | undefined; note?: string }
   | { kind: 'llm-model'; provider: YagrModelProvider; apiKey: string; models: string[]; defModel: string | undefined; cursor: number; note?: string }
+  | { kind: 'llm-reasoning-effort'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
   | { kind: 'llm-baseurl'; provider: YagrModelProvider; apiKey: string; model: string; def: string; err?: string }
   | { kind: 'surfaces'; cursor: number; selected: GatewaySurface[] }
   | { kind: 'telegram-reuse-token'; surfaces: GatewaySurface[]; existing: string; cursor: number }
@@ -1109,6 +1110,38 @@ function SetupWizard({ callbacks, options, onDone }: {
           saveLlmAndContinue(phase.provider, phase.apiKey, model, phase.note);
         }
       } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'llm-reasoning-effort') {
+      const effortOptions = ['low', 'medium', 'high'] as const;
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(effortOptions.length - 1, phase.cursor + 1) });
+      else if (key.return) {
+        const selectedEffort = effortOptions[phase.cursor];
+        callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model });
+        const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider];
+        const defaultBaseUrl = draftedBaseUrl ?? llmDef.getBaseUrl(phase.provider);
+        const needsUrl = llmDef.needsBaseUrl(phase.provider);
+        if (draftedBaseUrl) {
+          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model, baseUrl: draftedBaseUrl });
+          setTextValue('');
+          if (mode === 'llm-only') {
+            setPhase({ kind: 'done', n8nHost: '', n8nProject: '', provider: phase.provider, model: phase.model, surfaces: surfDef.surfaces });
+            setTimeout(() => { onDone({ ok: true }); app.exit(); }, 250);
+            return;
+          }
+          setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
+        } else if (needsUrl || defaultBaseUrl) {
+          setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model: phase.model, def: defaultBaseUrl ?? '' });
+          setTextValue(defaultBaseUrl ?? '');
+        } else {
+          setTextValue('');
+          if (mode === 'llm-only') {
+            setPhase({ kind: 'done', n8nHost: '', n8nProject: '', provider: phase.provider, model: phase.model, surfaces: surfDef.surfaces });
+            setTimeout(() => { onDone({ ok: true }); app.exit(); }, 250);
+            return;
+          }
+          setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'surfaces') {
       const opts = SURFACE_OPTIONS.map((o) => o.value);
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
@@ -1207,7 +1240,7 @@ function SetupWizard({ callbacks, options, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-mode', 'n8n-managed-runtime', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-instance-location', 'n8n-local-runtime', 'n8n-project', 'llm-provider', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-mode', 'n8n-managed-runtime', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-instance-location', 'n8n-local-runtime', 'n8n-project', 'llm-provider', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'llm-reasoning-effort', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'llm-model' && phase.models.length > 0)
     || (phase.kind === 'llm-proxy-setup' && (phase.status === 'ready' || phase.status === 'failed'));
 
@@ -1698,6 +1731,30 @@ function SetupWizard({ callbacks, options, onDone }: {
                 ? ['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel']
                 : ['Enter ↵  confirm', 'Ctrl+C  cancel']
             } />
+          </Box>
+        );
+      }
+
+      case 'llm-reasoning-effort': {
+        const effortOptions = ['low', 'medium', 'high'] as const;
+        const effortDescriptions: Record<string, string> = {
+          low: '~10-20% of token budget for reasoning (faster)',
+          medium: '~50% of token budget for reasoning (balanced)',
+          high: '~80-95% of token budget for reasoning (thorough)',
+        };
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label="Reasoning effort  ·  Codex" />
+            <Text dimColor>  How much thinking budget should Codex use?</Text>
+            <SelectList
+              options={effortOptions}
+              cursor={phase.cursor}
+              getLabel={(v) => v}
+              getHint={(v) => effortDescriptions[v] ?? ''}
+              maxVisibleRows={getListViewportHeight(terminalRows, 10)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
       }

@@ -76,6 +76,7 @@ export interface YagrLocalConfig {
   provider?: YagrModelProvider;
   model?: string;
   baseUrl?: string;
+  reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   gateway?: YagrGatewayConfig;
   telegram?: YagrTelegramConfig;
   llmProxy?: YagrLlmProxyConfig;
