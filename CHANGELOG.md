@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.16](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.15...yagr@v0.2.16) (2026-04-12)
+
+
+### Features
+
+* add OpenHands PR review workflow and architecture documentation ([1435a2e](https://github.com/EtienneLescot/yagr/commit/1435a2e6a257c211a878088a1ec7ae913a6fd8cd))
+
+
+### Bug Fixes
+
+* **workflow:** adjust PR review trigger to include draft pull requests ([3ca9cbe](https://github.com/EtienneLescot/yagr/commit/3ca9cbe41a2ef2f436a20f5333ea59502940045f))
+
 ## [0.2.15](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.14...yagr@v0.2.15) (2026-03-31)
 
 
