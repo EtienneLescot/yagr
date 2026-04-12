@@ -39,27 +39,11 @@ Thumbs.db
 dist/
 *.tsbuildinfo
 
-# --- AI Context Artifacts (Generated) ---
-AGENTS.md
-n8nac-skills
-n8nac-skills.cmd
-.cursorrules
-.clinerules
-.claude/
-.ai-rules.md
-.windsurfrules
-.roo
 
-n8nac.json
-n8nac-instance.json
-n8nac-config.json
 .yagr-config.json
 .yagr-test-workspace/
 
-# Generated assets
-.n8n-cache/
-.local
-workflows_test/
+
 
 ignoredTests/
 session_context.json
@@ -67,7 +51,7 @@ session_context.json
 # Generated test reports
 reports/
 
-# n8n-as-code AI helpers
+
 
 conversation.md
 
