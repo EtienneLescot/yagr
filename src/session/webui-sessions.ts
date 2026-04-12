@@ -34,7 +34,7 @@ export class WebUiSessionRegistry {
 
     const files = fs
       .readdirSync(this.sessionsDir)
-      .filter((f) => f.endsWith('.json') && f !== '.state.json');
+      .filter((f) => f.endsWith('.json'));
 
     const results: SessionSummary[] = [];
 
@@ -87,19 +87,6 @@ export class WebUiSessionRegistry {
   }
 
   // ---------------------------------------------------------------------------
-  // Active session tracking
-  // ---------------------------------------------------------------------------
-
-  getActiveSessionId(): string | undefined {
-    return this.readState().activeSessionId;
-  }
-
-  setActiveSessionId(sessionId: string): void {
-    this.ensureDir();
-    fs.writeFileSync(this.statePath(), JSON.stringify({ activeSessionId: sessionId }, null, 2), 'utf-8');
-  }
-
-  // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 
@@ -119,22 +106,6 @@ export class WebUiSessionRegistry {
     return path.join(this.sessionsDir, `${sessionId}.json`);
   }
 
-  private statePath(): string {
-    return path.join(this.sessionsDir, '.state.json');
-  }
-
-  private readState(): { activeSessionId?: string } {
-    const filePath = this.statePath();
-    if (!fs.existsSync(filePath)) {
-      return {};
-    }
-    try {
-      return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as { activeSessionId?: string };
-    } catch {
-      return {};
-    }
-  }
-
   private readFile(filePath: string): WebUiSession | undefined {
     if (!fs.existsSync(filePath)) {
       return undefined;
@@ -149,6 +120,16 @@ export class WebUiSessionRegistry {
   private ensureDir(): void {
     if (!fs.existsSync(this.sessionsDir)) {
       fs.mkdirSync(this.sessionsDir, { recursive: true });
+    }
+
+    // Best-effort cleanup of the legacy server-side "active session" state.
+    const legacyStatePath = path.join(this.sessionsDir, '.state.json');
+    if (fs.existsSync(legacyStatePath)) {
+      try {
+        fs.unlinkSync(legacyStatePath);
+      } catch {
+        // Ignore cleanup failures — they are non-blocking.
+      }
     }
   }
 }

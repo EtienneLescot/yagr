@@ -403,7 +403,6 @@ class WebUiGateway implements Gateway {
       if (!this.sessionRegistry.get(newId)) {
         this.sessionRegistry.createEmpty(newId);
       }
-      this.sessionRegistry.setActiveSessionId(newId);
       this.sendJson(response, 201, { id: newId });
       return;
     }
@@ -449,24 +448,6 @@ class WebUiGateway implements Gateway {
         return;
       }
       this.sessionRegistry.setDisplayMessages(sessionId, displayMessages);
-      this.sendJson(response, 200, { ok: true });
-      return;
-    }
-
-    // GET /api/state — server-side active session for this gateway.
-    if (method === 'GET' && url.pathname === '/api/state') {
-      const activeSessionId = this.sessionRegistry.getActiveSessionId() ?? null;
-      this.sendJson(response, 200, { activeSessionId });
-      return;
-    }
-
-    // PUT /api/state — set the active session (called by the UI on every switch).
-    if (method === 'PUT' && url.pathname === '/api/state') {
-      const body = await this.readJson(request);
-      const activeSessionId = String(body.activeSessionId ?? '').trim();
-      if (activeSessionId) {
-        this.sessionRegistry.setActiveSessionId(activeSessionId);
-      }
       this.sendJson(response, 200, { ok: true });
       return;
     }
@@ -739,4 +720,3 @@ class WebUiGateway implements Gateway {
     }
   }
 }
-
