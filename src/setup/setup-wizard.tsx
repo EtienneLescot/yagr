@@ -13,7 +13,7 @@ import {
 } from '../llm/provider-registry.js';
 import type { ManagedN8nInstanceState } from '../n8n-local/state.js';
 import type { YagrN8nInstanceProfile } from '../config/n8n-config-service.js';
-import type { YagrLlmProxyConfig } from '../config/yagr-config-service.js';
+import { YagrConfigService, type YagrLlmProxyConfig } from '../config/yagr-config-service.js';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -93,6 +93,7 @@ export interface SetupCallbacks {
   saveLlmProxyConfig(config: YagrLlmProxyConfig): void;
   provisionLlmProxyCredential(): Promise<void>;
   isLlmProxyEnabled(): boolean;
+  startN8nTunnel(targetUrl: string): Promise<{ publicUrl: string }>;
 }
 
 export interface SetupResult {
@@ -126,6 +127,7 @@ type Phase =
   | { kind: 'n8n-project'; url: string; apiKey: string; instanceProfile?: YagrN8nInstanceProfile; projects: IProject[]; cursor: number }
   | { kind: 'n8n-syncfolder'; url: string; apiKey: string; instanceProfile?: YagrN8nInstanceProfile; project: IProject; def: string; err?: string }
   | { kind: 'n8n-saving'; url: string; apiKey: string; instanceProfile?: YagrN8nInstanceProfile; project: IProject; syncFolder: string; log?: string }
+  | { kind: 'n8n-tunnel-offer'; url: string; instanceProfile?: YagrN8nInstanceProfile; cursor: number; status: 'offer' | 'starting' | 'done' | 'failed'; publicUrl?: string; err?: string }
   | { kind: 'llm-proxy-setup'; url: string; instanceProfile?: YagrN8nInstanceProfile; status: 'detecting' | 'provisioning' | 'ready' | 'skipped' | 'failed'; mode?: YagrLlmProxyConfig['mode']; relayUrl?: string; err?: string; cursor: number }
   | { kind: 'n8n-local-installing'; startedAt: number; strategy: 'docker' | 'direct' | 'auto' }
   | { kind: 'n8n-local-ready'; url: string; instanceProfile: YagrN8nInstanceProfile; cursor: number; note?: string }
@@ -657,7 +659,14 @@ function SetupWizard({ callbacks, options, onDone }: {
           setTimeout(() => { onDone({ ok: true }); app.exit(); }, 250);
           return;
         }
-        setPhase({ kind: 'llm-proxy-setup', url: phase.url, instanceProfile: phase.instanceProfile, status: 'detecting', cursor: 0 });
+        // After n8n config is saved, offer tunnel setup if this is a Yagr-managed local instance
+        const isYagrManaged = phase.instanceProfile === 'yagr-managed-docker' || phase.instanceProfile === 'yagr-managed-direct';
+        const tunnelCfg = new YagrConfigService().getN8nTunnelConfig();
+        if (isYagrManaged && !tunnelCfg?.enabled) {
+          setPhase({ kind: 'n8n-tunnel-offer', url: phase.url, instanceProfile: phase.instanceProfile, cursor: 0, status: 'offer' });
+        } else {
+          setPhase({ kind: 'llm-proxy-setup', url: phase.url, instanceProfile: phase.instanceProfile, status: 'detecting', cursor: 0 });
+        }
       } catch (err) {
         if (guard !== asyncGuard.current) return;
         setPhase({ kind: 'error', message: (err as Error).message });
@@ -1237,12 +1246,41 @@ function SetupWizard({ callbacks, options, onDone }: {
           goToLlm();
         }
       } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'n8n-tunnel-offer' && phase.status === 'offer') {
+      const maxCursor = 1; // 0=yes, 1=skip
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(maxCursor, phase.cursor + 1) });
+      else if (key.return) {
+        if (phase.cursor === 0) {
+          // Yes: start the tunnel
+          setPhase({ ...phase, status: 'starting' });
+          void (async () => {
+            try {
+              const result = await callbacks.startN8nTunnel(phase.url);
+              setPhase({ ...phase, status: 'done', publicUrl: result.publicUrl });
+            } catch (err) {
+              setPhase({ ...phase, status: 'failed', err: (err as Error).message });
+            }
+          })();
+        } else {
+          // Skip: go to llm-proxy-setup
+          setPhase({ kind: 'llm-proxy-setup', url: phase.url, instanceProfile: phase.instanceProfile, status: 'detecting', cursor: 0 });
+        }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'n8n-tunnel-offer' && phase.status === 'done') {
+      // Auto-advance to llm-proxy-setup without showing a confirmation screen
+      setPhase({ kind: 'llm-proxy-setup', url: phase.url, instanceProfile: phase.instanceProfile, status: 'detecting', cursor: 0 });
+    } else if (phase.kind === 'n8n-tunnel-offer' && phase.status === 'failed') {
+      if (key.return) {
+        setPhase({ kind: 'llm-proxy-setup', url: phase.url, instanceProfile: phase.instanceProfile, status: 'detecting', cursor: 0 });
+      }
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
   const isSelectPhase = ['n8n-mode', 'n8n-managed-runtime', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-instance-location', 'n8n-local-runtime', 'n8n-project', 'llm-provider', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'llm-reasoning-effort', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'llm-model' && phase.models.length > 0)
-    || (phase.kind === 'llm-proxy-setup' && (phase.status === 'ready' || phase.status === 'failed'));
+    || (phase.kind === 'llm-proxy-setup' && (phase.status === 'ready' || phase.status === 'failed'))
+    || (phase.kind === 'n8n-tunnel-offer' && (phase.status === 'offer' || phase.status === 'done' || phase.status === 'failed'));
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') return;
@@ -1495,6 +1533,44 @@ function SetupWizard({ callbacks, options, onDone }: {
             <SpinnerDisplay message="Saving n8n configuration and refreshing workspace…" frame={spinnerFrame} />
           </Box>
         );
+
+      case 'n8n-tunnel-offer': {
+        const isStarting = phase.status === 'starting';
+        const isDone = phase.status === 'done';
+        const isFailed = phase.status === 'failed';
+        return (
+          <Box flexDirection="column" gap={1}>
+            <FieldLabel label="Setup a public URL (optional)" />
+            {isStarting
+              ? <SpinnerDisplay message="Starting Cloudflare Tunnel…" frame={spinnerFrame} />
+              : isDone
+                ? <>
+                    <Text color="green">  Tunnel ready: <Text bold>{phase.publicUrl}</Text></Text>
+                    <Text dimColor>  The tunnel will restart automatically on next `yagr start`.</Text>
+                    <SelectList options={['Continue'] as const} cursor={0} getLabel={(v) => v} maxVisibleRows={2} maxLineWidth={listLineWidth} />
+                  </>
+                : isFailed
+                  ? <>
+                      <Text color="yellow">  Tunnel setup failed: {phase.err}</Text>
+                      <Text dimColor>  You can run it later with `yagr n8n tunnel setup`.</Text>
+                      <SelectList options={['Continue'] as const} cursor={0} getLabel={(v) => v} maxVisibleRows={2} maxLineWidth={listLineWidth} />
+                    </>
+                  : <>
+                      <Text dimColor>  Your local n8n needs a public URL for webhooks and Telegram triggers.</Text>
+                      <Text dimColor>  Yagr can start a Cloudflare Tunnel to expose it.</Text>
+                      <SelectList
+                        options={['Yes, setup a public URL', 'Skip'] as const}
+                        cursor={phase.cursor}
+                        getLabel={(v) => v}
+                        maxVisibleRows={3}
+                        maxLineWidth={listLineWidth}
+                      />
+                    </>
+            }
+            {!isStarting && <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />}
+          </Box>
+        );
+      }
 
       case 'llm-proxy-setup': {
         const isDetecting = phase.status === 'detecting';
