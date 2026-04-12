@@ -1,13 +1,15 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import { Telegraf } from 'telegraf';
 import { YagrConfigService, type YagrConfigStoreLike, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { getYagrDeepAgentSessionsDir } from '../config/yagr-home.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import type { YagrUserVisibleUpdate } from '../runtime/user-visible-updates.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
 import { createRunAccumulator, ensureWorkflowPresentation, processStreamEvent } from './langgraph-events.js';
+import { buildDeepAgentSessionConfig, DeepAgentSessionStore, deriveSessionTitle } from '../session/deepagent-sessions.js';
 import {
   type WorkflowEmbed,
   buildWorkflowBannerHtml,
@@ -241,7 +243,7 @@ export function createTelegramGatewayRuntime(
 class TelegramGateway implements Gateway {
   private readonly bot: Telegraf;
   private agentHandlePromise?: Promise<YagrDeepAgentHandle>;
-  private readonly threadIds = new Map<string, string>();
+  private readonly sessionStore = new DeepAgentSessionStore(getYagrDeepAgentSessionsDir());
   private readonly runningChats = new Set<string>();
   private readonly pendingApprovals = new Map<string, YagrRequiredAction[]>();
   private stopped = false;
@@ -341,7 +343,7 @@ class TelegramGateway implements Gateway {
     });
 
     const clearSession = async (chatId: string, reply: (message: string) => Promise<unknown>) => {
-      this.resetChatSession(chatId);
+      await this.resetChatSession(chatId);
       await reply('Yagr conversation reset for this chat.');
     };
 
@@ -364,7 +366,7 @@ class TelegramGateway implements Gateway {
       }
 
       this.unlinkChat(chatId);
-      this.threadIds.delete(chatId);
+      await this.resetChatSession(chatId);
       this.pendingApprovals.delete(chatId);
       await ctx.reply('Chat unlinked. Use the onboarding link or QR code again to reconnect.');
     });
@@ -463,19 +465,30 @@ class TelegramGateway implements Gateway {
     return await this.agentHandlePromise;
   }
 
-  private getOrCreateThreadId(chatId: string): string {
-    let threadId = this.threadIds.get(chatId);
-    if (!threadId) {
-      threadId = randomUUID();
-      this.threadIds.set(chatId, threadId);
-    }
-    return threadId;
+  private getTelegramScope(chatId: string): { kind: string; key: string } {
+    return { kind: 'telegram', key: chatId };
   }
 
-  private resetChatSession(chatId: string): void {
-    // Abandon the current LangGraph thread by deleting its ID.
-    // The next message will start a fresh thread via getOrCreateThreadId.
-    this.threadIds.delete(chatId);
+  private async getOrCreateThreadId(chatId: string): Promise<string> {
+    const session = this.sessionStore.getOrCreateActiveForScope(
+      this.getTelegramScope(chatId),
+      { title: `Telegram chat ${chatId}` },
+    );
+    return session.id;
+  }
+
+  private async resetChatSession(chatId: string): Promise<void> {
+    const session = this.sessionStore.getActiveForScope(this.getTelegramScope(chatId));
+    if (session) {
+      this.sessionStore.touch(session.id, { closed: true });
+      this.sessionStore.clearActiveScope(this.getTelegramScope(chatId));
+
+      if (this.agentHandlePromise) {
+        const { checkpointer } = await this.resolveAgentHandle();
+        await this.sessionStore.deleteThread(checkpointer, session.id);
+      }
+    }
+
     this.pendingApprovals.delete(chatId);
   }
 
@@ -495,7 +508,8 @@ class TelegramGateway implements Gateway {
       await reply('Yagr is working...');
 
       const { agent } = await this.resolveAgentHandle();
-      const threadId = this.getOrCreateThreadId(chatId);
+      const threadId = await this.getOrCreateThreadId(chatId);
+      this.sessionStore.touch(threadId, { title: deriveSessionTitle(prompt, `Telegram chat ${chatId}`) });
       const accumulator = createRunAccumulator();
 
       let lastProgressKey = '';
@@ -509,7 +523,7 @@ class TelegramGateway implements Gateway {
 
       const stream = agent.streamEvents(
         { messages: [{ role: 'user', content: prompt }] },
-        { configurable: { thread_id: threadId }, version: 'v2' },
+        buildDeepAgentSessionConfig(threadId),
       );
 
       for await (const event of stream) {

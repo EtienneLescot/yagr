@@ -12,6 +12,7 @@ export interface YagrPaths {
   managedN8nDir: string;
   proxyRuntimeDir: string;
   accountAuthDir: string;
+  deepAgentSessionsDir: string;
   workspaceInstructionsPath: string;
   memorySources: string;
   yagrConfigPath: string;
@@ -191,6 +192,10 @@ export function getYagrMemoriesDir(): string {
   return path.join(getYagrHomeDir(), 'memories');
 }
 
+export function getYagrDeepAgentSessionsDir(): string {
+  return path.join(getYagrHomeDir(), 'deepagent-sessions');
+}
+
 export function resolveLegacyConfStorePath(
   projectName: string,
   configName: string,
@@ -219,6 +224,7 @@ export function getYagrPaths(): YagrPaths {
   const managedN8nDir = getYagrManagedN8nDir();
   const proxyRuntimeDir = getYagrProxyRuntimeDir();
   const accountAuthDir = getYagrAccountAuthDir();
+  const deepAgentSessionsDir = getYagrDeepAgentSessionsDir();
   const legacyYagrCredentialsPath = resolveLegacyConfStorePath('yagr', 'credentials');
   const legacyN8nCredentialsPath = resolveLegacyConfStorePath('n8nac', 'credentials');
 
@@ -229,6 +235,7 @@ export function getYagrPaths(): YagrPaths {
     managedN8nDir,
     proxyRuntimeDir,
     accountAuthDir,
+    deepAgentSessionsDir,
     workspaceInstructionsPath: path.join(n8nWorkspaceDir, 'AGENTS.md'),
     memorySources: path.join(homeDir, 'memory-sources.json'),
     yagrConfigPath: path.join(homeDir, 'yagr-config.json'),
@@ -252,5 +259,6 @@ export function ensureYagrHomeDir(): string {
   fs.mkdirSync(paths.managedN8nDir, { recursive: true });
   fs.mkdirSync(paths.proxyRuntimeDir, { recursive: true });
   fs.mkdirSync(paths.accountAuthDir, { recursive: true });
+  fs.mkdirSync(paths.deepAgentSessionsDir, { recursive: true });
   return paths.homeDir;
 }

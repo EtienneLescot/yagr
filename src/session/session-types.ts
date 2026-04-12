@@ -8,6 +8,29 @@ export interface SessionMessage {
 }
 
 /**
+ * Generic low-level session scope used to bind a Deepagents thread to an
+ * external conversation identity without coupling the store to a specific
+ * facade implementation.
+ */
+export interface DeepAgentSessionScope {
+  kind: string;
+  key: string;
+}
+
+/**
+ * Persisted metadata for one Deepagents thread.
+ * The authoritative runtime state still lives in the LangGraph checkpointer.
+ */
+export interface DeepAgentSessionRecord {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  title: string;
+  scope?: DeepAgentSessionScope;
+  closedAt?: string;
+}
+
+/**
  * A rich UI message that can be saved alongside the CoreMessages so that
  * the WebUI can restore the full visual state (progress tickers, embeds, etc.)
  * without reconstructing it from raw LLM history.
