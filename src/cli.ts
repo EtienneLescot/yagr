@@ -790,6 +790,11 @@ async function ensureTunnelAtLaunch(): Promise<void> {
     const bin = await installCloudflaredIfNeeded();
     const state = await startN8nTunnel(targetUrl, bin);
     configService.saveN8nTunnelConfig({ ...tunnelConfig, publicUrl: state.publicUrl, targetUrl });
+
+    // Sync the tunnel URL into n8nac-config.json so webhook URLs are correct.
+    const n8nConfigService = new YagrN8nConfigService();
+    n8nConfigService.syncN8nacHostUrl(state.publicUrl);
+
     process.stdout.write(`Cloudflare Tunnel started: ${state.publicUrl}\n`);
     await restartManagedN8nForTunnel(state.publicUrl);
   } catch (error) {
@@ -805,6 +810,10 @@ async function ensureTunnelAtLaunch(): Promise<void> {
 async function restartManagedN8nForTunnel(publicUrl: string): Promise<void> {
   const managedState = getConfiguredManagedN8nState();
   if (!managedState || managedState.status === 'stopped') return;
+
+  // Keep n8nac's host URL in sync with the active tunnel public URL
+  // so that webhook URLs constructed by n8nac use the correct public origin.
+  new YagrN8nConfigService().syncN8nacHostUrl(publicUrl);
 
   process.stdout.write(`\nRestarting managed n8n so it picks up N8N_WEBHOOK_URL=${publicUrl}…\n`);
   try {
@@ -1202,6 +1211,10 @@ async function main(): Promise<void> {
       );
       const config = new YagrConfigService();
       config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
+
+      // Update n8nac-config.json host URL so webhook URLs are correct.
+      new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
+
       process.stdout.write(`\nTunnel ready: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
       process.stdout.write(`\nThe tunnel will restart automatically on next \`yagr start\` / \`yagr gateway start\`.\n`);
@@ -1219,6 +1232,10 @@ async function main(): Promise<void> {
       );
       const config = new YagrConfigService();
       config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
+
+      // Update n8nac-config.json host URL so webhook URLs are correct.
+      new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
+
       process.stdout.write(`Tunnel started: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
       await restartManagedN8nForTunnel(state.publicUrl);
@@ -1229,6 +1246,12 @@ async function main(): Promise<void> {
       await stopN8nTunnel();
       const config = new YagrConfigService();
       config.clearN8nTunnelConfig();
+
+      // Revert n8nac-config.json host back to the local n8n URL.
+      const managedState = readManagedN8nState();
+      const localHost = `http://127.0.0.1:${managedState?.port ?? 5678}`;
+      new YagrN8nConfigService().syncN8nacHostUrl(localHost);
+
       process.stdout.write('Tunnel stopped.\n');
       return;
     }
@@ -1243,6 +1266,10 @@ async function main(): Promise<void> {
       );
       const config = new YagrConfigService();
       config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
+
+      // Update n8nac-config.json host URL so webhook URLs are correct.
+      new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
+
       process.stdout.write(`Tunnel refreshed: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
       await restartManagedN8nForTunnel(state.publicUrl);

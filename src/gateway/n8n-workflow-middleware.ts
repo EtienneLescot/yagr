@@ -19,6 +19,10 @@ export interface N8nWorkflowMiddlewareOptions {
  * Creates a middleware that intercepts workflow embed events and
  * resolves proper n8n URLs (tunnel public URL, self-contained auth).
  *
+ * @deprecated URL resolution is now done at the source in `presentWorkflowResultCli()`.
+ *             This middleware is kept for backward compatibility but will be removed
+ *             in a future version. Prefer resolving URLs at emit time.
+ *
  * Usage:
  *   const middleware = createN8nWorkflowMiddleware({ onEnrichedEvent: forwardToGateway });
  *   runOptions.onToolEvent = (event) => middleware(event);
@@ -35,6 +39,10 @@ export function createN8nWorkflowMiddleware(
 /**
  * Enriches a tool event with resolved workflow URLs when applicable.
  * Returns the original event unchanged if it is not a workflow embed.
+ *
+ * @deprecated URL resolution is now done at the source in `presentWorkflowResultCli()`.
+ *             This middleware is kept for backward compatibility with `langgraph-events.ts`
+ *             but will be removed in a future version. Prefer resolving URLs at emit time.
  */
 export function enrichWorkflowEmbed(event: YagrToolEvent): YagrToolEvent {
   if (event.type !== 'embed' || event.kind !== 'workflow') {
@@ -51,5 +59,6 @@ export function enrichWorkflowEmbed(event: YagrToolEvent): YagrToolEvent {
     ...event,
     url: workflowLink.openUrl,
     targetUrl: workflowLink.targetUrl,
+    via: workflowLink.via,
   };
 }

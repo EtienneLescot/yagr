@@ -10,9 +10,11 @@ import path from 'node:path';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { getYagrLaunchDir, getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
+import { resolveWorkflowOpenLink } from '../gateway/workflow-links.js';
 import { normalizeRenderableWorkflowDiagram } from '../gateway/workflow-diagram.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { getActiveTunnelState } from '../n8n-local/n8n-tunnel.js';
+import { ManagedN8nOwnerCredentialService } from '../n8n-local/owner-credentials.js';
 import type { ToolExecutionObserver } from '../tools/observer.js';
 import { emitToolEvent } from '../tools/observer.js';
 import { resolveN8nWorkspacePath } from '../tools/n8n-workspace-path-utils.js';
@@ -42,6 +44,7 @@ export interface WorkflowEmbedPayload {
   workflowId: string;
   url: string;
   targetUrl: string;
+  via: 'direct' | 'self-contained-auth';
   title?: string;
   diagram?: string;
   executionResult?: PresentWorkflowExecutionResult;
@@ -204,13 +207,22 @@ export async function presentWorkflowResultCli({
 }: PresentWorkflowCliInput) {
   const resolvedDiagram = resolveWorkflowDiagram(workflowId, diagram);
   const canonicalUrl = resolveWorkflowUrl(workflowId, workflowUrl);
+  const tunnelUrl = getActiveTunnelState()?.publicUrl;
+  const n8nConfigService = new YagrN8nConfigService();
+  const ownerCredentialService = new ManagedN8nOwnerCredentialService();
+  const workflowLink = resolveWorkflowOpenLink(canonicalUrl, {
+    n8nConfigService,
+    ownerCredentialService,
+    n8nTunnelPublicUrl: tunnelUrl,
+  });
 
   return {
     __type: WORKFLOW_EMBED_TYPE,
     kind: 'workflow',
     workflowId,
-    url: canonicalUrl,
-    targetUrl: canonicalUrl,
+    url: workflowLink.openUrl,
+    targetUrl: workflowLink.targetUrl,
+    via: workflowLink.via,
     title: title ?? undefined,
     diagram: resolvedDiagram ?? undefined,
     executionResult: executionResult ?? undefined,
@@ -249,6 +261,7 @@ export function createPresentWorkflowResultTool(observer?: ToolExecutionObserver
         workflowId: payload.workflowId,
         url: payload.url,
         targetUrl: payload.targetUrl,
+        via: payload.via,
         title: payload.title ?? undefined,
         diagram: payload.diagram ?? undefined,
         executionResult: payload.executionResult ?? undefined,

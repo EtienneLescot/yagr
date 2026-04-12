@@ -230,6 +230,54 @@ export class YagrN8nConfigService {
     }
   }
 
+  /**
+   * When a Cloudflare tunnel is active for a Yagr-managed n8n instance, the
+   * n8nac workspace host URL needs to be updated so that webhook URLs
+   * constructed by n8nac (which uses the configured host, not n8n's reported URL)
+   * are correct.
+   *
+   * For Yagr-managed instances the instance identifier stays stable as
+   * `"yagr-managed"` — only the host URL changes to the tunnel public URL.
+   *
+   * Best effort: errors are silently ignored so tunnel issues don't block startup.
+   */
+  syncN8nacHostUrl(tunnelPublicUrl: string): void {
+    ensureYagrHomeDir();
+    const workspaceDir = getYagrN8nWorkspaceDir();
+    const n8nacConfigPath = path.join(workspaceDir, 'n8nac-config.json');
+    if (!fs.existsSync(n8nacConfigPath)) {
+      return;
+    }
+
+    try {
+      const raw = fs.readFileSync(n8nacConfigPath, 'utf-8');
+      const config = JSON.parse(raw) as {
+        activeInstanceId?: string;
+        instances?: Array<{ id: string; host?: string; name?: string }>;
+      };
+
+      const instances = config.instances ?? [];
+      const activeId = config.activeInstanceId;
+      const activeIndex = instances.findIndex((i) => i.id === activeId);
+      if (activeIndex === -1) {
+        return;
+      }
+
+      // Normalize both to `${protocol}//${host}` for reliable comparison.
+      const tunnelOrigin = tunnelPublicUrl.replace(/\/+$/, '');
+      const currentHost = instances[activeIndex].host?.replace(/\/+$/, '') ?? '';
+      if (currentHost === tunnelOrigin) {
+        return; // Already up to date.
+      }
+
+      instances[activeIndex] = { ...instances[activeIndex], host: tunnelPublicUrl };
+      const updated = { ...config, instances };
+      fs.writeFileSync(n8nacConfigPath, JSON.stringify(updated, null, 2), 'utf-8');
+    } catch {
+      /* best effort */
+    }
+  }
+
   clearLocalConfig(): void {
     if (fs.existsSync(this.localConfigPath)) {
       fs.unlinkSync(this.localConfigPath);

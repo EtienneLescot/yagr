@@ -185,6 +185,7 @@ export type YagrToolEvent =
       workflowId: string;
       url: string;
       targetUrl?: string;
+      via?: 'direct' | 'self-contained-auth';
       title?: string;
       diagram?: string;
       executionResult?: {
