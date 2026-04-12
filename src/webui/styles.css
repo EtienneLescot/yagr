@@ -29,6 +29,10 @@
   --workflow-graph-node-bg: rgba(255, 255, 255, 0.98);
   --workflow-graph-node-text: #1e293b;
   --workflow-graph-node-muted: #64748b;
+  --notice-text: #f7fbfb;
+  --notice-bg: var(--violet-deep);
+  --progress-success: #1f8f64;
+  --progress-error: #c94d72;
   font-family: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
 }
 
@@ -62,6 +66,10 @@
     --workflow-graph-node-bg: rgba(24, 34, 44, 0.98);
     --workflow-graph-node-text: #edf3f5;
     --workflow-graph-node-muted: #9fb1b8;
+    --notice-text: #f7fbfb;
+    --notice-bg: var(--violet-deep);
+    --progress-success: #1f8f64;
+    --progress-error: #c94d72;
   }
 }
 
@@ -94,6 +102,8 @@
   --workflow-graph-node-bg: rgba(255, 255, 255, 0.98);
   --workflow-graph-node-text: #1e293b;
   --workflow-graph-node-muted: #64748b;
+  --notice-text: #f7fbfb;
+  --notice-bg: var(--violet-deep);
 }
 
 :root[data-theme-mode='dark'] {
@@ -125,6 +135,10 @@
   --workflow-graph-node-bg: rgba(24, 34, 44, 0.98);
   --workflow-graph-node-text: #edf3f5;
   --workflow-graph-node-muted: #9fb1b8;
+  --notice-text: #f7fbfb;
+  --notice-bg: var(--violet-deep);
+  --progress-success: #1f8f64;
+  --progress-error: #c94d72;
 }
 
 * { box-sizing: border-box; }
@@ -1200,8 +1214,8 @@ button {
   max-width: 24rem;
   padding: 0.85rem 1rem;
   border-radius: 0.5rem;
-  color: #f7fbfb;
-  background: var(--violet-deep);
+  color: var(--notice-text, #f7fbfb);
+  background: var(--notice-bg, var(--violet-deep));
   border: 1px solid var(--panel-border-deep);
   box-shadow: 0 8px 20px rgba(12,16,31,0.2);
 }
@@ -1254,11 +1268,11 @@ button {
 }
 
 .progressTickerEntry.success .progressDot {
-  background: #1f8f64;
+  background: var(--progress-success, #1f8f64);
 }
 
 .progressTickerEntry.error .progressDot {
-  background: #c94d72;
+  background: var(--progress-error, #c94d72);
 }
 
 .workflowBadge {
