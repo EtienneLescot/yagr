@@ -49,7 +49,7 @@ test('getConfiguredManagedN8nState returns managed state when configured host ma
   assert.equal(state?.url, 'http://127.0.0.1:5678');
 });
 
-test('getConfiguredManagedN8nState ignores configs without explicit managed classification', async (t) => {
+test('getConfiguredManagedN8nState upgrades configs without explicit managed classification when managed state matches host', async (t) => {
   const previousHome = process.env.YAGR_HOME;
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-managed-runtime-'));
   process.env.YAGR_HOME = tempHome;
@@ -84,11 +84,12 @@ test('getConfiguredManagedN8nState ignores configs without explicit managed clas
   });
 
   const state = getConfiguredManagedN8nState(configService);
-  assert.equal(state, undefined);
-  assert.equal(configService.getLocalConfig().instanceProfile, undefined);
+  assert.ok(state);
+  assert.equal(state?.strategy, 'direct');
+  assert.equal(state?.url, 'http://127.0.0.1:5678');
 });
 
-test('getConfiguredManagedN8nState ignores external configured instances even when the host matches', async (t) => {
+test('getConfiguredManagedN8nState upgrades custom-local profiles when managed runtime matches host', async (t) => {
   const previousHome = process.env.YAGR_HOME;
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-managed-runtime-'));
   process.env.YAGR_HOME = tempHome;
@@ -124,7 +125,9 @@ test('getConfiguredManagedN8nState ignores external configured instances even wh
   });
 
   const state = getConfiguredManagedN8nState(configService);
-  assert.equal(state, undefined);
+  assert.ok(state);
+  assert.equal(state?.strategy, 'docker');
+  assert.equal(state?.url, 'http://127.0.0.1:5678');
 });
 
 test('getConfiguredExternalN8nReachabilityWarning returns a warning for unreachable external instances', async () => {
