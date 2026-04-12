@@ -107,7 +107,7 @@ Note: `create-language-model.ts` (factory Vercel AI SDK) **supprimé**. Les fonc
 Fichiers clefs:
 
 - `webui-sessions.ts` — `WebUiSessionRegistry` : registre fichier des sessions WebUI (metadata + display messages)
-- `session-types.ts` — types partages (`SerializedChatMessage`, `SessionSummary`, `PersistedSession`)
+- `session-types.ts` — types partages minimaux (`SessionMessage`, `SerializedChatMessage`, `SessionSummary`)
 
 Note: `session-store.ts` (`SessionStore`) **supprimé**. La persistance de l'historique de conversation est assurée par le checkpointer LangGraph (`MemorySaver`) dans deepagentsjs. `WebUiSessionRegistry` ne stocke que les metadonnees UI et les display messages.
 
