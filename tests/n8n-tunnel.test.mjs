@@ -260,6 +260,6 @@ test('startN8nTunnel rejects cleanly when cloudflared is not installed', async (
 
   await assert.rejects(
     () => startN8nTunnel('http://localhost:5678'),
-    /cloudflared not found/,
+    /cloudflared is not installed/,
   );
 });
