@@ -3,7 +3,8 @@ import { YagrConfigService, type YagrConfigStoreLike, type YagrGatewayConfig } f
 import type { YagrRunOptions } from '../types.js';
 import type { GatewayRuntimeHandle, GatewaySurface } from './types.js';
 import { createTelegramGatewayRuntime, getTelegramGatewayStatus, type TelegramGatewayStatus } from './telegram.js';
-import { createWebUiGatewayRuntime, getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui.js';
+import { createWebUiGatewayRuntime } from './webui.js';
+import { getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
 
 export interface GatewaySurfaceStatus {
   id: GatewaySurface;

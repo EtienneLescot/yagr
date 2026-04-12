@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
+import { getActiveWorkflowOpenTunnelState } from '../n8n-local/n8n-tunnel.js';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 
 const DEFAULT_LOCAL_BRIDGE_HOST = '127.0.0.1';
@@ -50,7 +51,11 @@ function persistTarget(token: string, targetUrl: string): void {
   }
 }
 
-function resolveTargetFromToken(token: string): string {
+function buildWorkflowOpenToken(targetUrl: string): string {
+  return createHash('sha256').update(targetUrl).digest('hex').slice(0, 16);
+}
+
+export function resolveStoredWorkflowOpenTarget(token: string): string {
   const inMemory = targetByToken.get(token);
   if (inMemory) {
     return inMemory;
@@ -63,6 +68,18 @@ function resolveTargetFromToken(token: string): string {
   }
 
   return '';
+}
+
+function registerWorkflowOpenTarget(targetUrl: string): string {
+  const token = buildWorkflowOpenToken(targetUrl);
+  targetByToken.set(token, targetUrl);
+  persistTarget(token, targetUrl);
+  return token;
+}
+
+export function decodeHtmlDataUrl(dataUrl: string): string {
+  const encoded = dataUrl.split(',', 2)[1] ?? '';
+  return decodeURIComponent(encoded);
 }
 
 export async function ensureLocalWorkflowOpenBridgeRunning(): Promise<void> {
@@ -102,10 +119,31 @@ export async function ensureLocalWorkflowOpenBridgeRunning(): Promise<void> {
 }
 
 export function buildLocalWorkflowOpenBridgeUrl(target: string): string {
-  const token = createHash('sha256').update(target).digest('hex').slice(0, 16);
-  targetByToken.set(token, target);
-  persistTarget(token, target);
+  const token = registerWorkflowOpenTarget(target);
   return `http://${DEFAULT_LOCAL_BRIDGE_HOST}:${activePort}/open/n8n-workflow/${token}`;
+}
+
+export function buildHostedWorkflowOpenBridgeUrl(baseUrl: string, target: string): string {
+  const token = registerWorkflowOpenTarget(target);
+  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  return `${normalizedBaseUrl}/open/n8n-workflow/${token}`;
+}
+
+export function getLocalWorkflowOpenBridgeBaseUrl(): string {
+  return `http://${DEFAULT_LOCAL_BRIDGE_HOST}:${activePort}`;
+}
+
+export function resolvePreferredWorkflowOpenBridgeUrl(target: string, fallbackBaseUrl?: string): string {
+  const tunnelBaseUrl = getActiveWorkflowOpenTunnelState()?.tunnelUrl;
+  if (tunnelBaseUrl) {
+    return buildHostedWorkflowOpenBridgeUrl(tunnelBaseUrl, target);
+  }
+
+  if (fallbackBaseUrl) {
+    return buildHostedWorkflowOpenBridgeUrl(fallbackBaseUrl, target);
+  }
+
+  return buildLocalWorkflowOpenBridgeUrl(target);
 }
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -121,10 +159,9 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   const token = url.pathname.startsWith('/open/n8n-workflow/')
     ? decodeURIComponent(url.pathname.slice('/open/n8n-workflow/'.length)).trim()
     : '';
-  const target = String(token ? resolveTargetFromToken(token) : (url.searchParams.get('target') ?? '')).trim();
+  const target = String(token ? resolveStoredWorkflowOpenTarget(token) : (url.searchParams.get('target') ?? '')).trim();
   if (target.startsWith('data:text/html')) {
-    const encoded = target.split(',', 2)[1] ?? '';
-    const html = decodeURIComponent(encoded);
+    const html = decodeHtmlDataUrl(target);
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     response.end(html);
     return;

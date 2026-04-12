@@ -79,10 +79,12 @@ Fichiers clefs:
 
 - `langgraph-events.ts` — adaptateur events LangGraph → `YagrUserVisibleUpdate`
 - `webui.ts` — gateway HTTP/SSE pour l'interface React
+- `webui-config.ts` — SSOT du host/port/url WebUI partage par les facades
 - `telegram.ts` — gateway Telegram  
 - `interactive-ui.tsx` — gateway TUI Ink
 - `cli.ts` — gateway CLI non-interactif
 - `manager.ts` — superviseur multi-gateway (`GatewaySupervisor`)
+- `local-open-bridge.ts` — bridge HTTP tokenise pour materialiser `presentWorkflowResult.url` selon la surface
 
 Toutes les gateways consomment `YagrDeepAgentHandle` (deepagentsjs).
 Aucune ne depend du runtime supprimé (`YagrRunEngine`).

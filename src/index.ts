@@ -38,8 +38,10 @@ export {
 } from './gateway/telegram.js';
 export {
   createWebUiGatewayRuntime,
-  getWebUiGatewayStatus,
 } from './gateway/webui.js';
+export {
+  getWebUiGatewayStatus,
+} from './gateway/webui-config.js';
 export {
   resolveLanguageModelConfig,
   resolveModelName,
@@ -79,7 +81,7 @@ export {
 export type { Gateway, InboundMessage } from './gateway/types.js';
 export type { GatewayRuntimeHandle, GatewaySurface } from './gateway/types.js';
 export type { GatewaySupervisorStatus, GatewaySurfaceStatus } from './gateway/manager.js';
-export type { WebUiGatewayStatus } from './gateway/webui.js';
+export type { WebUiGatewayStatus } from './gateway/webui-config.js';
 export type { YagrSetupStatus } from './setup.js';
 export type { YagrResetScope, YagrCleanupPlan, YagrResetResult } from './config/local-state.js';
 export type { YagrN8nLocalConfig } from './config/n8n-config-service.js';

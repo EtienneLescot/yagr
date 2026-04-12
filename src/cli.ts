@@ -48,15 +48,18 @@ import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
 import {
   getActiveTunnelState,
+  getActiveWorkflowOpenTunnelState,
   installCloudflaredIfNeeded,
   isCloudflaredAvailable,
   isLocalUrl,
   refreshN8nTunnel,
   resolveN8nTunnelTargetUrl,
   startN8nTunnel,
+  startWorkflowOpenTunnel,
   stopN8nTunnel,
 } from './n8n-local/n8n-tunnel.js';
 import { ensureN8nRelayServer } from './llm/llm-relay-server.js';
+import { ensureLocalWorkflowOpenBridgeRunning, getLocalWorkflowOpenBridgeBaseUrl } from './gateway/local-open-bridge.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -781,24 +784,34 @@ async function ensureTunnelAtLaunch(): Promise<void> {
   const tunnelConfig = configService.getN8nTunnelConfig();
   if (!tunnelConfig?.enabled) return;
 
-  // If already running, nothing to do.
   const active = getActiveTunnelState();
-  if (active) return;
+  if (!active) {
+    try {
+      const targetUrl = resolveN8nTunnelTargetUrl();
+      const bin = await installCloudflaredIfNeeded();
+      const state = await startN8nTunnel(targetUrl, bin);
+      configService.saveN8nTunnelConfig({ ...tunnelConfig, publicUrl: state.publicUrl, targetUrl });
 
-  try {
-    const targetUrl = resolveN8nTunnelTargetUrl();
-    const bin = await installCloudflaredIfNeeded();
-    const state = await startN8nTunnel(targetUrl, bin);
-    configService.saveN8nTunnelConfig({ ...tunnelConfig, publicUrl: state.publicUrl, targetUrl });
+      // Sync the tunnel URL into n8nac-config.json so webhook URLs are correct.
+      const n8nConfigService = new YagrN8nConfigService();
+      n8nConfigService.syncN8nacHostUrl(state.publicUrl);
 
-    // Sync the tunnel URL into n8nac-config.json so webhook URLs are correct.
-    const n8nConfigService = new YagrN8nConfigService();
-    n8nConfigService.syncN8nacHostUrl(state.publicUrl);
+      process.stdout.write(`Cloudflare Tunnel started: ${state.publicUrl}\n`);
+      await restartManagedN8nForTunnel(state.publicUrl);
+    } catch (error) {
+      process.stderr.write(`Warning: n8n tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+  }
 
-    process.stdout.write(`Cloudflare Tunnel started: ${state.publicUrl}\n`);
-    await restartManagedN8nForTunnel(state.publicUrl);
-  } catch (error) {
-    process.stderr.write(`Warning: n8n tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
+  if (!getActiveWorkflowOpenTunnelState()) {
+    try {
+      await ensureLocalWorkflowOpenBridgeRunning();
+      const bin = await installCloudflaredIfNeeded();
+      const publicUrl = await startWorkflowOpenTunnel(getLocalWorkflowOpenBridgeBaseUrl(), bin);
+      process.stdout.write(`Workflow open bridge tunnel started: ${publicUrl}\n`);
+    } catch (error) {
+      process.stderr.write(`Warning: workflow open bridge tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
   }
 }
 
@@ -1365,6 +1378,7 @@ async function main(): Promise<void> {
       await ensureManagedN8nAtLaunch();
       await refreshN8nWorkspaceInstructionsAtLaunch();
       await ensureRelayAtLaunch();
+      await ensureTunnelAtLaunch();
       await runTui(args);
       return;
     }
@@ -1373,6 +1387,7 @@ async function main(): Promise<void> {
       await ensureManagedN8nAtLaunch();
       await refreshN8nWorkspaceInstructionsAtLaunch();
       await ensureRelayAtLaunch();
+      await ensureTunnelAtLaunch();
       await runWebUi(args, configService);
       return;
     }
@@ -1393,6 +1408,7 @@ async function main(): Promise<void> {
     await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
     await ensureRelayAtLaunch();
+    await ensureTunnelAtLaunch();
     await runTui(args);
     return;
   }
@@ -1408,6 +1424,7 @@ async function main(): Promise<void> {
     await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
     await ensureRelayAtLaunch();
+    await ensureTunnelAtLaunch();
     await runWebUi(args, configService);
     return;
   }
@@ -1416,6 +1433,7 @@ async function main(): Promise<void> {
     await ensureManagedN8nAtLaunch();
     await refreshN8nWorkspaceInstructionsAtLaunch();
     await ensureRelayAtLaunch();
+    await ensureTunnelAtLaunch();
     await runTelegramGateway({
       provider: args.provider,
       model: args.model,
@@ -1427,6 +1445,7 @@ async function main(): Promise<void> {
   await ensureManagedN8nAtLaunch();
   await refreshN8nWorkspaceInstructionsAtLaunch();
   await ensureRelayAtLaunch();
+  await ensureTunnelAtLaunch();
 
   const handle = await createYagrDeepAgent();
   const { runCliGateway } = await import('./gateway/cli.js');
