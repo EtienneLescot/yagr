@@ -11,7 +11,7 @@
 
 ### (Y)our (A)gent (G)rounded in (R)eality
 
-**Autonomous automation agent · orchestrator-ready by design · powered by n8n-as-code today**
+**Autonomous automation agent · orchestrator-ready by design · powered by n8n-as-code today** <!-- op-hands-test -->
 
 </td>
 </tr>
