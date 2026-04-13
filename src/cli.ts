@@ -57,6 +57,7 @@ import {
   startN8nTunnel,
   startWorkflowOpenTunnel,
   stopN8nTunnel,
+  stopWorkflowOpenTunnel,
 } from './n8n-local/n8n-tunnel.js';
 import { ensureN8nRelayServer } from './llm/llm-relay-server.js';
 import { ensureLocalWorkflowOpenBridgeRunning, getLocalWorkflowOpenBridgeBaseUrl } from './gateway/local-open-bridge.js';
@@ -815,6 +816,11 @@ async function ensureTunnelAtLaunch(): Promise<void> {
   }
 }
 
+async function startWorkflowOpenBridgeTunnelCli(bin: string): Promise<string> {
+  await ensureLocalWorkflowOpenBridgeRunning();
+  return startWorkflowOpenTunnel(getLocalWorkflowOpenBridgeBaseUrl(), bin);
+}
+
 /**
  * If a Yagr-managed n8n instance is currently running, restart it so it picks
  * up the new N8N_WEBHOOK_URL. The managers inject the URL from the active
@@ -1225,11 +1231,18 @@ async function main(): Promise<void> {
       const config = new YagrConfigService();
       config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
 
+      const workflowOpenUrl = await runWithSpinner(
+        'Starting workflow open bridge tunnel…',
+        () => startWorkflowOpenBridgeTunnelCli(bin),
+        'Waiting for cloudflared to emit a public URL (up to 30s).',
+      );
+
       // Update n8nac-config.json host URL so webhook URLs are correct.
       new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
 
       process.stdout.write(`\nTunnel ready: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
+      process.stdout.write(`Workflow open bridge: ${workflowOpenUrl}\n`);
       process.stdout.write(`\nThe tunnel will restart automatically on next \`yagr start\` / \`yagr gateway start\`.\n`);
       await restartManagedN8nForTunnel(state.publicUrl);
       return;
@@ -1246,17 +1259,25 @@ async function main(): Promise<void> {
       const config = new YagrConfigService();
       config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
 
+      const workflowOpenUrl = await runWithSpinner(
+        'Starting workflow open bridge tunnel…',
+        () => startWorkflowOpenBridgeTunnelCli(bin),
+        'Waiting for cloudflared to emit a public URL (up to 30s).',
+      );
+
       // Update n8nac-config.json host URL so webhook URLs are correct.
       new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
 
       process.stdout.write(`Tunnel started: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
+      process.stdout.write(`Workflow open bridge: ${workflowOpenUrl}\n`);
       await restartManagedN8nForTunnel(state.publicUrl);
       return;
     }
 
     if (args.command === 'n8n-tunnel-stop') {
       await stopN8nTunnel();
+      await stopWorkflowOpenTunnel();
       const config = new YagrConfigService();
       config.clearN8nTunnelConfig();
 
@@ -1265,7 +1286,7 @@ async function main(): Promise<void> {
       const localHost = `http://127.0.0.1:${managedState?.port ?? 5678}`;
       new YagrN8nConfigService().syncN8nacHostUrl(localHost);
 
-      process.stdout.write('Tunnel stopped.\n');
+      process.stdout.write('Tunnel set stopped (n8n + workflow open bridge).\n');
       return;
     }
 
@@ -1280,20 +1301,55 @@ async function main(): Promise<void> {
       const config = new YagrConfigService();
       config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
 
+      await stopWorkflowOpenTunnel();
+      const workflowOpenUrl = await runWithSpinner(
+        'Refreshing workflow open bridge tunnel…',
+        () => startWorkflowOpenBridgeTunnelCli(bin),
+        'Stopping current workflow-open tunnel and starting a new one.',
+      );
+
       // Update n8nac-config.json host URL so webhook URLs are correct.
       new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
 
       process.stdout.write(`Tunnel refreshed: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
+      process.stdout.write(`Workflow open bridge: ${workflowOpenUrl}\n`);
       await restartManagedN8nForTunnel(state.publicUrl);
       return;
     }
 
     if (args.command === 'n8n-tunnel-status') {
       const active = getActiveTunnelState();
+      const workflowOpen = getActiveWorkflowOpenTunnelState();
       const payload = active
-        ? { running: true, publicUrl: active.publicUrl, targetUrl: active.targetUrl, pid: active.pid, startedAt: active.startedAt }
-        : { running: false };
+        ? {
+            running: true,
+            publicUrl: active.publicUrl,
+            targetUrl: active.targetUrl,
+            pid: active.pid,
+            startedAt: active.startedAt,
+            workflowOpen: workflowOpen
+              ? {
+                  running: true,
+                  publicUrl: workflowOpen.tunnelUrl,
+                  targetUrl: workflowOpen.targetUrl,
+                  pid: workflowOpen.pid,
+                  startedAt: workflowOpen.startedAt,
+                }
+              : { running: false },
+          }
+        : {
+            running: false,
+            workflowOpen: workflowOpen
+              ? {
+                  running: true,
+                  publicUrl: workflowOpen.tunnelUrl,
+                  targetUrl: workflowOpen.targetUrl,
+                  pid: workflowOpen.pid,
+                  startedAt: workflowOpen.startedAt,
+                }
+              : { running: false },
+          };
       process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
       return;
     }

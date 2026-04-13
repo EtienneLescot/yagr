@@ -57,10 +57,6 @@ const WEB_UI_HTML = `<!doctype html>
   </html>`;
 
 export { getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
-  host?: string;
-  port?: number;
-}
->>>>>>> origin/main
 
 type WebUiChatStreamEvent =
   | { type: 'start'; sessionId: string; message: string }
