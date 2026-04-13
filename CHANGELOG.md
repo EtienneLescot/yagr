@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.18](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.17...yagr@v0.2.18) (2026-04-13)
+
+
+### Features
+
+* add workflow open bridge tunnel management to CLI ([4cb7f20](https://github.com/EtienneLescot/yagr/commit/4cb7f2075b1af3416a282aa0e37906f66729b111))
+* migrate from OpenHands to PR Agent for automated PR reviews ([#42](https://github.com/EtienneLescot/yagr/issues/42)) ([3eba8d4](https://github.com/EtienneLescot/yagr/commit/3eba8d422aece89d35d86e7871b4e9fa73d31770))
+
+
+### Bug Fixes
+
+* enable auto describe/review in pr-agent config ([09dd679](https://github.com/EtienneLescot/yagr/commit/09dd6792bf5c54233c4758f9a07dbd347f77ab40))
+* use args parameter instead of CONFIG_FILE_PATH input ([6748303](https://github.com/EtienneLescot/yagr/commit/6748303eec7a46fa9ac0fb202c4a4614e290a6af))
+
 ## [0.2.17](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.16...yagr@v0.2.17) (2026-04-12)
 
 
