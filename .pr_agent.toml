@@ -1,7 +1,8 @@
 [config]
-# Model: use environment variable or fallback to gpt-4o
-model="gpt-4o"
-fallback_models=["gpt-3.5-turbo"]
+# Use litellm to route to MiniMax
+# Set model to use via environment variable or config
+model="litellm/minimax/MiniMax-M2.7"
+fallback_models=["litellm/minimax/MiniMax-M2.7"]
 # CLI
 git_provider="github"
 publish_output=true
@@ -27,3 +28,6 @@ include_generated_by_header = true
 [pr_code_suggestions]
 focus_only_on_problems = true
 enable_chat_text = false
+
+[litellm]
+enable_callbacks = false
