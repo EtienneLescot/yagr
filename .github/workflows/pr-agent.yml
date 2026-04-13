@@ -20,7 +20,8 @@ jobs:
       - name: PR Agent action step
         uses: Codium-ai/pr-agent@main
         with:
-          CONFIG_FILE_PATH: .pr_agent.toml
+          args: >
+            --config_file_path .pr_agent.toml
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           OPENAI_KEY: ${{ secrets.LLM_API_KEY }}
