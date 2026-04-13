@@ -23,6 +23,6 @@ jobs:
           args: >
             --config_file_path .pr_agent.toml
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_KEY: ${{ secrets.LLM_API_KEY }}
           OPENAI_API_BASE: https://api.minimax.io/v1
