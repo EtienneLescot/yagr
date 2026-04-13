@@ -1,0 +1,38 @@
+[config]
+# Model: use the variable from GitHub Actions, or fallback to gpt-4o
+# The actual model can be set via model env var or config
+model="gpt-4o"
+fallback_models=["gpt-3.5-turbo"]
+# CLI
+git_provider="github"
+publish_output=true
+verbosity_level=0
+
+[pr_reviewer]
+enable_review_labels_effort = true
+enable_review_labels_security = true
+require_tests_review = true
+require_security_review = true
+require_ticket_analysis_review = true
+
+[pr_description]
+enable_pr_diagram = true
+include_generated_by_header = true
+
+[pr_code_suggestions]
+focus_only_on_problems = true
+enable_chat_text = false
+
+[github_app]
+pr_commands = [
+    "/describe --pr_description.publish_description_as_comment=true",
+    "/review",
+    "/improve"
+]
+handle_push_trigger = true
+push_commands = [
+    "/improve"
+]
+
+[litellm]
+enable_callbacks = false
