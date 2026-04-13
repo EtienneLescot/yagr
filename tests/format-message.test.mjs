@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -12,6 +15,7 @@ import {
   formatTerminalLink,
   formatWorkflowLinkTerminal,
   markdownToTelegramHtml,
+  resolveTerminalWorkflowOpenUrl,
 } from '../dist/gateway/format-message.js';
 import { enrichWorkflowEmbed } from '../dist/gateway/n8n-workflow-middleware.js';
 
@@ -74,6 +78,64 @@ test('formatWorkflowLinkHtml outputs an anchor tag', () => {
   });
   assert.match(result, /<a href="https:\/\/n8n\.example\.com\/workflow\/abc">Test WF<\/a>/);
   assert.match(result, /https:\/\/n8n\.example\.com\/workflow\/abc/);
+});
+
+test('buildWorkflowFooterHtml can resolve tokenized hosted bridge links', () => {
+  const result = buildWorkflowFooterHtml([
+    {
+      workflowId: 'abc',
+      url: 'data:text/html;charset=utf-8,%3Chtml%3Ebridge%3C%2Fhtml%3E',
+      title: 'Test WF',
+    },
+  ], {
+    openBaseUrl: 'http://127.0.0.1:3789',
+  });
+  assert.match(result, /<a href="http:\/\/127\.0\.0\.1:3789\/open\/n8n-workflow\/[0-9a-f]{16}">Test WF<\/a>/);
+  assert.ok(!result.includes('data:text/html'));
+});
+
+test('workflow open links prefer the public bridge tunnel when active', () => {
+  const previousHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-open-bridge-'));
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const proxyRuntimeDir = path.join(tempHome, 'proxy-runtime');
+    fs.mkdirSync(proxyRuntimeDir, { recursive: true });
+    fs.writeFileSync(path.join(proxyRuntimeDir, 'workflow-open-tunnel.json'), JSON.stringify({
+      pid: process.pid,
+      tunnelUrl: 'https://workflow-open.example.trycloudflare.com',
+      targetUrl: 'http://127.0.0.1:3791',
+      startedAt: new Date().toISOString(),
+    }, null, 2));
+
+    const dataUrl = 'data:text/html;charset=utf-8,%3Chtml%3Ebridge%3C%2Fhtml%3E';
+    const terminalUrl = resolveTerminalWorkflowOpenUrl({
+      workflowId: 'abc',
+      url: dataUrl,
+      title: 'Test WF',
+    });
+    assert.match(terminalUrl, /^https:\/\/workflow-open\.example\.trycloudflare\.com\/open\/n8n-workflow\/[0-9a-f]{16}$/);
+
+    const html = buildWorkflowFooterHtml([
+      {
+        workflowId: 'abc',
+        url: dataUrl,
+        title: 'Test WF',
+      },
+    ], {
+      openBaseUrl: 'http://127.0.0.1:3789',
+    });
+    assert.match(html, /https:\/\/workflow-open\.example\.trycloudflare\.com\/open\/n8n-workflow\/[0-9a-f]{16}/);
+    assert.ok(!html.includes('127.0.0.1:3789/open/n8n-workflow/'));
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.YAGR_HOME;
+    } else {
+      process.env.YAGR_HOME = previousHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
 test('formatWorkflowLinkHtml escapes HTML in title', () => {

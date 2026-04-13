@@ -14,7 +14,7 @@ import { WebUiSessionRegistry } from '../session/webui-sessions.js';
 import type { SerializedChatMessage, SessionSummary } from '../session/session-types.js';
 import { buildDeepAgentSessionConfig, DeepAgentSessionStore, deriveSessionTitle } from '../session/deepagent-sessions.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
-import { YagrConfigService, type YagrConfigStoreLike } from '../config/yagr-config-service.js';
+import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
@@ -28,6 +28,8 @@ import {
 } from '../llm/provider-registry.js';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
+import { decodeHtmlDataUrl, resolvePreferredWorkflowOpenBridgeUrl, resolveStoredWorkflowOpenTarget } from './local-open-bridge.js';
+import { getWebUiConfig, getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
 import {
   createRunAccumulator,
   ensureWorkflowPresentation,
@@ -37,8 +39,6 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DEFAULT_HOST = '127.0.0.1';
-const DEFAULT_PORT = 3789;
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
 const ACTIVE_WEBUI_SURFACES = ['webui'] as const;
 
@@ -56,22 +56,11 @@ const WEB_UI_HTML = `<!doctype html>
   </body>
   </html>`;
 
-export interface WebUiGatewayStatus {
-  configured: boolean;
-  host: string;
-  port: number;
-  url: string;
-}
-
-function decodeHtmlDataUrl(dataUrl: string): string {
-  const encoded = dataUrl.split(',', 2)[1] ?? '';
-  return decodeURIComponent(encoded);
-}
-
-interface WebUiConfigPayload {
+export { getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
   host?: string;
   port?: number;
 }
+>>>>>>> origin/main
 
 type WebUiChatStreamEvent =
   | { type: 'start'; sessionId: string; message: string }
@@ -90,7 +79,7 @@ type WebUiChatStreamEvent =
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
-  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; openUrl?: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -101,36 +90,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** Reject IDs that could escape the sessions/memories directories. */
 function isValidSessionId(id: string): boolean {
   return UUID_RE.test(id);
-}
-
-function sanitizeHost(value: string | undefined): string {
-  const trimmed = value?.trim();
-  return trimmed || DEFAULT_HOST;
-}
-
-function sanitizePort(value: number | undefined): number {
-  if (!Number.isInteger(value) || Number(value) <= 0 || Number(value) > 65535) {
-    return DEFAULT_PORT;
-  }
-  return Number(value);
-}
-
-function getWebUiConfig(configService: YagrConfigStoreLike = new YagrConfigService()): Required<WebUiConfigPayload> {
-  const config = configService.getLocalConfig();
-  return {
-    host: sanitizeHost(config.gateway?.webui?.host),
-    port: sanitizePort(config.gateway?.webui?.port),
-  };
-}
-
-export function getWebUiGatewayStatus(configService: YagrConfigStoreLike = new YagrConfigService()): WebUiGatewayStatus {
-  const config = getWebUiConfig(configService);
-  return {
-    configured: true,
-    host: config.host,
-    port: config.port,
-    url: `http://${config.host}:${config.port}`,
-  };
 }
 
 export function createWebUiGatewayRuntime(
@@ -483,8 +442,8 @@ class WebUiGateway implements Gateway {
       return;
     }
 
-    if (method === 'GET' && url.pathname === '/open/n8n-workflow') {
-      const workflowUrl = String(url.searchParams.get('url') ?? url.searchParams.get('target') ?? '').trim();
+    if (method === 'GET' && (url.pathname === '/open/n8n-workflow' || url.pathname.startsWith('/open/n8n-workflow/'))) {
+      const workflowUrl = this.resolveWorkflowOpenUrl(url);
       await this.openManagedN8nWorkflow(response, workflowUrl);
       return;
     }
@@ -535,6 +494,18 @@ class WebUiGateway implements Gateway {
     }
 
     this.sendText(response, 200, session.payload.fallbackPage, 'text/html; charset=utf-8');
+  }
+
+  private resolveWorkflowOpenUrl(url: URL): string {
+    const token = url.pathname.startsWith('/open/n8n-workflow/')
+      ? decodeURIComponent(url.pathname.slice('/open/n8n-workflow/'.length)).trim()
+      : '';
+
+    if (token) {
+      return resolveStoredWorkflowOpenTarget(token);
+    }
+
+    return String(url.searchParams.get('url') ?? url.searchParams.get('target') ?? '').trim();
   }
 
   private async saveN8nConfig(input: {
@@ -700,6 +671,7 @@ class WebUiGateway implements Gateway {
               kind: embed.kind,
               workflowId: embed.workflowId,
               url: embed.url,
+              openUrl: resolvePreferredWorkflowOpenBridgeUrl(embed.url, this.status.url),
               targetUrl: embed.targetUrl,
               title: embed.title,
               diagram: embed.diagram,
@@ -716,6 +688,7 @@ class WebUiGateway implements Gateway {
             kind: embed.kind,
             workflowId: embed.workflowId,
             url: embed.url,
+            openUrl: resolvePreferredWorkflowOpenBridgeUrl(embed.url, this.status.url),
             targetUrl: embed.targetUrl,
             title: embed.title,
             diagram: embed.diagram,

@@ -107,6 +107,42 @@ export function resolveN8nInstanceProfile(input: {
   return isLocalN8nUrl(input.host) ? 'custom-local-direct' : 'custom-cloud';
 }
 
+function resolveConfiguredInstanceProfile(
+  localConfig: Pick<YagrN8nLocalConfig, 'instanceProfile'>,
+): YagrN8nInstanceProfile | undefined {
+  return localConfig.instanceProfile;
+}
+
+function classifyConfiguredProfile(input: {
+  host?: string;
+  instanceProfile?: YagrN8nInstanceProfile;
+  managedState?: ManagedN8nInstanceState;
+}): N8nInstanceClassification {
+  const host = input.host?.trim() || undefined;
+  const instanceProfile = input.instanceProfile;
+
+  let kind: N8nInstanceKind;
+  if (!instanceProfile) {
+    kind = host ? 'unconfigured' : 'unconfigured';
+  } else if (instanceProfile === 'custom-cloud') {
+    kind = 'cloud';
+  } else if (instanceProfile === 'custom-local-direct' || instanceProfile === 'custom-local-docker') {
+    kind = 'local';
+  } else {
+    kind = 'yagr-managed-local';
+  }
+
+  const tags = resolveTags({ kind, instanceProfile, managedState: input.managedState, host });
+  return {
+    kind,
+    host,
+    instanceProfile,
+    tags,
+    managedState: input.managedState,
+    capabilities: buildCapabilities(tags),
+  };
+}
+
 function resolveTags(input: {
   kind: N8nInstanceKind;
   instanceProfile?: YagrN8nInstanceProfile;
@@ -174,7 +210,7 @@ export function classifyN8nInstanceCandidate(input: {
     host,
     instanceProfile,
     tags,
-    managedState: isManaged ? managedState : undefined,
+    managedState,
     capabilities: buildCapabilities(tags),
   };
 }
@@ -182,11 +218,12 @@ export function classifyN8nInstanceCandidate(input: {
 export function classifyConfiguredN8nInstance(
   configService: Pick<YagrN8nConfigService, 'getLocalConfig'> = new YagrN8nConfigService(),
 ): N8nInstanceClassification {
+  const managedState = readManagedN8nState();
   const localConfig = configService.getLocalConfig();
-  return classifyN8nInstanceCandidate({
+  return classifyConfiguredProfile({
     host: localConfig.host,
-    instanceProfile: localConfig.instanceProfile,
-    managedState: readManagedN8nState(),
+    instanceProfile: resolveConfiguredInstanceProfile(localConfig),
+    managedState,
   });
 }
 

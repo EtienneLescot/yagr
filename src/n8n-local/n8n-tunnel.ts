@@ -369,53 +369,54 @@ export async function refreshN8nTunnel(targetUrl: string, cloudflaredBin?: strin
 
 // ─── Proxy tunnel state (for LLM relay deduplication) ─────────────────────────
 
-interface ProxyTunnelState {
+export interface ProxyTunnelState {
   pid: number;
   tunnelUrl: string;
   targetUrl: string;
   startedAt: string;
 }
 
-function readProxyTunnelState(): ProxyTunnelState | null {
+function readNamedTunnelState(statePath: string): ProxyTunnelState | null {
   try {
-    const p = getYagrPaths().proxyTunnelStatePath;
-    if (!fs.existsSync(p)) return null;
-    return JSON.parse(fs.readFileSync(p, 'utf-8')) as ProxyTunnelState;
+    if (!fs.existsSync(statePath)) return null;
+    return JSON.parse(fs.readFileSync(statePath, 'utf-8')) as ProxyTunnelState;
   } catch {
     return null;
   }
 }
 
-function writeProxyTunnelState(state: ProxyTunnelState | null): void {
-  const p = getYagrPaths().proxyTunnelStatePath;
+function writeNamedTunnelState(statePath: string, state: ProxyTunnelState | null): void {
   if (state === null) {
-    try { fs.unlinkSync(p); } catch { /* ignore */ }
+    try { fs.unlinkSync(statePath); } catch { /* ignore */ }
     return;
   }
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(state, null, 2));
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
 }
 
-/**
- * Starts a detached cloudflared tunnel for an arbitrary target URL and returns
- * the public trycloudflare.com URL.
- *
- * Deduplicates: if a previous proxy tunnel pointing to the same targetUrl is
- * still alive, its URL is returned immediately without spawning a new process.
- * Stale/dead tunnels are cleaned up before spawning a new one.
- */
-export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: string): Promise<string> {
-  // Reuse existing tunnel if alive and pointing to the same target.
-  const existing = readProxyTunnelState();
+function getNamedActiveTunnelState(statePath: string): ProxyTunnelState | null {
+  const state = readNamedTunnelState(statePath);
+  if (!state) {
+    return null;
+  }
+
+  if (!isPidAlive(state.pid)) {
+    return null;
+  }
+
+  return state;
+}
+
+async function startNamedTunnel(targetUrl: string, statePath: string, cloudflaredBin?: string): Promise<string> {
+  const existing = readNamedTunnelState(statePath);
   if (existing && existing.targetUrl === targetUrl && isPidAlive(existing.pid)) {
     return existing.tunnelUrl;
   }
 
-  // Kill stale process if any.
   if (existing?.pid && isPidAlive(existing.pid)) {
     try { process.kill(existing.pid, 'SIGTERM'); } catch { /* ignore */ }
   }
-  writeProxyTunnelState(null);
+  writeNamedTunnelState(statePath, null);
 
   const bin = cloudflaredBin ?? await findCloudflaredBinary();
   if (!bin) {
@@ -425,7 +426,7 @@ export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: strin
   }
 
   return new Promise<string>((resolve, reject) => {
-    const logFile = path.join(os.tmpdir(), `cloudflared-proxy-${Date.now()}.log`);
+    const logFile = path.join(os.tmpdir(), `cloudflared-${path.basename(statePath, '.json')}-${Date.now()}.log`);
 
     const child = spawn(bin, ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', logFile], {
       detached: true,
@@ -452,7 +453,7 @@ export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: strin
           settled = true;
           clearInterval(pollInterval);
           cleanup();
-          writeProxyTunnelState({ pid, tunnelUrl: match[0], targetUrl, startedAt: new Date().toISOString() });
+          writeNamedTunnelState(statePath, { pid, tunnelUrl: match[0], targetUrl, startedAt: new Date().toISOString() });
           resolve(match[0]);
         }
       } catch { /* log file not yet created */ }
@@ -483,6 +484,46 @@ export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: strin
     }, TUNNEL_TIMEOUT_MS);
   });
 }
+
+async function stopNamedTunnel(statePath: string): Promise<void> {
+  const state = readNamedTunnelState(statePath);
+  if (state?.pid && isPidAlive(state.pid)) {
+    try { process.kill(state.pid, 'SIGTERM'); } catch { /* ignore */ }
+  }
+  writeNamedTunnelState(statePath, null);
+}
+
+function readProxyTunnelState(): ProxyTunnelState | null {
+  return readNamedTunnelState(getYagrPaths().proxyTunnelStatePath);
+}
+
+function writeProxyTunnelState(state: ProxyTunnelState | null): void {
+  writeNamedTunnelState(getYagrPaths().proxyTunnelStatePath, state);
+}
+
+/**
+ * Starts a detached cloudflared tunnel for an arbitrary target URL and returns
+ * the public trycloudflare.com URL.
+ *
+ * Deduplicates: if a previous proxy tunnel pointing to the same targetUrl is
+ * still alive, its URL is returned immediately without spawning a new process.
+ * Stale/dead tunnels are cleaned up before spawning a new one.
+ */
+export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: string): Promise<string> {
+  return startNamedTunnel(targetUrl, getYagrPaths().proxyTunnelStatePath, cloudflaredBin);
+}
+
+export function getActiveWorkflowOpenTunnelState(): ProxyTunnelState | null {
+  return getNamedActiveTunnelState(getYagrPaths().workflowOpenTunnelStatePath);
+}
+
+export async function startWorkflowOpenTunnel(targetUrl: string, cloudflaredBin?: string): Promise<string> {
+  return startNamedTunnel(targetUrl, getYagrPaths().workflowOpenTunnelStatePath, cloudflaredBin);
+}
+
+export async function stopWorkflowOpenTunnel(): Promise<void> {
+  await stopNamedTunnel(getYagrPaths().workflowOpenTunnelStatePath);
+}
 /**
  * Resolves the local n8n URL that should be used as the tunnel target.
  *
@@ -502,8 +543,13 @@ export function resolveN8nTunnelTargetUrl(): string {
   const isYagrManaged = classification.instanceProfile === 'yagr-managed-docker'
     || classification.instanceProfile === 'yagr-managed-direct';
 
-  if (isYagrManaged && classification.host) {
-    return classification.host;
+  if (isYagrManaged) {
+    if (classification.managedState && classification.managedState.status !== 'stopped') {
+      return `http://127.0.0.1:${classification.managedState.port}`;
+    }
+    if (classification.host && isLocalN8nUrl(classification.host)) {
+      return classification.host;
+    }
   }
 
   // Fallback: use managedState if available and running

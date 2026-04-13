@@ -4,7 +4,7 @@
  */
 
 import type { YagrToolEvent } from '../types.js';
-import { buildLocalWorkflowOpenBridgeUrl } from './local-open-bridge.js';
+import { resolvePreferredWorkflowOpenBridgeUrl } from './local-open-bridge.js';
 
 // ---------------------------------------------------------------------------
 // Workflow embed extraction (from tool events)
@@ -51,9 +51,9 @@ export function formatWorkflowLinkPlain(embed: WorkflowEmbed): string {
   return `🔗 ${label}`;
 }
 
-export function formatWorkflowLinkHtml(embed: WorkflowEmbed): string {
+export function formatWorkflowLinkHtml(embed: WorkflowEmbed, openUrl = embed.url): string {
   const label = escapeHtml(embed.title ?? `Workflow ${embed.workflowId}`);
-  return `🔗 <a href="${escapeHtml(embed.url)}">${label}</a>`;
+  return `🔗 <a href="${escapeHtml(openUrl)}">${label}</a>`;
 }
 
 export function formatTerminalLink(label: string, url: string): string {
@@ -75,10 +75,16 @@ export function buildWorkflowBannerPlain(embeds: WorkflowEmbed[]): string {
   return uniqueEmbeds.map(formatWorkflowLinkPlain).join('\n');
 }
 
-export function buildWorkflowBannerHtml(embeds: WorkflowEmbed[]): string {
+export function buildWorkflowBannerHtml(
+  embeds: WorkflowEmbed[],
+  options?: { openBaseUrl?: string },
+): string {
   const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
   if (uniqueEmbeds.length === 0) return '';
-  return uniqueEmbeds.map(formatWorkflowLinkHtml).join('\n');
+  return uniqueEmbeds.map((embed) => {
+    const openUrl = resolvePreferredWorkflowOpenBridgeUrl(embed.url, options?.openBaseUrl);
+    return formatWorkflowLinkHtml(embed, openUrl);
+  }).join('\n');
 }
 
 export function buildWorkflowBannerTerminal(embeds: WorkflowEmbed[]): string {
@@ -101,7 +107,7 @@ export function escapeHtml(text: string): string {
 }
 
 export function resolveTerminalWorkflowOpenUrl(embed: WorkflowEmbed): string {
-  return buildLocalWorkflowOpenBridgeUrl(embed.url);
+  return resolvePreferredWorkflowOpenBridgeUrl(embed.url);
 }
 
 function dedupeWorkflowEmbeds(embeds: WorkflowEmbed[]): WorkflowEmbed[] {

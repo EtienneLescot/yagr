@@ -33,7 +33,7 @@ type ChatStreamEvent =
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
-  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
+  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; openUrl?: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -567,7 +567,7 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
 }
 
 function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
-  const resolvedUrl = `/open/n8n-workflow?url=${encodeURIComponent(embed.url)}`;
+  const resolvedUrl = embed.openUrl ?? embed.url;
 
   const exec = embed.executionResult;
   const execStatusClass = exec
@@ -1634,6 +1634,7 @@ function App() {
               kind: streamEvent.kind,
               workflowId: streamEvent.workflowId,
               url: streamEvent.url,
+              openUrl: streamEvent.openUrl,
               targetUrl: streamEvent.targetUrl,
               title: streamEvent.title,
               diagram: streamEvent.diagram,
