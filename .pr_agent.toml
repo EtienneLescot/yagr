@@ -1,8 +1,8 @@
 [config]
 # Use litellm to route to MiniMax
-# Set model to use via environment variable or config
 model="litellm/minimax/MiniMax-M2.7"
 fallback_models=["litellm/minimax/MiniMax-M2.7"]
+custom_model_max_tokens=32000
 # CLI
 git_provider="github"
 publish_output=true
