@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.18](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.17...yagr@v0.2.18) (2026-04-13)
+
+
+### Features
+
+* add workflow open bridge tunnel management to CLI ([4cb7f20](https://github.com/EtienneLescot/yagr/commit/4cb7f2075b1af3416a282aa0e37906f66729b111))
+* migrate from OpenHands to PR Agent for automated PR reviews ([#42](https://github.com/EtienneLescot/yagr/issues/42)) ([3eba8d4](https://github.com/EtienneLescot/yagr/commit/3eba8d422aece89d35d86e7871b4e9fa73d31770))
+
+
+### Bug Fixes
+
+* configure litellm model for MiniMax ([bccf232](https://github.com/EtienneLescot/yagr/commit/bccf2326aff8b77479872ae00f787fc65d4cbb26))
+* enable auto describe/review in pr-agent config ([09dd679](https://github.com/EtienneLescot/yagr/commit/09dd6792bf5c54233c4758f9a07dbd347f77ab40))
+* set custom_model_max_tokens for MiniMax model ([7b9d1cc](https://github.com/EtienneLescot/yagr/commit/7b9d1cce04ada341fdd8654dfa0f46c43c604f09))
+* use args parameter instead of CONFIG_FILE_PATH input ([6748303](https://github.com/EtienneLescot/yagr/commit/6748303eec7a46fa9ac0fb202c4a4614e290a6af))
+* use OPENAI_MODEL env var for MiniMax ([489ad9b](https://github.com/EtienneLescot/yagr/commit/489ad9b97e15380891a9ef3b98b9c4d31b8b6fa6))
+
 ## [0.2.17](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.16...yagr@v0.2.17) (2026-04-12)
 
 
