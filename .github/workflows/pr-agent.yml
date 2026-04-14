@@ -26,5 +26,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.LLM_API_KEY }}
-          OPENAI_API_BASE: https://api.minimax.io/v1
+          OPENAI_API_BASE: https://api.openai.com/v1
           OPENAI_MODEL: gpt-4o

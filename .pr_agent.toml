@@ -1,16 +1,10 @@
 [config]
-# Use OpenAI API directly
+# Use OpenAI API directly — model must match the provider endpoint
 model="gpt-4o"
 # CLI
 git_provider="github"
 publish_output=true
 verbosity_level=0
-
-[github_action_config]
-auto_describe = true
-auto_review = true
-auto_improve = false
-pr_actions = ['opened', 'reopened', 'ready_for_review', 'synchronize']
 
 [pr_reviewer]
 enable_review_labels_effort = true
