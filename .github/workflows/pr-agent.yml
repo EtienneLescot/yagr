@@ -29,3 +29,5 @@ jobs:
           MINIMAX_API_BASE: https://api.minimax.io/v1
           OPENAI_MODEL: minimax/MiniMax-M2.7
           OPENAI_API_KEY: ${{ secrets.LLM_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.LLM_API_KEY }}
+          ANTHROPIC_API_BASE: https://api.minimax.io/anthropic/v1/messages
