@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.19](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.18...yagr@v0.2.19) (2026-04-14)
+
+
+### Bug Fixes
+
+* correct MiniMax API base (anthropic/v1/messages), remove invalid custom_model_max_tokens ([479f8f3](https://github.com/EtienneLescot/yagr/commit/479f8f3bdc70d6a6df09fe64c73899798f6ea746))
+* target prod env for secrets/vars, fix OPENAI_API_BASE ([59bb66c](https://github.com/EtienneLescot/yagr/commit/59bb66c944828caac48a7b0e6320264a5b1d075c))
+* try ANTHROPIC_API_KEY with MiniMax + OPENAI fallback ([342e74e](https://github.com/EtienneLescot/yagr/commit/342e74e9540e991bcf81f64d88fe26d4de920017))
+* use ANTHROPIC_API_KEY for MiniMax Anthropic endpoint ([70f8159](https://github.com/EtienneLescot/yagr/commit/70f81593fccc0290f0ec7fcb7b149b0ae919ef92))
+* use MINIMAX_API_KEY + MINIMAX_API_BASE for LiteLLM MiniMax handler ([49552e4](https://github.com/EtienneLescot/yagr/commit/49552e4fba638568eb3d877a81d4cf4593a70d94))
+* use MINIMAX_API_KEY env var for LiteLLM MiniMax handler ([0b3e66b](https://github.com/EtienneLescot/yagr/commit/0b3e66bf8d290fbd05405df62fa41ff5944b1e83))
+
 ## [0.2.18](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.17...yagr@v0.2.18) (2026-04-13)
 
 
