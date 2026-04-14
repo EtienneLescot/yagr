@@ -14,6 +14,7 @@ permissions:
 jobs:
   pr_agent_job:
     runs-on: ubuntu-latest
+    environment: prod
     if: github.event.pull_request.draft == false
     
     steps:
@@ -25,5 +26,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_KEY: ${{ secrets.LLM_API_KEY }}
-          OPENAI_API_BASE: ${{ vars.OPENHANDS_LLM_BASE_URL }}
+          OPENAI_API_BASE: https://api.minimax.io
           OPENAI_MODEL: ${{ vars.OPENHANDS_LLM_MODEL }}
