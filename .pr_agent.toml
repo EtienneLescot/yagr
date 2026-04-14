@@ -1,6 +1,6 @@
 [config]
-# Use OpenAI API directly — model must match the provider endpoint
-model="gpt-4o"
+model="minimax/MiniMax-M2.7"
+custom_model_max_tokens=32000
 # CLI
 git_provider="github"
 publish_output=true
