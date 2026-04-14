@@ -35,6 +35,46 @@ export type CodexReasoningEffort = typeof CODEX_REASONING_EFFORT_OPTIONS[number]
 const CODEX_RESPONSES_PATH = '/codex/responses';
 const CODEX_MODELS_PATH = '/codex/models';
 
+/** Default timeout for upstream Codex API calls (ms). */
+const CODEX_UPSTREAM_TIMEOUT_MS = 60_000;
+
+/** Default retry configuration for transient failures. */
+const RETRY_CONFIG = {
+  maxAttempts: 3,
+  initialDelayMs: 500,
+  maxDelayMs: 8_000,
+  backoffMultiplier: 2,
+};
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  options: { retries?: number; delayMs?: number } = {},
+): Promise<T> {
+  let attempt = 0;
+  let delay = options.delayMs ?? RETRY_CONFIG.initialDelayMs;
+  const maxAttempts = options.retries ?? RETRY_CONFIG.maxAttempts;
+
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      if (attempt >= maxAttempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * RETRY_CONFIG.backoffMultiplier, RETRY_CONFIG.maxDelayMs);
+    }
+  }
+}
+
+/** Creates an AbortSignal that times out after `timeoutMs`. */
+function timeoutSignal(timeoutMs: number, label: string): AbortSignal {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (typeof timer.unref === 'function') timer.unref();
+  return controller.signal;
+}
+
 /** In-memory cache for model discovery with ETag support. */
 interface ModelDiscoveryCache {
   models: string[];
@@ -440,6 +480,7 @@ export async function fetchOpenAiAccountModels(accessToken: string): Promise<str
     if (modelDiscoveryCache?.models.length) {
       return modelDiscoveryCache.models;
     }
+    console.warn(`[openai-account] Model discovery failed: ${error instanceof Error ? error.message : String(error)}. Using fallback model list.`);
     return [...KNOWN_CODEX_MODELS];
   }
 }
@@ -531,25 +572,35 @@ export function createOpenAiAccountLanguageModel(
         ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice), parallel_tool_calls: true } : { tool_choice: 'auto' }),
       };
 
-      const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.accessToken}`,
-          'chatgpt-account-id': accountId,
-          'OpenAI-Beta': 'responses=experimental',
-          'originator': 'pi',
-          'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
-          'accept': 'text/event-stream',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: options.abortSignal,
-      });
+      const response = await withRetry(async () => {
+        const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.accessToken}`,
+            'chatgpt-account-id': accountId,
+            'OpenAI-Beta': 'responses=experimental',
+            'originator': 'pi',
+            'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
+            'accept': 'text/event-stream',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          signal: options.abortSignal
+            ? AbortSignal.any([options.abortSignal, timeoutSignal(CODEX_UPSTREAM_TIMEOUT_MS, 'codex-streaming')])
+            : timeoutSignal(CODEX_UPSTREAM_TIMEOUT_MS, 'codex-streaming'),
+        });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText.trim() || `Codex completion failed: HTTP ${response.status}`);
-      }
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText.trim() || `Codex completion failed: HTTP ${response.status}`);
+        }
+
+        if (!response.body) {
+          throw new Error('Codex completion returned empty response body.');
+        }
+
+        return response;
+      }, 'Codex streaming completion');
 
       if (!response.body) {
         throw new Error('Codex completion returned empty response body.');
@@ -680,35 +731,42 @@ async function runOpenAiAccountCompletion(
     ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice), parallel_tool_calls: true } : { tool_choice: 'auto' }),
   };
 
-  const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${session.accessToken}`,
-      'chatgpt-account-id': accountId,
-      'OpenAI-Beta': 'responses=experimental',
-      'originator': 'pi',
-      'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
-      'accept': 'text/event-stream',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const rawResponse = await withRetry(async () => {
+    const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.accessToken}`,
+        'chatgpt-account-id': accountId,
+        'OpenAI-Beta': 'responses=experimental',
+        'originator': 'pi',
+        'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
+        'accept': 'text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: timeoutSignal(CODEX_UPSTREAM_TIMEOUT_MS, 'codex-non-streaming'),
+    });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(errText.trim() || `Codex completion failed: HTTP ${response.status}`);
-  }
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText.trim() || `Codex completion failed: HTTP ${response.status}`);
+    }
 
-  if (!response.body) {
-    throw new Error('Codex completion returned empty response body.');
-  }
+    if (!response.body) {
+      throw new Error('Codex completion returned empty response body.');
+    }
+
+    return response;
+  }, 'Codex non-streaming completion');
+
+  const responseBody = rawResponse.body as ReadableStream<Uint8Array>;
 
   let text = '';
   let inputTokens = 0;
   let outputTokens = 0;
   const toolCalls = new Map<string, LanguageModelV1FunctionToolCall>();
 
-  for await (const event of parseCodexSSE(response.body)) {
+  for await (const event of parseCodexSSE(responseBody)) {
     const type = typeof event.type === 'string' ? event.type : undefined;
     if (!type) continue;
 
