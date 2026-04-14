@@ -2,8 +2,6 @@
 # Use OpenAI-compatible API with MiniMax
 model="minimax/MiniMax-M2.7"
 fallback_models=["gpt-4o"]
-# Increase max tokens for MiniMax models
-max_tokens=32000
 # CLI
 git_provider="github"
 publish_output=true
