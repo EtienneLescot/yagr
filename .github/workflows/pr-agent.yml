@@ -29,4 +29,3 @@ jobs:
           ANTHROPIC_API_BASE: https://api.minimax.io
           OPENAI_MODEL: MiniMax-M2.7
           OPENAI_API_KEY: ${{ secrets.LLM_API_KEY }}
-          OPENAI_API_BASE: https://api.minimax.io/anthropic/v1/messages
