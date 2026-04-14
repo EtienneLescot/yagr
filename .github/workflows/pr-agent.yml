@@ -25,6 +25,6 @@ jobs:
             --config_file_path .pr_agent.toml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENAI_KEY: ${{ secrets.LLM_API_KEY }}
-          OPENAI_API_BASE: https://api.minimax.io/anthropic/v1/messages
+          ANTHROPIC_API_KEY: ${{ secrets.LLM_API_KEY }}
+          ANTHROPIC_API_BASE: https://api.minimax.io/anthropic/v1/messages
           OPENAI_MODEL: ${{ vars.OPENHANDS_LLM_MODEL }}
