@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.20](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.19...yagr@v0.2.20) (2026-04-14)
+
+
+### Bug Fixes
+
+* remove gpt-4o fallback from PR Agent config on main ([2e52128](https://github.com/EtienneLescot/yagr/commit/2e52128a2a7857bb133ad878250e0f6f809b2925))
+
 ## [0.2.19](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.18...yagr@v0.2.19) (2026-04-14)
 
 
