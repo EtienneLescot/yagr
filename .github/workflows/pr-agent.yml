@@ -26,5 +26,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_KEY: ${{ secrets.LLM_API_KEY }}
-          OPENAI_API_BASE: https://api.minimax.io
+          OPENAI_API_BASE: https://api.minimax.io/anthropic/v1/messages
           OPENAI_MODEL: ${{ vars.OPENHANDS_LLM_MODEL }}
