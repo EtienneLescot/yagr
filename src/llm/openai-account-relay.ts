@@ -18,6 +18,46 @@ import os from 'node:os';
 import { OPENAI_ACCOUNT_BASE_URL, ensureOpenAiAccountSession } from './openai-account.js';
 import { translateChatCompletionToResponsesApi, pipeChatCompletionsSseAsResponsesApi } from './responses-api-relay.js';
 
+/** Default timeout for upstream Codex API calls (ms). */
+const CODEX_UPSTREAM_TIMEOUT_MS = 60_000;
+
+/** Default retry configuration for transient failures. */
+const RETRY_CONFIG = {
+  maxAttempts: 3,
+  initialDelayMs: 500,
+  maxDelayMs: 8_000,
+  backoffMultiplier: 2,
+};
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  options: { retries?: number; delayMs?: number } = {},
+): Promise<T> {
+  let attempt = 0;
+  let delay = options.delayMs ?? RETRY_CONFIG.initialDelayMs;
+  const maxAttempts = options.retries ?? RETRY_CONFIG.maxAttempts;
+
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      if (attempt >= maxAttempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * RETRY_CONFIG.backoffMultiplier, RETRY_CONFIG.maxDelayMs);
+    }
+  }
+}
+
+/** Creates an AbortSignal that times out after `timeoutMs`. */
+function timeoutSignal(timeoutMs: number, _label: string): AbortSignal {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (typeof timer.unref === 'function') timer.unref();
+  return controller.signal;
+}
+
 const CODEX_RESPONSES_PATH = '/codex/responses';
 const JWT_ACCOUNT_CLAIM = 'https://api.openai.com/auth';
 
@@ -444,33 +484,32 @@ export async function handleOpenAiAccountRelay(
     instructions,
     input,
     text: { verbosity: 'medium' },
-    ...(tools.length > 0 ? { tools, tool_choice } : { tool_choice: 'auto' }),
-    parallel_tool_calls: false,
+    ...(tools.length > 0 ? { tools, tool_choice, parallel_tool_calls: true } : { tool_choice: 'auto' }),
   };
 
-  const upstream = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${session.accessToken}`,
-      'chatgpt-account-id': accountId,
-      'OpenAI-Beta': 'responses=experimental',
-      'originator': 'pi',
-      'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
-      'accept': 'text/event-stream',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(codexBody),
-  });
+  const upstream = await withRetry(async () => {
+    const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.accessToken}`,
+        'chatgpt-account-id': accountId,
+        'OpenAI-Beta': 'responses=experimental',
+        'originator': 'pi',
+        'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
+        'accept': 'text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(codexBody),
+      signal: timeoutSignal(CODEX_UPSTREAM_TIMEOUT_MS, 'openai-account-relay'),
+    });
 
-  if (!upstream.ok || !upstream.body) {
-    const errorBody = await upstream.text().catch(() => '');
-    res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
-    res.end(
-      errorBody ||
-      JSON.stringify({ error: { message: `Codex upstream error: HTTP ${upstream.status}`, type: 'server_error' } }),
-    );
-    return;
-  }
+    if (!response.ok || !response.body) {
+      const errorBody = await response.text().catch(() => '');
+      throw new Error(errorBody || `Codex upstream error: HTTP ${response.status}`);
+    }
+
+    return response;
+  }, 'openai-account-relay upstream');
 
   const state = createCodexSseState(payload.model);
 
