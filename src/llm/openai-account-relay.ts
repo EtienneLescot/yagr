@@ -17,46 +17,7 @@ import http from 'node:http';
 import os from 'node:os';
 import { OPENAI_ACCOUNT_BASE_URL, ensureOpenAiAccountSession } from './openai-account.js';
 import { translateChatCompletionToResponsesApi, pipeChatCompletionsSseAsResponsesApi } from './responses-api-relay.js';
-
-/** Default timeout for upstream Codex API calls (ms). */
-const CODEX_UPSTREAM_TIMEOUT_MS = 60_000;
-
-/** Default retry configuration for transient failures. */
-const RETRY_CONFIG = {
-  maxAttempts: 3,
-  initialDelayMs: 500,
-  maxDelayMs: 8_000,
-  backoffMultiplier: 2,
-};
-
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  label: string,
-  options: { retries?: number; delayMs?: number } = {},
-): Promise<T> {
-  let attempt = 0;
-  let delay = options.delayMs ?? RETRY_CONFIG.initialDelayMs;
-  const maxAttempts = options.retries ?? RETRY_CONFIG.maxAttempts;
-
-  while (true) {
-    try {
-      return await fn();
-    } catch (err) {
-      attempt++;
-      if (attempt >= maxAttempts) throw err;
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      delay = Math.min(delay * RETRY_CONFIG.backoffMultiplier, RETRY_CONFIG.maxDelayMs);
-    }
-  }
-}
-
-/** Creates an AbortSignal that times out after `timeoutMs`. */
-function timeoutSignal(timeoutMs: number, _label: string): AbortSignal {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  if (typeof timer.unref === 'function') timer.unref();
-  return controller.signal;
-}
+import { withRetry, timeoutSignal } from './utils.js';
 
 const CODEX_RESPONSES_PATH = '/codex/responses';
 const JWT_ACCOUNT_CLAIM = 'https://api.openai.com/auth';
@@ -487,6 +448,10 @@ export async function handleOpenAiAccountRelay(
     ...(tools.length > 0 ? { tools, tool_choice, parallel_tool_calls: true } : { tool_choice: 'auto' }),
   };
 
+  // Abort the upstream request when the client disconnects.
+  const clientDisconnectController = new AbortController();
+  _req.on('close', () => clientDisconnectController.abort());
+
   const upstream = await withRetry(async () => {
     const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
       method: 'POST',
@@ -500,7 +465,10 @@ export async function handleOpenAiAccountRelay(
         'content-type': 'application/json',
       },
       body: JSON.stringify(codexBody),
-      signal: timeoutSignal(CODEX_UPSTREAM_TIMEOUT_MS, 'openai-account-relay'),
+      signal: AbortSignal.any([
+        clientDisconnectController.signal,
+        timeoutSignal(60_000, 'openai-account-relay'),
+      ]),
     });
 
     if (!response.ok || !response.body) {
