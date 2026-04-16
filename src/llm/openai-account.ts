@@ -14,6 +14,7 @@ import type {
   LanguageModelV1ToolChoice,
 } from './provider-types.js';
 import { normalizeFunctionToolParametersSchema } from './tool-schema.js';
+import { CODEX_UPSTREAM_TIMEOUT_MS, RETRY_CONFIG, withRetry, timeoutSignal } from './utils.js';
 
 export const OPENAI_ACCOUNT_BASE_URL = 'https://chatgpt.com/backend-api';
 export const OPENAI_ACCOUNT_DEFAULT_MODEL = 'gpt-5.1-codex-mini';
@@ -440,6 +441,7 @@ export async function fetchOpenAiAccountModels(accessToken: string): Promise<str
     if (modelDiscoveryCache?.models.length) {
       return modelDiscoveryCache.models;
     }
+    console.warn(`[openai-account] Model discovery failed: ${error instanceof Error ? error.message : String(error)}. Using fallback model list.`);
     return [...KNOWN_CODEX_MODELS];
   }
 }
@@ -531,25 +533,35 @@ export function createOpenAiAccountLanguageModel(
         ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice), parallel_tool_calls: true } : { tool_choice: 'auto' }),
       };
 
-      const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.accessToken}`,
-          'chatgpt-account-id': accountId,
-          'OpenAI-Beta': 'responses=experimental',
-          'originator': 'pi',
-          'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
-          'accept': 'text/event-stream',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: options.abortSignal,
-      });
+      const response = await withRetry(async () => {
+        const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.accessToken}`,
+            'chatgpt-account-id': accountId,
+            'OpenAI-Beta': 'responses=experimental',
+            'originator': 'pi',
+            'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
+            'accept': 'text/event-stream',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          signal: options.abortSignal
+            ? AbortSignal.any([options.abortSignal, timeoutSignal(CODEX_UPSTREAM_TIMEOUT_MS, 'codex-streaming')])
+            : timeoutSignal(CODEX_UPSTREAM_TIMEOUT_MS, 'codex-streaming'),
+        });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText.trim() || `Codex completion failed: HTTP ${response.status}`);
-      }
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText.trim() || `Codex completion failed: HTTP ${response.status}`);
+        }
+
+        if (!response.body) {
+          throw new Error('Codex completion returned empty response body.');
+        }
+
+        return response;
+      }, 'Codex streaming completion');
 
       if (!response.body) {
         throw new Error('Codex completion returned empty response body.');
@@ -680,35 +692,42 @@ async function runOpenAiAccountCompletion(
     ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice), parallel_tool_calls: true } : { tool_choice: 'auto' }),
   };
 
-  const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${session.accessToken}`,
-      'chatgpt-account-id': accountId,
-      'OpenAI-Beta': 'responses=experimental',
-      'originator': 'pi',
-      'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
-      'accept': 'text/event-stream',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const rawResponse = await withRetry(async () => {
+    const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.accessToken}`,
+        'chatgpt-account-id': accountId,
+        'OpenAI-Beta': 'responses=experimental',
+        'originator': 'pi',
+        'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
+        'accept': 'text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: timeoutSignal(CODEX_UPSTREAM_TIMEOUT_MS, 'codex-non-streaming'),
+    });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(errText.trim() || `Codex completion failed: HTTP ${response.status}`);
-  }
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText.trim() || `Codex completion failed: HTTP ${response.status}`);
+    }
 
-  if (!response.body) {
-    throw new Error('Codex completion returned empty response body.');
-  }
+    if (!response.body) {
+      throw new Error('Codex completion returned empty response body.');
+    }
+
+    return response;
+  }, 'Codex non-streaming completion');
+
+  const responseBody = rawResponse.body as ReadableStream<Uint8Array>;
 
   let text = '';
   let inputTokens = 0;
   let outputTokens = 0;
   const toolCalls = new Map<string, LanguageModelV1FunctionToolCall>();
 
-  for await (const event of parseCodexSSE(response.body)) {
+  for await (const event of parseCodexSSE(responseBody)) {
     const type = typeof event.type === 'string' ? event.type : undefined;
     if (!type) continue;
 

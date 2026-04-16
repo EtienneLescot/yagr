@@ -170,7 +170,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           OPENAI_KEY: ${{ secrets.LLM_API_KEY }}
-          OPENAI_API_BASE: https://api.minimax.io/v1
+          OPENAI_API_BASE: https://api.minimax.io/anthropic/v1/messages
 ```
 
 ### 4.2 Configuration PR Agent

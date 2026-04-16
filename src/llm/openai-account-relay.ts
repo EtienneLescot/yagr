@@ -17,6 +17,7 @@ import http from 'node:http';
 import os from 'node:os';
 import { OPENAI_ACCOUNT_BASE_URL, ensureOpenAiAccountSession } from './openai-account.js';
 import { translateChatCompletionToResponsesApi, pipeChatCompletionsSseAsResponsesApi } from './responses-api-relay.js';
+import { withRetry, timeoutSignal } from './utils.js';
 
 const CODEX_RESPONSES_PATH = '/codex/responses';
 const JWT_ACCOUNT_CLAIM = 'https://api.openai.com/auth';
@@ -444,33 +445,39 @@ export async function handleOpenAiAccountRelay(
     instructions,
     input,
     text: { verbosity: 'medium' },
-    ...(tools.length > 0 ? { tools, tool_choice } : { tool_choice: 'auto' }),
-    parallel_tool_calls: false,
+    ...(tools.length > 0 ? { tools, tool_choice, parallel_tool_calls: true } : { tool_choice: 'auto' }),
   };
 
-  const upstream = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${session.accessToken}`,
-      'chatgpt-account-id': accountId,
-      'OpenAI-Beta': 'responses=experimental',
-      'originator': 'pi',
-      'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
-      'accept': 'text/event-stream',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(codexBody),
-  });
+  // Abort the upstream request when the client disconnects.
+  const clientDisconnectController = new AbortController();
+  _req.on('close', () => clientDisconnectController.abort());
 
-  if (!upstream.ok || !upstream.body) {
-    const errorBody = await upstream.text().catch(() => '');
-    res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
-    res.end(
-      errorBody ||
-      JSON.stringify({ error: { message: `Codex upstream error: HTTP ${upstream.status}`, type: 'server_error' } }),
-    );
-    return;
-  }
+  const upstream = await withRetry(async () => {
+    const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_RESPONSES_PATH}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.accessToken}`,
+        'chatgpt-account-id': accountId,
+        'OpenAI-Beta': 'responses=experimental',
+        'originator': 'pi',
+        'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
+        'accept': 'text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(codexBody),
+      signal: AbortSignal.any([
+        clientDisconnectController.signal,
+        timeoutSignal(60_000, 'openai-account-relay'),
+      ]),
+    });
+
+    if (!response.ok || !response.body) {
+      const errorBody = await response.text().catch(() => '');
+      throw new Error(errorBody || `Codex upstream error: HTTP ${response.status}`);
+    }
+
+    return response;
+  }, 'openai-account-relay upstream');
 
   const state = createCodexSseState(payload.model);
 
