@@ -64,6 +64,11 @@ function stateColor(state: YagrAgentState): string {
   }
 }
 
+function buildContextGauge(percent: number, width = 10): string {
+  const filled = Math.round((percent / 100) * width);
+  return '█'.repeat(filled) + '░'.repeat(width - filled);
+}
+
 function laneColor(lane: FeedLane): string {
   switch (lane) {
     case 'user': return 'cyan';
@@ -275,6 +280,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, sessions }: Interacti
   const [activeOperationText, setActiveOperationText] = useState('Ready for a request.');
   const [workflowEmbeds, setWorkflowEmbeds] = useState<WorkflowEmbed[]>([]);
   const [loadingDots, setLoadingDots] = useState('');
+  const [contextFillPercent, setContextFillPercent] = useState<number | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
   const nextEntryIdRef = useRef(1);
   const assistantBufferRef = useRef('');
@@ -497,6 +503,9 @@ function YagrInteractiveApp({ agent, threadIdRef, options, sessions }: Interacti
     seenOperationEndRef.current = new Set();
     operationStateRef.current = new Map();
 
+    const initialContextPercent = Math.min(99, Math.round((prompt.length / 4 / 100000) * 100));
+    setContextFillPercent(initialContextPercent);
+
     const accumulator = createRunAccumulator();
 
     try {
@@ -555,6 +564,9 @@ function YagrInteractiveApp({ agent, threadIdRef, options, sessions }: Interacti
               pushEntry('result', 'Workflow available', formatWorkflowLinkTerminal(w), 'strong');
               setActiveOperationText(`Workflow ready: ${w.targetUrl ?? w.url}`);
             },
+            onCompaction: async (compaction) => {
+              setActiveOperationText(`Context compacted: ${compaction.messagesCompacted} msgs → ${compaction.preservedRecentMessages} preserved`);
+            },
           });
         }
         if (DEBUG_STREAM) {
@@ -587,6 +599,9 @@ function YagrInteractiveApp({ agent, threadIdRef, options, sessions }: Interacti
         setPhaseStatusText('Ready.');
         setActiveOperationText('Run finished. Ready for the next request.');
       }
+
+      const finalContextPercent = Math.min(100, Math.round(((prompt.length + accumulator.responseText.length) / 4 / 100000) * 100));
+      setContextFillPercent(finalContextPercent);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       pushEntry('interrupt', 'Run failed', message);
@@ -859,7 +874,11 @@ function YagrInteractiveApp({ agent, threadIdRef, options, sessions }: Interacti
         <Text color={isRunning ? 'yellow' : stateColor(currentState)}>
           {isRunning ? `${loadingDots} ${statusText}` : `${idleIcon} ${statusText}`}
         </Text>
-        {!isAtBottom && allContentLines.length > contentHeight ? (
+        {contextFillPercent != null ? (
+          <Text dimColor={contextFillPercent < 60} color={contextFillPercent >= 80 ? 'red' : contextFillPercent >= 60 ? 'yellow' : undefined}>
+            [{buildContextGauge(contextFillPercent)}] {Math.round(contextFillPercent)}%
+          </Text>
+        ) : !isAtBottom && allContentLines.length > contentHeight ? (
           <Text dimColor>
             {isAutoFollowRef.current ? '↓ auto' : `↑↓ ${maxScrollOffset - scrollOffset + contentHeight}/${allContentLines.length}`}
           </Text>
