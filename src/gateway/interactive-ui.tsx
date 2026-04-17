@@ -330,47 +330,66 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
         { configurable: { thread_id: threadIdRef.current }, version: 'v2' },
       );
 
-      for await (const event of stream) {
-        await processStreamEvent(event, accumulator, {
-          onTextDelta: async (delta) => {
-            if (display.showResponses) {
-              appendAssistantDelta(delta);
-            }
-            await options.onTextDelta?.(delta);
-          },
-          onThinkingDelta: async (delta) => {
-            if (display.showThinking) {
-              appendStreamDelta('thinking', delta, thinkingBufferRef, setLiveThinkingLine);
-            }
-          },
-          onOperation: async (op) => {
-            handleOperationEvent(op);
-          },
-          onUserVisibleUpdate: async (update) => {
-            if (update.tone === 'error') {
-              pushEntry('interrupt', update.title, update.detail ?? update.title, 'strong');
-            }
-            setPhaseStatusText(update.title);
-            if (update.detail) setActiveOperationText(update.detail);
-          },
-          onWorkflowEmbed: async (embed) => {
-            const w: WorkflowEmbed = {
-              workflowId: embed.workflowId,
-              url: embed.url,
-              targetUrl: embed.targetUrl,
-              title: embed.title,
-              diagram: embed.diagram,
-              executionResult: embed.executionResult,
-            };
-            setWorkflowEmbeds((prev) => (
-              prev.some((entry) => workflowEmbedKey(entry) === workflowEmbedKey(w))
-                ? prev
-                : [...prev, w]
-            ));
-            pushEntry('result', 'Workflow available', formatWorkflowLinkTerminal(w), 'strong');
-            setActiveOperationText(`Workflow ready: ${w.targetUrl ?? w.url}`);
-          },
-        });
+      const DEBUG_STREAM = process.env.DEBUG_AGENT_STREAM === '1';
+      let eventCount = 0;
+
+      try {
+        for await (const event of stream) {
+          eventCount++;
+          if (DEBUG_STREAM) {
+            const eventType = 'event' in event ? (event.event as string) : 'unknown';
+            const eventName = 'name' in event ? (event.name as string) : 'unknown';
+            console.error(`[DEBUG_AGENT_STREAM] #${eventCount} event=${eventType} name=${eventName}`);
+          }
+          await processStreamEvent(event, accumulator, {
+            onTextDelta: async (delta) => {
+              if (display.showResponses) {
+                appendAssistantDelta(delta);
+              }
+              await options.onTextDelta?.(delta);
+            },
+            onThinkingDelta: async (delta) => {
+              if (display.showThinking) {
+                appendStreamDelta('thinking', delta, thinkingBufferRef, setLiveThinkingLine);
+              }
+            },
+            onOperation: async (op) => {
+              handleOperationEvent(op);
+            },
+            onUserVisibleUpdate: async (update) => {
+              if (update.tone === 'error') {
+                pushEntry('interrupt', update.title, update.detail ?? update.title, 'strong');
+              }
+              setPhaseStatusText(update.title);
+              if (update.detail) setActiveOperationText(update.detail);
+            },
+            onWorkflowEmbed: async (embed) => {
+              const w: WorkflowEmbed = {
+                workflowId: embed.workflowId,
+                url: embed.url,
+                targetUrl: embed.targetUrl,
+                title: embed.title,
+                diagram: embed.diagram,
+                executionResult: embed.executionResult,
+              };
+              setWorkflowEmbeds((prev) => (
+                prev.some((entry) => workflowEmbedKey(entry) === workflowEmbedKey(w))
+                  ? prev
+                  : [...prev, w]
+              ));
+              pushEntry('result', 'Workflow available', formatWorkflowLinkTerminal(w), 'strong');
+              setActiveOperationText(`Workflow ready: ${w.targetUrl ?? w.url}`);
+            },
+          });
+        }
+        if (DEBUG_STREAM) {
+          console.error(`[DEBUG_AGENT_STREAM] Stream finished normally. eventCount=${eventCount}`);
+        }
+      } catch (streamError) {
+        if (DEBUG_STREAM) {
+          console.error(`[DEBUG_AGENT_STREAM] Stream error:`, streamError);
+        }
+        throw streamError;
       }
 
       if (display.showResponses) {
