@@ -10,7 +10,9 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -b && node scripts/copy-manager-assets.mjs && node scripts/build-webui.mjs",
-    "clean": "rm -rf dist tsconfig.tsbuildinfo node_modules/.cache docs/static/img/yagr-logo.png",
+    "build:clean": "npm run clean && npm run build",
+    "build:clean:symlink": "npm run clean && npm run build && chmod +x dist/cli.js && npm link",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo node_modules/.cache",
     "clean:yagr:all": "node scripts/clean-yagr-local.mjs",
     "test": "npm run test:unit",
     "test:unit": "npm run build && node --test tests/*.test.mjs",
