@@ -24,6 +24,7 @@ import { resolveCopilotApiToken, getGitHubCopilotSession } from './copilot-accou
 import { getOpenAiAccountSession, OPENAI_ACCOUNT_BASE_URL } from './openai-account.js';
 import { getAnthropicAccountSession } from './anthropic-account.js';
 import { OpenAiAccountChatModel } from './openai-account-langchain.js';
+import { ChatCodexOAuth } from './chat-codex-oauth.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -260,7 +261,7 @@ export async function createLangChainModel(
       if (!session?.accessToken) {
         throw new Error('OpenAI account session not found. Run `yagr setup` first.');
       }
-      return new OpenAiAccountChatModel({
+      return new ChatCodexOAuth({
         model,
       });
     }

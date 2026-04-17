@@ -8,7 +8,7 @@ import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { getYagrDeepAgentSessionsDir } from '../config/yagr-home.js';
 import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
-import { createRunAccumulator, ensureWorkflowPresentation, processStreamEvent } from './langgraph-events.js';
+import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import { DeepAgentSessionStore } from '../session/deepagent-sessions.js';
 import {
   formatTerminalLink,
@@ -372,26 +372,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
           },
         });
       }
-
-      await ensureWorkflowPresentation(accumulator, {
-        onWorkflowEmbed: async (embed) => {
-          const w: WorkflowEmbed = {
-            workflowId: embed.workflowId,
-            url: embed.url,
-            targetUrl: embed.targetUrl,
-            title: embed.title,
-            diagram: embed.diagram,
-            executionResult: embed.executionResult,
-          };
-          setWorkflowEmbeds((prev) => (
-            prev.some((entry) => workflowEmbedKey(entry) === workflowEmbedKey(w))
-              ? prev
-              : [...prev, w]
-          ));
-          pushEntry('result', 'Workflow available', formatWorkflowLinkTerminal(w), 'strong');
-          setActiveOperationText(`Workflow ready: ${w.targetUrl ?? w.url}`);
-        },
-      });
 
       if (display.showResponses) {
         finalizeAssistantStream();

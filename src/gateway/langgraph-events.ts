@@ -21,7 +21,7 @@ import {
   makeThinkingEndEvent,
   THINKING_OP_ID,
 } from '../runtime/user-visible-updates.js';
-import { presentWorkflowResultCli, WORKFLOW_EMBED_TYPE } from '../manager-tooling/present-workflow.js';
+import { WORKFLOW_EMBED_TYPE } from '../manager-tooling/present-workflow.js';
 import type { WorkflowEmbedPayload } from '../manager-tooling/present-workflow.js';
 import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 
@@ -36,15 +36,36 @@ export interface LangGraphRunAccumulator {
   requiredActions: YagrRequiredAction[];
   /** Workflow embeds raised via `presentWorkflowResult` tool calls. */
   workflowEmbeds: WorkflowEmbedPayload[];
-  /** Workflow IDs detected from structured tool outputs during the run. */
-  workflowCandidates: Array<{ workflowId: string; workflowUrl?: string; title?: string }>;
   /** Accumulated thinking text across the current turn. */
   thinkingText: string;
   /** When the current thinking block started (ms). */
   thinkingStartedAt: number;
   /** Map of event-scoped tool run keys → operation metadata for in-flight tool calls. */
   activeOperations: Map<string, YagrOperationEvent>;
+  /** Loop guard: total tool calls in this run. */
+  toolCallCount: number;
+  /** Loop guard: history of recent tool calls for detecting repeated calls. */
+  recentToolCalls: Array<{ toolName: string; normalizedArgs: string; timestamp: number }>;
+  /** Loop guard: timestamp of last text delta or significant progress. */
+  lastProgressAt: number;
+  /** Loop guard: timestamp when run started. */
+  runStartedAt: number;
 }
+
+export interface LoopGuardConfig {
+  /** Maximum total tool calls before aborting (default: 50). */
+  maxToolCalls?: number;
+  /** Maximum consecutive identical tool calls before aborting (default: 3). */
+  maxIdenticalCalls?: number;
+  /** Timeout (ms) without text progress before aborting (default: 120000). */
+  inactivityTimeoutMs?: number;
+}
+
+export const DEFAULT_LOOP_GUARD_CONFIG: Required<LoopGuardConfig> = {
+  maxToolCalls: 50,
+  maxIdenticalCalls: 3,
+  inactivityTimeoutMs: 120000,
+};
 
 export interface LangGraphEventCallbacks {
   onTextDelta?: (delta: string) => void | Promise<void>;
@@ -64,11 +85,68 @@ export function createRunAccumulator(): LangGraphRunAccumulator {
     responseText: '',
     requiredActions: [],
     workflowEmbeds: [],
-    workflowCandidates: [],
     thinkingText: '',
     thinkingStartedAt: 0,
     activeOperations: new Map(),
+    toolCallCount: 0,
+    recentToolCalls: [],
+    lastProgressAt: Date.now(),
+    runStartedAt: Date.now(),
   };
+}
+
+export interface LoopGuardResult {
+  shouldInterrupt: boolean;
+  reason?: string;
+}
+
+export function checkLoopGuard(
+  accumulator: LangGraphRunAccumulator,
+  config: LoopGuardConfig = DEFAULT_LOOP_GUARD_CONFIG,
+): LoopGuardResult {
+  const effectiveConfig = { ...DEFAULT_LOOP_GUARD_CONFIG, ...config };
+
+  if (accumulator.toolCallCount >= effectiveConfig.maxToolCalls) {
+    return {
+      shouldInterrupt: true,
+      reason: `Maximum tool calls (${effectiveConfig.maxToolCalls}) reached. Possible infinite loop detected.`,
+    };
+  }
+
+  const now = Date.now();
+  if (now - accumulator.lastProgressAt > effectiveConfig.inactivityTimeoutMs) {
+    return {
+      shouldInterrupt: true,
+      reason: `Inactivity timeout (${effectiveConfig.inactivityTimeoutMs}ms) reached. No text progress while tools keep running.`,
+    };
+  }
+
+  if (accumulator.recentToolCalls.length >= effectiveConfig.maxIdenticalCalls) {
+    const lastCalls = accumulator.recentToolCalls.slice(-effectiveConfig.maxIdenticalCalls);
+    const allIdentical = lastCalls.every(
+      (call) =>
+        call.toolName === lastCalls[0].toolName &&
+        call.normalizedArgs === lastCalls[0].normalizedArgs,
+    );
+
+    if (allIdentical) {
+      return {
+        shouldInterrupt: true,
+        reason: `Identical tool call repeated ${effectiveConfig.maxIdenticalCalls} times: ${lastCalls[0].toolName}(${lastCalls[0].normalizedArgs.slice(0, 50)}...). Possible infinite loop detected.`,
+      };
+    }
+  }
+
+  return { shouldInterrupt: false };
+}
+
+function normalizeToolArgs(args: Record<string, unknown> | undefined): string {
+  if (!args) return '';
+  const sorted = Object.entries(args)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`);
+  return sorted.join('&');
 }
 
 // ---------------------------------------------------------------------------
@@ -80,14 +158,27 @@ export function createRunAccumulator(): LangGraphRunAccumulator {
  *
  * Mutates `accumulator` in place and fires the appropriate `callbacks`.
  */
+const DEBUG = process.env.DEBUG_LANGGRAPH_EVENTS === '1';
+
 export async function processStreamEvent(
   event: StreamEvent,
   accumulator: LangGraphRunAccumulator,
   callbacks: LangGraphEventCallbacks = {},
 ): Promise<void> {
+  if (DEBUG) {
+    const eventName = 'name' in event ? (event.name as string) : 'unknown';
+    const runId = 'run_id' in event ? (event.run_id as string) : 'unknown';
+    console.error(`[DEBUG_LANGGRAPH_EVENTS] event=${event.event} name=${eventName} run_id=${runId}`);
+  }
+
   switch (event.event) {
     case 'on_chat_model_stream': {
       const { textDelta, thinkingDelta } = extractDeltas(event.data?.chunk);
+
+      if (DEBUG) {
+        console.error(`[DEBUG_LANGGRAPH_EVENTS]   textDelta.len=${textDelta.length} thinkingDelta.len=${thinkingDelta.length}`);
+        if (textDelta) console.error(`[DEBUG_LANGGRAPH_EVENTS]   textDelta preview: "${textDelta.slice(0, 100)}"`);
+      }
 
       if (thinkingDelta) {
         const isFirst = accumulator.thinkingText.length === 0;
@@ -139,12 +230,16 @@ export async function processStreamEvent(
         }
 
         accumulator.responseText += textDelta;
+        accumulator.lastProgressAt = Date.now();
         await callbacks.onTextDelta?.(textDelta);
       }
       break;
     }
 
     case 'on_tool_start': {
+      if (DEBUG) {
+        console.error(`[DEBUG_LANGGRAPH_EVENTS]   tool_start: ${event.name}`);
+      }
       // LangChain packages tool args as: event.data.input = { input: '{"command":"..."}' }
       // i.e. the real args are JSON-stringified under the key "input".
       const rawEventInput = event.data?.input as Record<string, unknown> | undefined;
@@ -159,6 +254,20 @@ export async function processStreamEvent(
       }
       const toolName = event.name;
       const operationKey = getToolOperationKey(event);
+
+      // Track tool call for loop guard
+      accumulator.toolCallCount++;
+      if (toolName) {
+        accumulator.recentToolCalls.push({
+          toolName,
+          normalizedArgs: normalizeToolArgs(input),
+          timestamp: Date.now(),
+        });
+        // Keep only last 10 calls for duplicate detection
+        if (accumulator.recentToolCalls.length > 10) {
+          accumulator.recentToolCalls.shift();
+        }
+      }
 
       // Legacy update (still used by surfaces that don't handle operations).
       const update = mapToolStartToUpdate(toolName, input);
@@ -176,6 +285,10 @@ export async function processStreamEvent(
     }
 
     case 'on_tool_end': {
+      if (DEBUG) {
+        const outputPreview = event.data?.output ? String(event.data.output).slice(0, 100) : 'undefined';
+        console.error(`[DEBUG_LANGGRAPH_EVENTS]   tool_end: ${event.name} output="${outputPreview}"`);
+      }
       const toolName = event.name;
       const operationKey = getToolOperationKey(event);
       const active = accumulator.activeOperations.get(operationKey);
@@ -346,7 +459,6 @@ async function handleToolEnd(
   callbacks: LangGraphEventCallbacks,
 ): Promise<void> {
   const output = parseToolOutput(rawOutput);
-  captureWorkflowCandidate(output, accumulator);
 
   switch (toolName) {
     case 'execute': {
@@ -406,117 +518,9 @@ async function handleToolEnd(
   }
 }
 
-export async function ensureWorkflowPresentation(
-  accumulator: LangGraphRunAccumulator,
-  callbacks: Pick<LangGraphEventCallbacks, 'onWorkflowEmbed'> = {},
-): Promise<void> {
-  if (accumulator.workflowEmbeds.length > 0) {
-    return;
-  }
-
-  const candidate = accumulator.workflowCandidates.at(-1);
-  if (!candidate?.workflowId) {
-    return;
-  }
-
-  const payload = await presentWorkflowResultCli({
-    workflowId: candidate.workflowId,
-    workflowUrl: candidate.workflowUrl,
-    title: candidate.title,
-  }) as WorkflowEmbedPayload;
-  const enriched = enrichWorkflowEmbedPayload(payload);
-  accumulator.workflowEmbeds.push(enriched);
-  await callbacks.onWorkflowEmbed?.(enriched);
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function captureWorkflowCandidate(
-  output: Record<string, unknown> | undefined,
-  accumulator: LangGraphRunAccumulator,
-): void {
-  const candidate = extractWorkflowCandidate(output);
-  if (!candidate) {
-    return;
-  }
-
-  const existingIndex = accumulator.workflowCandidates.findIndex((entry) => entry.workflowId === candidate.workflowId);
-  if (existingIndex >= 0) {
-    accumulator.workflowCandidates[existingIndex] = {
-      ...accumulator.workflowCandidates[existingIndex],
-      ...candidate,
-    };
-    return;
-  }
-
-  accumulator.workflowCandidates.push(candidate);
-}
-
-function extractWorkflowCandidate(
-  output: Record<string, unknown> | undefined,
-): { workflowId: string; workflowUrl?: string; title?: string } | undefined {
-  if (!output) {
-    return undefined;
-  }
-
-  const directWorkflowId = asNonEmptyString(output.workflowId);
-  if (directWorkflowId) {
-    return {
-      workflowId: directWorkflowId,
-      workflowUrl: asWorkflowUrl(output.workflowUrl) ?? asWorkflowUrl(output.url),
-      title: asNonEmptyString(output.title) ?? asNonEmptyString(output.name),
-    };
-  }
-
-  const directId = asNonEmptyString(output.id);
-  if (directId && looksLikeWorkflowRecord(output)) {
-    return {
-      workflowId: directId,
-      workflowUrl: asWorkflowUrl(output.workflowUrl) ?? asWorkflowUrl(output.url),
-      title: asNonEmptyString(output.title) ?? asNonEmptyString(output.name),
-    };
-  }
-
-  const nestedCandidates = ['workflow', 'data', 'result'];
-  for (const key of nestedCandidates) {
-    const nested = output[key];
-    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-      const candidate = extractWorkflowCandidate(nested as Record<string, unknown>);
-      if (candidate) {
-        return candidate;
-      }
-    }
-  }
-
-  return undefined;
-}
-
-function looksLikeWorkflowRecord(output: Record<string, unknown>): boolean {
-  return (
-    Array.isArray(output.nodes) ||
-    Array.isArray(output.connections) ||
-    typeof output.active === 'boolean' ||
-    typeof output.updatedAt === 'string' ||
-    typeof output.createdAt === 'string' ||
-    !!asWorkflowUrl(output.workflowUrl) ||
-    !!asWorkflowUrl(output.url)
-  );
-}
-
-function asNonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-function asWorkflowUrl(value: unknown): string | undefined {
-  const normalized = asNonEmptyString(value);
-  if (!normalized) {
-    return undefined;
-  }
-
-  return normalized.includes('/workflow/') ? normalized : undefined;
-}
 
 function parseToolOutput(raw: unknown): Record<string, unknown> | undefined {
   if (!raw) {

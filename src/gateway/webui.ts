@@ -32,7 +32,6 @@ import { decodeHtmlDataUrl, resolvePreferredWorkflowOpenBridgeUrl, resolveStored
 import { getWebUiConfig, getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
 import {
   createRunAccumulator,
-  ensureWorkflowPresentation,
   processStreamEvent,
   extractLastAiMessage,
 } from './langgraph-events.js';
@@ -630,8 +629,26 @@ class WebUiGateway implements Gateway {
       );
 
       const lastProgressKeys = new Set<string>();
+      const DEBUG_AGENT_LOOP = process.env.DEBUG_AGENT_LOOP === '1';
+      let eventCount = 0;
+      let lastLogTime = Date.now();
+
+      if (DEBUG_AGENT_LOOP) {
+        console.error('[DEBUG_AGENT_LOOP] Starting stream...');
+      }
 
       for await (const event of stream) {
+        eventCount++;
+        const now = Date.now();
+        const timeSinceLastLog = now - lastLogTime;
+
+        if (DEBUG_AGENT_LOOP) {
+          const eventName = 'name' in event ? (event.name as string) : 'unknown';
+          const eventType = 'event' in event ? (event.event as string) : 'unknown';
+          console.error(`[DEBUG_AGENT_LOOP] #${eventCount} event=${eventType} name=${eventName} deltaTime=${timeSinceLastLog}ms responseText.len=${accumulator.responseText.length} requiredActions=${accumulator.requiredActions.length}`);
+          lastLogTime = now;
+        }
+
         await processStreamEvent(event, accumulator, {
           onTextDelta: (delta) => {
             writeEvent({ type: 'text-delta', delta });
@@ -677,21 +694,10 @@ class WebUiGateway implements Gateway {
         });
       }
 
-      await ensureWorkflowPresentation(accumulator, {
-        onWorkflowEmbed: (embed) => {
-          writeEvent({
-            type: 'embed',
-            kind: embed.kind,
-            workflowId: embed.workflowId,
-            url: embed.url,
-            openUrl: resolvePreferredWorkflowOpenBridgeUrl(embed.url, this.status.url),
-            targetUrl: embed.targetUrl,
-            title: embed.title,
-            diagram: embed.diagram,
-            executionResult: embed.executionResult,
-          });
-        },
-      });
+      if (DEBUG_AGENT_LOOP) {
+        console.error(`[DEBUG_AGENT_LOOP] Stream ended. eventCount=${eventCount} responseText.len=${accumulator.responseText.length} workflowEmbeds=${accumulator.workflowEmbeds.length} requiredActions=${accumulator.requiredActions.length}`);
+        console.error(`[DEBUG_AGENT_LOOP] responseText preview: ${accumulator.responseText.slice(0, 200)}`);
+      }
 
       runFinished = true;
       this.persistSessionMetadata(sessionId);
