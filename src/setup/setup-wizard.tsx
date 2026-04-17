@@ -640,6 +640,13 @@ function SetupWizard({ callbacks, options, onDone }: {
   }, [phase.kind, (phase as Extract<Phase, { kind: 'n8n-docker-check' }>).status]);
 
   useEffect(() => {
+    if (phase.kind !== 'n8n-docker-check') return;
+    const currentPhase = phase as Extract<Phase, { kind: 'n8n-docker-check' }>;
+    if (currentPhase.status !== 'available') return;
+    setPhase({ kind: 'n8n-local-installing', startedAt: Date.now() });
+  }, [phase.kind, (phase as Extract<Phase, { kind: 'n8n-docker-check' }>).status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (phase.kind !== 'n8n-connecting') return;
     const guard = ++asyncGuard.current;
     void (async () => {
@@ -907,9 +914,7 @@ function SetupWizard({ callbacks, options, onDone }: {
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'n8n-docker-check') {
-      if (phase.status === 'checking') {
-        // No interaction, just wait
-      } else if (phase.status === 'unavailable') {
+      if (phase.status === 'unavailable') {
         if (key.upArrow) setPhase((p) => ({ ...(p as Extract<Phase, { kind: 'n8n-docker-check' }>), cursor: Math.max(0, (p as Extract<Phase, { kind: 'n8n-docker-check' }>).cursor - 1) }));
         else if (key.downArrow) setPhase((p) => ({ ...(p as Extract<Phase, { kind: 'n8n-docker-check' }>), cursor: Math.min(1, (p as Extract<Phase, { kind: 'n8n-docker-check' }>).cursor + 1) }));
         else if (key.return) {
@@ -919,10 +924,8 @@ function SetupWizard({ callbacks, options, onDone }: {
             setPhase({ kind: 'n8n-mode', cursor: 0, err: undefined });
           }
         } else if (key.escape) cancel('Setup cancelled.');
-      } else if (phase.status === 'available') {
-        // Auto-proceed to installation
-        setPhase({ kind: 'n8n-local-installing', startedAt: Date.now() });
       }
+      // 'available' status is handled by a separate useEffect that auto-proceeds
     } else if (phase.kind === 'n8n-local-ready') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
@@ -1361,6 +1364,13 @@ function SetupWizard({ callbacks, options, onDone }: {
           return (
             <Box flexDirection="column">
               <SpinnerDisplay message="Checking Docker availability…" frame={spinnerFrame} />
+            </Box>
+          );
+        }
+        if (phase.status === 'available') {
+          return (
+            <Box flexDirection="column">
+              <SpinnerDisplay message="Docker is ready. Starting installation…" frame={spinnerFrame} />
             </Box>
           );
         }
