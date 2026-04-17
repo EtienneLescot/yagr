@@ -5,6 +5,15 @@ description: "Connect Yagr to its current orchestrator, model, and optional inte
 
 # Getting Started
 
+## Prerequisites
+
+- **Node.js** (v22.16.0 or higher) — required to run Yagr
+- **Docker** (free) — optional but recommended if you want Yagr to install and manage a local n8n instance. [Download Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+If you already have an n8n instance, you can skip Docker and connect Yagr to your existing instance via URL and API key during onboarding.
+
+---
+
 Yagr starts with a simple loop:
 
 1. Install `@yagr/agent`
