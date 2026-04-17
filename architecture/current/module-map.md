@@ -14,6 +14,7 @@ flowchart TD
     SRC --> GATEWAY[gateway/]
     SRC --> SESSION[session/]
     SRC --> MEMORY[memory/]
+    SRC --> COMPACTION[compaction/]
     SRC --> SETUP[setup.ts and setup/]
     SRC --> CONFIG[config/]
     SRC --> N8NLOCAL[n8n-local/]
@@ -33,6 +34,7 @@ Notes:
 - `gateway/local-open-bridge.ts` porte le bridge HTTP d'auth n8n pour les ouvertures de workflow sur surfaces distantes
 - `session/` porte le registre UI des sessions WebUI (metadata + display messages)
 - `memory/` porte le `MemoryStore` cross-session (synthetique, injecte dans le system prompt)
+- `compaction/` porte le `CompactionService` SSOT pour les evenements de compaction de contexte (historique, context block, subscribers)
 - `setup/` porte la couche applicative de configuration
 - `n8n-local/tunnel-reachability.ts` porte le SSOT de wake-up des tunnels par consommateur/facade
 - `n8n-local/n8n-tunnel.ts` porte le SSOT du lifecycle `cloudflared` et de la politique `TUNNEL_DOMAIN`
@@ -166,6 +168,22 @@ Role actuel:
 - persistance credentials
 - resolution chemins et home dir
 
+### `src/compaction/`
+
+Fichiers clefs:
+
+- `compaction-types.ts` — types partages (`CompactionState`, `CompactionConfig`, `buildCompactionContextBlock`)
+- `compaction-service.ts` — `CompactionService` SSOT (historique compaction, subscribers, context block builder)
+
+Responsabilites actuelles:
+
+- centralise l'etat de compaction (dernier evenement, historique, compteur)
+- notifie les subscribers (facades) lors d'une compaction
+- construit un context block pour injection dans le system prompt
+- consommé par toutes les facades (WebUI, Telegram) via `langgraph-events.ts`
+
+Note: orthogonal a `memory/` qui porte le cross-session memory. `compaction/` gere la reduction de contexte in-session via deepagents.
+
 ## References utiles
 
 - Agent: `src/agent-factory.ts`, `deepagentsjs`
@@ -173,6 +191,7 @@ Role actuel:
 - Tooling generaliste: `src/tools/langchain/*`
 - Tooling manager: `src/manager-tooling/*`
 - Facades: `src/gateway/*`
+- Compaction: `src/compaction/*`, `src/deepagents/compaction-middleware.ts`
 - Setup: `src/setup.ts`, `src/setup/*`, `src/n8n-local/*`
 - Sessions Deepagents + UI: `src/session/deepagent-sessions.ts`, `src/session/webui-sessions.ts`
 - Memoire cross-session: `src/memory/*`

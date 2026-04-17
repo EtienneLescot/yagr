@@ -26,6 +26,7 @@ import {
 } from '../llm/provider-registry.js';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
+import { getGlobalCompactionService } from '../compaction/compaction-service.js';
 import { decodeHtmlDataUrl, resolvePreferredWorkflowOpenBridgeUrl, resolveStoredWorkflowOpenTarget } from './local-open-bridge.js';
 import { getWebUiConfig, getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
 import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
@@ -71,6 +72,7 @@ type WebUiChatStreamEvent =
       endedAt?: number;
     }
   | { type: 'text-delta'; delta: string }
+  | { type: 'compaction'; summary: string; source: 'llm' | 'fallback'; messagesCompacted: number; preservedRecentMessages: number }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
   | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; openUrl?: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
@@ -338,9 +340,14 @@ class WebUiGateway implements Gateway {
     }
 
     if (method === 'POST' && url.pathname === '/api/chat/compact') {
-      // Auto-summarisation is handled natively by deepagents — this endpoint
-      // is retained for API compatibility but is now a no-op.
-      this.sendJson(response, 200, { compacted: false, event: null });
+      const compactionService = getGlobalCompactionService();
+      const state = compactionService.getState();
+      this.sendJson(response, 200, {
+        compacted: state.lastCompaction !== null,
+        event: state.lastCompaction,
+        totalCompactions: state.totalCompactions,
+        contextBlock: compactionService.getContextBlock(),
+      });
       return;
     }
 
@@ -579,7 +586,7 @@ class WebUiGateway implements Gateway {
 
   private async resolveAgentHandle(): Promise<YagrDeepAgentHandle> {
     if (!this.agentHandlePromise) {
-      this.agentHandlePromise = createYagrDeepAgent(this.configService);
+      this.agentHandlePromise = createYagrDeepAgent(this.configService, undefined, undefined, this.options);
       const handle = await this.agentHandlePromise;
       this.sessions.setCheckpointer(handle.checkpointer);
     }
@@ -740,6 +747,15 @@ class WebUiGateway implements Gateway {
               title: embed.title,
               diagram: embed.diagram,
               executionResult: embed.executionResult,
+            });
+          },
+          onCompaction: (compaction) => {
+            writeEvent({
+              type: 'compaction',
+              summary: compaction.summary,
+              source: compaction.source,
+              messagesCompacted: compaction.messagesCompacted,
+              preservedRecentMessages: compaction.preservedRecentMessages,
             });
           },
         });

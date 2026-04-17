@@ -133,6 +133,10 @@ export function getLocalN8nAuthBridgeBaseUrl(): string {
   return `http://${DEFAULT_LOCAL_BRIDGE_HOST}:${activePort}`;
 }
 
+export async function ensureLocalWorkflowOpenBridgeRunning(): Promise<void> {
+  return ensureLocalN8nAuthBridgeRunning();
+}
+
 export function resolvePreferredWorkflowOpenBridgeUrl(target: string, fallbackBaseUrl?: string): string {
   const tunnelBaseUrl = getActiveN8nAuthTunnelState()?.publicUrl;
   if (tunnelBaseUrl) {
