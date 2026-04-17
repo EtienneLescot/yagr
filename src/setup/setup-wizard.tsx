@@ -51,6 +51,7 @@ export interface SetupCallbacks {
   openUrl(url: string): Promise<void>;
   getLlmDefaults(): {
     provider?: YagrModelProvider;
+    reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
     getApiKey(prov: YagrModelProvider): string | undefined;
     getDefaultModel(prov: YagrModelProvider): string | undefined;
     getBaseUrl(prov: YagrModelProvider): string | undefined;
@@ -79,7 +80,7 @@ export interface SetupCallbacks {
     apiKey?: string;
   }>;
   fetchModels(provider: YagrModelProvider, apiKey?: string): Promise<string[]>;
-  saveLlmConfig(p: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string }): void;
+  saveLlmConfig(p: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string; reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' }): void;
   getSurfaceDefaults(): { surfaces: GatewaySurface[] };
   getTelegramToken(): string | undefined;
   setupTelegram(token: string): Promise<{ username: string }>;
@@ -142,7 +143,7 @@ type Phase =
   | { kind: 'llm-models-loading'; provider: YagrModelProvider; apiKey: string; defModel: string | undefined; note?: string }
   | { kind: 'llm-model'; provider: YagrModelProvider; apiKey: string; models: string[]; defModel: string | undefined; cursor: number; note?: string }
   | { kind: 'llm-reasoning-effort'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
-  | { kind: 'llm-baseurl'; provider: YagrModelProvider; apiKey: string; model: string; def: string; err?: string }
+  | { kind: 'llm-baseurl'; provider: YagrModelProvider; apiKey: string; model: string; def: string; reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'; err?: string }
   | { kind: 'surfaces'; cursor: number; selected: GatewaySurface[] }
   | { kind: 'telegram-reuse-token'; surfaces: GatewaySurface[]; existing: string; cursor: number }
   | { kind: 'telegram-token'; surfaces: GatewaySurface[]; err?: string }
@@ -833,12 +834,12 @@ function SetupWizard({ callbacks, options, onDone }: {
     setPhase({ kind: 'n8n-saving', url, apiKey, instanceProfile, project, syncFolder: folder });
   }, []);
 
-  const handleBaseUrlSubmit = useCallback((provider: YagrModelProvider, apiKey: string, model: string) => (value: string) => {
+  const handleBaseUrlSubmit = useCallback((provider: YagrModelProvider, apiKey: string, model: string, reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh') => (value: string) => {
     const url = value.trim();
     if (url) {
       try { new URL(url); } catch { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'llm-baseurl' }>, err: 'Enter a valid URL.' })); return; }
     }
-    callbacks.saveLlmConfig({ provider, apiKey, model, baseUrl: url || undefined });
+    callbacks.saveLlmConfig({ provider, apiKey, model, baseUrl: url || undefined, reasoningEffort });
     const currentSurfaces = surfDef.surfaces;
     setPhase({ kind: 'surfaces', cursor: 0, selected: currentSurfaces });
   }, [callbacks, surfDef]);
@@ -890,6 +891,13 @@ function SetupWizard({ callbacks, options, onDone }: {
   }, [callbacks, llmDef, transitionToLlmModelsLoading]);
 
   const saveLlmAndContinue = useCallback((provider: YagrModelProvider, apiKey: string, model: string, note?: string) => {
+    if (provider === 'openai-proxy') {
+      const currentEffort = llmDef.provider === provider ? llmDef.reasoningEffort : undefined;
+      const effortOptions = ['low', 'medium', 'high'] as const;
+      const selectedCursor = Math.max(0, effortOptions.indexOf((currentEffort === 'low' || currentEffort === 'medium' || currentEffort === 'high') ? currentEffort : 'medium'));
+      setPhase({ kind: 'llm-reasoning-effort', provider, apiKey, model, cursor: selectedCursor });
+      return;
+    }
     const draftedBaseUrl = llmBaseUrlDraftsRef.current[provider];
     callbacks.saveLlmConfig({ provider, apiKey, model, baseUrl: draftedBaseUrl || undefined });
     setTextValue('');
@@ -899,7 +907,7 @@ function SetupWizard({ callbacks, options, onDone }: {
       return;
     }
     setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
-  }, [app, callbacks, mode, onDone, surfDef]);
+  }, [app, callbacks, llmDef, mode, onDone, surfDef]);
 
   const handleSelectKey = useCallback((input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean; escape: boolean }) => {
     if (phase.kind === 'n8n-mode') {
@@ -1146,6 +1154,10 @@ function SetupWizard({ callbacks, options, onDone }: {
           return;
         }
         const model = selected;
+        if (phase.provider === 'openai-proxy') {
+          saveLlmAndContinue(phase.provider, phase.apiKey, model, phase.note);
+          return;
+        }
         const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider];
         const defaultBaseUrl = draftedBaseUrl ?? llmDef.getBaseUrl(phase.provider);
         const needsUrl = llmDef.needsBaseUrl(phase.provider);
@@ -1164,12 +1176,11 @@ function SetupWizard({ callbacks, options, onDone }: {
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(effortOptions.length - 1, phase.cursor + 1) });
       else if (key.return) {
         const selectedEffort = effortOptions[phase.cursor];
-        callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model });
         const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider];
         const defaultBaseUrl = draftedBaseUrl ?? llmDef.getBaseUrl(phase.provider);
         const needsUrl = llmDef.needsBaseUrl(phase.provider);
         if (draftedBaseUrl) {
-          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model, baseUrl: draftedBaseUrl });
+          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model, baseUrl: draftedBaseUrl, reasoningEffort: selectedEffort });
           setTextValue('');
           if (mode === 'llm-only') {
             setPhase({ kind: 'done', n8nHost: '', n8nProject: '', provider: phase.provider, model: phase.model, surfaces: surfDef.surfaces });
@@ -1178,9 +1189,10 @@ function SetupWizard({ callbacks, options, onDone }: {
           }
           setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
         } else if (needsUrl || defaultBaseUrl) {
-          setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model: phase.model, def: defaultBaseUrl ?? '' });
+          setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model: phase.model, def: defaultBaseUrl ?? '', reasoningEffort: selectedEffort });
           setTextValue(defaultBaseUrl ?? '');
         } else {
+          callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model, reasoningEffort: selectedEffort });
           setTextValue('');
           if (mode === 'llm-only') {
             setPhase({ kind: 'done', n8nHost: '', n8nProject: '', provider: phase.provider, model: phase.model, surfaces: surfDef.surfaces });
@@ -1843,6 +1855,10 @@ function SetupWizard({ callbacks, options, onDone }: {
                   onSubmit={(v) => {
                     const m = v.trim() || phase.defModel || '';
                     if (!m) return;
+                    if (phase.provider === 'openai-proxy') {
+                      saveLlmAndContinue(phase.provider, phase.apiKey, m, phase.note);
+                      return;
+                    }
                     const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider];
                     const defaultBaseUrl = draftedBaseUrl ?? llmDef.getBaseUrl(phase.provider);
                     const needsUrl = llmDef.needsBaseUrl(phase.provider);
@@ -1910,7 +1926,7 @@ function SetupWizard({ callbacks, options, onDone }: {
               <WizardTextInput
                 value={textValue}
                 onChange={setTextValue}
-                onSubmit={handleBaseUrlSubmit(phase.provider, phase.apiKey, phase.model)}
+                onSubmit={handleBaseUrlSubmit(phase.provider, phase.apiKey, phase.model, phase.reasoningEffort)}
                 placeholder={phase.def || 'https://api.example.com/v1'}
               />
             </Box>

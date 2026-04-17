@@ -222,7 +222,9 @@ export async function createLangChainModel(
   config?: YagrLanguageModelConfig,
   configStore?: YagrLanguageModelConfigStore,
 ): Promise<BaseChatModel> {
-  const { provider, model, apiKey, baseUrl } = resolveLanguageModelConfig(config ?? {}, configStore);
+  const effectiveConfigStore = configStore ?? new YagrConfigService();
+  const { provider, model, apiKey, baseUrl } = resolveLanguageModelConfig(config ?? {}, effectiveConfigStore);
+  const localConfig = effectiveConfigStore.getLocalConfig();
 
   switch (provider) {
     case 'anthropic':
@@ -263,6 +265,7 @@ export async function createLangChainModel(
       }
       return new ChatCodexOAuth({
         model,
+        reasoningEffort: localConfig.provider === provider ? localConfig.reasoningEffort : undefined,
       });
     }
 

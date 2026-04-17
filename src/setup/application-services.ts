@@ -128,6 +128,7 @@ export class YagrSetupApplicationService {
     }
     return {
       provider: initialProvider,
+      reasoningEffort: cfg.reasoningEffort,
       getApiKey: (prov: YagrModelProvider) => this.yagrConfigService.getApiKey(prov),
       getDefaultModel: (prov: YagrModelProvider) => cfg.provider === prov && cfg.model ? cfg.model : undefined,
       getBaseUrl: (prov: YagrModelProvider) => cfg.provider === prov ? cfg.baseUrl : getDefaultBaseUrlForProvider(prov),
@@ -387,7 +388,7 @@ export class YagrSetupApplicationService {
     };
   }
 
-  saveLlmConfig(input: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string }): void {
+  saveLlmConfig(input: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string; reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' }): void {
     const cfg = this.yagrConfigService.getLocalConfig();
     if (input.apiKey) {
       this.yagrConfigService.saveApiKey(input.provider, input.apiKey);
@@ -397,10 +398,11 @@ export class YagrSetupApplicationService {
       provider: input.provider,
       model: input.model,
       baseUrl: input.baseUrl ?? getDefaultBaseUrlForProvider(input.provider),
+      reasoningEffort: input.reasoningEffort,
     });
   }
 
-  saveResolvedCliModelSelection(input: { provider: YagrModelProvider; model: string; baseUrl?: string; apiKey?: string }): void {
+  saveResolvedCliModelSelection(input: { provider: YagrModelProvider; model: string; baseUrl?: string; apiKey?: string; reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' }): void {
     this.saveLlmConfig(input);
   }
 

@@ -13,12 +13,11 @@ import {
 } from '@langchain/core/language_models/chat_models';
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage, AIMessageChunk, type BaseMessage } from '@langchain/core/messages';
 import type { ToolCall } from '@langchain/core/messages/tool';
-import type { ChatResult } from '@langchain/core/outputs';
+import { ChatGenerationChunk, type ChatResult } from '@langchain/core/outputs';
 import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
-import type { BaseMessageChunk } from '@langchain/core/messages';
 import type { Runnable } from '@langchain/core/runnables';
 import { z } from 'zod';
-import { createOpenAiAccountLanguageModel, CodexReasoningEffort, CODEX_REASONING_EFFORT_OPTIONS } from './openai-account.js';
+import { createOpenAiAccountLanguageModel, CodexReasoningEffort } from './openai-account.js';
 
 interface ChatCodexOAuthCallOptions extends BaseChatModelCallOptions {
   tools?: LanguageModelV1FunctionTool[];
@@ -141,13 +140,13 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
     };
   }
 
-  async *_stream(
+  async *_streamResponseChunks(
     messages: BaseMessage[],
     options: this['ParsedCallOptions'],
-    _runManager?: CallbackManagerForLLMRun,
-  ): AsyncGenerator<BaseMessageChunk> {
+    runManager?: CallbackManagerForLLMRun,
+  ): AsyncGenerator<ChatGenerationChunk> {
     const DEBUG_STREAM = process.env.DEBUG_CODEX_STREAM === '1';
-    if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] _stream() called');
+    if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] _streamResponseChunks() called');
 
     const model = createOpenAiAccountLanguageModel(this.model, this.reasoningEffort);
     const boundToolChoice = this.boundCallOptions?.tool_choice;
@@ -167,12 +166,6 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
 
     if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] doStream() returned, getting reader');
 
-    let currentToolCallId: string | null = null;
-    let currentToolName: string | null = null;
-    let currentArgs = '';
-    let currentText = '';
-    let finishReason: string | null = null;
-
     const reader = result.stream.getReader();
 
     try {
@@ -189,49 +182,88 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
         const part = value as LanguageModelV1StreamPart;
 
         if (part.type === 'text-delta') {
-          currentText += part.textDelta;
           if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] Yielding text-delta:', part.textDelta);
-          yield new AIMessageChunk({
+          const message = new AIMessageChunk({
             content: part.textDelta,
             additional_kwargs: {},
           });
+          const chunk = new ChatGenerationChunk({
+            message,
+            text: part.textDelta,
+          });
+          yield chunk;
+          await runManager?.handleLLMNewToken(part.textDelta, { prompt: 0, completion: 0 }, undefined, undefined, undefined, { chunk });
         } else if (part.type === 'tool-call-delta') {
-          if (part.toolCallId !== currentToolCallId) {
-            currentToolCallId = part.toolCallId;
-            currentToolName = part.toolName;
-            currentArgs = '';
-          }
-          currentArgs += part.argsTextDelta;
-
-          yield new AIMessageChunk({
+          const message = new AIMessageChunk({
             content: '',
-            tool_calls: [{
+            tool_call_chunks: [{
               name: part.toolName,
-              args: { [part.toolName]: currentArgs },
+              args: part.argsTextDelta,
               id: part.toolCallId,
-              type: 'tool_call' as const,
+              index: 0,
+              type: 'tool_call_chunk' as const,
             }],
-            additional_kwargs: {},
-          });
+            additional_kwargs: {
+              tool_calls: [{
+                id: part.toolCallId,
+                index: 0,
+                function: {
+                  name: part.toolName,
+                  arguments: part.argsTextDelta,
+                },
+              }],
+            },
+          } as ConstructorParameters<typeof AIMessageChunk>[0]);
+          yield new ChatGenerationChunk({ message, text: '' });
         } else if (part.type === 'tool-call') {
-          currentToolCallId = part.toolCallId;
-          currentToolName = part.toolName;
-          currentArgs = part.args;
-
-          yield new AIMessageChunk({
+          const parsedArgs = parseToolArgs(part.args);
+          const message = new AIMessageChunk({
             content: '',
             tool_calls: [{
               name: part.toolName,
-              args: parseToolArgs(part.args),
+              args: parsedArgs,
               id: part.toolCallId,
               type: 'tool_call' as const,
             }],
-            additional_kwargs: {},
-          });
+            tool_call_chunks: [{
+              name: part.toolName,
+              args: part.args,
+              id: part.toolCallId,
+              index: 0,
+              type: 'tool_call_chunk' as const,
+            }],
+            additional_kwargs: {
+              tool_calls: [{
+                id: part.toolCallId,
+                index: 0,
+                function: {
+                  name: part.toolName,
+                  arguments: part.args,
+                },
+              }],
+            },
+          } as ConstructorParameters<typeof AIMessageChunk>[0]);
+          yield new ChatGenerationChunk({ message, text: '' });
         } else if (part.type === 'finish') {
           if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] Got finish:', part.finishReason);
-          finishReason = part.finishReason;
-          break;
+          yield new ChatGenerationChunk({
+            message: new AIMessageChunk({
+              content: '',
+              usage_metadata: {
+                input_tokens: part.usage.promptTokens,
+                output_tokens: part.usage.completionTokens,
+                total_tokens: part.usage.promptTokens + part.usage.completionTokens,
+              },
+              response_metadata: {
+                finishReason: part.finishReason,
+              },
+            }),
+            text: '',
+            generationInfo: {
+              finishReason: part.finishReason,
+            },
+          });
+          return;
         } else if (part.type === 'error') {
           throw new Error(`Codex stream error: ${part.error}`);
         }

@@ -32,6 +32,24 @@ export const OPENAI_ACCOUNT_DEFAULT_MODEL = 'gpt-5.1-codex-mini';
 export const CODEX_REASONING_EFFORT_OPTIONS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 export type CodexReasoningEffort = typeof CODEX_REASONING_EFFORT_OPTIONS[number];
 
+function toCodexReasoningPayload(reasoningEffort: CodexReasoningEffort): Record<string, unknown> {
+  if (reasoningEffort === 'none') {
+    return {};
+  }
+
+  const effort = reasoningEffort === 'minimal'
+    ? 'low'
+    : reasoningEffort === 'xhigh'
+      ? 'high'
+      : reasoningEffort;
+
+  return {
+    reasoning: {
+      effort,
+    },
+  };
+}
+
 /** Endpoint path for Codex responses on the ChatGPT backend. */
 const CODEX_RESPONSES_PATH = '/codex/responses';
 const CODEX_MODELS_PATH = '/codex/models';
@@ -522,6 +540,7 @@ export function createOpenAiAccountLanguageModel(
       const tools = getFunctionTools(options.mode);
       const accountId = extractChatGptAccountId(session.accessToken);
       const { instructions, input } = convertPromptToCodexInput(options.prompt);
+      const reasoning = toCodexReasoningPayload(reasoningEffort);
 
       const body = {
         model: modelId,
@@ -529,7 +548,7 @@ export function createOpenAiAccountLanguageModel(
         stream: true,
         instructions: instructions || 'You are a helpful assistant.',
         input,
-        thinking: { budget: 4096 },
+        ...reasoning,
         ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice), parallel_tool_calls: true } : { tool_choice: 'auto' }),
       };
 
@@ -681,6 +700,7 @@ async function runOpenAiAccountCompletion(
   const warnings = buildCodexWarnings(options, tools);
   const accountId = extractChatGptAccountId(session.accessToken);
   const { instructions, input } = convertPromptToCodexInput(options.prompt);
+  const reasoning = toCodexReasoningPayload(reasoningEffort);
 
   const body = {
     model: modelId,
@@ -689,6 +709,7 @@ async function runOpenAiAccountCompletion(
     // The Codex backend requires a non-empty instructions field.
     instructions: instructions || 'You are a helpful assistant.',
     input,
+    ...reasoning,
     ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice), parallel_tool_calls: true } : { tool_choice: 'auto' }),
   };
 
