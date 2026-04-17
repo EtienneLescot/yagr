@@ -1,4 +1,4 @@
-import { Box, Static, Text, render, useApp, useInput, useStdout } from 'ink';
+import { Box, Static, Text, render, useApp, useInput } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
@@ -178,7 +178,6 @@ function RequiredActionList({ actions }: { actions: YagrRequiredAction[] }): JSX
 
 function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: InteractiveAppProps) {
   const app = useApp();
-  const { stdout } = useStdout();
   const [inputVersion, setInputVersion] = useState(0);
   const [historyFeed, setHistoryFeed] = useState<FeedEntry[]>([]);
   const [shellFeed, setShellFeed] = useState<FeedEntry[]>([]);
@@ -613,8 +612,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
     }
   }, { isActive: true });
 
-  const terminalWidth = stdout?.columns ?? process.stdout.columns ?? 100;
-
   const idleIcon = currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
   const statusText = isRunning ? activeOperationText : phaseStatusText;
   const latestWorkflow = workflowEmbeds.length > 0 ? workflowEmbeds[workflowEmbeds.length - 1] : undefined;
@@ -673,10 +670,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
             : null}
         </Box>
       ))}
-
-      <Box marginTop={1}>
-        <Text dimColor>{"─".repeat(Math.min(terminalWidth - 2, 80))}</Text>
-      </Box>
 
       {historyFeed.length === 0 && shellFeed.length === 0 && !isRunning && pendingRequiredActions.length === 0 ? <EmptyState /> : null}
 
