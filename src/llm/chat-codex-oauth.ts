@@ -70,7 +70,6 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
       .filter((tool): tool is LanguageModelV1FunctionTool => Boolean(tool));
     const boundCallOptions = {
       ...(kwargs ?? {}),
-      tool_choice: kwargs?.tool_choice ?? (normalizedTools.length > 0 ? 'any' : undefined),
     };
     return new ChatCodexOAuth({
       model: this.model,
