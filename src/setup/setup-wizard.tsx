@@ -914,15 +914,14 @@ function SetupWizard({ callbacks, options, onDone }: {
         else if (key.downArrow) setPhase((p) => ({ ...(p as Extract<Phase, { kind: 'n8n-docker-check' }>), cursor: Math.min(1, (p as Extract<Phase, { kind: 'n8n-docker-check' }>).cursor + 1) }));
         else if (key.return) {
           if (phase.cursor === 0) {
-          setPhase({ kind: 'n8n-docker-check', status: 'checking', cursor: 0, err: undefined });
+            setPhase({ kind: 'n8n-docker-check', status: 'checking', cursor: 0, err: undefined });
           } else {
             setPhase({ kind: 'n8n-mode', cursor: 0, err: undefined });
           }
         } else if (key.escape) cancel('Setup cancelled.');
       } else if (phase.status === 'available') {
-        if (key.return) {
-          setPhase({ kind: 'n8n-local-installing', startedAt: Date.now() });
-        } else if (key.escape) cancel('Setup cancelled.');
+        // Auto-proceed to installation
+        setPhase({ kind: 'n8n-local-installing', startedAt: Date.now() });
       }
     } else if (phase.kind === 'n8n-local-ready') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
@@ -1315,7 +1314,6 @@ function SetupWizard({ callbacks, options, onDone }: {
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
   const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-instance-location', 'n8n-local-runtime', 'n8n-project', 'llm-provider', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'llm-reasoning-effort', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
-    || (phase.kind === 'n8n-docker-check' && phase.status === 'available')
     || (phase.kind === 'n8n-docker-check' && phase.status === 'unavailable')
     || (phase.kind === 'llm-model' && phase.models.length > 0)
     || (phase.kind === 'llm-proxy-setup' && (phase.status === 'ready' || phase.status === 'failed'))
@@ -1366,54 +1364,36 @@ function SetupWizard({ callbacks, options, onDone }: {
             </Box>
           );
         }
-        if (phase.status === 'unavailable') {
-          return (
-            <Box flexDirection="column">
-              <Text color="yellow" bold>Docker is not available</Text>
-              <Box marginTop={1} flexDirection="column" gap={0}>
-                <Text dimColor>Yagr needs Docker to install and manage a local n8n instance.</Text>
-                <Text dimColor>Please install and start Docker Desktop, then retry.</Text>
-              </Box>
-              <Box marginTop={1} flexDirection="column" gap={0}>
-                <Text bold>Installation instructions:</Text>
-                <Text dimColor>  Windows / macOS:</Text>
-                <Text dimColor>    1. Download Docker Desktop (free) from</Text>
-                <Text dimColor>       https://www.docker.com/products/docker-desktop</Text>
-                <Text dimColor>    2. Run the installer and follow the steps</Text>
-                <Text dimColor>    3. Start Docker Desktop from your applications</Text>
-                <Text dimColor>  Linux (Ubuntu/Debian):</Text>
-                <Text dimColor>    1. Run: curl -fsSL https://get.docker.com | sh</Text>
-                <Text dimColor>    2. Then: sudo usermod -aG docker $USER</Text>
-                <Text dimColor>    3. Log out and back in, or run: newgrp docker</Text>
-                <Text dimColor>    4. Start Docker: sudo systemctl start docker</Text>
-              </Box>
-              <Box marginTop={1}>
-                <SelectList
-                  options={['Retry', 'Go back'] as const}
-                  cursor={phase.cursor}
-                  getLabel={(v) => v}
-                  maxVisibleRows={2}
-                  maxLineWidth={listLineWidth}
-                />
-              </Box>
-              <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
-            </Box>
-          );
-        }
         return (
           <Box flexDirection="column">
-            <Text color="green" bold>Docker is available</Text>
-            <Text dimColor>Yagr will install and manage a local n8n instance using Docker.</Text>
+            <Text color="yellow" bold>Docker is not available</Text>
+            <Box marginTop={1} flexDirection="column" gap={0}>
+              <Text dimColor>Yagr needs Docker to install and manage a local n8n instance.</Text>
+              <Text dimColor>Please install and start Docker Desktop, then retry.</Text>
+            </Box>
+            <Box marginTop={1} flexDirection="column" gap={0}>
+              <Text bold>Installation instructions:</Text>
+              <Text dimColor>  Windows / macOS:</Text>
+              <Text dimColor>    1. Download Docker Desktop (free) from</Text>
+              <Text dimColor>       https://www.docker.com/products/docker-desktop</Text>
+              <Text dimColor>    2. Run the installer and follow the steps</Text>
+              <Text dimColor>    3. Start Docker Desktop from your applications</Text>
+              <Text dimColor>  Linux (Ubuntu/Debian):</Text>
+              <Text dimColor>    1. Run: curl -fsSL https://get.docker.com | sh</Text>
+              <Text dimColor>    2. Then: sudo usermod -aG docker $USER</Text>
+              <Text dimColor>    3. Log out and back in, or run: newgrp docker</Text>
+              <Text dimColor>    4. Start Docker: sudo systemctl start docker</Text>
+            </Box>
             <Box marginTop={1}>
               <SelectList
-                options={['Continue'] as const}
-                cursor={0}
+                options={['Retry', 'Go back'] as const}
+                cursor={phase.cursor}
                 getLabel={(v) => v}
                 maxVisibleRows={2}
                 maxLineWidth={listLineWidth}
               />
             </Box>
-            <HintBar hints={['Enter ↵  confirm', 'Ctrl+C  cancel']} />
+            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
 
