@@ -1,10 +1,8 @@
-import { basename } from 'node:path';
 import { Box, Static, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
-import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { getYagrDeepAgentSessionsDir } from '../config/yagr-home.js';
 import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
@@ -182,7 +180,8 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   const app = useApp();
   const { stdout } = useStdout();
   const [inputVersion, setInputVersion] = useState(0);
-  const [feed, setFeed] = useState<FeedEntry[]>([]);
+  const [historyFeed, setHistoryFeed] = useState<FeedEntry[]>([]);
+  const [shellFeed, setShellFeed] = useState<FeedEntry[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [currentState, setCurrentState] = useState<YagrAgentState>('idle');
   const [phaseStatusText, setPhaseStatusText] = useState('Ready.');
@@ -200,7 +199,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   const seenOperationStartRef = useRef(new Set<string>());
   const seenOperationEndRef = useRef(new Set<string>());
   const operationStateRef = useRef(new Map<string, YagrOperationEvent>());
-  const workspaceLabel = useMemo(() => basename(getYagrN8nWorkspaceDir()), []);
 
   const pushEntry = useCallback((
     lane: FeedLane,
@@ -211,20 +209,22 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
     isShellBlock = false,
   ): number => {
     const id = nextEntryIdRef.current++;
+    const entry: FeedEntry = {
+      id,
+      lane,
+      title,
+      text,
+      timestamp: formatTimestamp(),
+      emphasis,
+      expanded,
+      isShellBlock,
+    };
 
-    setFeed((previous) => [
-      ...previous,
-      {
-        id,
-        lane,
-        title,
-        text,
-        timestamp: formatTimestamp(),
-        emphasis,
-        expanded,
-        isShellBlock,
-      },
-    ]);
+    if (isShellBlock) {
+      setShellFeed((previous) => [...previous, entry]);
+    } else {
+      setHistoryFeed((previous) => [...previous, entry]);
+    }
 
     return id;
   }, []);
@@ -293,7 +293,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   }, [pushEntry]);
 
   const collapseAllShellBlocks = useCallback(() => {
-    setFeed((previous) =>
+    setShellFeed((previous) =>
       previous.map((entry) =>
         entry.isShellBlock ? { ...entry, expanded: false } : entry,
       ),
@@ -301,7 +301,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   }, []);
 
   const expandAllShellBlocks = useCallback(() => {
-    setFeed((previous) =>
+    setShellFeed((previous) =>
       previous.map((entry) =>
         entry.isShellBlock ? { ...entry, expanded: true } : entry,
       ),
@@ -527,7 +527,8 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
 
     if (prompt === '/reset') {
       threadIdRef.current = createSessionId();
-      setFeed([]);
+      setHistoryFeed([]);
+      setShellFeed([]);
       setPendingRequiredActions([]);
       setCurrentState('idle');
       setPhaseStatusText('Conversation reset.');
@@ -610,25 +611,15 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   }, { isActive: true });
 
   const terminalWidth = stdout?.columns ?? process.stdout.columns ?? 100;
-  const headerSubtitle = useMemo(() => {
-    if (!lastUserPrompt) {
-      return 'Interactive session';
-    }
-
-    return truncateText(lastUserPrompt.replace(/\s+/g, ' ').trim(), Math.max(24, Math.floor(terminalWidth * 0.65)));
-  }, [lastUserPrompt, terminalWidth]);
 
   const idleIcon = currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
   const statusText = isRunning ? activeOperationText : phaseStatusText;
   const latestWorkflow = workflowEmbeds.length > 0 ? workflowEmbeds[workflowEmbeds.length - 1] : undefined;
   const latestWorkflowOpenUrl = latestWorkflow ? resolveTerminalWorkflowOpenUrl(latestWorkflow) : undefined;
 
-  const nonShellFeed = feed.filter(entry => !entry.isShellBlock);
-  const shellBlocks = feed.filter(entry => entry.isShellBlock);
-
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0} width="100%">
-      <Static items={nonShellFeed}>
+      <Static items={historyFeed}>
         {(entry) => (
           <Box key={entry.id} flexDirection="column" marginBottom={0}>
             <Text color={laneColor(entry.lane)} dimColor>
@@ -658,7 +649,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
         )}
       </Static>
 
-      {shellBlocks.map(entry => (
+      {shellFeed.map(entry => (
         <Box key={entry.id} flexDirection="column" marginBottom={0}>
           <Text color={laneColor(entry.lane)} dimColor>
             [{entry.timestamp}] {laneLabel(entry.lane)}{entry.title ? ` · ${entry.title}` : ''}
@@ -684,12 +675,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
         <Text dimColor>{"─".repeat(Math.min(terminalWidth - 2, 80))}</Text>
       </Box>
 
-      <Box flexDirection="column" marginBottom={1} marginTop={1}>
-        <Text color="cyan" bold>Yagr <Text dimColor>{workspaceLabel}</Text></Text>
-        <Text dimColor>{headerSubtitle}</Text>
-      </Box>
-
-      {feed.length === 0 && !isRunning && pendingRequiredActions.length === 0 ? <EmptyState /> : null}
+      {historyFeed.length === 0 && shellFeed.length === 0 && !isRunning && pendingRequiredActions.length === 0 ? <EmptyState /> : null}
 
       <Box flexDirection="column" marginTop={1}>
         <Text color={isRunning ? 'yellow' : stateColor(currentState)}>
@@ -706,7 +692,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
         </Text>
       </Box>
 
-      <Box marginTop={1} width="100%">
+      <Box borderStyle="round" borderColor="cyan" paddingX={1} marginTop={1}>
         <Text color="green">› </Text>
         <TextInput
           key={`prompt-input-${inputVersion}`}
