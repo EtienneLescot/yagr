@@ -495,12 +495,14 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
     if (prompt === '/expand') {
       expandAllShellBlocks();
       setActiveOperationText('All shell outputs expanded.');
+      setInputVersion((previous) => previous + 1);
       return;
     }
 
     if (prompt === '/collapse') {
       collapseAllShellBlocks();
       setActiveOperationText('All shell outputs collapsed.');
+      setInputVersion((previous) => previous + 1);
       return;
     }
 
@@ -510,6 +512,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
       } else {
         setActiveOperationText('Nothing is currently running.');
       }
+      setInputVersion((previous) => previous + 1);
       return;
     }
 
@@ -681,7 +684,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
         <Text color={isRunning ? 'yellow' : stateColor(currentState)}>
           {isRunning ? `${loadingDots} ${statusText}` : `${idleIcon} ${statusText}`}
         </Text>
-        {isRunning ? <Text color="yellow">Enter is disabled while the agent is still working. You can keep typing and send once the run finishes.</Text> : null}
         {liveThinkingLine ? <Text color="magenta">Thinking: {liveThinkingLine}</Text> : null}
         {liveAssistantText ? <Text color="green">Assistant: {liveAssistantText}</Text> : null}
         {pendingRequiredActions.length > 0 ? <RequiredActionList actions={pendingRequiredActions} /> : null}
