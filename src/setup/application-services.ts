@@ -22,7 +22,7 @@ import { ensureN8nRelayServer, resolveDockerHostAddress } from '../llm/llm-relay
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import { resolveModelProvider } from '../llm/create-langchain-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
-import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession } from '../llm/openai-account.js';
+import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession, getOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';
 import { ensureYagrProxyCredential } from '../manager-tooling/yagr-proxy.js';
 import { classifyConfiguredN8nInstance, classifyN8nInstanceCandidate, hasN8nInstanceTag, resolveN8nInstanceProfile } from '../n8n-local/instance-classification.js';
@@ -228,7 +228,11 @@ export class YagrSetupApplicationService {
   async completeAccountAuth(provider: YagrModelProvider, input: string, state?: string) {
     if (provider === 'openai-proxy') {
       await completeCodexAuth();
-      return { ok: true };
+      const session = getOpenAiAccountSession();
+      if (!session) {
+        throw new Error('OpenAI OAuth completed but could not read session. Try again.');
+      }
+      return { ok: true, apiKey: session.accessToken };
     }
 
     if (provider === 'copilot-proxy') {

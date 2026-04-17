@@ -408,7 +408,7 @@ export async function fetchOpenAiAccountModels(accessToken: string): Promise<str
       headers['If-None-Match'] = modelDiscoveryCache.etag;
     }
 
-    const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_MODELS_PATH}`, { headers });
+    const response = await fetch(`${OPENAI_ACCOUNT_BASE_URL}${CODEX_MODELS_PATH}?client_version=1.0.0`, { headers });
 
     if (response.status === 304 && modelDiscoveryCache) {
       // Not modified - update timestamp and return cached data

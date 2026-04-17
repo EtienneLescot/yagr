@@ -79,13 +79,7 @@ export async function prepareProviderRuntime(
     }
 
     const probe = await validateOpenAiAccountRuntime(OPENAI_ACCOUNT_DEFAULT_MODEL);
-    if (!probe.ok) {
-      return {
-        ready: false,
-        reason: probe.error || 'OpenAI account runtime validation failed.',
-        notes: ['OpenAI session found, but the API endpoint did not validate successfully.'],
-      };
-    }
+    const probeFailed = !probe.ok;
 
     let models: string[] = [];
     let discoveryError: string | undefined;
@@ -104,6 +98,9 @@ export async function prepareProviderRuntime(
       : 'Connected through Yagr-managed OpenAI OAuth.';
 
     const notes = [sessionNote];
+    if (probeFailed) {
+      notes.push(`Runtime validation warning: ${probe.error || 'API probe failed'}. Session is valid but may have limited access.`);
+    }
     if (discoveryError) {
       notes.push(`Model discovery failed: ${discoveryError}`);
     } else if (models.length > 0) {
