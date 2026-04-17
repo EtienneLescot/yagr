@@ -1,7 +1,7 @@
 import { basename } from 'node:path';
 import { Box, Static, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
 import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
@@ -34,6 +34,8 @@ type FeedEntry = {
   text: string;
   timestamp: string;
   emphasis?: 'normal' | 'strong';
+  expanded?: boolean;
+  isShellBlock?: boolean;
 };
 
 type InteractiveAppProps = {
@@ -132,9 +134,24 @@ function truncateText(text: string, maxLength: number): string {
   return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
+const YAGR_LOGO = `
+
+██████         █████
+█▒▒▒▒▒██     █▓▒▒▒▓█
+ █▓▒▒▒▒▒█  █▓▒▒▒▓▓██
+   █▓▒▒▒▒▒▓▒▒▒▓▓██  
+     █▒▒▒▒▒▒▓▓█     
+      ██▒▒▓▓██      
+       █▒▒▓▓██      
+       █▒▒▓▓██      
+       ███████      
+`;
+
 function EmptyState(): JSX.Element {
   return (
     <Box flexDirection="column">
+      <Text color="cyan" bold>{YAGR_LOGO}</Text>
+      <Box marginTop={1} />
       <Text color="cyan" bold>Yagr turns an intent into executable automation.</Text>
       <Text dimColor>Type your request below.</Text>
     </Box>
@@ -176,6 +193,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   const [lastUserPrompt, setLastUserPrompt] = useState('');
   const [activeOperationText, setActiveOperationText] = useState('Ready for a request.');
   const [workflowEmbeds, setWorkflowEmbeds] = useState<WorkflowEmbed[]>([]);
+  const [loadingDots, setLoadingDots] = useState('');
   const nextEntryIdRef = useRef(1);
   const assistantBufferRef = useRef('');
   const thinkingBufferRef = useRef('');
@@ -184,22 +202,31 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   const operationStateRef = useRef(new Map<string, YagrOperationEvent>());
   const workspaceLabel = useMemo(() => basename(getYagrN8nWorkspaceDir()), []);
 
-  const pushEntry = useCallback((lane: FeedLane, title: string, text = '', emphasis: FeedEntry['emphasis'] = 'normal') => {
-    if (!title.trim() && !text.trim()) {
-      return;
-    }
+  const pushEntry = useCallback((
+    lane: FeedLane,
+    title: string,
+    text = '',
+    emphasis: FeedEntry['emphasis'] = 'normal',
+    expanded = false,
+    isShellBlock = false,
+  ): number => {
+    const id = nextEntryIdRef.current++;
 
     setFeed((previous) => [
       ...previous,
       {
-        id: nextEntryIdRef.current += 1,
+        id,
         lane,
         title,
         text,
         timestamp: formatTimestamp(),
         emphasis,
+        expanded,
+        isShellBlock,
       },
     ]);
+
+    return id;
   }, []);
 
   const flushStreamBuffer = useCallback((
@@ -234,6 +261,23 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
     setLiveThinkingLine('');
   }, []);
 
+  useEffect(() => {
+    if (!isRunning) {
+      setLoadingDots('');
+      return;
+    }
+
+    const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+    let frame = 0;
+
+    const interval = setInterval(() => {
+      setLoadingDots(frames[frame % frames.length]);
+      frame++;
+    }, 80);
+
+    return () => clearInterval(interval);
+  }, [isRunning]);
+
   const appendAssistantDelta = useCallback((delta: string) => {
     assistantBufferRef.current += normalizeCommandChunk(delta);
     setLiveAssistantText(assistantBufferRef.current);
@@ -247,6 +291,22 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
     assistantBufferRef.current = '';
     setLiveAssistantText('');
   }, [pushEntry]);
+
+  const collapseAllShellBlocks = useCallback(() => {
+    setFeed((previous) =>
+      previous.map((entry) =>
+        entry.isShellBlock ? { ...entry, expanded: false } : entry,
+      ),
+    );
+  }, []);
+
+  const expandAllShellBlocks = useCallback(() => {
+    setFeed((previous) =>
+      previous.map((entry) =>
+        entry.isShellBlock ? { ...entry, expanded: true } : entry,
+      ),
+    );
+  }, []);
 
   const handleOperationEvent = useCallback((op: YagrOperationEvent) => {
     const previous = operationStateRef.current.get(op.operationId);
@@ -291,11 +351,13 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
       if (merged.summary?.trim()) {
         parts.push(merged.summary.trim());
       }
-      pushEntry(
+      const entryId = pushEntry(
         merged.status === 'error' ? 'interrupt' : 'action',
         `${merged.status === 'error' ? '✕' : '●'} ${merged.label}`,
         parts.join('\n\n'),
         merged.status === 'error' ? 'strong' : 'normal',
+        false,
+        true,
       );
       seenOperationEndRef.current.add(merged.operationId);
     }
@@ -430,6 +492,27 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
       return;
     }
 
+    if (prompt === '/expand') {
+      expandAllShellBlocks();
+      setActiveOperationText('All shell outputs expanded.');
+      return;
+    }
+
+    if (prompt === '/collapse') {
+      collapseAllShellBlocks();
+      setActiveOperationText('All shell outputs collapsed.');
+      return;
+    }
+
+    if (prompt === '/stop') {
+      if (isRunning) {
+        setActiveOperationText('Stop requested. Finishing current operation...');
+      } else {
+        setActiveOperationText('Nothing is currently running.');
+      }
+      return;
+    }
+
     if (isRunning) {
       setActiveOperationText('Current run still in progress. Wait before sending a new message.');
       return;
@@ -518,31 +601,11 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
     }
 
     await runPrompt(prompt);
-  }, [agent, app, handleCompact, isRunning, pendingRequiredActions, pushEntry, runPrompt, workflowEmbeds]);
+  }, [agent, app, handleCompact, isRunning, pendingRequiredActions, pushEntry, runPrompt, workflowEmbeds, collapseAllShellBlocks, expandAllShellBlocks]);
 
-  useInput((inputKey, key) => {
-    if (key.ctrl && inputKey === 'c') {
+  useInput((input, key) => {
+    if (key.ctrl && input === 'c') {
       app.exit();
-      return;
-    }
-
-    if (key.ctrl && inputKey.toLowerCase() === 'o' && workflowEmbeds.length > 0 && !isRunning) {
-      const latestEmbed = workflowEmbeds[workflowEmbeds.length - 1];
-      if (!latestEmbed) {
-        return;
-      }
-
-      void openExternalUrl(resolveTerminalWorkflowOpenUrl(latestEmbed))
-        .then(() => {
-          pushEntry('result', 'Opened workflow', latestEmbed.targetUrl ?? latestEmbed.url);
-          setActiveOperationText(`Workflow opened: ${latestEmbed.targetUrl ?? latestEmbed.url}`);
-        })
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
-          pushEntry('interrupt', 'Workflow open failed', message);
-          setActiveOperationText(`Workflow open failed: ${message}`);
-        });
-      return;
     }
   }, { isActive: true });
 
@@ -560,16 +623,27 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   const latestWorkflow = workflowEmbeds.length > 0 ? workflowEmbeds[workflowEmbeds.length - 1] : undefined;
   const latestWorkflowOpenUrl = latestWorkflow ? resolveTerminalWorkflowOpenUrl(latestWorkflow) : undefined;
 
+  const nonShellFeed = feed.filter(entry => !entry.isShellBlock);
+  const shellBlocks = feed.filter(entry => entry.isShellBlock);
+
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0} width="100%">
-      <Static items={feed}>
+      <Static items={nonShellFeed}>
         {(entry) => (
           <Box key={entry.id} flexDirection="column" marginBottom={0}>
             <Text color={laneColor(entry.lane)} dimColor>
               [{entry.timestamp}] {laneLabel(entry.lane)}{entry.title ? ` · ${entry.title}` : ''}
             </Text>
-            {entry.text
-              ? entry.text.split('\n').map((line, i) => (
+            {entry.text && entry.lane === 'assistant' ? (
+              <Box flexDirection="column">
+                <Text color="green">{'  '}┌─ response</Text>
+                {entry.text.split('\n').map((line, i) => (
+                  <Text key={i} color="green">{'  '}│ {line}</Text>
+                ))}
+                <Text color="green">{'  '}└─</Text>
+              </Box>
+            ) : entry.text ? (
+              entry.text.split('\n').map((line, i) => (
                 <Text
                   // eslint-disable-next-line react/no-array-index-key
                   key={i}
@@ -579,10 +653,36 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
                   {'  '}{line}
                 </Text>
               ))
-              : null}
+            ) : null}
           </Box>
         )}
       </Static>
+
+      {shellBlocks.map(entry => (
+        <Box key={entry.id} flexDirection="column" marginBottom={0}>
+          <Text color={laneColor(entry.lane)} dimColor>
+            [{entry.timestamp}] {laneLabel(entry.lane)}{entry.title ? ` · ${entry.title}` : ''}
+          </Text>
+          {entry.text
+            ? entry.expanded
+              ? entry.text.split('\n').map((line, i) => (
+                  <Text
+                    // eslint-disable-next-line react/no-array-index-key
+                    key={i}
+                    color={entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined}
+                    dimColor={entry.emphasis !== 'strong'}
+                  >
+                    {'  '}{line}
+                  </Text>
+                ))
+              : <Text dimColor>{'  '}({entry.text.split('\n').length} lines · use /expand to show all)</Text>
+            : null}
+        </Box>
+      ))}
+
+      <Box marginTop={1}>
+        <Text dimColor>{"─".repeat(Math.min(terminalWidth - 2, 80))}</Text>
+      </Box>
 
       <Box flexDirection="column" marginBottom={1} marginTop={1}>
         <Text color="cyan" bold>Yagr <Text dimColor>{workspaceLabel}</Text></Text>
@@ -593,7 +693,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
 
       <Box flexDirection="column" marginTop={1}>
         <Text color={isRunning ? 'yellow' : stateColor(currentState)}>
-          {isRunning ? `◐ ${statusText}` : `${idleIcon} ${statusText}`}
+          {isRunning ? `${loadingDots} ${statusText}` : `${idleIcon} ${statusText}`}
         </Text>
         {isRunning ? <Text color="yellow">Enter is disabled while the agent is still working. You can keep typing and send once the run finishes.</Text> : null}
         {liveThinkingLine ? <Text color="magenta">Thinking: {liveThinkingLine}</Text> : null}
@@ -601,10 +701,9 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
         {pendingRequiredActions.length > 0 ? <RequiredActionList actions={pendingRequiredActions} /> : null}
         <Text dimColor>
           {latestWorkflowOpenUrl
-            ? 'Ctrl+O to open the latest workflow.'
-            : ' '}
+            ? '/expand · /collapse · /open · /stop'
+            : '/expand · /collapse · /stop'}
         </Text>
-        {latestWorkflowOpenUrl ? <Text dimColor>Latest workflow: {formatTerminalLink('click here to view the workflow', latestWorkflowOpenUrl)}</Text> : null}
       </Box>
 
       <Box marginTop={1} width="100%">
