@@ -1,4 +1,4 @@
-import { Box, Static, Text, render, useApp, useInput } from 'ink';
+import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
@@ -9,7 +9,6 @@ import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import { DeepAgentSessionStore } from '../session/deepagent-sessions.js';
 import {
-  formatTerminalLink,
   formatWorkflowLinkTerminal,
   type WorkflowEmbed,
   resolveTerminalWorkflowOpenUrl,
@@ -34,6 +33,13 @@ type FeedEntry = {
   emphasis?: 'normal' | 'strong';
   expanded?: boolean;
   isShellBlock?: boolean;
+};
+
+type RenderLine = {
+  key: string;
+  text: string;
+  color?: string;
+  dimColor?: boolean;
 };
 
 type InteractiveAppProps = {
@@ -78,6 +84,80 @@ function laneLabel(lane: FeedLane): string {
     case 'result': return 'Result';
     case 'interrupt': return 'Blocked';
   }
+}
+
+function entryHeader(entry: FeedEntry): RenderLine {
+  return {
+    key: `header-${entry.id}`,
+    text: `[${entry.timestamp}] ${laneLabel(entry.lane)}${entry.title ? ` · ${entry.title}` : ''}`,
+    color: laneColor(entry.lane),
+    dimColor: true,
+  };
+}
+
+function assistantLines(entry: FeedEntry): RenderLine[] {
+  const body = entry.text ? entry.text.split('\n') : [];
+  return [
+    { key: `a-top-${entry.id}`, text: '  ┌─ response', color: 'green' },
+    ...body.map((line, i) => ({
+      key: `a-${entry.id}-${i}`,
+      text: `  │ ${line}`,
+      color: 'green',
+    })),
+    { key: `a-bottom-${entry.id}`, text: '  └─', color: 'green' },
+  ];
+}
+
+function collapsedShellLines(entry: FeedEntry): RenderLine[] {
+  const count = entry.text ? entry.text.split('\n').length : 0;
+  return [
+    {
+      key: `shell-collapsed-${entry.id}`,
+      text: `  (${count} lines · use /expand to show all)`,
+      dimColor: true,
+    },
+  ];
+}
+
+function expandedShellLines(entry: FeedEntry): RenderLine[] {
+  return entry.text.split('\n').map((line, i) => ({
+    key: `shell-${entry.id}-${i}`,
+    text: `  ${line}`,
+    color: entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined,
+    dimColor: entry.emphasis !== 'strong',
+  }));
+}
+
+function entryToLines(entry: FeedEntry): RenderLine[] {
+  const lines: RenderLine[] = [entryHeader(entry)];
+
+  if (!entry.text) {
+    return lines;
+  }
+
+  if (entry.lane === 'assistant') {
+    return [...lines, ...assistantLines(entry)];
+  }
+
+  if (entry.isShellBlock) {
+    return [
+      ...lines,
+      ...(entry.expanded ? expandedShellLines(entry) : collapsedShellLines(entry)),
+    ];
+  }
+
+  return [
+    ...lines,
+    ...entry.text.split('\n').map((line, i) => ({
+      key: `entry-${entry.id}-${i}`,
+      text: `  ${line}`,
+      color: entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined,
+      dimColor:
+        entry.lane !== 'assistant' &&
+        entry.lane !== 'thinking' &&
+        entry.emphasis !== 'strong',
+    })),
+  ];
 }
 
 function normalizeDisplayOptions(display?: YagrDisplayOptions): Required<YagrDisplayOptions> {
@@ -178,9 +258,12 @@ function RequiredActionList({ actions }: { actions: YagrRequiredAction[] }): JSX
 
 function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: InteractiveAppProps) {
   const app = useApp();
+  const { stdout } = useStdout();
+  const terminalHeight = stdout?.rows ?? 24;
+  const terminalWidth = stdout?.columns ?? 80;
+
   const [inputVersion, setInputVersion] = useState(0);
-  const [historyFeed, setHistoryFeed] = useState<FeedEntry[]>([]);
-  const [shellFeed, setShellFeed] = useState<FeedEntry[]>([]);
+  const [feed, setFeed] = useState<FeedEntry[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [currentState, setCurrentState] = useState<YagrAgentState>('idle');
   const [phaseStatusText, setPhaseStatusText] = useState('Ready.');
@@ -192,12 +275,16 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   const [activeOperationText, setActiveOperationText] = useState('Ready for a request.');
   const [workflowEmbeds, setWorkflowEmbeds] = useState<WorkflowEmbed[]>([]);
   const [loadingDots, setLoadingDots] = useState('');
+  const [scrollOffset, setScrollOffset] = useState(0);
   const nextEntryIdRef = useRef(1);
   const assistantBufferRef = useRef('');
   const thinkingBufferRef = useRef('');
+  const pendingAssistantTextRef = useRef('');
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenOperationStartRef = useRef(new Set<string>());
   const seenOperationEndRef = useRef(new Set<string>());
   const operationStateRef = useRef(new Map<string, YagrOperationEvent>());
+  const isAutoFollowRef = useRef(true);
 
   const pushEntry = useCallback((
     lane: FeedLane,
@@ -219,10 +306,10 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
       isShellBlock,
     };
 
-    if (isShellBlock) {
-      setShellFeed((previous) => [...previous, entry]);
-    } else {
-      setHistoryFeed((previous) => [...previous, entry]);
+    setFeed((previous) => [...previous, entry]);
+
+    if (isAutoFollowRef.current) {
+      setScrollOffset(0);
     }
 
     return id;
@@ -256,6 +343,11 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   const resetStreamingBuffers = useCallback(() => {
     assistantBufferRef.current = '';
     thinkingBufferRef.current = '';
+    pendingAssistantTextRef.current = '';
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
     setLiveAssistantText('');
     setLiveThinkingLine('');
   }, []);
@@ -277,22 +369,44 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
     return () => clearInterval(interval);
   }, [isRunning]);
 
-  const appendAssistantDelta = useCallback((delta: string) => {
-    assistantBufferRef.current += normalizeCommandChunk(delta);
-    setLiveAssistantText(assistantBufferRef.current);
+  const flushPendingAssistantText = useCallback(() => {
+    const text = pendingAssistantTextRef.current;
+    pendingAssistantTextRef.current = '';
+    flushTimerRef.current = null;
+    if (text) {
+      setLiveAssistantText(text);
+    }
   }, []);
 
+  const appendAssistantDelta = useCallback((delta: string) => {
+    assistantBufferRef.current += normalizeCommandChunk(delta);
+    pendingAssistantTextRef.current = assistantBufferRef.current;
+
+    if (flushTimerRef.current) {
+      return;
+    }
+
+    flushTimerRef.current = setTimeout(() => {
+      flushPendingAssistantText();
+    }, 50);
+  }, [flushPendingAssistantText]);
+
   const finalizeAssistantStream = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
     const finalText = assistantBufferRef.current.trimEnd();
     if (finalText) {
       pushEntry('assistant', '', finalText);
     }
     assistantBufferRef.current = '';
+    pendingAssistantTextRef.current = '';
     setLiveAssistantText('');
   }, [pushEntry]);
 
   const collapseAllShellBlocks = useCallback(() => {
-    setShellFeed((previous) =>
+    setFeed((previous) =>
       previous.map((entry) =>
         entry.isShellBlock ? { ...entry, expanded: false } : entry,
       ),
@@ -300,7 +414,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   }, []);
 
   const expandAllShellBlocks = useCallback(() => {
-    setShellFeed((previous) =>
+    setFeed((previous) =>
       previous.map((entry) =>
         entry.isShellBlock ? { ...entry, expanded: true } : entry,
       ),
@@ -529,8 +643,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
 
     if (prompt === '/reset') {
       threadIdRef.current = createSessionId();
-      setHistoryFeed([]);
-      setShellFeed([]);
+      setFeed([]);
       setPendingRequiredActions([]);
       setCurrentState('idle');
       setPhaseStatusText('Conversation reset.');
@@ -609,6 +722,73 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       app.exit();
+      return;
+    }
+
+    if (key.upArrow) {
+      setScrollOffset(prev => Math.min(prev + 1, Math.max(0, allContentLines.length - contentHeight)));
+      isAutoFollowRef.current = false;
+      return;
+    }
+
+    if (key.downArrow) {
+      setScrollOffset(prev => {
+        const newOffset = Math.max(prev - 1, 0);
+        if (newOffset === 0) {
+          isAutoFollowRef.current = true;
+        }
+        return newOffset;
+      });
+      return;
+    }
+
+    if (key.pageUp) {
+      setScrollOffset(prev => Math.min(prev + contentHeight, Math.max(0, allContentLines.length - contentHeight)));
+      isAutoFollowRef.current = false;
+      return;
+    }
+
+    if (key.pageDown) {
+      setScrollOffset(prev => {
+        const newOffset = Math.max(prev - contentHeight, 0);
+        if (newOffset === 0) {
+          isAutoFollowRef.current = true;
+        }
+        return newOffset;
+      });
+      return;
+    }
+
+    if (key.home) {
+      setScrollOffset(0);
+      isAutoFollowRef.current = true;
+      return;
+    }
+
+    if (key.end) {
+      setScrollOffset(Math.max(0, allContentLines.length - contentHeight));
+      isAutoFollowRef.current = false;
+      return;
+    }
+
+    const mouseWheelUp = input === '\x1b[M' && key.shift;
+    const mouseWheelDown = input === '\x1b[M' && key.ctrl;
+
+    if (mouseWheelUp || (input.startsWith('\x1b[M') && input.endsWith('a'))) {
+      setScrollOffset(prev => Math.min(prev + 3, Math.max(0, allContentLines.length - contentHeight)));
+      isAutoFollowRef.current = false;
+      return;
+    }
+
+    if (mouseWheelDown || (input.startsWith('\x1b[M') && input.endsWith('b'))) {
+      setScrollOffset(prev => {
+        const newOffset = Math.max(prev - 3, 0);
+        if (newOffset === 0) {
+          isAutoFollowRef.current = true;
+        }
+        return newOffset;
+      });
+      return;
     }
   }, { isActive: true });
 
@@ -617,86 +797,96 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
   const latestWorkflow = workflowEmbeds.length > 0 ? workflowEmbeds[workflowEmbeds.length - 1] : undefined;
   const latestWorkflowOpenUrl = latestWorkflow ? resolveTerminalWorkflowOpenUrl(latestWorkflow) : undefined;
 
+  const headerHeight = feed.length === 0 ? 12 : 1;
+  const statusHeight = 1;
+  const separatorHeight = 1;
+  const inputHeight = 1;
+  const hintsHeight = 1;
+  const footerPadding = 1;
+
+  const reservedHeight =
+    headerHeight +
+    statusHeight +
+    separatorHeight +
+    inputHeight +
+    hintsHeight +
+    footerPadding;
+
+  const contentHeight = Math.max(1, terminalHeight - reservedHeight);
+
+  const allContentLines = useMemo(() => {
+    return feed.flatMap(entry => entryToLines(entry));
+  }, [feed]);
+
+  const maxScrollOffset = Math.max(0, allContentLines.length - contentHeight);
+
+  const visibleContentLines = useMemo(() => {
+    const effectiveOffset = Math.min(scrollOffset, maxScrollOffset);
+    const start = Math.max(0, allContentLines.length - contentHeight - effectiveOffset);
+    return allContentLines.slice(start, start + contentHeight);
+  }, [allContentLines, contentHeight, scrollOffset, maxScrollOffset]);
+
+  const isAtBottom = scrollOffset === 0;
+  const isAtTop = scrollOffset >= maxScrollOffset;
+
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={0} width="100%">
-      <Static items={historyFeed}>
-        {(entry) => (
-          <Box key={entry.id} flexDirection="column" marginBottom={0}>
-            <Text color={laneColor(entry.lane)} dimColor>
-              [{entry.timestamp}] {laneLabel(entry.lane)}{entry.title ? ` · ${entry.title}` : ''}
-            </Text>
-            {entry.text && entry.lane === 'assistant' ? (
-              <Box flexDirection="column">
-                <Text color="green">{'  '}┌─ response</Text>
-                {entry.text.split('\n').map((line, i) => (
-                  <Text key={i} color="green">{'  '}│ {line}</Text>
-                ))}
-                <Text color="green">{'  '}└─</Text>
-              </Box>
-            ) : entry.text ? (
-              entry.text.split('\n').map((line, i) => (
-                <Text
-                  // eslint-disable-next-line react/no-array-index-key
-                  key={i}
-                  color={entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined}
-                  dimColor={entry.lane !== 'assistant' && entry.lane !== 'thinking' && entry.emphasis !== 'strong'}
-                >
-                  {'  '}{line}
-                </Text>
-              ))
-            ) : null}
-          </Box>
-        )}
-      </Static>
-
-      {shellFeed.map(entry => (
-        <Box key={entry.id} flexDirection="column" marginBottom={0}>
-          <Text color={laneColor(entry.lane)} dimColor>
-            [{entry.timestamp}] {laneLabel(entry.lane)}{entry.title ? ` · ${entry.title}` : ''}
-          </Text>
-          {entry.text
-            ? entry.expanded
-              ? entry.text.split('\n').map((line, i) => (
-                  <Text
-                    // eslint-disable-next-line react/no-array-index-key
-                    key={i}
-                    color={entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined}
-                    dimColor={entry.emphasis !== 'strong'}
-                  >
-                    {'  '}{line}
-                  </Text>
-                ))
-              : <Text dimColor>{'  '}({entry.text.split('\n').length} lines · use /expand to show all)</Text>
-            : null}
+    <Box flexDirection="column" height={terminalHeight} width="100%">
+      {feed.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <Box>
+          <Text color="cyan" bold>YAGR</Text>
         </Box>
-      ))}
+      )}
 
-      {historyFeed.length === 0 && shellFeed.length === 0 && !isRunning && pendingRequiredActions.length === 0 ? <EmptyState /> : null}
+      <Box flexDirection="column" flexGrow={1}>
+        {visibleContentLines.map(line => (
+          <Text
+            key={line.key}
+            color={line.color}
+            dimColor={line.dimColor}
+            wrap="truncate-end"
+          >
+            {line.text}
+          </Text>
+        ))}
+      </Box>
 
-      <Box flexDirection="column" marginTop={1}>
+      <Box justifyContent="space-between">
         <Text color={isRunning ? 'yellow' : stateColor(currentState)}>
           {isRunning ? `${loadingDots} ${statusText}` : `${idleIcon} ${statusText}`}
         </Text>
-        {liveThinkingLine ? <Text color="magenta">Thinking: {liveThinkingLine}</Text> : null}
-        {liveAssistantText ? <Text color="green">Assistant: {liveAssistantText}</Text> : null}
-        {pendingRequiredActions.length > 0 ? <RequiredActionList actions={pendingRequiredActions} /> : null}
-        <Text dimColor>
-          {latestWorkflowOpenUrl
-            ? '/expand · /collapse · /open · /stop'
-            : '/expand · /collapse · /stop'}
-        </Text>
+        {!isAtBottom && allContentLines.length > contentHeight ? (
+          <Text dimColor>
+            {isAutoFollowRef.current ? '↓ auto' : `↑↓ ${maxScrollOffset - scrollOffset + contentHeight}/${allContentLines.length}`}
+          </Text>
+        ) : null}
       </Box>
 
-      <Box borderStyle="round" borderColor="cyan" paddingX={1} marginTop={1}>
+      {liveThinkingLine ? <Text color="magenta">Thinking: {liveThinkingLine}</Text> : null}
+      {liveAssistantText ? <Text color="green">Assistant: {liveAssistantText}</Text> : null}
+      {pendingRequiredActions.length > 0 ? <RequiredActionList actions={pendingRequiredActions} /> : null}
+
+      <Box marginTop={1}>
+        <Text dimColor>{"─".repeat(Math.min(terminalWidth - 2, 80))}</Text>
+      </Box>
+
+      <Box width="100%">
         <Text color="green">› </Text>
         <TextInput
           key={`prompt-input-${inputVersion}`}
           onSubmit={(value) => {
             void submitPrompt(value);
           }}
-          placeholder={isRunning ? 'Draft your next message. Press Enter when the current run finishes.' : 'Describe what you want to automate'}
+          placeholder={isRunning ? 'Draft your next message...' : 'Describe what you want to automate'}
         />
       </Box>
+
+      <Text dimColor>
+        {latestWorkflowOpenUrl
+          ? '/expand · /collapse · /open · /stop · ↑↓ scroll'
+          : '/expand · /collapse · /stop · ↑↓ scroll'}
+      </Text>
     </Box>
   );
 }
@@ -707,9 +897,11 @@ export async function runInteractiveGateway(handle: YagrDeepAgentHandle, options
   const createSessionId = () => sessionStore.create({ title: 'Interactive session' }).id;
   const session = { id: createSessionId() };
   const threadIdRef = { current: session.id };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ink = render(<YagrInteractiveApp agent={handle.agent} threadIdRef={threadIdRef} options={options} createSessionId={createSessionId} />, {
     exitOnCtrlC: false,
-  });
+    alternateScreen: true,
+  } as any);
 
   await ink.waitUntilExit();
 }
