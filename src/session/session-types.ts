@@ -74,3 +74,16 @@ export interface SessionSummary {
   updatedAt: string;
   messageCount: number;
 }
+
+/**
+ * Metadata for a named checkpoint of a session.
+ * Checkpoints capture the full agent state at a point in time and can be
+ * restored to resume conversation from that exact state.
+ */
+export interface CheckpointMetadata {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  messageCount: number;
+  summary?: string;
+}
