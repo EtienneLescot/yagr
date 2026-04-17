@@ -42,30 +42,7 @@ export interface LangGraphRunAccumulator {
   thinkingStartedAt: number;
   /** Map of event-scoped tool run keys → operation metadata for in-flight tool calls. */
   activeOperations: Map<string, YagrOperationEvent>;
-  /** Loop guard: total tool calls in this run. */
-  toolCallCount: number;
-  /** Loop guard: history of recent tool calls for detecting repeated calls. */
-  recentToolCalls: Array<{ toolName: string; normalizedArgs: string; timestamp: number }>;
-  /** Loop guard: timestamp of last text delta or significant progress. */
-  lastProgressAt: number;
-  /** Loop guard: timestamp when run started. */
-  runStartedAt: number;
 }
-
-export interface LoopGuardConfig {
-  /** Maximum total tool calls before aborting (default: 50). */
-  maxToolCalls?: number;
-  /** Maximum consecutive identical tool calls before aborting (default: 3). */
-  maxIdenticalCalls?: number;
-  /** Timeout (ms) without text progress before aborting (default: 120000). */
-  inactivityTimeoutMs?: number;
-}
-
-export const DEFAULT_LOOP_GUARD_CONFIG: Required<LoopGuardConfig> = {
-  maxToolCalls: 50,
-  maxIdenticalCalls: 3,
-  inactivityTimeoutMs: 120000,
-};
 
 export interface LangGraphEventCallbacks {
   onTextDelta?: (delta: string) => void | Promise<void>;
@@ -88,65 +65,7 @@ export function createRunAccumulator(): LangGraphRunAccumulator {
     thinkingText: '',
     thinkingStartedAt: 0,
     activeOperations: new Map(),
-    toolCallCount: 0,
-    recentToolCalls: [],
-    lastProgressAt: Date.now(),
-    runStartedAt: Date.now(),
   };
-}
-
-export interface LoopGuardResult {
-  shouldInterrupt: boolean;
-  reason?: string;
-}
-
-export function checkLoopGuard(
-  accumulator: LangGraphRunAccumulator,
-  config: LoopGuardConfig = DEFAULT_LOOP_GUARD_CONFIG,
-): LoopGuardResult {
-  const effectiveConfig = { ...DEFAULT_LOOP_GUARD_CONFIG, ...config };
-
-  if (accumulator.toolCallCount >= effectiveConfig.maxToolCalls) {
-    return {
-      shouldInterrupt: true,
-      reason: `Maximum tool calls (${effectiveConfig.maxToolCalls}) reached. Possible infinite loop detected.`,
-    };
-  }
-
-  const now = Date.now();
-  if (now - accumulator.lastProgressAt > effectiveConfig.inactivityTimeoutMs) {
-    return {
-      shouldInterrupt: true,
-      reason: `Inactivity timeout (${effectiveConfig.inactivityTimeoutMs}ms) reached. No text progress while tools keep running.`,
-    };
-  }
-
-  if (accumulator.recentToolCalls.length >= effectiveConfig.maxIdenticalCalls) {
-    const lastCalls = accumulator.recentToolCalls.slice(-effectiveConfig.maxIdenticalCalls);
-    const allIdentical = lastCalls.every(
-      (call) =>
-        call.toolName === lastCalls[0].toolName &&
-        call.normalizedArgs === lastCalls[0].normalizedArgs,
-    );
-
-    if (allIdentical) {
-      return {
-        shouldInterrupt: true,
-        reason: `Identical tool call repeated ${effectiveConfig.maxIdenticalCalls} times: ${lastCalls[0].toolName}(${lastCalls[0].normalizedArgs.slice(0, 50)}...). Possible infinite loop detected.`,
-      };
-    }
-  }
-
-  return { shouldInterrupt: false };
-}
-
-function normalizeToolArgs(args: Record<string, unknown> | undefined): string {
-  if (!args) return '';
-  const sorted = Object.entries(args)
-    .filter(([, v]) => v !== undefined && v !== null)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${JSON.stringify(v)}`);
-  return sorted.join('&');
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +149,6 @@ export async function processStreamEvent(
         }
 
         accumulator.responseText += textDelta;
-        accumulator.lastProgressAt = Date.now();
         await callbacks.onTextDelta?.(textDelta);
       }
       break;
@@ -254,20 +172,6 @@ export async function processStreamEvent(
       }
       const toolName = event.name;
       const operationKey = getToolOperationKey(event);
-
-      // Track tool call for loop guard
-      accumulator.toolCallCount++;
-      if (toolName) {
-        accumulator.recentToolCalls.push({
-          toolName,
-          normalizedArgs: normalizeToolArgs(input),
-          timestamp: Date.now(),
-        });
-        // Keep only last 10 calls for duplicate detection
-        if (accumulator.recentToolCalls.length > 10) {
-          accumulator.recentToolCalls.shift();
-        }
-      }
 
       // Legacy update (still used by surfaces that don't handle operations).
       const update = mapToolStartToUpdate(toolName, input);

@@ -146,8 +146,13 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
     options: this['ParsedCallOptions'],
     _runManager?: CallbackManagerForLLMRun,
   ): AsyncGenerator<BaseMessageChunk> {
+    const DEBUG_STREAM = process.env.DEBUG_CODEX_STREAM === '1';
+    if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] _stream() called');
+
     const model = createOpenAiAccountLanguageModel(this.model, this.reasoningEffort);
     const boundToolChoice = this.boundCallOptions?.tool_choice;
+
+    if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] Calling model.doStream()');
 
     const result = await model.doStream({
       inputFormat: 'prompt',
@@ -160,6 +165,8 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
       abortSignal: options.signal,
     });
 
+    if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] doStream() returned, getting reader');
+
     let currentToolCallId: string | null = null;
     let currentToolName: string | null = null;
     let currentArgs = '';
@@ -169,17 +176,21 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
     const reader = result.stream.getReader();
 
     try {
+      if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] Reading stream...');
       while (true) {
         const { done, value } = await reader.read();
-
         if (done) {
+          if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] Stream done');
           break;
         }
+
+        if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] Got part:', JSON.stringify(value).slice(0, 200));
 
         const part = value as LanguageModelV1StreamPart;
 
         if (part.type === 'text-delta') {
           currentText += part.textDelta;
+          if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] Yielding text-delta:', part.textDelta);
           yield new AIMessageChunk({
             content: part.textDelta,
             additional_kwargs: {},
@@ -218,6 +229,7 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
             additional_kwargs: {},
           });
         } else if (part.type === 'finish') {
+          if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] Got finish:', part.finishReason);
           finishReason = part.finishReason;
           break;
         } else if (part.type === 'error') {
