@@ -117,7 +117,7 @@ export function runSetupWizard(callbacks: SetupCallbacks, options: SetupWizardOp
 
 type Phase =
   | { kind: 'n8n-mode'; cursor: number; err?: string }
-  | { kind: 'n8n-managed-runtime'; cursor: number; err?: string }
+  | { kind: 'n8n-docker-check'; status: 'checking' | 'available' | 'unavailable'; cursor: number; err?: string }
   | { kind: 'n8n-url'; def: string; err?: string }
   | { kind: 'n8n-reuse-apikey'; url: string; existing: string; cursor: number }
   | { kind: 'n8n-apikey'; url: string; err?: string }
@@ -129,7 +129,7 @@ type Phase =
   | { kind: 'n8n-saving'; url: string; apiKey: string; instanceProfile?: YagrN8nInstanceProfile; project: IProject; syncFolder: string; log?: string }
   | { kind: 'n8n-tunnel-offer'; url: string; instanceProfile?: YagrN8nInstanceProfile; cursor: number; status: 'offer' | 'starting' | 'done' | 'failed'; publicUrl?: string; err?: string }
   | { kind: 'llm-proxy-setup'; url: string; instanceProfile?: YagrN8nInstanceProfile; status: 'detecting' | 'provisioning' | 'ready' | 'skipped' | 'failed'; mode?: YagrLlmProxyConfig['mode']; relayUrl?: string; err?: string; cursor: number }
-  | { kind: 'n8n-local-installing'; startedAt: number; strategy: 'docker' | 'direct' | 'auto' }
+  | { kind: 'n8n-local-installing'; startedAt: number }
   | { kind: 'n8n-local-ready'; url: string; instanceProfile: YagrN8nInstanceProfile; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
@@ -582,11 +582,11 @@ function SetupWizard({ callbacks, options, onDone }: {
     const guard = ++asyncGuard.current;
     void (async () => {
       try {
-        const state = await callbacks.installManagedLocalN8n(phase.strategy);
+        const state = await callbacks.installManagedLocalN8n('docker');
         if (guard !== asyncGuard.current) return;
         const bootstrap = await callbacks.bootstrapManagedLocalN8n(state.url);
         if (guard !== asyncGuard.current) return;
-        const instanceProfile: YagrN8nInstanceProfile = phase.strategy === 'docker' ? 'yagr-managed-docker' : 'yagr-managed-direct';
+        const instanceProfile: YagrN8nInstanceProfile = 'yagr-managed-docker';
         if (bootstrap.mode === 'silent' && bootstrap.apiKey) {
           setPhase({ kind: 'n8n-connecting', url: state.url, apiKey: bootstrap.apiKey, instanceProfile });
           return;
@@ -607,12 +607,37 @@ function SetupWizard({ callbacks, options, onDone }: {
         if (guard !== asyncGuard.current) return;
         setPhase({
           kind: 'n8n-mode',
-          cursor: phase.strategy === 'docker' ? 0 : 1,
+          cursor: 0,
           err: err instanceof Error ? err.message : String(err),
         });
       }
     })();
   }, [phase.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (phase.kind !== 'n8n-docker-check') return;
+    const currentPhase = phase as Extract<Phase, { kind: 'n8n-docker-check' }>;
+    if (currentPhase.status !== 'checking') return;
+    const guard = ++asyncGuard.current;
+    void (async () => {
+      try {
+        const assessment = await import('../n8n-local/detect.js').then((m) => m.inspectLocalN8nBootstrap());
+        if (guard !== asyncGuard.current) return;
+        const dockerAvailable = assessment.docker.available && assessment.docker.reachable !== false;
+        setPhase((p) => ({
+          ...(p as Extract<Phase, { kind: 'n8n-docker-check' }>),
+          status: dockerAvailable ? 'available' : 'unavailable',
+        }));
+      } catch {
+        if (guard !== asyncGuard.current) return;
+        setPhase((p) => ({
+          ...(p as Extract<Phase, { kind: 'n8n-docker-check' }>),
+          status: 'unavailable',
+        }));
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase.kind, (phase as Extract<Phase, { kind: 'n8n-docker-check' }>).status]);
 
   useEffect(() => {
     if (phase.kind !== 'n8n-connecting') return;
@@ -875,18 +900,30 @@ function SetupWizard({ callbacks, options, onDone }: {
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1), err: undefined });
       else if (key.return) {
         if (phase.cursor === 0) {
+          setPhase({ kind: 'n8n-docker-check', status: 'checking', cursor: 0, err: undefined });
+        } else {
           setPhase({ kind: 'n8n-url', def: n8nDef.url });
           setTextValue(n8nDef.url);
-        } else {
-          setPhase({ kind: 'n8n-managed-runtime', cursor: 0 });
         }
       } else if (key.escape) cancel('Setup cancelled.');
-    } else if (phase.kind === 'n8n-managed-runtime') {
-      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1), err: undefined });
-      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1), err: undefined });
-      else if (key.return) {
-        setPhase({ kind: 'n8n-local-installing', startedAt: Date.now(), strategy: phase.cursor === 0 ? 'docker' : 'direct' });
-      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'n8n-docker-check') {
+      if (phase.status === 'checking') {
+        // No interaction, just wait
+      } else if (phase.status === 'unavailable') {
+        if (key.upArrow) setPhase((p) => ({ ...(p as Extract<Phase, { kind: 'n8n-docker-check' }>), cursor: Math.max(0, (p as Extract<Phase, { kind: 'n8n-docker-check' }>).cursor - 1) }));
+        else if (key.downArrow) setPhase((p) => ({ ...(p as Extract<Phase, { kind: 'n8n-docker-check' }>), cursor: Math.min(1, (p as Extract<Phase, { kind: 'n8n-docker-check' }>).cursor + 1) }));
+        else if (key.return) {
+          if (phase.cursor === 0) {
+          setPhase({ kind: 'n8n-docker-check', status: 'checking', cursor: 0, err: undefined });
+          } else {
+            setPhase({ kind: 'n8n-mode', cursor: 0, err: undefined });
+          }
+        } else if (key.escape) cancel('Setup cancelled.');
+      } else if (phase.status === 'available') {
+        if (key.return) {
+          setPhase({ kind: 'n8n-local-installing', startedAt: Date.now() });
+        } else if (key.escape) cancel('Setup cancelled.');
+      }
     } else if (phase.kind === 'n8n-local-ready') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
@@ -1277,7 +1314,9 @@ function SetupWizard({ callbacks, options, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-mode', 'n8n-managed-runtime', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-instance-location', 'n8n-local-runtime', 'n8n-project', 'llm-provider', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'llm-reasoning-effort', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-instance-location', 'n8n-local-runtime', 'n8n-project', 'llm-provider', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'llm-reasoning-effort', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+    || (phase.kind === 'n8n-docker-check' && phase.status === 'available')
+    || (phase.kind === 'n8n-docker-check' && phase.status === 'unavailable')
     || (phase.kind === 'llm-model' && phase.models.length > 0)
     || (phase.kind === 'llm-proxy-setup' && (phase.status === 'ready' || phase.status === 'failed'))
     || (phase.kind === 'n8n-tunnel-offer' && (phase.status === 'offer' || phase.status === 'done' || phase.status === 'failed'));
@@ -1299,17 +1338,17 @@ function SetupWizard({ callbacks, options, onDone }: {
       case 'n8n-mode':
         return (
           <Box flexDirection="column">
-            <FieldLabel label="Disposez-vous deja d'une instance n8n ?" />
+            <FieldLabel label="How would you like to use n8n?" />
             <SelectList
               options={[
-                'Oui, j ai deja une instance n8n',
-                'Non, je veux que Yagr en installe une',
+                'Yagr installs and manages a local instance',
+                'I bring my own n8n (URL + API key)',
               ] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
               getHint={(v) => {
-                if (v.startsWith('Oui')) return 'Connexion a une instance existante via URL et cle API';
-                return 'Yagr installera et gerera une instance locale pour vous';
+                if (v.startsWith('Yagr')) return 'Recommended (requires Docker)';
+                return 'Connect to an existing instance';
               }}
               maxVisibleRows={getListViewportHeight(terminalRows, 13)}
               maxLineWidth={listLineWidth}
@@ -1319,25 +1358,62 @@ function SetupWizard({ callbacks, options, onDone }: {
           </Box>
         );
 
-      case 'n8n-managed-runtime':
+      case 'n8n-docker-check':
+        if (phase.status === 'checking') {
+          return (
+            <Box flexDirection="column">
+              <SpinnerDisplay message="Checking Docker availability…" frame={spinnerFrame} />
+            </Box>
+          );
+        }
+        if (phase.status === 'unavailable') {
+          return (
+            <Box flexDirection="column">
+              <Text color="yellow" bold>Docker is not available</Text>
+              <Box marginTop={1} flexDirection="column" gap={0}>
+                <Text dimColor>Yagr needs Docker to install and manage a local n8n instance.</Text>
+                <Text dimColor>Please install and start Docker Desktop, then retry.</Text>
+              </Box>
+              <Box marginTop={1} flexDirection="column" gap={0}>
+                <Text bold>Installation instructions:</Text>
+                <Text dimColor>  Windows / macOS:</Text>
+                <Text dimColor>    1. Download Docker Desktop (free) from</Text>
+                <Text dimColor>       https://www.docker.com/products/docker-desktop</Text>
+                <Text dimColor>    2. Run the installer and follow the steps</Text>
+                <Text dimColor>    3. Start Docker Desktop from your applications</Text>
+                <Text dimColor>  Linux (Ubuntu/Debian):</Text>
+                <Text dimColor>    1. Run: curl -fsSL https://get.docker.com | sh</Text>
+                <Text dimColor>    2. Then: sudo usermod -aG docker $USER</Text>
+                <Text dimColor>    3. Log out and back in, or run: newgrp docker</Text>
+                <Text dimColor>    4. Start Docker: sudo systemctl start docker</Text>
+              </Box>
+              <Box marginTop={1}>
+                <SelectList
+                  options={['Retry', 'Go back'] as const}
+                  cursor={phase.cursor}
+                  getLabel={(v) => v}
+                  maxVisibleRows={2}
+                  maxLineWidth={listLineWidth}
+                />
+              </Box>
+              <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
+            </Box>
+          );
+        }
         return (
           <Box flexDirection="column">
-            <FieldLabel label="Souhaitez-vous installer l'instance n8n avec Docker ?" />
-            <SelectList
-              options={[
-                'Oui',
-                'Non',
-              ] as const}
-              cursor={phase.cursor}
-              getLabel={(v) => v}
-              getHint={(v) => v === 'Oui'
-                ? 'Recommande si Docker est disponible sur votre machine'
-                : 'Utilise un runtime local direct sans Docker'}
-              maxVisibleRows={getListViewportHeight(terminalRows, 12)}
-              maxLineWidth={listLineWidth}
-            />
-            {phase.err ? <ErrorLine message={phase.err} /> : null}
-            <HintBar hints={['↑↓  move', 'Enter ↵  confirm', 'Ctrl+C  cancel']} />
+            <Text color="green" bold>Docker is available</Text>
+            <Text dimColor>Yagr will install and manage a local n8n instance using Docker.</Text>
+            <Box marginTop={1}>
+              <SelectList
+                options={['Continue'] as const}
+                cursor={0}
+                getLabel={(v) => v}
+                maxVisibleRows={2}
+                maxLineWidth={listLineWidth}
+              />
+            </Box>
+            <HintBar hints={['Enter ↵  confirm', 'Ctrl+C  cancel']} />
           </Box>
         );
 
@@ -1446,7 +1522,7 @@ function SetupWizard({ callbacks, options, onDone }: {
           <Box flexDirection="column">
             <SpinnerDisplay message="Installing and starting a Yagr-managed local n8n instance…" frame={spinnerFrame} />
             <Text dimColor>  Yagr is waiting for the n8n API and editor to become ready before continuing.</Text>
-            <Text dimColor>  First run can take 1 to 3 minutes depending on Docker, npm downloads, and machine speed.</Text>
+            <Text dimColor>  First run can take 1 to 3 minutes depending on Docker download and machine speed.</Text>
             <Text dimColor>  Elapsed: {elapsedLabel}</Text>
           </Box>
         );
