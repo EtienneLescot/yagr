@@ -852,6 +852,8 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
         ))}
       </Box>
 
+      <Text dimColor>{"─".repeat(Math.min(terminalWidth - 2, 80))}</Text>
+
       <Box justifyContent="space-between">
         <Text color={isRunning ? 'yellow' : stateColor(currentState)}>
           {isRunning ? `${loadingDots} ${statusText}` : `${idleIcon} ${statusText}`}
@@ -867,11 +869,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
       {liveAssistantText ? <Text color="green">Assistant: {liveAssistantText}</Text> : null}
       {pendingRequiredActions.length > 0 ? <RequiredActionList actions={pendingRequiredActions} /> : null}
 
-      <Box marginTop={1}>
-        <Text dimColor>{"─".repeat(Math.min(terminalWidth - 2, 80))}</Text>
-      </Box>
-
-      <Box width="100%">
+      <Box borderStyle="round" borderColor="cyan" paddingX={1}>
         <Text color="green">› </Text>
         <TextInput
           key={`prompt-input-${inputVersion}`}
