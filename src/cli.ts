@@ -66,7 +66,7 @@ const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'tui' | 'webui' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-setup' | 'n8n-context-setup' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url' | 'presentWorkflowResult' | 'yagrProxy';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'restart' | 'tui' | 'webui' | 'gateway' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-setup' | 'n8n-context-setup' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url' | 'presentWorkflowResult' | 'yagrProxy';
   startTarget?: 'webui' | 'tui';
   n8nLocalRuntime?: 'docker' | 'direct';
   prompt?: string;
@@ -179,6 +179,16 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   if (argv[0] === 'start') {
     parsed.command = 'start';
+    startIndex = 1;
+  }
+
+  if (argv[0] === 'restart') {
+    parsed.command = 'restart';
+    startIndex = 1;
+  }
+
+  if (argv[0] === 'gateway' && !argv[1]) {
+    parsed.command = 'gateway';
     startIndex = 1;
   }
 
@@ -583,11 +593,22 @@ async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigServi
   await refreshN8nWorkspaceInstructionsAtLaunch();
   await ensureRelayAtLaunch();
   await ensureTunnelAtLaunch();
-  await runGatewaySupervisor({
-    provider: args.provider,
-    model: args.model,
-    maxSteps: args.maxSteps,
-  }, configService);
+
+  const tunnelHealthCheck = async () => {
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 30_000));
+      await ensureTunnelAtLaunch();
+    }
+  };
+
+  await Promise.all([
+    runGatewaySupervisor({
+      provider: args.provider,
+      model: args.model,
+      maxSteps: args.maxSteps,
+    }, configService),
+    tunnelHealthCheck(),
+  ]);
 }
 
 async function runGatewaySupervisorProcess(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
@@ -705,7 +726,27 @@ async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigS
   process.stdout.write(getGatewayRunningBanner(configService, pid));
 }
 
+async function ensureGatewayRunning(configService: YagrConfigService): Promise<boolean> {
+  const { isGatewayRunning } = await import('./config/gateway-daemon.js');
+  const running = isGatewayRunning();
+  if (!running.running) {
+    process.stdout.write([
+      '',
+      '  Gateway is not running.',
+      '  Start it with: yagr start',
+      '  Or: yagr gateway',
+      '',
+    ].join('\n'));
+    return false;
+  }
+  return true;
+}
+
 async function runTui(args: ParsedArgs): Promise<void> {
+  const configService = new YagrConfigService();
+  if (!await ensureGatewayRunning(configService)) {
+    return;
+  }
   const handle = await createYagrDeepAgent();
   const { runCliGateway } = await import('./gateway/cli.js');
 
@@ -1430,66 +1471,32 @@ async function main(): Promise<void> {
       }
     }
 
-    if (args.startTarget === 'tui') {
-      await ensureManagedN8nAtLaunch();
-      await refreshN8nWorkspaceInstructionsAtLaunch();
-      await ensureRelayAtLaunch();
-      await ensureTunnelAtLaunch();
-      await runTui(args);
-      return;
-    }
+    await runGatewayOrFallback(args, configService);
+    return;
+  }
 
-    if (args.startTarget === 'webui') {
-      await ensureManagedN8nAtLaunch();
-      await refreshN8nWorkspaceInstructionsAtLaunch();
-      await ensureRelayAtLaunch();
-      await ensureTunnelAtLaunch();
-      await runWebUi(args, configService);
-      return;
-    }
-
-    // No explicit target — start all configured gateways
+  if (args.command === 'gateway') {
     await runGatewayOrFallback(args, configService);
     return;
   }
 
   if (args.command === 'tui') {
-    const status = getYagrSetupStatus(configService);
-    if (!status.ready) {
-      const completed = await runYagrSetup(configService);
-      if (!completed) {
-        return;
-      }
-    }
-    await ensureManagedN8nAtLaunch();
-    await refreshN8nWorkspaceInstructionsAtLaunch();
-    await ensureRelayAtLaunch();
-    await ensureTunnelAtLaunch();
     await runTui(args);
     return;
   }
 
   if (args.command === 'webui') {
-    const status = getYagrSetupStatus(configService);
-    if (!status.ready) {
-      const completed = await runYagrSetup(configService);
-      if (!completed) {
-        return;
-      }
+    if (!await ensureGatewayRunning(configService)) {
+      return;
     }
-    await ensureManagedN8nAtLaunch();
-    await refreshN8nWorkspaceInstructionsAtLaunch();
-    await ensureRelayAtLaunch();
-    await ensureTunnelAtLaunch();
     await runWebUi(args, configService);
     return;
   }
 
   if (args.command === 'telegram-start') {
-    await ensureManagedN8nAtLaunch();
-    await refreshN8nWorkspaceInstructionsAtLaunch();
-    await ensureRelayAtLaunch();
-    await ensureTunnelAtLaunch();
+    if (!await ensureGatewayRunning(configService)) {
+      return;
+    }
     await runTelegramGateway({
       provider: args.provider,
       model: args.model,

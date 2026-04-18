@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
 import { getYagrDeepAgentSessionsDir } from '../config/yagr-home.js';
-import { ensureLocalWorkflowOpenBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import { DeepAgentSessionStore } from '../session/deepagent-sessions.js';
@@ -890,7 +889,6 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
 }
 
 export async function runInteractiveGateway(handle: YagrDeepAgentHandle, options: YagrRunOptions): Promise<void> {
-  await ensureLocalWorkflowOpenBridgeRunning();
   const sessionStore = new DeepAgentSessionStore(getYagrDeepAgentSessionsDir());
   const createSessionId = () => sessionStore.create({ title: 'Interactive session' }).id;
   const session = { id: createSessionId() };
