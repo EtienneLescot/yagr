@@ -1530,6 +1530,7 @@ function App() {
             tone: streamEvent.tone,
             title: streamEvent.title,
             detail: streamEvent.detail,
+            category: 'phase',
           }, bodyId);
           patchEntry(headerId, { statusLabel: streamEvent.detail ?? streamEvent.title });
           setBusyLabel(streamEvent.detail ?? streamEvent.title);

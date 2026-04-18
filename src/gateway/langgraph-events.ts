@@ -408,6 +408,9 @@ async function handleToolEnd(
     }
 
     case 'presentWorkflowResult': {
+      if (DEBUG) {
+        console.error(`[DEBUG_LANGGRAPH_EVENTS]   presentWorkflowResult tool end, output type: ${typeof output}, __type: ${(output as Record<string, unknown>)?.__type}, keys: ${output ? Object.keys(output as object).join(', ') : 'none'}`);
+      }
       if (output?.__type === WORKFLOW_EMBED_TYPE) {
         const embed = output as unknown as WorkflowEmbedPayload;
         const enriched = enrichWorkflowEmbedPayload(embed);
