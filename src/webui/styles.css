@@ -1539,9 +1539,9 @@ button {
   fill: var(--violet);
 }
 
-.msgIconAssistant .workGlyphSvg.animated .workGlyphPixel {
-  animation: pixelBlink 2.4s steps(1, end) infinite;
-  animation-fill-mode: backwards;
+.msgIconAssistant .workGlyphSvg:not(.animated) .workGlyphPixel {
+  animation: none;
+  opacity: 1;
 }
 
 /* ── Native collapsible (details/summary) ─────────────────────── */
