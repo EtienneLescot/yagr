@@ -606,7 +606,8 @@ function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Elemen
     return null;
   }
 
-  if (!entry.category || entry.category === 'tool') {
+
+  if (entry.category === 'phase') {
     return null;
   }
 
@@ -659,7 +660,7 @@ function AssistantHeaderRow({ entry, now }: { entry: Extract<ThreadEntry, { kind
 function AssistantBodyRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'assistant-body' }> }): React.JSX.Element {
   return (
     <div className={`msgSimple msgAssistant${entry.streaming ? ' msgStreaming' : ''}`}>
-      {entry.text ? <MarkdownBody text={entry.text} /> : entry.streaming ? 'The answer is being composed...' : null}
+      {entry.text ? <MarkdownBody text={entry.text} /> : null}
       {entry.embed ? <WorkflowBanner embed={entry.embed} /> : null}
     </div>
   );
