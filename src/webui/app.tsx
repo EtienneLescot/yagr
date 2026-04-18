@@ -570,61 +570,19 @@ function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
   const resolvedUrl = embed.openUrl ?? embed.url;
 
   const exec = embed.executionResult;
-  const execStatusClass = exec
-    ? exec.status === 'success' ? 'execSuccess' : exec.status === 'error' ? 'execError' : 'execWaiting'
-    : '';
 
   return (
-    <div className="workflowCard">
-      <div className="workflowHeader">
-        <div className="workflowHeaderLeft">
-          <span className="workflowBadge">Workflow</span>
-          <span className="workflowTitle">{embed.title ?? `Workflow ${embed.workflowId}`}</span>
-        </div>
-        <a
-          className="primaryButton"
-          href={resolvedUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open in n8n
-        </a>
-      </div>
+    <div className="workflowSimple">
+      Workflow: {embed.title ?? `Workflow ${embed.workflowId}`}
       {exec ? (
-        <div className={`executionResult ${execStatusClass}`}>
-          <div className="executionResultHeader">
-            <span className={`executionBadge ${execStatusClass}`}>
-              {exec.status === 'success' ? '✓ Success' : exec.status === 'error' ? '✗ Error' : '⧗ Waiting'}
-              {exec.executionId ? ` · #${exec.executionId}` : ''}
-            </span>
-            {exec.summary ? <span className="executionSummary">{exec.summary}</span> : null}
-          </div>
-          {exec.data ? (
-            <pre className="executionData">{exec.data}</pre>
-          ) : null}
-        </div>
+        <span className={`execStatus exec${exec.status ?? ''}`}>
+          {' '}{exec.status === 'success' ? '✓' : exec.status === 'error' ? '✗' : '⧗'}{exec.summary ? ` ${exec.summary}` : ''}
+        </span>
       ) : null}
-      {embed.diagram ? (
-        <div className="workflowGraphWrap">
-          <WorkflowGraph diagram={embed.diagram} />
-        </div>
-      ) : null}
+      {' '}<a href={resolvedUrl} target="_blank" rel="noopener noreferrer">Open in n8n</a>
     </div>
   );
 }
-
-// Pixel-art Y — grid 7×7, pitch 4 (3px pixel + 1px gap).
-// Diagonal arms: each row out from junction spreads 1 col further.
-// Build order: stem bottom → junction → inner arms → tips.
-const Y_PIXELS: Array<[col: number, row: number, delayMs: number]> = [
-  [3, 6,   0],                      // stem bottom
-  [3, 5,  90],                      // stem
-  [3, 4, 180],                      // stem
-  [3, 3, 270],                      // junction
-  [2, 2, 360], [4, 2, 360],         // inner arms
-  [1, 1, 450], [5, 1, 450],         // arms
-  [0, 0, 540], [6, 0, 540],         // tips
-];
 
 const OPERATION_CATEGORY_ICON: Record<string, string> = {
   'file-read': '📄',
@@ -638,7 +596,6 @@ const OPERATION_CATEGORY_ICON: Record<string, string> = {
 };
 
 function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Element | null {
-  const isRunning = entry.status === 'running';
   const icon = OPERATION_CATEGORY_ICON[entry.category ?? 'tool'] ?? '🔧';
   const durationMs = entry.startedAt != null && entry.endedAt != null ? entry.endedAt - entry.startedAt : null;
   const duration = durationMs != null
@@ -650,44 +607,29 @@ function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Elemen
   }
 
   return (
-    <details className={`opRow ${entry.status ?? 'done'} ${entry.category ?? ''}`} open={isRunning || undefined}>
-      <summary className="opRowHeader">
-        <span className="opIcon" aria-hidden="true">{icon}</span>
-        <span className="opLabel">{entry.title || 'Operation'}</span>
-        <span className="opMeta">
-          {duration && <span className="opDuration">{duration}</span>}
-          {isRunning
-            ? <span className="opSpinner" aria-hidden="true" />
-            : entry.status === 'error'
-              ? <span className="opStatusIcon error" aria-hidden="true">✕</span>
-              : <span className="opStatusIcon done" aria-hidden="true">✓</span>}
-        </span>
-      </summary>
-      {(entry.body || entry.summary) && (
-        <pre className="opBody">{(entry.body ?? entry.summary ?? '').trimEnd()}</pre>
-      )}
-    </details>
+    <div className="opSimple">
+      <span className="opIcon" aria-hidden="true">{icon}</span>
+      <span className="opLabel">{entry.title || 'Operation'}</span>
+      {duration && <span className="opDuration">{duration}</span>}
+      {entry.body && <div className="opBody">{(entry.body ?? '').trimEnd()}</div>}
+      {entry.summary && !entry.body && <span className="opSummary">{entry.summary}</span>}
+    </div>
   );
 }
 
 function UserRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'user-message' }> }): React.JSX.Element {
   return (
-    <article className="message user">
-      <div className="messageTopline">
-        <div className="messageRole">You</div>
-      </div>
-      <div className="messageText">{entry.text}</div>
-    </article>
+    <div className="msgSimple msgUser">
+      {entry.text}
+    </div>
   );
 }
 
 function SystemRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'system-notice' }> }): React.JSX.Element {
   return (
-    <article className="message system">
-      <div className="messageText">
-        <MarkdownBody text={entry.text} />
-      </div>
-    </article>
+    <div className="msgSimple msgSystem">
+      <MarkdownBody text={entry.text} />
+    </div>
   );
 }
 
@@ -697,42 +639,18 @@ function AssistantHeaderRow({ entry, now }: { entry: Extract<ThreadEntry, { kind
   const elapsed = entry.startedAt ? formatElapsed(now - entry.startedAt) : undefined;
 
   return (
-    <div className="assistantHeader streaming">
-      <div className="workGlyph" aria-hidden="true">
-        <svg className="workGlyphSvg" viewBox="0 0 27 27" shapeRendering="crispEdges">
-          {Y_PIXELS.map(([col, row, delayMs], i) => (
-            <rect
-              key={i}
-              className="workGlyphPixel"
-              x={col * 4}
-              y={row * 4}
-              width={3}
-              height={3}
-              style={{ animationDelay: `${delayMs}ms` }}
-            />
-          ))}
-        </svg>
-      </div>
-      <div className="workMeta">
-        <strong>{entry.statusLabel ?? 'Yagr is working…'}</strong>
-        {elapsed && <span className="muted">Running for {elapsed}</span>}
-      </div>
+    <div className="msgSimple msgStreaming">
+      {entry.statusLabel ?? 'Yagr is working…'}{elapsed && ` · ${elapsed}`}
     </div>
   );
 }
 
 function AssistantBodyRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'assistant-body' }> }): React.JSX.Element {
   return (
-    <article className={`message assistant${entry.streaming ? ' streaming' : ''}`}>
-      {entry.text ? (
-        <div className={`messageText${!entry.text && entry.streaming ? ' placeholder' : ''}`}>
-          <MarkdownBody text={entry.text} />
-        </div>
-      ) : entry.streaming ? (
-        <div className="messageText placeholder">The answer is being composed...</div>
-      ) : null}
+    <div className={`msgSimple msgAssistant${entry.streaming ? ' msgStreaming' : ''}`}>
+      {entry.text ? <MarkdownBody text={entry.text} /> : entry.streaming ? 'The answer is being composed...' : null}
       {entry.embed ? <WorkflowBanner embed={entry.embed} /> : null}
-    </article>
+    </div>
   );
 }
 

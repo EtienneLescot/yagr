@@ -575,7 +575,7 @@ label span,
   display: grid;
   grid-auto-rows: max-content;
   align-content: start;
-  gap: var(--gap-md, 0.9rem);
+  gap: 0.35rem;
   margin-right: -0.7rem;
   padding-right: 0.7rem;
   padding-bottom: 0.2rem;
@@ -607,7 +607,6 @@ label span,
   z-index: 1;
   margin: 0 -1.15rem -1.15rem;
   padding: 0.85rem 1.15rem 1.15rem;
-  border-top: 1px solid var(--panel-border);
   background: var(--panel);
 }
 
@@ -1416,4 +1415,77 @@ button {
 .workflowDiagram {
   margin: 0;
   color: var(--workflow-title-ink);
+}
+
+/* ── Simplified message rows ───────────────────────────────────── */
+
+.msgSimple {
+  padding: 0.2rem 0;
+  line-height: 1.6;
+}
+
+.msgUser {
+  color: var(--ink);
+}
+
+.msgAssistant {
+  color: var(--ink);
+}
+
+.msgSystem {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.msgStreaming {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ── Simplified operation rows ─────────────────────────────────── */
+
+.opSimple {
+  padding: 0.15rem 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.opSimple .opIcon {
+  margin-right: 0.3rem;
+}
+
+.opSimple .opLabel {
+  font-weight: 500;
+}
+
+.opSimple .opDuration {
+  margin-left: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.opSimple .opBody {
+  margin: 0.2rem 0 0 1.2rem;
+  font-size: 0.8rem;
+  word-break: break-word;
+}
+
+.opSimple .opSummary {
+  margin-left: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.workflowSimple {
+  padding: 0.2rem 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.execStatus.success { color: #1cc98a; }
+.execStatus.error { color: #d94778; }
+.execStatus.waiting { color: var(--muted); }
+
+.workflowSimple a {
+  color: var(--violet);
 }
