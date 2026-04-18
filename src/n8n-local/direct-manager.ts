@@ -13,7 +13,7 @@ import {
 } from './state.js';
 import { getActiveTunnelState } from './n8n-tunnel.js';
 
-const DEFAULT_HEALTH_TIMEOUT_MS = 180_000;
+const DEFAULT_HEALTH_TIMEOUT_MS = 300_000;
 const DEFAULT_STARTUP_TIMEOUT_MS = 600_000;
 const DEFAULT_EDITOR_TIMEOUT_MS = 90_000;
 const N8N_PACKAGE_SPEC = 'n8n@latest';
