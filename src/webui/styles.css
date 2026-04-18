@@ -207,9 +207,9 @@ button, input, select, textarea { font: inherit; }
   overflow: hidden;
 }
 
-/* Home sidebar: brandCard (auto) → sessionPanel (auto) → historyPanel (fills remaining) */
+/* Home sidebar: brandCard (auto) → historyPanel (fills remaining) */
 .sidebarHome {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .panel {
@@ -233,8 +233,17 @@ button, input, select, textarea { font: inherit; }
 .brandCard {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 1rem;
+  gap: 0 1rem;
   align-items: start;
+}
+
+.brandCardTopRight {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .brandCopy {
@@ -251,13 +260,9 @@ button, input, select, textarea { font: inherit; }
 
 
 .themeControl {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  max-width: calc(100% - 8.5rem);
 }
 
 .themeButton {
@@ -608,6 +613,24 @@ label span,
   margin: 0 -1.15rem -1.15rem;
   padding: 0.85rem 1.15rem 1.15rem;
   background: var(--panel);
+}
+
+.chatPanelFooter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.15rem;
+  border-top: 1px solid var(--panel-border);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.chatPanelFooter strong {
+  font-weight: 600;
+}
+
+.footerSep {
+  color: var(--muted);
 }
 
 .setupStage {
@@ -1308,6 +1331,7 @@ button {
 
   .brandCard {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
   }
 
   .brandCopy {
@@ -1315,10 +1339,14 @@ button {
     padding-top: 0;
   }
 
-  .themeControl {
+  .brandCardTopRight {
     position: static;
     margin-top: 0.9rem;
-    max-width: none;
+  }
+
+  .themeControl {
+    position: static;
+    margin-top: 0;
   }
 
   .chatHero,
