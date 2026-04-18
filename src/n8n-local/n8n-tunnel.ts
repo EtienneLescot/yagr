@@ -17,9 +17,85 @@ export interface N8nTunnelState {
   startedAt: string;
 }
 
+export interface TunnelConfig {
+  mode: 'quick' | 'custom-domain';
+  domain?: string;
+  tunnelName?: string;
+}
+
 const TUNNEL_TIMEOUT_MS = 30_000;
 const CLOUDFLARE_URL_PATTERN = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
 const STATE_FILENAME = 'n8n-tunnel-state.json';
+
+export interface TunnelConfig {
+  mode: 'quick' | 'custom-domain';
+  domain?: string;
+  tunnelName?: string;
+  hostname?: string;
+}
+
+export function getTunnelConfig(serviceName?: string): TunnelConfig {
+  const domain = process.env['TUNNEL_DOMAIN']?.trim();
+  if (!domain) {
+    return { mode: 'quick' };
+  }
+  const baseSubdomain = `tunnel.${domain}`;
+  const hostname = serviceName ? `${serviceName}.${baseSubdomain}` : baseSubdomain;
+  const tunnelNameBase = `yagr-${domain.replace(/[^a-z0-9]/g, '-')}`;
+  const tunnelName = serviceName ? `${tunnelNameBase}-${serviceName}` : tunnelNameBase;
+  return {
+    mode: 'custom-domain',
+    domain: baseSubdomain,
+    hostname,
+    tunnelName,
+  };
+}
+
+function getTunnelCredentialsPath(tunnelName: string): string {
+  ensureYagrHomeDir();
+  return path.join(getYagrPaths().homeDir, 'tunnels', `${tunnelName}.json`);
+}
+
+function findCloudflaredCredentials(tunnelName: string): string | null {
+  const cloudflaredDir = path.join(os.homedir(), '.cloudflared');
+  if (!fs.existsSync(cloudflaredDir)) return null;
+  const files = fs.readdirSync(cloudflaredDir);
+  let newest: { path: string; mtime: number } | null = null;
+  for (const file of files) {
+    if (file.endsWith('.json') && file !== 'cert.pem') {
+      const filePath = path.join(cloudflaredDir, file);
+      const stat = fs.statSync(filePath);
+      if (!newest || stat.mtimeMs > newest.mtime) {
+        newest = { path: filePath, mtime: stat.mtimeMs };
+      }
+    }
+  }
+  return newest?.path ?? null;
+}
+
+async function ensurePersistentTunnel(bin: string, tunnelName: string, domain: string): Promise<string> {
+  const credsPath = getTunnelCredentialsPath(tunnelName);
+  if (fs.existsSync(credsPath)) {
+    return credsPath;
+  }
+  const tunnelDir = path.dirname(credsPath);
+  fs.mkdirSync(tunnelDir, { recursive: true, mode: 0o700 });
+
+  try {
+    await execFileAsync(bin, ['tunnel', 'create', tunnelName], {
+      cwd: tunnelDir,
+    });
+  } catch {
+    // Tunnel might already exist, find its credentials
+  }
+
+  const sourceCreds = findCloudflaredCredentials(tunnelName);
+  if (!sourceCreds) {
+    throw new Error(`Failed to find credentials for tunnel ${tunnelName}`);
+  }
+  fs.copyFileSync(sourceCreds, credsPath);
+  return credsPath;
+}
 
 // ---------------------------------------------------------------------------
 // cloudflared binary resolution and installation
@@ -248,34 +324,53 @@ export async function startN8nTunnel(targetUrl: string, cloudflaredBin?: string)
     );
   }
 
-  return new Promise<N8nTunnelState>((resolve, reject) => {
-    const logFile = path.join(os.tmpdir(), `cloudflared-${Date.now()}.log`);
+  const tunnelConfig = getTunnelConfig('n8n');
+  const logFile = path.join(os.tmpdir(), `cloudflared-${Date.now()}.log`);
+  let cloudflaredArgs: string[];
+  let publicUrl: string;
 
-    const child = spawn(
-      bin,
-      ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', logFile],
-      {
-        detached: true,
-        stdio: 'ignore',
-      },
-    );
+  if (tunnelConfig.mode === 'custom-domain' && tunnelConfig.hostname && tunnelConfig.tunnelName) {
+    const credsPath = await ensurePersistentTunnel(bin, tunnelConfig.tunnelName, tunnelConfig.hostname);
+    publicUrl = `https://${tunnelConfig.hostname}`;
+    cloudflaredArgs = ['tunnel', '--hostname', tunnelConfig.hostname, '--url', targetUrl, '--no-autoupdate', '--logfile', logFile, '--credential-file', credsPath];
+  } else {
+    cloudflaredArgs = ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', logFile];
+    publicUrl = ''; // Will be extracted from log
+  }
+
+  return new Promise<N8nTunnelState>((resolve, reject) => {
+    const child = spawn(bin, cloudflaredArgs, {
+      detached: true,
+      stdio: 'ignore',
+    });
 
     if (!child.pid) {
       reject(new Error('cloudflared failed to start (no PID assigned).'));
       return;
     }
 
-    // Unref immediately — the child is fully detached and survives the parent.
     child.unref();
 
     const pid = child.pid;
+
+    if (tunnelConfig.mode === 'custom-domain') {
+      const state: N8nTunnelState = {
+        publicUrl: `https://${tunnelConfig.domain}`,
+        targetUrl,
+        pid,
+        startedAt: new Date().toISOString(),
+      };
+      writeTunnelState(state);
+      resolve(state);
+      return;
+    }
+
     let settled = false;
 
     const cleanup = () => {
       try { fs.unlinkSync(logFile); } catch { /* ignore */ }
     };
 
-    // Poll the log file for the public URL (cloudflared writes it to the log).
     const pollInterval = setInterval(() => {
       if (settled) {
         clearInterval(pollInterval);
@@ -414,7 +509,7 @@ function getNamedActiveTunnelState(statePath: string): ProxyTunnelState | null {
   return state;
 }
 
-async function startNamedTunnel(targetUrl: string, statePath: string, cloudflaredBin?: string): Promise<string> {
+async function startNamedTunnel(targetUrl: string, statePath: string, tunnelNameSuffix: string, cloudflaredBin?: string): Promise<string> {
   const existing = readNamedTunnelState(statePath);
   if (existing && existing.targetUrl === targetUrl && isPidAlive(existing.pid)) {
     return existing.tunnelUrl;
@@ -432,10 +527,19 @@ async function startNamedTunnel(targetUrl: string, statePath: string, cloudflare
     );
   }
 
-  return new Promise<string>((resolve, reject) => {
-    const logFile = path.join(os.tmpdir(), `cloudflared-${path.basename(statePath, '.json')}-${Date.now()}.log`);
+  const tunnelConfig = getTunnelConfig(tunnelNameSuffix);
+  const logFile = path.join(os.tmpdir(), `cloudflared-${path.basename(statePath, '.json')}-${Date.now()}.log`);
+  let cloudflaredArgs: string[];
 
-    const child = spawn(bin, ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', logFile], {
+  if (tunnelConfig.mode === 'custom-domain' && tunnelConfig.hostname && tunnelConfig.tunnelName) {
+    const credsPath = await ensurePersistentTunnel(bin, tunnelConfig.tunnelName, tunnelConfig.hostname);
+    cloudflaredArgs = ['tunnel', '--hostname', tunnelConfig.hostname, '--url', targetUrl, '--no-autoupdate', '--logfile', logFile, '--credential-file', credsPath];
+  } else {
+    cloudflaredArgs = ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', logFile];
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(bin, cloudflaredArgs, {
       detached: true,
       stdio: 'ignore',
     });
@@ -448,11 +552,21 @@ async function startNamedTunnel(targetUrl: string, statePath: string, cloudflare
     child.unref();
     const pid = child.pid;
 
+    if (tunnelConfig.mode === 'custom-domain') {
+      const tunnelUrl = `https://${tunnelConfig.hostname}`;
+      writeNamedTunnelState(statePath, { pid, tunnelUrl, targetUrl, startedAt: new Date().toISOString() });
+      resolve(tunnelUrl);
+      return;
+    }
+
     let settled = false;
     const cleanup = () => { try { fs.unlinkSync(logFile); } catch { /* ignore */ } };
 
     const pollInterval = setInterval(() => {
-      if (settled) { clearInterval(pollInterval); return; }
+      if (settled) {
+        clearInterval(pollInterval);
+        return;
+      }
       try {
         const text = fs.readFileSync(logFile, 'utf8');
         const match = text.match(CLOUDFLARE_URL_PATTERN);
@@ -524,7 +638,7 @@ function writeProxyTunnelState(state: ProxyTunnelState | null): void {
  * Stale/dead tunnels are cleaned up before spawning a new one.
  */
 export async function startProxyTunnel(targetUrl: string, cloudflaredBin?: string): Promise<string> {
-  return startNamedTunnel(targetUrl, getYagrPaths().proxyTunnelStatePath, cloudflaredBin);
+  return startNamedTunnel(targetUrl, getYagrPaths().proxyTunnelStatePath, 'proxy', cloudflaredBin);
 }
 
 export function getActiveWorkflowOpenTunnelState(): ProxyTunnelState | null {
@@ -532,7 +646,7 @@ export function getActiveWorkflowOpenTunnelState(): ProxyTunnelState | null {
 }
 
 export async function startWorkflowOpenTunnel(targetUrl: string, cloudflaredBin?: string): Promise<string> {
-  return startNamedTunnel(targetUrl, getYagrPaths().workflowOpenTunnelStatePath, cloudflaredBin);
+  return startNamedTunnel(targetUrl, getYagrPaths().workflowOpenTunnelStatePath, 'bridge', cloudflaredBin);
 }
 
 export async function stopWorkflowOpenTunnel(): Promise<void> {
