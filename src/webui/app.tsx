@@ -670,7 +670,6 @@ function HomePage({
                 </div>
               )}
               <div className="composerActions">
-                <span className="muted">{busyLabel ?? 'Runtime idle'}</span>
                 {runActive ? (
                   <button className="ghostButton dangerButton stopButton" type="button" onClick={onStopRun}>
                     <span className="stopButtonSymbol" aria-hidden="true">■</span>
@@ -683,15 +682,15 @@ function HomePage({
                   </div>
                 )}
               </div>
+              <div className="composerBottom">
+                <span className="muted">{snapshot?.yagr.provider ?? '—'}</span>
+                <strong>{snapshot?.yagr.model ?? 'Not configured'}</strong>
+                <span className="footerSep" aria-hidden="true">·</span>
+                <span className="muted">n8n project:</span>
+                <strong>{snapshot?.n8n.projectName ?? 'No project'}</strong>
+              </div>
             </form>
           )}
-          <div className="chatPanelFooter">
-            <span className="muted">{snapshot?.yagr.provider ?? '—'}</span>
-            <strong>{snapshot?.yagr.model ?? 'Not configured'}</strong>
-            <span className="footerSep" aria-hidden="true">·</span>
-            <span className="muted">n8n project:</span>
-            <strong>{snapshot?.n8n.projectName ?? 'No project'}</strong>
-          </div>
         </section>
       </main>
     </div>
