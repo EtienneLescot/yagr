@@ -596,41 +596,17 @@ export function getGatewayRestartDelayMs(failureCount: number): number {
   return Math.min(300_000, 60_000 * (2 ** cappedFailures));
 }
 
-const TUNNEL_RESTART_COOLDOWN_MS = 30_000;
-let lastN8nTunnelRestartAttempt = 0;
-let lastWorkflowOpenTunnelRestartAttempt = 0;
-
 async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
   await ensureManagedN8nAtLaunch();
   await refreshN8nWorkspaceInstructionsAtLaunch();
   await ensureRelayAtLaunch();
   await ensureTunnelAtLaunch();
 
-  let consecutiveFailures = 0;
-
-  const tunnelHealthCheck = async () => {
-    while (true) {
-      const baseInterval = 300_000;
-      const delay = getGatewayRestartDelayMs(consecutiveFailures);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-
-      try {
-        await ensureTunnelAtLaunch();
-        consecutiveFailures = 0;
-      } catch {
-        consecutiveFailures++;
-      }
-    }
-  };
-
-  await Promise.all([
-    runGatewaySupervisor({
-      provider: args.provider,
-      model: args.model,
-      maxSteps: args.maxSteps,
-    }, configService),
-    tunnelHealthCheck(),
-  ]);
+  await runGatewaySupervisor({
+    provider: args.provider,
+    model: args.model,
+    maxSteps: args.maxSteps,
+  }, configService);
 }
 
 async function runGatewaySupervisorProcess(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
@@ -843,24 +819,28 @@ async function ensureRelayAtLaunch(): Promise<void> {
   }
 }
 
-async function checkTunnelHealthWithRetry(
-  tunnelUrl: string,
-  options: { retries?: number; retryDelayMs?: number; timeoutMs?: number } = {},
-): Promise<boolean> {
-  const { retries = 1, retryDelayMs = 3000, timeoutMs = 5000 } = options;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch(`${tunnelUrl}/health`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (response.ok) return true;
-    } catch { /* fall through to retry */ }
-    if (attempt < retries) {
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-    }
+async function checkTunnelHealth(tunnelUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${tunnelUrl}/health`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
+  } catch {
+    return false;
   }
-  return false;
+}
+
+async function checkLocalServiceHealth(serviceUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(serviceUrl, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function ensureTunnelAtLaunch(): Promise<void> {
@@ -872,6 +852,10 @@ async function ensureTunnelAtLaunch(): Promise<void> {
   if (!active) {
     try {
       const targetUrl = resolveN8nTunnelTargetUrl();
+      if (!(await checkLocalServiceHealth(targetUrl))) {
+        process.stderr.write(`Warning: n8n local service is not responding at ${targetUrl}. Skipping tunnel start.\n`);
+        return;
+      }
       const bin = await installCloudflaredIfNeeded();
       const state = await startN8nTunnel(targetUrl, bin);
       configService.saveN8nTunnelConfig({ ...tunnelConfig, publicUrl: state.publicUrl, targetUrl });
@@ -885,18 +869,14 @@ async function ensureTunnelAtLaunch(): Promise<void> {
       process.stderr.write(`Warning: n8n tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
     }
   } else {
-    if (await checkTunnelHealthWithRetry(active.publicUrl)) {
-      // Tunnel is healthy
-    } else {
-      const now = Date.now();
-      if (now - lastN8nTunnelRestartAttempt < TUNNEL_RESTART_COOLDOWN_MS) {
-        process.stdout.write(`N8n tunnel not responding but restart skipped (cooldown active).\n`);
+    if (!(await checkTunnelHealth(active.publicUrl))) {
+      const targetUrl = resolveN8nTunnelTargetUrl();
+      if (!(await checkLocalServiceHealth(targetUrl))) {
+        process.stderr.write(`Warning: n8n local service is not responding at ${targetUrl}. Skipping tunnel restart.\n`);
       } else {
-        lastN8nTunnelRestartAttempt = now;
         process.stdout.write(`N8n tunnel not responding, restarting...\n`);
         const { stopN8nTunnel } = await import('./n8n-local/n8n-tunnel.js');
         await stopN8nTunnel();
-        const targetUrl = resolveN8nTunnelTargetUrl();
         const bin = await installCloudflaredIfNeeded();
         const state = await startN8nTunnel(targetUrl, bin);
         configService.saveN8nTunnelConfig({ ...tunnelConfig, publicUrl: state.publicUrl, targetUrl });
@@ -909,30 +889,31 @@ async function ensureTunnelAtLaunch(): Promise<void> {
   }
 
   const workflowOpenState = getActiveWorkflowOpenTunnelState();
+  const bridgeUrl = getLocalWorkflowOpenBridgeBaseUrl();
   if (!workflowOpenState) {
     try {
       await ensureLocalWorkflowOpenBridgeRunning();
+      if (!(await checkLocalServiceHealth(bridgeUrl))) {
+        process.stderr.write(`Warning: local workflow open bridge is not responding at ${bridgeUrl}. Skipping tunnel start.\n`);
+        return;
+      }
       const bin = await installCloudflaredIfNeeded();
-      const publicUrl = await startWorkflowOpenTunnel(getLocalWorkflowOpenBridgeBaseUrl(), bin);
+      const publicUrl = await startWorkflowOpenTunnel(bridgeUrl, bin);
       process.stdout.write(`Workflow open bridge tunnel started: ${publicUrl}\n`);
     } catch (error) {
       process.stderr.write(`Warning: workflow open bridge tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
     }
   } else {
-    if (await checkTunnelHealthWithRetry(workflowOpenState.tunnelUrl)) {
-      // Tunnel is healthy
-    } else {
-      const now = Date.now();
-      if (now - lastWorkflowOpenTunnelRestartAttempt < TUNNEL_RESTART_COOLDOWN_MS) {
-        process.stdout.write(`Workflow open tunnel not responding but restart skipped (cooldown active).\n`);
+    if (!(await checkTunnelHealth(workflowOpenState.tunnelUrl))) {
+      await ensureLocalWorkflowOpenBridgeRunning();
+      if (!(await checkLocalServiceHealth(bridgeUrl))) {
+        process.stderr.write(`Warning: local workflow open bridge is not responding at ${bridgeUrl}. Skipping tunnel restart.\n`);
       } else {
-        lastWorkflowOpenTunnelRestartAttempt = now;
         process.stdout.write(`Workflow open tunnel not responding, restarting...\n`);
         const { stopWorkflowOpenTunnel } = await import('./n8n-local/n8n-tunnel.js');
         await stopWorkflowOpenTunnel();
-        await ensureLocalWorkflowOpenBridgeRunning();
         const bin = await installCloudflaredIfNeeded();
-        const publicUrl = await startWorkflowOpenTunnel(getLocalWorkflowOpenBridgeBaseUrl(), bin);
+        const publicUrl = await startWorkflowOpenTunnel(bridgeUrl, bin);
         process.stdout.write(`Workflow open bridge tunnel restarted: ${publicUrl}\n`);
       }
     }
