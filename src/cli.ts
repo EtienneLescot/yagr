@@ -839,6 +839,26 @@ async function ensureRelayAtLaunch(): Promise<void> {
   }
 }
 
+async function checkTunnelHealthWithRetry(
+  tunnelUrl: string,
+  options: { retries?: number; retryDelayMs?: number; timeoutMs?: number } = {},
+): Promise<boolean> {
+  const { retries = 1, retryDelayMs = 3000, timeoutMs = 5000 } = options;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(`${tunnelUrl}/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (response.ok) return true;
+    } catch { /* fall through to retry */ }
+    if (attempt < retries) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+  return false;
+}
+
 async function ensureTunnelAtLaunch(): Promise<void> {
   const configService = new YagrConfigService();
   const tunnelConfig = configService.getN8nTunnelConfig();
@@ -861,12 +881,9 @@ async function ensureTunnelAtLaunch(): Promise<void> {
       process.stderr.write(`Warning: n8n tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
     }
   } else {
-    try {
-      const response = await fetch(active.publicUrl, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
-      if (!response.ok) {
-        throw new Error(`Tunnel responded with ${response.status}`);
-      }
-    } catch {
+    if (await checkTunnelHealthWithRetry(active.publicUrl)) {
+      // Tunnel is healthy
+    } else {
       process.stdout.write(`N8n tunnel not responding, restarting...\n`);
       const { stopN8nTunnel } = await import('./n8n-local/n8n-tunnel.js');
       await stopN8nTunnel();
@@ -892,12 +909,9 @@ async function ensureTunnelAtLaunch(): Promise<void> {
       process.stderr.write(`Warning: workflow open bridge tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
     }
   } else {
-    try {
-      const response = await fetch(`${workflowOpenState.tunnelUrl}/open/n8n-workflow`, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
-      if (!response.ok) {
-        throw new Error(`Workflow tunnel responded with ${response.status}`);
-      }
-    } catch {
+    if (await checkTunnelHealthWithRetry(workflowOpenState.tunnelUrl)) {
+      // Tunnel is healthy
+    } else {
       process.stdout.write(`Workflow open tunnel not responding, restarting...\n`);
       const { stopWorkflowOpenTunnel } = await import('./n8n-local/n8n-tunnel.js');
       await stopWorkflowOpenTunnel();

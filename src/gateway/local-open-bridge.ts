@@ -150,6 +150,12 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   const method = request.method ?? 'GET';
   const url = new URL(request.url ?? '/', `http://${DEFAULT_LOCAL_BRIDGE_HOST}:${activePort}`);
 
+  if (method === 'GET' && url.pathname === '/health') {
+    response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+    response.end('OK');
+    return;
+  }
+
   if (method !== 'GET' || !(url.pathname === '/open/n8n-workflow' || url.pathname.startsWith('/open/n8n-workflow/'))) {
     response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
     response.end('Not found');
