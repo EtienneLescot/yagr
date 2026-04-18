@@ -606,6 +606,10 @@ function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Elemen
     return null;
   }
 
+  if (!entry.category || entry.category === 'tool') {
+    return null;
+  }
+
   return (
     <div className="opSimple">
       <span className="opIcon" aria-hidden="true">{icon}</span>
