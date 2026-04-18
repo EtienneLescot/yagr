@@ -834,7 +834,6 @@ async function ensureTunnelAtLaunch(): Promise<void> {
       const state = await startN8nTunnel(targetUrl, bin);
       configService.saveN8nTunnelConfig({ ...tunnelConfig, publicUrl: state.publicUrl, targetUrl });
 
-      // Sync the tunnel URL into n8nac-config.json so webhook URLs are correct.
       const n8nConfigService = new YagrN8nConfigService();
       n8nConfigService.syncN8nacHostUrl(state.publicUrl);
 
@@ -843,9 +842,29 @@ async function ensureTunnelAtLaunch(): Promise<void> {
     } catch (error) {
       process.stderr.write(`Warning: n8n tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
     }
+  } else {
+    try {
+      const response = await fetch(active.publicUrl, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+      if (!response.ok) {
+        throw new Error(`Tunnel responded with ${response.status}`);
+      }
+    } catch {
+      process.stdout.write(`N8n tunnel not responding, restarting...\n`);
+      const { stopN8nTunnel } = await import('./n8n-local/n8n-tunnel.js');
+      await stopN8nTunnel();
+      const targetUrl = resolveN8nTunnelTargetUrl();
+      const bin = await installCloudflaredIfNeeded();
+      const state = await startN8nTunnel(targetUrl, bin);
+      configService.saveN8nTunnelConfig({ ...tunnelConfig, publicUrl: state.publicUrl, targetUrl });
+      const n8nConfigService = new YagrN8nConfigService();
+      n8nConfigService.syncN8nacHostUrl(state.publicUrl);
+      process.stdout.write(`Cloudflare Tunnel restarted: ${state.publicUrl}\n`);
+      await restartManagedN8nForTunnel(state.publicUrl);
+    }
   }
 
-  if (!getActiveWorkflowOpenTunnelState()) {
+  const workflowOpenState = getActiveWorkflowOpenTunnelState();
+  if (!workflowOpenState) {
     try {
       await ensureLocalWorkflowOpenBridgeRunning();
       const bin = await installCloudflaredIfNeeded();
@@ -853,6 +872,21 @@ async function ensureTunnelAtLaunch(): Promise<void> {
       process.stdout.write(`Workflow open bridge tunnel started: ${publicUrl}\n`);
     } catch (error) {
       process.stderr.write(`Warning: workflow open bridge tunnel failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+  } else {
+    try {
+      const response = await fetch(`${workflowOpenState.tunnelUrl}/open/n8n-workflow`, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+      if (!response.ok) {
+        throw new Error(`Workflow tunnel responded with ${response.status}`);
+      }
+    } catch {
+      process.stdout.write(`Workflow open tunnel not responding, restarting...\n`);
+      const { stopWorkflowOpenTunnel } = await import('./n8n-local/n8n-tunnel.js');
+      await stopWorkflowOpenTunnel();
+      await ensureLocalWorkflowOpenBridgeRunning();
+      const bin = await installCloudflaredIfNeeded();
+      const publicUrl = await startWorkflowOpenTunnel(getLocalWorkflowOpenBridgeBaseUrl(), bin);
+      process.stdout.write(`Workflow open bridge tunnel restarted: ${publicUrl}\n`);
     }
   }
 }
@@ -1445,10 +1479,22 @@ async function main(): Promise<void> {
     }
 
     process.kill(running.pid, 'SIGTERM');
-    // Give the process a moment to clean up, then ensure PID file is gone
     await new Promise<void>((resolve) => setTimeout(resolve, 500));
     clearGatewayPid();
     process.stdout.write(`Gateway stopped (PID ${running.pid}).\n`);
+    return;
+  }
+
+  if (args.command === 'restart') {
+    const { isGatewayRunning, clearGatewayPid } = await import('./config/gateway-daemon.js');
+    const running = isGatewayRunning();
+    if (running.running && running.pid) {
+      process.stdout.write(`Stopping gateway (PID ${running.pid})...\n`);
+      process.kill(running.pid, 'SIGTERM');
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+      clearGatewayPid();
+    }
+    await runGatewayOrFallback(args, configService);
     return;
   }
 
