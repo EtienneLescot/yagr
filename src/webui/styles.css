@@ -1450,6 +1450,39 @@ button {
   color: var(--workflow-title-ink);
 }
 
+.executionResult {
+  padding: 0.5rem 0.875rem;
+  border-top: 1px solid var(--workflow-card-border);
+  font-size: 0.8rem;
+}
+
+.executionResultHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.executionBadge {
+  font-weight: 600;
+}
+
+.executionBadge.execSuccess { color: #1cc98a; }
+.executionBadge.execError { color: #d94778; }
+.executionBadge.execWaiting { color: var(--muted); }
+
+.executionSummary {
+  color: var(--muted);
+}
+
+.executionData {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem;
+  background: rgba(0,0,0,0.05);
+  border-radius: 0.3rem;
+  font-size: 0.75rem;
+  overflow-x: auto;
+}
+
 /* ── Simplified message rows ───────────────────────────────────── */
 
 .msgSimple {
@@ -1494,22 +1527,23 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
   margin-right: 0.5rem;
   vertical-align: middle;
   flex-shrink: 0;
 }
 
-.msgIconUser {
-  background: var(--blue-deep);
-  color: var(--workflow-badge-ink);
+.msgIconAssistant .workGlyphSvg {
+  width: 16px;
+  height: 16px;
 }
 
-.msgIconAssistant {
-  background: var(--violet);
-  color: var(--notice-text);
+.msgIconAssistant .workGlyphPixel {
+  fill: var(--violet);
+}
+
+.msgIconAssistant .workGlyphSvg.animated .workGlyphPixel {
+  animation: pixelBlink 2.4s steps(1, end) infinite;
+  animation-fill-mode: backwards;
 }
 
 /* ── Native collapsible (details/summary) ─────────────────────── */

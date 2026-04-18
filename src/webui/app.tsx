@@ -459,17 +459,45 @@ function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
   const resolvedUrl = embed.openUrl ?? embed.url;
 
   const exec = embed.executionResult;
+  const execStatusClass = exec
+    ? exec.status === 'success' ? 'execSuccess' : exec.status === 'error' ? 'execError' : 'execWaiting'
+    : '';
 
   return (
-    <div className="workflowSimple">
-      Workflow: {embed.title ?? `Workflow ${embed.workflowId}`}
+    <div className="workflowCard">
+      <div className="workflowHeader">
+        <div className="workflowHeaderLeft">
+          <span className="workflowBadge">Workflow</span>
+          <span className="workflowTitle">{embed.title ?? `Workflow ${embed.workflowId}`}</span>
+        </div>
+        <a
+          className="primaryButton"
+          href={resolvedUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open in n8n
+        </a>
+      </div>
       {exec ? (
-        <span className={`execStatus exec${exec.status ?? ''}`}>
-          {' '}{exec.status === 'success' ? '✓' : exec.status === 'error' ? '✗' : '⧗'}{exec.summary ? ` ${exec.summary}` : ''}
-        </span>
+        <div className={`executionResult ${execStatusClass}`}>
+          <div className="executionResultHeader">
+            <span className={`executionBadge ${execStatusClass}`}>
+              {exec.status === 'success' ? '✓ Success' : exec.status === 'error' ? '✗ Error' : '⧗ Waiting'}
+              {exec.executionId ? ` · #${exec.executionId}` : ''}
+            </span>
+            {exec.summary ? <span className="executionSummary">{exec.summary}</span> : null}
+          </div>
+          {exec.data ? (
+            <pre className="executionData">{exec.data}</pre>
+          ) : null}
+        </div>
       ) : null}
-      {' '}<a href={resolvedUrl} target="_blank" rel="noopener noreferrer">Open in n8n</a>
-      {embed.diagram ? <WorkflowGraph diagram={embed.diagram} /> : null}
+      {embed.diagram ? (
+        <div className="workflowGraphWrap">
+          <WorkflowGraph diagram={embed.diagram} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -522,12 +550,6 @@ function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Elemen
 function UserRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'user-message' }> }): React.JSX.Element {
   return (
     <div className="msgSimple msgUser">
-      <span className="msgIcon msgIconUser" aria-hidden="true">
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-          <circle cx="8" cy="5" r="3.5"/>
-          <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
-        </svg>
-      </span>
       {entry.text}
     </div>
   );
@@ -548,17 +570,6 @@ function AssistantHeaderRow({ entry, now }: { entry: Extract<ThreadEntry, { kind
 
   return (
     <div className="msgSimple msgStreaming">
-      <span className="workGlyph" aria-hidden="true">
-        <svg className="workGlyphSvg" viewBox="0 0 5 5" xmlns="http://www.w3.org/2000/svg">
-          <rect className="workGlyphPixel" x="0" y="0" width="1" height="1" style={{ animationDelay: '0.8s' }} />
-          <rect className="workGlyphPixel" x="4" y="0" width="1" height="1" style={{ animationDelay: '0.8s' }} />
-          <rect className="workGlyphPixel" x="1" y="1" width="1" height="1" style={{ animationDelay: '0.6s' }} />
-          <rect className="workGlyphPixel" x="3" y="1" width="1" height="1" style={{ animationDelay: '0.6s' }} />
-          <rect className="workGlyphPixel" x="2" y="2" width="1" height="1" style={{ animationDelay: '0.4s' }} />
-          <rect className="workGlyphPixel" x="2" y="3" width="1" height="1" style={{ animationDelay: '0.2s' }} />
-          <rect className="workGlyphPixel" x="2" y="4" width="1" height="1" style={{ animationDelay: '0s' }} />
-        </svg>
-      </span>
       {entry.statusLabel ?? 'Yagr is working…'}{elapsed && ` · ${elapsed}`}
     </div>
   );
@@ -568,8 +579,14 @@ function AssistantBodyRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'assi
   return (
     <div className={`msgSimple msgAssistant${entry.streaming ? ' msgStreaming' : ''}`}>
       <span className="msgIcon msgIconAssistant" aria-hidden="true">
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-          <path d="M8 1a4 4 0 0 1 4 4v2H4V5a4 4 0 0 1 4-4zm-2 12v2h4v-2H6zm-2 0c-2.2 0-4 1.3-4 3v2h8v-2c0-1.7-1.8-3-4-3z"/>
+        <svg className={`workGlyphSvg${entry.streaming ? ' animated' : ''}`} viewBox="0 0 5 5" xmlns="http://www.w3.org/2000/svg">
+          <rect className="workGlyphPixel" x="0" y="0" width="1" height="1" style={entry.streaming ? { animationDelay: '0.8s' } : {}} />
+          <rect className="workGlyphPixel" x="4" y="0" width="1" height="1" style={entry.streaming ? { animationDelay: '0.8s' } : {}} />
+          <rect className="workGlyphPixel" x="1" y="1" width="1" height="1" style={entry.streaming ? { animationDelay: '0.6s' } : {}} />
+          <rect className="workGlyphPixel" x="3" y="1" width="1" height="1" style={entry.streaming ? { animationDelay: '0.6s' } : {}} />
+          <rect className="workGlyphPixel" x="2" y="2" width="1" height="1" style={entry.streaming ? { animationDelay: '0.4s' } : {}} />
+          <rect className="workGlyphPixel" x="2" y="3" width="1" height="1" style={entry.streaming ? { animationDelay: '0.2s' } : {}} />
+          <rect className="workGlyphPixel" x="2" y="4" width="1" height="1" style={entry.streaming ? { animationDelay: '0s' } : {}} />
         </svg>
       </span>
       {entry.text ? <MarkdownBody text={entry.text} /> : null}
