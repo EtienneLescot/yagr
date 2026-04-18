@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -b && node scripts/copy-manager-assets.mjs && node scripts/build-webui.mjs",
     "build:clean": "npm run clean && npm run build",
-    "build:clean:symlink": "npm run clean && npm run build && chmod +x dist/cli.js && npm link",
+    "build:clean:symlink": "npm run clean && npm run build && node --eval \"import('fs').then(({chmodSync})=>chmodSync('dist/cli.js',0o755))\" && npm link",
     "clean": "rm -rf dist tsconfig.tsbuildinfo node_modules/.cache",
     "clean:yagr:all": "node scripts/clean-yagr-local.mjs",
     "test": "npm run test:unit",
