@@ -53,25 +53,11 @@ export interface ChatWorkflowEmbed {
   };
 }
 
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  text: string;
-  streaming?: boolean;
-  phase?: string;
-  statusLabel?: string;
-  startedAt?: number;
-  finalState?: string;
-  progress?: ChatProgressEntry[];
-  embed?: ChatWorkflowEmbed;
-}
-
 export interface ChatProgressEntry {
   id: string;
   tone: 'info' | 'success' | 'error';
   title: string;
   detail?: string;
-  // Operation card fields (optional — absent on legacy progress entries)
   category?: string;
   status?: 'running' | 'done' | 'error';
   body?: string;
@@ -80,19 +66,21 @@ export interface ChatProgressEntry {
   endedAt?: number;
 }
 
+export type ThreadEntry =
+  | { kind: 'user-message'; id: string; text: string; timestamp?: number }
+  | { kind: 'system-notice'; id: string; text: string; timestamp?: number }
+  | { kind: 'assistant-header'; id: string; streaming: boolean; statusLabel?: string; phase?: string; startedAt?: number }
+  | { kind: 'operation'; id: string; entry: ChatProgressEntry }
+  | { kind: 'assistant-body'; id: string; text: string; streaming: boolean; finalState?: string; embed?: ChatWorkflowEmbed };
+
 interface WebUiState {
-  /** The session ID that owns the agent backend — messages stream here. */
   sessionId: string;
-  /** When browsing a different session, viewSessionId differs from sessionId. */
   viewSessionId: string;
   snapshot?: ConfigSnapshot;
   n8nProjects: Array<{ id: string; name: string }>;
   availableModels: string[];
-  /** Messages for the active/running session (always kept in sync with stream events). */
-  messages: ChatMessage[];
-  /** Messages for the browsed session (non-null only when viewing a different session). */
-  viewMessages: ChatMessage[] | null;
-  sessionHistory: SessionHistoryEntry[];
+  thread: ThreadEntry[];
+  viewThread: ThreadEntry[] | null;
   busyLabel?: string;
   error?: string;
   setBusyLabel: (value?: string) => void;
@@ -100,26 +88,16 @@ interface WebUiState {
   setSnapshot: (snapshot: ConfigSnapshot) => void;
   setProjects: (projects: Array<{ id: string; name: string }>) => void;
   setAvailableModels: (models: string[]) => void;
-  pushMessage: (message: ChatMessage) => void;
-  patchMessage: (id: string, patch: Partial<ChatMessage>) => void;
-  appendMessageText: (id: string, text: string) => void;
-  pushMessageProgress: (id: string, entry: ChatProgressEntry) => void;
-  /**
-   * Create or update an operation card inside a message's progress list.
-   * Matching is done by `entry.id` (= operationId).
-   */
-  upsertMessageOperation: (messageId: string, entry: ChatProgressEntry) => void;
-  replaceMessage: (id: string, text: string, role?: ChatMessage['role']) => void;
-  resetMessages: () => void;
-  setMessages: (messages: ChatMessage[]) => void;
+  pushEntry: (entry: ThreadEntry) => void;
+  patchEntry: (id: string, patch: Partial<ThreadEntry>) => void;
+  appendBodyText: (id: string, text: string) => void;
+  upsertOperation: (id: string, entry: ChatProgressEntry) => void;
+  setThread: (thread: ThreadEntry[]) => void;
+  resetThread: () => void;
   setSessionHistory: (sessions: SessionHistoryEntry[]) => void;
-  /** Switch the active session: updates localStorage and shows a loading placeholder. */
   switchSession: (sessionId: string) => void;
-  /** Browse a different session without changing the active (running) session. */
   browseSession: (sessionId: string) => void;
-  /** Set the messages for the browsed session. */
-  setViewMessages: (messages: ChatMessage[] | null) => void;
-  /** Return to the active session from a browsed session. */
+  setViewThread: (thread: ThreadEntry[] | null) => void;
   returnToActiveSession: () => void;
 }
 
@@ -133,13 +111,9 @@ export interface SessionHistoryEntry {
 const SESSION_KEY = 'yagr-web-session';
 const TAB_FLAG = 'yagr:tab-initialized';
 
-// Synchronous — runs before any React render.
-// New tab/browser open → fresh UUID (never inherit previous session context).
-// F5 page refresh → keep the current session from localStorage.
 const isNewTab = !window.sessionStorage.getItem(TAB_FLAG);
 window.sessionStorage.setItem(TAB_FLAG, '1');
 
-/** True when this is a fresh browser/tab open (not an F5 page refresh). */
 export const isNewTabOpen = isNewTab;
 
 const initialSessionId = isNewTab
@@ -160,14 +134,14 @@ export const useWebUiStore = create<WebUiState>((set) => ({
   n8nProjects: [],
   availableModels: [],
   sessionHistory: [],
-  messages: [
+  thread: [
     {
+      kind: 'system-notice',
       id: crypto.randomUUID(),
-      role: 'system',
       text: 'Yagr Web UI ready. Configure the runtime or start chatting.',
     },
   ],
-  viewMessages: null,
+  viewThread: null,
   setBusyLabel: (busyLabel) => set({ busyLabel }),
   setError: (error) => set({ error }),
   setSnapshot: (snapshot) => set({
@@ -177,71 +151,46 @@ export const useWebUiStore = create<WebUiState>((set) => ({
   }),
   setProjects: (n8nProjects) => set({ n8nProjects }),
   setAvailableModels: (availableModels) => set({ availableModels }),
-  pushMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
-  patchMessage: (id, patch) => set((state) => ({
-    messages: state.messages.map((message) => message.id === id ? { ...message, ...patch } : message),
+  pushEntry: (entry) => set((state) => ({ thread: [...state.thread, entry] })),
+  patchEntry: (id, patch) => set((state) => ({
+    thread: state.thread.map((entry) => entry.id === id ? { ...entry, ...patch } as ThreadEntry : entry),
   })),
-  appendMessageText: (id, text) => set((state) => ({
-    messages: state.messages.map((message) => message.id === id ? { ...message, text: `${message.text}${text}` } : message),
-  })),
-  pushMessageProgress: (id, entry) => set((state) => ({
-    messages: state.messages.map((message) => {
-      if (message.id !== id) {
-        return message;
-      }
-
-      const previousEntry = message.progress?.[message.progress.length - 1];
-      if (
-        previousEntry
-        && previousEntry.tone === entry.tone
-        && previousEntry.title === entry.title
-        && previousEntry.detail === entry.detail
-      ) {
-        return message;
-      }
-
-      const nextProgress = [...(message.progress ?? []), entry].slice(-3);
-      return {
-        ...message,
-        progress: nextProgress,
-      };
+  appendBodyText: (id, text) => set((state) => ({
+    thread: state.thread.map((entry) => {
+      if (entry.kind !== 'assistant-body' || entry.id !== id) return entry;
+      return { ...entry, text: `${entry.text}${text}` };
     }),
   })),
-  upsertMessageOperation: (messageId, entry) => set((state) => ({
-    messages: state.messages.map((message) => {
-      if (message.id !== messageId) return message;
-      const existing = message.progress ?? [];
-      const idx = existing.findIndex((e) => e.id === entry.id);
-      const next = idx >= 0
-        ? existing.map((e, i) => i === idx ? { ...e, ...entry } : e)
-        : [...existing, entry];
-      return { ...message, progress: next };
-    }),
-  })),
-  replaceMessage: (id, text, role) => set((state) => ({
-    messages: state.messages.map((message) => message.id === id ? { ...message, text, role: role ?? message.role } : message),
-  })),
-  resetMessages: () => set({
-    messages: [
+  upsertOperation: (id, entry) => set((state) => {
+    const existingIdx = state.thread.findIndex((e) => e.kind === 'operation' && e.id === id);
+    if (existingIdx >= 0) {
+      const next = [...state.thread];
+      next[existingIdx] = { kind: 'operation', id, entry: { ...state.thread[existingIdx].entry, ...entry } };
+      return { thread: next };
+    }
+    return { thread: [...state.thread, { kind: 'operation', id, entry }] };
+  }),
+  setThread: (thread) => set({ thread }),
+  resetThread: () => set({
+    thread: [
       {
+        kind: 'system-notice',
         id: crypto.randomUUID(),
-        role: 'system',
         text: 'Conversation reset.',
       },
     ],
   }),
-  setMessages: (messages) => set({ messages }),
   setSessionHistory: (sessionHistory) => set({ sessionHistory }),
   switchSession: (sessionId) => {
     window.localStorage.setItem(SESSION_KEY, sessionId);
     set({
       sessionId,
       viewSessionId: sessionId,
-      viewMessages: null,
-      messages: [
+      viewThread: null,
+      thread: [
         {
+          kind: 'system-notice',
           id: crypto.randomUUID(),
-          role: 'system',
           text: 'Loading session…',
         },
       ],
@@ -249,17 +198,17 @@ export const useWebUiStore = create<WebUiState>((set) => ({
   },
   browseSession: (viewSessionId) => set({
     viewSessionId,
-    viewMessages: [
+    viewThread: [
       {
+        kind: 'system-notice',
         id: crypto.randomUUID(),
-        role: 'system',
         text: 'Loading session…',
       },
     ],
   }),
-  setViewMessages: (viewMessages) => set({ viewMessages }),
+  setViewThread: (viewThread) => set({ viewThread }),
   returnToActiveSession: () => set((state) => ({
     viewSessionId: state.sessionId,
-    viewMessages: null,
+    viewThread: null,
   })),
 }));

@@ -2,7 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useWebUiStore, isNewTabOpen, type ChatMessage, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot, type SessionHistoryEntry } from './store.js';
+import { useWebUiStore, isNewTabOpen, type ThreadEntry, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot, type SessionHistoryEntry } from './store.js';
 import type { SerializedChatMessage } from '../session/session-types.js';
 import { parseWorkflowMap } from '../gateway/workflow-diagram.js';
 import yagrLogoUrl from '../../docs/static/img/yagr-logo.png';
@@ -637,132 +637,108 @@ const OPERATION_CATEGORY_ICON: Record<string, string> = {
   'thinking': '💭',
 };
 
-function OperationCard({ entry }: { entry: ChatProgressEntry }): React.JSX.Element {
-  // Only auto-expand running operations; completed ones start collapsed
-  const defaultExpanded = entry.status === 'running';
-  const [expanded, setExpanded] = React.useState(defaultExpanded);
+function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Element | null {
+  const isRunning = entry.status === 'running';
   const icon = OPERATION_CATEGORY_ICON[entry.category ?? 'tool'] ?? '🔧';
   const durationMs = entry.startedAt != null && entry.endedAt != null ? entry.endedAt - entry.startedAt : null;
-  const duration = durationMs != null ? (durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`) : null;
+  const duration = durationMs != null
+    ? (durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`)
+    : null;
+
+  if (!entry.title && !entry.body && !entry.summary) {
+    return null;
+  }
+
   return (
-    <div className={`operationCard ${entry.status ?? 'done'} ${entry.category ?? ''}`}>
-      <button
-        className="opHeader"
-        onClick={() => setExpanded((prev) => !prev)}
-        aria-expanded={expanded}
-        type="button"
-      >
-        <span className="opCategoryIcon" aria-hidden="true">{icon}</span>
-        <span className="opLabel">{entry.title}</span>
+    <details className={`opRow ${entry.status ?? 'done'} ${entry.category ?? ''}`} open={isRunning || undefined}>
+      <summary className="opRowHeader">
+        <span className="opIcon" aria-hidden="true">{icon}</span>
+        <span className="opLabel">{entry.title || 'Operation'}</span>
         <span className="opMeta">
-          {duration ? <span className="opDuration">{duration}</span> : null}
-          {entry.status === 'running'
+          {duration && <span className="opDuration">{duration}</span>}
+          {isRunning
             ? <span className="opSpinner" aria-hidden="true" />
             : entry.status === 'error'
               ? <span className="opStatusIcon error" aria-hidden="true">✕</span>
               : <span className="opStatusIcon done" aria-hidden="true">✓</span>}
         </span>
-        <span className="opToggle" aria-hidden="true">{expanded ? '▲' : '▼'}</span>
-      </button>
-      {expanded && entry.body ? (
-        <pre className="opBody">{entry.body}</pre>
-      ) : !expanded && entry.summary ? (
-        <div className="opSummary">{entry.summary}</div>
-      ) : null}
+      </summary>
+      {(entry.body || entry.summary) && (
+        <pre className="opBody">{entry.body ?? entry.summary}</pre>
+      )}
+    </details>
+  );
+}
+
+function UserRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'user-message' }> }): React.JSX.Element {
+  return (
+    <article className="message user">
+      <div className="messageTopline">
+        <div className="messageRole">You</div>
+      </div>
+      <div className="messageText">{entry.text}</div>
+    </article>
+  );
+}
+
+function SystemRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'system-notice' }> }): React.JSX.Element {
+  return (
+    <article className="message system">
+      <div className="messageText">
+        <MarkdownBody text={entry.text} />
+      </div>
+    </article>
+  );
+}
+
+function AssistantHeaderRow({ entry, now }: { entry: Extract<ThreadEntry, { kind: 'assistant-header' }>; now: number }): React.JSX.Element | null {
+  if (!entry.streaming) return null;
+
+  const elapsed = entry.startedAt ? formatElapsed(now - entry.startedAt) : undefined;
+
+  return (
+    <div className="assistantHeader streaming">
+      <div className="workGlyph" aria-hidden="true">
+        <svg className="workGlyphSvg" viewBox="0 0 27 27" shapeRendering="crispEdges">
+          {Y_PIXELS.map(([col, row, delayMs], i) => (
+            <rect
+              key={i}
+              className="workGlyphPixel"
+              x={col * 4}
+              y={row * 4}
+              width={3}
+              height={3}
+              style={{ animationDelay: `${delayMs}ms` }}
+            />
+          ))}
+        </svg>
+      </div>
+      <div className="workMeta">
+        <strong>{entry.statusLabel ?? 'Yagr is working…'}</strong>
+        {elapsed && <span className="muted">Running for {elapsed}</span>}
+      </div>
     </div>
   );
 }
 
-function MessageCard({ message, now }: { message: ChatMessage; now: number }): React.JSX.Element {
-  const elapsed = message.streaming && message.startedAt ? formatElapsed(now - message.startedAt) : undefined;
-  const operationEntries = (message.progress ?? []).filter((e) => e.category != null);
-  const legacyEntries = (message.progress ?? []).filter((e) => e.category == null);
-  const visibleOperations = operationEntries;
-  const visibleProgress = legacyEntries.slice(-3);
-  const previewLines = message.streaming ? buildStreamingPreview(message.text) : [];
-  const showOperations = visibleOperations.length > 0;
-  const showProgress = message.streaming || message.finalState === 'failed_terminal';
-  const showBody = !message.streaming || (previewLines.length === 0 && visibleOperations.length === 0 && visibleProgress.length === 0);
-
+function AssistantBodyRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'assistant-body' }> }): React.JSX.Element {
   return (
-    <article className={`message ${message.role}${message.streaming ? ' streaming' : ''}`}>
-      <div className="messageTopline">
-        <div className="messageRole">{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Yagr' : 'System'}</div>
-        {message.role === 'assistant' && (message.phase || message.statusLabel || elapsed) ? (
-          <div className="messageBadges">
-            {message.phase ? <span className="messageBadge phaseBadge">{phaseLabel(message.phase)}</span> : null}
-            {message.statusLabel ? <span className="messageBadge">{message.statusLabel}</span> : null}
-            {elapsed ? <span className="messageBadge quietBadge">{elapsed}</span> : null}
-          </div>
-        ) : null}
-      </div>
-
-      {message.role === 'assistant' && message.streaming ? (
-        <div className="workbench compactWorkbench">
-          <div className="workGlyph" aria-hidden="true">
-            {/* Pixel-art Y: 5-wide × 7-tall grid, builds bottom-to-top */}
-            <svg className="workGlyphSvg" viewBox="0 0 27 27" shapeRendering="crispEdges">
-              {Y_PIXELS.map(([col, row, delayMs], i) => (
-                <rect
-                  key={i}
-                  className="workGlyphPixel"
-                  x={col * 4}
-                  y={row * 4}
-                  width={3}
-                  height={3}
-                  style={{ animationDelay: `${delayMs}ms` }}
-                />
-              ))}
-            </svg>
-          </div>
-          <div className="workMeta">
-            <strong>{message.statusLabel ?? 'Yagr is working…'}</strong>
-            <span className="muted">{elapsed ? `Running for ${elapsed}` : 'Thinking, planning, and executing…'}</span>
-          </div>
+    <article className={`message assistant${entry.streaming ? ' streaming' : ''}`}>
+      {entry.text ? (
+        <div className={`messageText${!entry.text && entry.streaming ? ' placeholder' : ''}`}>
+          <MarkdownBody text={entry.text} />
         </div>
+      ) : entry.streaming ? (
+        <div className="messageText placeholder">The answer is being composed...</div>
       ) : null}
-
-      {showOperations ? (
-        <div className="operationList">
-          {visibleOperations.map((entry) => (
-            <OperationCard key={entry.id} entry={entry} />
-          ))}
-        </div>
-      ) : null}
-
-      {showProgress && visibleProgress.length > 0 ? (
-        <div className="progressTicker">
-          {visibleProgress.map((entry) => (
-            <div key={entry.id} className={`progressTickerEntry ${entry.tone}`}>
-              <span className="progressDot" aria-hidden="true" />
-              <span>{entry.detail ?? entry.title}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {message.streaming && previewLines.length > 0 ? (
-        <div className="streamPreview">
-          {previewLines.map((line, index) => <div key={`${message.id}:preview:${index}`}>{line}</div>)}
-        </div>
-      ) : null}
-
-      {showBody ? (
-        <div className={`messageText${!message.text && message.streaming ? ' placeholder' : ''}`}>
-          {message.text
-            ? <MarkdownBody text={message.text} />
-            : (message.streaming ? 'The answer is being composed...' : '')}
-        </div>
-      ) : null}
-
-      {message.embed ? <WorkflowBanner embed={message.embed} /> : null}
+      {entry.embed ? <WorkflowBanner embed={entry.embed} /> : null}
     </article>
   );
 }
 
 function HomePage({
   snapshot,
-  messages,
+  thread,
   now,
   busyLabel,
   runActive,
@@ -786,7 +762,7 @@ function HomePage({
   onCompactContext,
 }: {
   snapshot?: ConfigSnapshot;
-  messages: ChatMessage[];
+  thread: ThreadEntry[];
   now: number;
   busyLabel?: string;
   runActive: boolean;
@@ -827,7 +803,16 @@ function HomePage({
       <main className="chatStage">
         <section className="panel chatPanel chatPanelSingleScroll">
           <div className="chatLog" ref={chatLogRef}>
-            {messages.map((message) => <MessageCard key={message.id} message={message} now={now} />)}
+            {thread.map((entry) => {
+              switch (entry.kind) {
+                case 'user-message':   return <UserRow key={entry.id} entry={entry} />;
+                case 'system-notice':  return <SystemRow key={entry.id} entry={entry} />;
+                case 'assistant-header': return <AssistantHeaderRow key={entry.id} entry={entry} now={now} />;
+                case 'operation':      return <OperationRow key={entry.id} entry={entry.entry} />;
+                case 'assistant-body': return <AssistantBodyRow key={entry.id} entry={entry} />;
+                default: return null;
+              }
+            })}
           </div>
 
           {isBrowsing ? (
@@ -1105,20 +1090,29 @@ function SetupPage({
   );
 }
 
-function restoreSessionMessages(session: {
+function restoreSessionThread(session: {
   messages: Array<{ role: string; content: unknown }>;
+  displayThread?: ThreadEntry[];
   displayMessages?: SerializedChatMessage[];
-}): ChatMessage[] {
-  if (session.displayMessages && session.displayMessages.length > 0) {
-    return session.displayMessages.map((m) => ({
-      ...m,
-      id: crypto.randomUUID(),
-      streaming: false,
-      progress: (m.progress ?? []) as ChatProgressEntry[],
-    }));
+}): ThreadEntry[] {
+  if (session.displayThread) {
+    return session.displayThread;
   }
 
-  // Fallback: reconstruct from CoreMessages (plain text only).
+  if (session.displayMessages && session.displayMessages.length > 0) {
+    return session.displayMessages.flatMap((msg) => {
+      if (msg.role === 'user') return [{ kind: 'user-message' as const, id: msg.id ?? crypto.randomUUID(), text: msg.text }];
+      if (msg.role === 'system') return [{ kind: 'system-notice' as const, id: msg.id ?? crypto.randomUUID(), text: msg.text }];
+
+      const res: ThreadEntry[] = [];
+      for (const op of msg.progress ?? []) {
+        res.push({ kind: 'operation', id: op.id, entry: op });
+      }
+      res.push({ kind: 'assistant-body', id: `${msg.id}:body`, text: msg.text ?? '', streaming: false, finalState: msg.finalState, embed: msg.embed });
+      return res;
+    });
+  }
+
   const result = session.messages.flatMap((m) => {
     if (m.role !== 'user' && m.role !== 'assistant') {
       return [];
@@ -1138,12 +1132,15 @@ function restoreSessionMessages(session: {
       return [];
     }
 
-    return [{ id: crypto.randomUUID(), role: m.role as 'user' | 'assistant', text, progress: [] as ChatProgressEntry[] }];
+    if (m.role === 'user') {
+      return [{ kind: 'user-message', id: crypto.randomUUID(), text }];
+    }
+    return [{ kind: 'assistant-body', id: crypto.randomUUID(), text, streaming: false }];
   });
 
   return result.length > 0
     ? result
-    : [{ id: crypto.randomUUID(), role: 'system' as const, text: 'Session loaded. Continue the conversation.', progress: [] }];
+    : [{ kind: 'system-notice', id: crypto.randomUUID(), text: 'Session loaded. Continue the conversation.' }];
 }
 
 function App() {
@@ -1152,27 +1149,26 @@ function App() {
     snapshot,
     n8nProjects,
     availableModels,
-    messages,
+    thread,
     busyLabel,
     setBusyLabel,
     setError,
     setSnapshot,
     setProjects,
     setAvailableModels,
-    pushMessage,
-    patchMessage,
-    appendMessageText,
-    pushMessageProgress,
-    upsertMessageOperation,
-    resetMessages,
+    pushEntry,
+    patchEntry,
+    appendBodyText,
+    upsertOperation,
+    resetThread,
     sessionHistory,
     setSessionHistory,
-    setMessages,
+    setThread,
     switchSession,
     viewSessionId,
-    viewMessages,
+    viewThread,
     browseSession,
-    setViewMessages,
+    setViewThread,
     returnToActiveSession,
   } = useWebUiStore();
 
@@ -1200,9 +1196,9 @@ function App() {
   const [chatInput, setChatInput] = React.useState('');
   const [now, setNow] = React.useState(() => Date.now());
   const [contextFillPercent, setContextFillPercent] = React.useState<number | null>(null);
-  const runActive = React.useMemo(() => messages.some((message) => message.streaming), [messages]);
+  const runActive = React.useMemo(() => thread.some((entry) => entry.kind === 'assistant-header' && entry.streaming), [thread]);
   const isBrowsing = viewSessionId !== sessionId;
-  const displayMessages = viewMessages ?? messages;
+  const displayThread = viewThread ?? thread;
 
   React.useEffect(() => {
     applyThemeMode(themeMode);
@@ -1210,7 +1206,7 @@ function App() {
   }, [themeMode]);
 
   React.useEffect(() => {
-    if (!messages.some((message) => message.streaming)) {
+    if (!thread.some((entry) => entry.kind === 'assistant-header' && entry.streaming)) {
       return undefined;
     }
 
@@ -1219,7 +1215,7 @@ function App() {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [messages]);
+  }, [thread]);
 
   React.useEffect(() => {
     const chatLog = chatLogRef.current;
@@ -1244,7 +1240,7 @@ function App() {
     }
 
     chatLog.scrollTop = chatLog.scrollHeight;
-  }, [messages]);
+  }, [thread]);
 
   const hydrate = React.useCallback((nextSnapshot: ConfigSnapshot) => {
     setSnapshot(nextSnapshot);
@@ -1308,11 +1304,15 @@ function App() {
           try {
             const session = await request<{
               messages: Array<{ role: string; content: unknown }>;
+              displayThread?: ThreadEntry[];
               displayMessages?: SerializedChatMessage[];
             }>(`/api/sessions/${sessionId}`);
-            const restored = restoreSessionMessages(session);
-            if (restored.length > 0 && !(restored.length === 1 && restored[0].role === 'system')) {
-              setMessages(restored);
+            const restored = restoreSessionThread(session);
+            if (restored.length > 0) {
+              const isOnlySystemNotice = restored.length === 1 && restored[0].kind === 'system-notice';
+              if (!isOnlySystemNotice) {
+                setThread(restored);
+              }
             }
           } catch {
             // Session file missing or empty — keep the default welcome message.
@@ -1343,13 +1343,13 @@ function App() {
         // Server creates the session file immediately → it appears in the list right away.
         const { id } = await request<{ id: string }>('/api/sessions', { method: 'POST' });
         switchSession(id);
-        setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'New conversation. How can Yagr help?', progress: [] }]);
+        setThread([{ kind: 'system-notice', id: crypto.randomUUID(), text: 'New conversation. How can Yagr help?' }]);
         void refreshSessions();
       } catch (error) {
         notify(error instanceof Error ? error.message : String(error), 'error');
       }
     })();
-  }, [switchSession, setMessages, refreshSessions, notify]);
+  }, [switchSession, setThread, refreshSessions, notify]);
 
   const onSwitchSession = React.useCallback((targetId: string) => {
     // If the target is already the active session, just return to it
@@ -1367,11 +1367,12 @@ function App() {
         try {
           const session = await request<{
             messages: Array<{ role: string; content: unknown }>;
+            displayThread?: ThreadEntry[];
             displayMessages?: SerializedChatMessage[];
           }>(`/api/sessions/${targetId}`);
-          setViewMessages(restoreSessionMessages(session));
+          setViewThread(restoreSessionThread(session));
         } catch {
-          setViewMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Could not restore session.', progress: [] }]);
+          setViewThread([{ kind: 'system-notice', id: crypto.randomUUID(), text: 'Could not restore session.' }]);
         }
       })();
       return;
@@ -1384,16 +1385,17 @@ function App() {
       try {
         const session = await request<{
           messages: Array<{ role: string; content: unknown }>;
+          displayThread?: ThreadEntry[];
           displayMessages?: SerializedChatMessage[];
         }>(`/api/sessions/${targetId}`);
-        setMessages(restoreSessionMessages(session));
+        setThread(restoreSessionThread(session));
       } catch {
-        setMessages([{ id: crypto.randomUUID(), role: 'system', text: 'Could not restore session.', progress: [] }]);
+        setThread([{ kind: 'system-notice', id: crypto.randomUUID(), text: 'Could not restore session.' }]);
       } finally {
         void refreshSessions();
       }
     })();
-  }, [sessionId, switchSession, setMessages, refreshSessions, browseSession, setViewMessages, returnToActiveSession]);
+  }, [sessionId, switchSession, setThread, refreshSessions, browseSession, setViewThread, returnToActiveSession]);
 
   const onLoadProjects = async () => {
     try {
@@ -1517,7 +1519,7 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ sessionId }),
       });
-      resetMessages();
+      resetThread();
       setContextFillPercent(null);
       notify('Conversation reset.');
     } catch (error) {
@@ -1538,18 +1540,26 @@ function App() {
       return;
     }
 
-    const pendingId = crypto.randomUUID();
-    pushMessage({ id: crypto.randomUUID(), role: 'user', text: trimmed });
-    pushMessage({
-      id: pendingId,
-      role: 'assistant',
-      text: '',
+    const userMessageId = crypto.randomUUID();
+    const headerId = crypto.randomUUID();
+    const bodyId = crypto.randomUUID();
+
+    pushEntry({ kind: 'user-message', id: userMessageId, text: trimmed });
+    pushEntry({
+      kind: 'assistant-header',
+      id: headerId,
       streaming: true,
       phase: 'inspect',
       statusLabel: 'Starting run...',
       startedAt: Date.now(),
-      progress: [],
     });
+    pushEntry({
+      kind: 'assistant-body',
+      id: bodyId,
+      streaming: true,
+      text: '',
+    });
+
     setChatInput('');
     setBusyLabel('Yagr is working...');
     stickToBottomRef.current = true;
@@ -1563,14 +1573,14 @@ function App() {
         body: JSON.stringify({ sessionId, message: trimmed }),
       }, (streamEvent) => {
         if (streamEvent.type === 'start') {
-          patchMessage(pendingId, { statusLabel: streamEvent.message, phase: 'inspect' });
+          patchEntry(headerId, { phase: 'inspect', statusLabel: streamEvent.message });
           setBusyLabel(streamEvent.message);
           return;
         }
 
         if (streamEvent.type === 'phase') {
           if (streamEvent.status === 'started') {
-            patchMessage(pendingId, {
+            patchEntry(headerId, {
               phase: streamEvent.phase,
               statusLabel: streamEvent.message,
             });
@@ -1580,36 +1590,25 @@ function App() {
         }
 
         if (streamEvent.type === 'state') {
-          if (streamEvent.state === 'failed_terminal' || streamEvent.state === 'resumable') {
-            pushMessageProgress(pendingId, {
-              id: crypto.randomUUID(),
-              tone: streamEvent.state === 'failed_terminal' ? 'error' : 'info',
-              title: streamEvent.state === 'failed_terminal' ? 'Run failed' : 'Needs attention',
-              detail: streamEvent.message,
-            });
-          }
-          patchMessage(pendingId, { statusLabel: streamEvent.message });
+          patchEntry(headerId, { statusLabel: streamEvent.message });
           setBusyLabel(streamEvent.message);
           return;
         }
 
         if (streamEvent.type === 'progress') {
-          pushMessageProgress(pendingId, {
+          upsertOperation(crypto.randomUUID(), {
             id: crypto.randomUUID(),
             tone: streamEvent.tone,
             title: streamEvent.title,
             detail: streamEvent.detail,
           });
-          patchMessage(pendingId, {
-            phase: streamEvent.phase ?? undefined,
-            statusLabel: streamEvent.detail ?? streamEvent.title,
-          });
+          patchEntry(headerId, { statusLabel: streamEvent.detail ?? streamEvent.title });
           setBusyLabel(streamEvent.detail ?? streamEvent.title);
           return;
         }
 
         if (streamEvent.type === 'operation') {
-          upsertMessageOperation(pendingId, {
+          upsertOperation(streamEvent.operationId, {
             id: streamEvent.operationId,
             tone: streamEvent.status === 'error' ? 'error' : 'info',
             title: streamEvent.label,
@@ -1629,7 +1628,7 @@ function App() {
         }
 
         if (streamEvent.type === 'embed') {
-          patchMessage(pendingId, {
+          patchEntry(bodyId, {
             embed: {
               kind: streamEvent.kind,
               workflowId: streamEvent.workflowId,
@@ -1645,25 +1644,16 @@ function App() {
         }
 
         if (streamEvent.type === 'text-delta') {
-          appendMessageText(pendingId, streamEvent.delta);
+          appendBodyText(bodyId, streamEvent.delta);
           return;
         }
 
         if (streamEvent.type === 'final') {
-          const statusLabel = streamEvent.finalState === 'stopped'
-            ? 'Stopped'
-            : streamEvent.finalState === 'failed_terminal'
-              ? 'Run failed'
-              : streamEvent.finalState === 'completed'
-                ? 'Completed'
-                : 'Needs attention';
-
-          patchMessage(pendingId, {
+          patchEntry(headerId, { streaming: false });
+          patchEntry(bodyId, {
             text: streamEvent.response,
             streaming: false,
             finalState: streamEvent.finalState,
-            statusLabel,
-            phase: undefined,
           });
           setBusyLabel(undefined);
           if (streamEvent.requiredActions?.length) {
@@ -1672,59 +1662,43 @@ function App() {
           return;
         }
 
-        patchMessage(pendingId, {
-          role: 'system',
+        patchEntry(headerId, { streaming: false });
+        patchEntry(bodyId, {
           text: streamEvent.error,
           streaming: false,
           finalState: 'failed_terminal',
-          statusLabel: 'Run failed',
-          phase: undefined,
         });
         setBusyLabel(undefined);
         notify(streamEvent.error, 'error');
       });
     } catch (error) {
       if (isAbortError(error)) {
-        const currentMessage = useWebUiStore.getState().messages.find((message) => message.id === pendingId);
-        patchMessage(pendingId, {
-          text: currentMessage?.text.trim() ? currentMessage.text : 'Run stopped.',
+        patchEntry(headerId, { streaming: false });
+        patchEntry(bodyId, {
+          text: 'Run stopped.',
           streaming: false,
           finalState: 'stopped',
-          statusLabel: 'Stopped',
-          phase: undefined,
         });
       } else {
-        patchMessage(pendingId, {
-          role: 'system',
+        patchEntry(headerId, { streaming: false });
+        patchEntry(bodyId, {
           text: error instanceof Error ? error.message : String(error),
           streaming: false,
           finalState: 'failed_terminal',
-          statusLabel: 'Run failed',
-          phase: undefined,
         });
         notify(error instanceof Error ? error.message : String(error), 'error');
       }
     } finally {
       activeStreamRef.current = null;
       setBusyLabel(undefined);
-      // Persist rich display messages then refresh the session list.
-      // sessionId and refreshSessions are both stable in this closure.
       void (async () => {
         try {
-          const currentMessages = useWebUiStore.getState().messages
-            .filter((m) => !m.streaming)
-            .map(({ role, text, finalState, phase, statusLabel, progress, embed }) => ({
-              role,
-              text,
-              ...(finalState !== undefined && { finalState }),
-              ...(phase !== undefined && { phase }),
-              ...(statusLabel !== undefined && { statusLabel }),
-              ...(progress?.length && { progress }),
-              ...(embed !== undefined && { embed }),
-            }));
+          const currentThread = useWebUiStore.getState().thread
+            .filter((e) => e.kind !== 'assistant-header' || !e.streaming)
+            .filter((e) => e.kind !== 'assistant-body' || !e.streaming);
           await request(`/api/sessions/${sessionId}`, {
             method: 'PATCH',
-            body: JSON.stringify({ displayMessages: currentMessages }),
+            body: JSON.stringify({ displayThread: currentThread }),
           });
         } catch {
           // Non-critical.
@@ -1814,7 +1788,7 @@ function App() {
   return (
     <HomePage
       snapshot={snapshot}
-      messages={displayMessages}
+      thread={displayThread}
       now={now}
       busyLabel={busyLabel}
       runActive={runActive}
