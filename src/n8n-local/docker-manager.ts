@@ -174,6 +174,15 @@ function buildEnvFile(input: { image: string; port: number; webhookUrl?: string 
   return lines.join('\n');
 }
 
+async function dockerComposeV2Available(): Promise<boolean> {
+  try {
+    await execFileAsync('docker', ['compose', 'version'], { timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function buildComposeFile(): string {
   return [
     'services:',
@@ -192,8 +201,13 @@ function buildComposeFile(): string {
 
 async function runDockerCompose(args: string[]): Promise<{ stdout: string; stderr: string }> {
   const { rootDir, composeFile } = ensureManagedN8nDirs();
+  const useDockerComposeV1 = !(await dockerComposeV2Available());
+  const cmd = useDockerComposeV1 ? 'docker-compose' : 'docker';
+  const cmdArgs = useDockerComposeV1
+    ? ['-f', composeFile, ...args]
+    : ['compose', '-f', composeFile, ...args];
   try {
-    return await execFileAsync('docker', ['compose', '-f', composeFile, ...args], {
+    return await execFileAsync(cmd, cmdArgs, {
       cwd: rootDir,
       timeout: 120_000,
       env: {
