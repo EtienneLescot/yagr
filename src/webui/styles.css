@@ -1453,26 +1453,41 @@ button {
 /* ── Simplified message rows ───────────────────────────────────── */
 
 .msgSimple {
-  padding: 0.2rem 0;
+  padding: 0.5rem 0.75rem;
   line-height: 1.6;
+  border-radius: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .msgUser {
+  background: var(--panel-soft);
+  border-left: 3px solid var(--blue-deep);
   color: var(--ink);
+  margin-right: 2rem;
 }
 
 .msgAssistant {
+  background: var(--panel);
+  border-left: 3px solid var(--violet);
   color: var(--ink);
+  margin-left: 2rem;
 }
 
 .msgSystem {
   color: var(--muted);
   font-size: 0.9rem;
+  background: transparent;
+  border-left: 3px solid var(--muted);
+  margin-left: 2rem;
+  margin-right: 2rem;
 }
 
 .msgStreaming {
   color: var(--muted);
   font-style: italic;
+  background: var(--panel);
+  border-left: 3px solid var(--muted);
+  margin-left: 2rem;
 }
 
 /* ── Native collapsible (details/summary) ─────────────────────── */

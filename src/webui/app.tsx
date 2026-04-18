@@ -469,6 +469,7 @@ function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
         </span>
       ) : null}
       {' '}<a href={resolvedUrl} target="_blank" rel="noopener noreferrer">Open in n8n</a>
+      {embed.diagram ? <WorkflowGraph diagram={embed.diagram} /> : null}
     </div>
   );
 }
@@ -521,6 +522,12 @@ function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Elemen
 function UserRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'user-message' }> }): React.JSX.Element {
   return (
     <div className="msgSimple msgUser">
+      <span className="msgIcon msgIconUser" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+          <circle cx="8" cy="5" r="3.5"/>
+          <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
+        </svg>
+      </span>
       {entry.text}
     </div>
   );
@@ -541,6 +548,17 @@ function AssistantHeaderRow({ entry, now }: { entry: Extract<ThreadEntry, { kind
 
   return (
     <div className="msgSimple msgStreaming">
+      <span className="workGlyph" aria-hidden="true">
+        <svg className="workGlyphSvg" viewBox="0 0 5 5" xmlns="http://www.w3.org/2000/svg">
+          <rect className="workGlyphPixel" x="0" y="0" width="1" height="1" style={{ animationDelay: '0.8s' }} />
+          <rect className="workGlyphPixel" x="4" y="0" width="1" height="1" style={{ animationDelay: '0.8s' }} />
+          <rect className="workGlyphPixel" x="1" y="1" width="1" height="1" style={{ animationDelay: '0.6s' }} />
+          <rect className="workGlyphPixel" x="3" y="1" width="1" height="1" style={{ animationDelay: '0.6s' }} />
+          <rect className="workGlyphPixel" x="2" y="2" width="1" height="1" style={{ animationDelay: '0.4s' }} />
+          <rect className="workGlyphPixel" x="2" y="3" width="1" height="1" style={{ animationDelay: '0.2s' }} />
+          <rect className="workGlyphPixel" x="2" y="4" width="1" height="1" style={{ animationDelay: '0s' }} />
+        </svg>
+      </span>
       {entry.statusLabel ?? 'Yagr is working…'}{elapsed && ` · ${elapsed}`}
     </div>
   );
@@ -646,6 +664,12 @@ function HomePage({
               <textarea
                 value={chatInput}
                 onChange={(event) => onChatInputChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
                 rows={4}
                 placeholder="Ask Yagr to inspect, create, validate, or evolve an automation..."
               />
