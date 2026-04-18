@@ -664,7 +664,7 @@ function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Elemen
         </span>
       </summary>
       {(entry.body || entry.summary) && (
-        <pre className="opBody">{entry.body ?? entry.summary}</pre>
+        <pre className="opBody">{(entry.body ?? entry.summary ?? '').trimEnd()}</pre>
       )}
     </details>
   );

@@ -572,8 +572,9 @@ label span,
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
   gap: var(--gap-md, 0.9rem);
   margin-right: -0.7rem;
   padding-right: 0.7rem;

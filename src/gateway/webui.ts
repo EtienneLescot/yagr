@@ -41,14 +41,14 @@ const __dirname = path.dirname(__filename);
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
 const ACTIVE_WEBUI_SURFACES = ['webui'] as const;
 
-const WEB_UI_HTML = `<!doctype html>
+const getWebUiHtml = () => `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Yagr Web UI</title>
-    <link rel="stylesheet" href="/styles.css" />
-    <script defer src="/app.js"></script>
+    <link rel="stylesheet" href="/styles.css?v=${Date.now()}" />
+    <script defer src="/app.js?v=${Date.now()}"></script>
   </head>
   <body>
     <div id="root"></div>
@@ -166,7 +166,7 @@ class WebUiGateway implements Gateway {
     const url = new URL(request.url ?? '/', this.status.url);
 
     if (method === 'GET' && url.pathname === '/') {
-      this.sendText(response, 200, WEB_UI_HTML, 'text/html; charset=utf-8');
+      this.sendText(response, 200, getWebUiHtml(), 'text/html; charset=utf-8');
       return;
     }
 
