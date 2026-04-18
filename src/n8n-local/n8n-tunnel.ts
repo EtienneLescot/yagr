@@ -354,6 +354,13 @@ export async function stopN8nTunnel(): Promise<void> {
     } catch {
       // Process already gone — nothing to do.
     }
+    const start = Date.now();
+    while (isPidAlive(state.pid) && Date.now() - start < 5000) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (isPidAlive(state.pid)) {
+      try { process.kill(state.pid, 'SIGKILL'); } catch { /* ignore */ }
+    }
   }
 
   writeTunnelState(null);
@@ -489,6 +496,13 @@ async function stopNamedTunnel(statePath: string): Promise<void> {
   const state = readNamedTunnelState(statePath);
   if (state?.pid && isPidAlive(state.pid)) {
     try { process.kill(state.pid, 'SIGTERM'); } catch { /* ignore */ }
+    const start = Date.now();
+    while (isPidAlive(state.pid) && Date.now() - start < 5000) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (isPidAlive(state.pid)) {
+      try { process.kill(state.pid, 'SIGKILL'); } catch { /* ignore */ }
+    }
   }
   writeNamedTunnelState(statePath, null);
 }
