@@ -593,7 +593,7 @@ function sleep(ms: number): Promise<void> {
 
 export function getGatewayRestartDelayMs(failureCount: number): number {
   const cappedFailures = Math.max(0, Math.min(failureCount, 6));
-  return Math.min(30_000, 1_000 * (2 ** cappedFailures));
+  return Math.min(300_000, 60_000 * (2 ** cappedFailures));
 }
 
 async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
@@ -602,10 +602,20 @@ async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigServi
   await ensureRelayAtLaunch();
   await ensureTunnelAtLaunch();
 
+  let consecutiveFailures = 0;
+
   const tunnelHealthCheck = async () => {
     while (true) {
-      await new Promise((resolve) => setTimeout(resolve, 30_000));
-      await ensureTunnelAtLaunch();
+      const baseInterval = 300_000;
+      const delay = getGatewayRestartDelayMs(consecutiveFailures);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      try {
+        await ensureTunnelAtLaunch();
+        consecutiveFailures = 0;
+      } catch {
+        consecutiveFailures++;
+      }
     }
   };
 
