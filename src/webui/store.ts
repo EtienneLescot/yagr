@@ -91,7 +91,7 @@ interface WebUiState {
   pushEntry: (entry: ThreadEntry) => void;
   patchEntry: (id: string, patch: Partial<ThreadEntry>) => void;
   appendBodyText: (id: string, text: string) => void;
-  upsertOperation: (id: string, entry: ChatProgressEntry) => void;
+  upsertOperation: (id: string, entry: ChatProgressEntry, beforeId?: string) => void;
   setThread: (thread: ThreadEntry[]) => void;
   resetThread: () => void;
   setSessionHistory: (sessions: SessionHistoryEntry[]) => void;
@@ -161,12 +161,20 @@ export const useWebUiStore = create<WebUiState>((set) => ({
       return { ...entry, text: `${entry.text}${text}` };
     }),
   })),
-  upsertOperation: (id, entry) => set((state) => {
+  upsertOperation: (id, entry, beforeId) => set((state) => {
     const existingIdx = state.thread.findIndex((e) => e.kind === 'operation' && e.id === id);
     if (existingIdx >= 0) {
       const next = [...state.thread];
       next[existingIdx] = { kind: 'operation', id, entry: { ...state.thread[existingIdx].entry, ...entry } };
       return { thread: next };
+    }
+    if (beforeId) {
+      const beforeIdx = state.thread.findIndex((e) => e.id === beforeId);
+      if (beforeIdx >= 0) {
+        const next = [...state.thread];
+        next.splice(beforeIdx, 0, { kind: 'operation', id, entry });
+        return { thread: next };
+      }
     }
     return { thread: [...state.thread, { kind: 'operation', id, entry }] };
   }),

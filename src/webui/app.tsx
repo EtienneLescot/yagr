@@ -1530,7 +1530,7 @@ function App() {
             tone: streamEvent.tone,
             title: streamEvent.title,
             detail: streamEvent.detail,
-          });
+          }, bodyId);
           patchEntry(headerId, { statusLabel: streamEvent.detail ?? streamEvent.title });
           setBusyLabel(streamEvent.detail ?? streamEvent.title);
           return;
@@ -1547,7 +1547,7 @@ function App() {
             summary: streamEvent.summary,
             startedAt: streamEvent.startedAt,
             endedAt: streamEvent.endedAt,
-          });
+          }, bodyId);
           return;
         }
 
