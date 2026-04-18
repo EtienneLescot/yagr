@@ -1503,7 +1503,6 @@ button {
   background: var(--panel);
   border-left: 3px solid var(--violet);
   color: var(--ink);
-  margin-left: 2rem;
 }
 
 .msgSystem {
@@ -1520,7 +1519,6 @@ button {
   font-style: italic;
   background: var(--panel);
   border-left: 3px solid var(--muted);
-  margin-left: 2rem;
 }
 
 .msgIcon {

@@ -134,13 +134,7 @@ export const useWebUiStore = create<WebUiState>((set) => ({
   n8nProjects: [],
   availableModels: [],
   sessionHistory: [],
-  thread: [
-    {
-      kind: 'system-notice',
-      id: crypto.randomUUID(),
-      text: 'Yagr Web UI ready. Configure the runtime or start chatting.',
-    },
-  ],
+  thread: [],
   viewThread: null,
   setBusyLabel: (busyLabel) => set({ busyLabel }),
   setError: (error) => set({ error }),
