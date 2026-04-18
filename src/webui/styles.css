@@ -1442,36 +1442,32 @@ button {
   font-style: italic;
 }
 
-/* ── Simplified operation rows ─────────────────────────────────── */
-
-.opSimple {
-  padding: 0.15rem 0;
-  font-size: 0.85rem;
-  color: var(--muted);
+/* ── Native collapsible (details/summary) ─────────────────────── */
+.collapsible {
+  margin-top: 0.1rem;
 }
 
-.opSimple .opIcon {
-  margin-right: 0.3rem;
-}
-
-.opSimple .opLabel {
-  font-weight: 500;
-}
-
-.opSimple .opDuration {
-  margin-left: 0.4rem;
+.collapsibleTrigger {
+  cursor: pointer;
+  list-style: none;
   font-size: 0.75rem;
   color: var(--muted);
 }
 
-.opSimple .opBody {
-  margin: 0.2rem 0 0 1.2rem;
-  font-size: 0.8rem;
-  word-break: break-word;
+.collapsibleTrigger::-webkit-details-marker { display: none; }
+
+.collapsibleContent {
+  padding-left: 0.2rem;
+  margin: 0.1rem 0 0;
 }
 
-.opSimple .opSummary {
-  margin-left: 0.4rem;
+.collapsible .opBody {
+  font-size: 0.8rem;
+  word-break: break-word;
+  color: var(--muted);
+}
+
+.collapsible .opSummary {
   font-size: 0.8rem;
   color: var(--muted);
 }

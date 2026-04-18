@@ -611,8 +611,15 @@ function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Elemen
       <span className="opIcon" aria-hidden="true">{icon}</span>
       <span className="opLabel">{entry.title || 'Operation'}</span>
       {duration && <span className="opDuration">{duration}</span>}
-      {entry.body && <div className="opBody">{(entry.body ?? '').trimEnd()}</div>}
-      {entry.summary && !entry.body && <span className="opSummary">{entry.summary}</span>}
+      {(entry.body || entry.summary) && (
+        <details className="collapsible">
+          <summary className="collapsibleTrigger">Show details</summary>
+          <div className="collapsibleContent">
+            {entry.body && <div className="opBody">{(entry.body ?? '').trimEnd()}</div>}
+            {entry.summary && !entry.body && <div className="opSummary">{entry.summary}</div>}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
