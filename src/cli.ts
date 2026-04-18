@@ -542,7 +542,11 @@ async function runWithSpinner<T>(message: string, task: () => Promise<T>, detail
 
 async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
   const { spawn } = await import('node:child_process');
-  const { getGatewayLogPath, writeGatewayPid } = await import('./config/gateway-daemon.js');
+  const { getGatewayLogPath, writeGatewayPid, tryAcquireLock, releaseLock } = await import('./config/gateway-daemon.js');
+
+  if (!tryAcquireLock()) {
+    throw new Error('Gateway is already starting or running. Use "yagr stop" first or "yagr restart".');
+  }
 
   const extraArgs: string[] = [];
   if (args.provider) extraArgs.push('--provider', args.provider);
@@ -561,13 +565,17 @@ async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
         env: { ...process.env },
       },
     );
-  } finally {
+  } catch (error) {
     fs.closeSync(logFd);
+    releaseLock();
+    throw error;
   }
 
   child.unref();
 
   if (!child.pid) {
+    fs.closeSync(logFd);
+    releaseLock();
     throw new Error('Failed to spawn gateway daemon.');
   }
 
@@ -1471,9 +1479,10 @@ async function main(): Promise<void> {
   }
 
   if (args.command === 'stop') {
-    const { isGatewayRunning, clearGatewayPid } = await import('./config/gateway-daemon.js');
+    const { isGatewayRunning, clearGatewayPid, releaseLock } = await import('./config/gateway-daemon.js');
     const running = isGatewayRunning();
     if (!running.running || !running.pid) {
+      releaseLock();
       process.stdout.write('No gateway is currently running.\n');
       return;
     }
@@ -1481,12 +1490,13 @@ async function main(): Promise<void> {
     process.kill(running.pid, 'SIGTERM');
     await new Promise<void>((resolve) => setTimeout(resolve, 500));
     clearGatewayPid();
+    releaseLock();
     process.stdout.write(`Gateway stopped (PID ${running.pid}).\n`);
     return;
   }
 
   if (args.command === 'restart') {
-    const { isGatewayRunning, clearGatewayPid } = await import('./config/gateway-daemon.js');
+    const { isGatewayRunning, clearGatewayPid, releaseLock } = await import('./config/gateway-daemon.js');
     const running = isGatewayRunning();
     if (running.running && running.pid) {
       process.stdout.write(`Stopping gateway (PID ${running.pid})...\n`);
