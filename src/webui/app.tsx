@@ -567,6 +567,11 @@ function AssistantHeaderRow({ entry, now }: { entry: Extract<ThreadEntry, { kind
 function AssistantBodyRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'assistant-body' }> }): React.JSX.Element {
   return (
     <div className={`msgSimple msgAssistant${entry.streaming ? ' msgStreaming' : ''}`}>
+      <span className="msgIcon msgIconAssistant" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+          <path d="M8 1a4 4 0 0 1 4 4v2H4V5a4 4 0 0 1 4-4zm-2 12v2h4v-2H6zm-2 0c-2.2 0-4 1.3-4 3v2h8v-2c0-1.7-1.8-3-4-3z"/>
+        </svg>
+      </span>
       {entry.text ? <MarkdownBody text={entry.text} /> : null}
       {entry.embed ? <WorkflowBanner embed={entry.embed} /> : null}
     </div>
