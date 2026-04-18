@@ -16,7 +16,7 @@ import {
 const execFileAsync = promisify(execFile);
 const DEFAULT_N8N_IMAGE = 'docker.n8n.io/n8nio/n8n:stable';
 const CONTAINER_N8N_PORT = 5678;
-const DEFAULT_HEALTH_TIMEOUT_MS = 300_000;
+const DEFAULT_HEALTH_TIMEOUT_MS = parseInt(process.env.YAGR_N8N_HEALTH_TIMEOUT_MS ?? '300000', 10);
 const DEFAULT_EDITOR_TIMEOUT_MS = 90_000;
 
 export interface InstallManagedDockerN8nOptions {
