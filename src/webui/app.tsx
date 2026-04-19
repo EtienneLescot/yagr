@@ -86,242 +86,17 @@ function formatElapsed(milliseconds: number): string {
   return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`;
 }
 
-function readThemeMode(): ThemeMode {
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return stored === 'system' || stored === 'light' || stored === 'dark' ? stored : 'system';
-}
+const OPERATION_CATEGORY_ICON: Record<string, string> = {
+  'file-read': '📄',
+  'file-write': '✏️',
+  'shell': '⚡',
+  'web': '🌐',
+  'tool': '🔧',
+  'agent': '🤖',
+  'phase': '🏁',
+  'thinking': '💭',
+};
 
-function applyThemeMode(mode: ThemeMode): void {
-  document.documentElement.dataset.themeMode = mode;
-}
-
-async function streamJsonLines(
-  targetPath: string,
-  init: RequestInit,
-  onEvent: (event: ChatStreamEvent) => void,
-): Promise<void> {
-  const response = await fetch(targetPath, {
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/x-ndjson',
-      ...(init.headers ?? {}),
-    },
-    ...init,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    const data = text ? JSON.parse(text) as ApiError : undefined;
-    throw new Error(data?.error ?? response.statusText);
-  }
-
-  if (!response.body) {
-    throw new Error('Streaming response body is unavailable.');
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) {
-      buffer += decoder.decode();
-      break;
-    }
-
-    buffer += decoder.decode(value, { stream: true });
-
-    let separatorIndex = buffer.indexOf('\n');
-    while (separatorIndex !== -1) {
-      const line = buffer.slice(0, separatorIndex).trim();
-      buffer = buffer.slice(separatorIndex + 1);
-
-      if (line) {
-        onEvent(JSON.parse(line) as ChatStreamEvent);
-      }
-
-      separatorIndex = buffer.indexOf('\n');
-    }
-  }
-
-  const trailing = buffer.trim();
-  if (trailing) {
-    onEvent(JSON.parse(trailing) as ChatStreamEvent);
-  }
-}
-
-function buildStreamingPreview(text: string): string[] {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  return lines.slice(-3).map((line) => line.length > 140 ? `${line.slice(0, 137).trimEnd()}...` : line);
-}
-
-function MarkdownBody({ text }: { text: string }): React.JSX.Element {
-  return (
-    <div className="markdownBody">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
-        }}
-      >
-        {text}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-function ThemeSelector({
-  value,
-  onChange,
-}: {
-  value: ThemeMode;
-  onChange: (mode: ThemeMode) => void;
-}): React.JSX.Element {
-  const nextThemeMode: Record<ThemeMode, ThemeMode> = {
-    system: 'light',
-    light: 'dark',
-    dark: 'system',
-  };
-
-  const themeLabels: Record<ThemeMode, string> = {
-    system: 'Use system theme',
-    light: 'Use light theme',
-    dark: 'Use dark theme',
-  };
-
-  const nextMode = nextThemeMode[value];
-  const nextLabel = themeLabels[nextMode];
-
-  return (
-    <div className="themeControl">
-      <button
-        aria-label={nextLabel}
-        className="themeButton"
-        title={nextLabel}
-        type="button"
-        onClick={() => onChange(nextMode)}
-      >
-        <ThemeIcon mode={value} />
-      </button>
-    </div>
-  );
-}
-
-function ThemeIcon({ mode }: { mode: ThemeMode }): React.JSX.Element {
-  if (mode === 'light') {
-    return (
-      <svg className="themeIcon" viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="12" r="4.25" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <path d="M12 2.5v2.5M12 19v2.5M21.5 12H19M5 12H2.5M18.72 5.28l-1.77 1.77M7.05 16.95l-1.77 1.77M18.72 18.72l-1.77-1.77M7.05 7.05L5.28 5.28" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-      </svg>
-    );
-  }
-
-  if (mode === 'dark') {
-    return (
-      <svg className="themeIcon" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M14.5 3.25a8.75 8.75 0 1 0 6.25 15.5A9.75 9.75 0 0 1 14.5 3.25Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.8" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg className="themeIcon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 3.25a8.75 8.75 0 1 0 0 17.5Z" fill="currentColor" />
-      <path d="M12 3.25a8.75 8.75 0 1 1 0 17.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
-    </svg>
-  );
-}
-
-function SessionSidebar({
-  snapshot,
-  busyLabel,
-  themeMode,
-  onThemeModeChange,
-  sessionHistory,
-  viewSessionId,
-  runningSessionId,
-  onNewSession,
-  onSwitchSession,
-}: {
-  snapshot?: ConfigSnapshot;
-  busyLabel?: string;
-  themeMode: ThemeMode;
-  onThemeModeChange: (mode: ThemeMode) => void;
-  sessionHistory: SessionHistoryEntry[];
-  viewSessionId: string;
-  runningSessionId: string | null;
-  onNewSession: () => void;
-  onSwitchSession: (id: string) => void;
-}): React.JSX.Element {
-  return (
-    <aside className="sidebar sidebarHome">
-      <section className="panel brandCard">
-        <img className="brandMark" src={yagrLogoUrl} alt="Yagr logo" />
-        <div className="brandCopy">
-          <p className="eyebrow">Yagr Web UI</p>
-          <h1 className="brandTitle">
-            <span className="brandTitleLine">(Y)our</span>
-            <span className="brandTitleLine">(A)gent</span>
-            <span className="brandTitleLine brandTitleAccent">(G)rounded in</span>
-            <span className="brandTitleLine brandTitleAccent">(R)eality.</span>
-          </h1>
-        </div>
-        <div className="brandCardTopRight">
-          <ThemeSelector value={themeMode} onChange={onThemeModeChange} />
-        </div>
-      </section>
-
-      <section className="panel historyPanel">
-        <div className="sectionHeader">
-          <p className="eyebrow">History</p>
-          <button
-            className="ghostButton newChatButton"
-            type="button"
-            title="Start new conversation"
-            aria-label="New conversation"
-            onClick={onNewSession}
-          >
-            +
-          </button>
-        </div>
-        <div className="historyList">
-          {sessionHistory.length === 0 && (
-            <p className="muted historyEmpty">No past conversations yet.</p>
-          )}
-          {sessionHistory.map((session) => (
-            <button
-              key={session.id}
-              type="button"
-              className={[
-                'historyItem',
-                session.id === viewSessionId ? 'historyItemActive' : '',
-                session.id === runningSessionId ? 'historyItemRunning' : '',
-              ].filter(Boolean).join(' ')}
-              onClick={() => onSwitchSession(session.id)}
-            >
-              <span className="historyItemTitle">
-                {session.id === runningSessionId && <span className="runningDot" role="img" aria-label="Running" />}
-                {session.title}
-              </span>
-              <span className="historyItemMeta">
-                {new Date(session.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                {' · '}{session.messageCount} msg
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
-    </aside>
-  );
-}
-
-// Node type → color palette
 const NODE_COLORS: Record<string, string> = {
   manualTrigger: '#7c3aed', scheduleTrigger: '#7c3aed', webhook: '#7c3aed',
   set: '#059669', code: '#059669', functionItem: '#059669',
@@ -353,7 +128,6 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
   const hasLoopEdges = graph.edges.some((e) => e.isLoop);
 
   const svgW = PAD * 2 + (maxCol + 1) * NODE_W + maxCol * COL_GAP;
-  // add vertical room for loop arcs that draw below the bottom-most node row
   const svgH = PAD * 2 + (maxRow + 1) * NODE_H + maxRow * ROW_GAP + (hasLoopEdges ? 80 : 0);
 
   const pos = (n: (typeof graph.nodes)[number]) => ({
@@ -364,7 +138,7 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
   return (
     <svg
       className="workflowGraph"
-      viewBox={`0 0 ${svgW} ${svgH}`}
+      viewBox={`${svgW} ${svgH}`}
       width={svgW}
       height={svgH}
     >
@@ -383,12 +157,10 @@ function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | nu
         const sp = pos(src);
         const tp = pos(tgt);
         if (e.isLoop) {
-          // Back-edge: arc along the bottom of the SVG so it never cuts through other nodes
           const x1 = sp.x + NODE_W / 2;
           const y1 = sp.y + NODE_H;
           const x2 = tp.x + NODE_W / 2;
           const y2 = tp.y + NODE_H;
-          // Route all loop arcs to the same baseline at the bottom of the SVG
           const cpY = svgH - 20;
           return (
             <path
@@ -502,47 +274,91 @@ function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Elem
   );
 }
 
-const OPERATION_CATEGORY_ICON: Record<string, string> = {
-  'file-read': '📄',
-  'file-write': '✏️',
-  'shell': '⚡',
-  'web': '🌐',
-  'tool': '🔧',
-  'agent': '🤖',
-  'phase': '🏁',
-  'thinking': '💭',
-};
+function readThemeMode(): ThemeMode {
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === 'system' || stored === 'light' || stored === 'dark' ? stored : 'system';
+}
 
-function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Element | null {
-  const icon = OPERATION_CATEGORY_ICON[entry.category ?? 'tool'] ?? '🔧';
-  const durationMs = entry.startedAt != null && entry.endedAt != null ? entry.endedAt - entry.startedAt : null;
-  const duration = durationMs != null
-    ? (durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`)
-    : null;
+function applyThemeMode(mode: ThemeMode): void {
+  document.documentElement.dataset.themeMode = mode;
+}
 
-  if (!entry.title && !entry.body && !entry.summary) {
-    return null;
+async function streamJsonLines(
+  targetPath: string,
+  init: RequestInit,
+  onEvent: (event: ChatStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch(targetPath, {
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/x-ndjson',
+      ...(init.headers ?? {}),
+    },
+    ...init,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    const data = text ? JSON.parse(text) as ApiError : undefined;
+    throw new Error(data?.error ?? response.statusText);
   }
 
-
-  if (entry.category === 'phase') {
-    return null;
+  if (!response.body) {
+    throw new Error('Streaming response body is unavailable.');
   }
 
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+
+    let separatorIndex = buffer.indexOf('\n');
+    while (separatorIndex !== -1) {
+      const line = buffer.slice(0, separatorIndex).trim();
+      buffer = buffer.slice(separatorIndex + 1);
+
+      if (line) {
+        onEvent(JSON.parse(line) as ChatStreamEvent);
+      }
+
+      separatorIndex = buffer.indexOf('\n');
+    }
+  }
+
+  const trailing = buffer.trim();
+  if (trailing) {
+    onEvent(JSON.parse(trailing) as ChatStreamEvent);
+  }
+}
+
+function buildStreamingPreview(text: string): string[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return lines.slice(-3).map((line) => line.length > 140 ? `${line.slice(0, 137).trimEnd()}...` : line);
+}
+
+function MarkdownBody({ text }: { text: string }): React.JSX.Element {
   return (
-    <div className="opSimple">
-      <span className="opIcon" aria-hidden="true">{icon}</span>
-      <span className="opLabel">{entry.title || 'Operation'}</span>
-      {duration && <span className="opDuration">{duration}</span>}
-      {(entry.body || entry.summary) && (
-        <details className="collapsible">
-          <summary className="collapsibleTrigger">Show details</summary>
-          <div className="collapsibleContent">
-            {entry.body && <div className="opBody">{(entry.body ?? '').trimEnd()}</div>}
-            {entry.summary && !entry.body && <div className="opSummary">{entry.summary}</div>}
-          </div>
-        </details>
-      )}
+    <div className="markdownBody">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
   );
 }
@@ -595,6 +411,202 @@ function AssistantBodyRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'assi
   );
 }
 
+function OperationRow({ entry }: { entry: ChatProgressEntry }): React.JSX.Element | null {
+  const icon = OPERATION_CATEGORY_ICON[entry.category ?? 'tool'] ?? '🔧';
+  const durationMs = entry.startedAt != null && entry.endedAt != null ? entry.endedAt - entry.startedAt : null;
+  const duration = durationMs != null
+    ? (durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`)
+    : null;
+
+  if (!entry.title && !entry.body && !entry.summary) {
+    return null;
+  }
+
+  if (entry.category === 'phase') {
+    return null;
+  }
+
+  return (
+    <div className="opSimple">
+      <span className="opIcon" aria-hidden="true">{icon}</span>
+      <span className="opLabel">{entry.title || 'Operation'}</span>
+      {duration && <span className="opDuration">{duration}</span>}
+      {(entry.body || entry.summary) && (
+        <details className="collapsible">
+          <summary className="collapsibleTrigger">Show details</summary>
+          <div className="collapsibleContent">
+            {entry.body && <div className="opBody">{(entry.body ?? '').trimEnd()}</div>}
+            {entry.summary && !entry.body && <div className="opSummary">{entry.summary}</div>}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function ThemeSelector({
+  value,
+  onChange,
+}: {
+  value: ThemeMode;
+  onChange: (mode: ThemeMode) => void;
+}): React.JSX.Element {
+  const nextThemeMode: Record<ThemeMode, ThemeMode> = {
+    system: 'light',
+    light: 'dark',
+    dark: 'system',
+  };
+
+  const themeLabels: Record<ThemeMode, string> = {
+    system: 'Use system theme',
+    light: 'Use light theme',
+    dark: 'Use dark theme',
+  };
+
+  const nextMode = nextThemeMode[value];
+  const nextLabel = themeLabels[nextMode];
+
+  return (
+    <div className="themeControl">
+      <button
+        aria-label={nextLabel}
+        className="themeButton"
+        title={nextLabel}
+        type="button"
+        onClick={() => onChange(nextMode)}
+      >
+        <ThemeIcon mode={value} />
+      </button>
+    </div>
+  );
+}
+
+function ThemeIcon({ mode }: { mode: ThemeMode }): React.JSX.Element {
+  if (mode === 'light') {
+    return (
+      <svg className="themeIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.25" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M12 2.5v2.5M12 19v2.5M21.5 12H19M5 12H2.5M18.72 5.28l-1.77 1.77M7.05 16.95l-1.77 1.77M18.72 18.72l-1.77-1.77M7.05 7.05L5.28 5.28" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      </svg>
+    );
+  }
+
+  if (mode === 'dark') {
+    return (
+      <svg className="themeIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14.5 3.25a8.75 8.75 0 1 0 6.25 15.5A9.75 9.75 0 0 1 14.5 3.25Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.8" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="themeIcon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3.25a8.75 8.75 0 1 0 0 17.5Z" fill="currentColor" />
+      <path d="M12 3.25a8.75 8.75 0 1 1 0 17.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function SessionSidebar({
+  snapshot,
+  busyLabel,
+  themeMode,
+  onThemeModeChange,
+  sessionHistory,
+  viewSessionId,
+  runningSessionId,
+  onNewSession,
+  onSwitchSession,
+  onDeleteSession,
+}: {
+  snapshot?: ConfigSnapshot;
+  busyLabel?: string;
+  themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
+  sessionHistory: SessionHistoryEntry[];
+  viewSessionId: string;
+  runningSessionId: string | null;
+  onNewSession: () => void;
+  onSwitchSession: (id: string) => void;
+  onDeleteSession: (id: string) => void;
+}): React.JSX.Element {
+  return (
+    <aside className="sidebar sidebarHome">
+      <section className="panel brandCard">
+        <img className="brandMark" src={yagrLogoUrl} alt="Yagr logo" />
+        <div className="brandCopy">
+          <p className="eyebrow">Yagr Web UI</p>
+          <h1 className="brandTitle">
+            <span className="brandTitleLine">(Y)our</span>
+            <span className="brandTitleLine">(A)gent</span>
+            <span className="brandTitleLine brandTitleAccent">(G)rounded in</span>
+            <span className="brandTitleLine brandTitleAccent">(R)eality.</span>
+          </h1>
+        </div>
+        <div className="brandCardTopRight">
+          <ThemeSelector value={themeMode} onChange={onThemeModeChange} />
+        </div>
+      </section>
+
+      <section className="panel historyPanel">
+        <div className="sectionHeader">
+          <p className="eyebrow">History</p>
+          <button
+            className="ghostButton newChatButton"
+            type="button"
+            title="Start new conversation"
+            aria-label="New conversation"
+            onClick={onNewSession}
+          >
+            +
+          </button>
+        </div>
+        <div className="historyList">
+          {sessionHistory.length === 0 && (
+            <p className="muted historyEmpty">No past conversations yet.</p>
+          )}
+          {sessionHistory.map((session) => (
+            <div
+              key={session.id}
+              className={[
+                'historyItem',
+                session.id === viewSessionId ? 'historyItemActive' : '',
+                session.id === runningSessionId ? 'historyItemRunning' : '',
+              ].filter(Boolean).join(' ')}
+            >
+              <button
+                type="button"
+                className="historyItemMain"
+                onClick={() => onSwitchSession(session.id)}
+              >
+                <span className="historyItemTitle">
+                  {session.id === runningSessionId && <span className="runningDot" role="img" aria-label="Running" />}
+                  {session.title}
+                </span>
+                <span className="historyItemMeta">
+                  {new Date(session.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  {' · '}{session.messageCount} msg
+                </span>
+              </button>
+              <button
+                type="button"
+                className="historyItemDelete"
+                title="Delete conversation"
+                aria-label="Delete conversation"
+                onClick={() => onDeleteSession(session.id)}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+    </aside>
+  );
+}
+
 function HomePage({
   snapshot,
   thread,
@@ -608,7 +620,6 @@ function HomePage({
   onStopRun,
   onResetChat,
   onReturnToActive,
-  onOpenSetup,
   chatLogRef,
   themeMode,
   onThemeModeChange,
@@ -617,6 +628,7 @@ function HomePage({
   runningSessionId,
   onNewSession,
   onSwitchSession,
+  onDeleteSession,
   contextFillPercent,
   onCompactContext,
 }: {
@@ -640,6 +652,7 @@ function HomePage({
   runningSessionId: string | null;
   onNewSession: () => void;
   onSwitchSession: (id: string) => void;
+  onDeleteSession: (id: string) => void;
   contextFillPercent: number | null;
   onCompactContext: () => void;
 }): React.JSX.Element {
@@ -655,6 +668,7 @@ function HomePage({
         runningSessionId={runningSessionId}
         onNewSession={onNewSession}
         onSwitchSession={onSwitchSession}
+        onDeleteSession={onDeleteSession}
       />
 
       <main className="chatStage">
@@ -1015,6 +1029,21 @@ function App() {
     })();
   }, [sessionId, switchSession, setThread, refreshSessions, browseSession, setViewThread, returnToActiveSession]);
 
+  const onDeleteSession = React.useCallback((targetId: string) => {
+    void (async () => {
+      try {
+        await request(`/api/sessions/${targetId}`, { method: 'DELETE' });
+        if (sessionId === targetId) {
+          switchSession(targetId);
+        }
+        void refreshSessions();
+        notify('Conversation deleted.');
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), 'error');
+      }
+    })();
+  }, [sessionId, switchSession, refreshSessions, notify]);
+
   const onResetChat = async () => {
     setBusyLabel('Resetting conversation...');
     try {
@@ -1268,6 +1297,7 @@ function App() {
       runningSessionId={runActive ? sessionId : null}
       onNewSession={onNewSession}
       onSwitchSession={onSwitchSession}
+      onDeleteSession={onDeleteSession}
       contextFillPercent={contextFillPercent}
       onCompactContext={() => void onCompactContext()}
     />
