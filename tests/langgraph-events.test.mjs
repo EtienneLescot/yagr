@@ -225,3 +225,17 @@ test('processStreamEvent sets fileModificationDetected for replaceInFile tool', 
 
   assert.equal(accumulator.fileModificationDetected, true);
 });
+
+test('processStreamEvent sets fileModificationDetected for edit_file tool', async () => {
+  const accumulator = createRunAccumulator();
+  assert.equal(accumulator.fileModificationDetected, false);
+
+  await processStreamEvent({
+    event: 'on_tool_end',
+    name: 'edit_file',
+    run_id: 'run-editfile',
+    data: { output: '{"ok": true}' },
+  }, accumulator);
+
+  assert.equal(accumulator.fileModificationDetected, true);
+});
