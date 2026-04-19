@@ -54,7 +54,7 @@
     "@n8n-as-code/transformer": "^1.1.0",
     "@types/qrcode-terminal": "^0.12.2",
     "conf": "^13.0.1",
-    "deepagents": "^1.8.8",
+    "deepagents": "^1.9.0",
     "dotenv": "^17.2.3",
     "fullscreen-ink": "^0.1.0",
     "ink": "^6.8.0",
