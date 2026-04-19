@@ -255,3 +255,86 @@ test('openai-proxy LangChain model preserves bindTools tool choice and sends bou
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('openai-proxy LangChain model preserves optional tool properties as optional in Codex schema', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-langchain-optional-'));
+  const authPath = path.join(tempDir, 'auth.json');
+  const accessToken = makeJwtWithAccountId('acct_yagr_langchain_optional');
+  fs.writeFileSync(authPath, JSON.stringify({
+    auth_mode: 'chatgpt',
+    tokens: {
+      access_token: accessToken,
+      refresh_token: 'refresh-token',
+    },
+  }));
+
+  const previousAuthPath = process.env.YAGR_CODEX_AUTH_PATH;
+  const previousFetch = globalThis.fetch;
+  let seenBody;
+
+  process.env.YAGR_CODEX_AUTH_PATH = authPath;
+  globalThis.fetch = async (_url, init) => {
+    seenBody = JSON.parse(String(init?.body || '{}'));
+    return createSseResponse([
+      {
+        type: 'response.output_item.added',
+        item: {
+          type: 'function_call',
+          call_id: 'call_789',
+          name: 'glob',
+          arguments: '',
+        },
+      },
+      {
+        type: 'response.function_call_arguments.delta',
+        item_id: 'call_789',
+        delta: '{"pattern":"workflows/**/*.workflow.ts"}',
+      },
+      {
+        type: 'response.completed',
+        response: {
+          usage: {
+            input_tokens: 12,
+            output_tokens: 5,
+          },
+        },
+      },
+    ]);
+  };
+
+  try {
+    const model = await createLangChainModel({ provider: 'openai-proxy', model: 'gpt-5.1-codex-mini' });
+    const boundModel = model.bindTools([
+      {
+        name: 'glob',
+        description: 'Search files by glob pattern.',
+        parameters: {
+          type: 'object',
+          properties: {
+            pattern: { type: 'string' },
+            path: { type: 'string' },
+          },
+          required: ['pattern'],
+          additionalProperties: false,
+        },
+      },
+    ], { tool_choice: 'any' });
+
+    const result = await boundModel.invoke([new HumanMessage('Find workflow files.')]);
+
+    assert.equal(seenBody.tools[0].name, 'glob');
+    assert.deepEqual(seenBody.tools[0].parameters.required, ['pattern']);
+    assert.equal(seenBody.tools[0].parameters.properties.path.type, 'string');
+    assert.equal(result.tool_calls.length, 1);
+    assert.equal(result.tool_calls[0].name, 'glob');
+    assert.deepEqual(result.tool_calls[0].args, { pattern: 'workflows/**/*.workflow.ts' });
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousAuthPath === undefined) {
+      delete process.env.YAGR_CODEX_AUTH_PATH;
+    } else {
+      process.env.YAGR_CODEX_AUTH_PATH = previousAuthPath;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
