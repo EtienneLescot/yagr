@@ -951,10 +951,6 @@ async function main(): Promise<void> {
           n8nConfig: cleanupPlan.paths.n8nConfigPath,
           n8nCredentials: cleanupPlan.paths.n8nCredentialsPath,
         },
-        legacy: {
-          yagrCredentials: cleanupPlan.paths.legacyYagrCredentialsPath,
-          n8nCredentials: cleanupPlan.paths.legacyN8nCredentialsPath,
-        },
         workspace: {
           managed: cleanupPlan.workspacePaths,
           preservedExternal: cleanupPlan.preservedWorkspacePaths,
