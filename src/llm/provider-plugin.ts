@@ -1,4 +1,5 @@
 import { fetchGitHubCopilotModels } from './copilot-account.js';
+import { ensureOpenAiAccountSession, fetchOpenAiAccountModels } from './openai-account.js';
 import { primeProviderModelMetadata, warmProviderMetadataCacheFromDiscovery } from './provider-metadata.js';
 import {
   getDefaultBaseUrlForProvider,
@@ -121,6 +122,18 @@ function buildProviderDiscovery(
         const payload = await response.json() as Record<string, unknown>;
         getProviderPlugin(provider).metadata?.warmDiscoveryPayload?.(payload);
         return fetchGitHubCopilotModels(apiKey, baseUrl || getDefaultBaseUrlForProvider(provider));
+      },
+    };
+  }
+
+  if (provider === 'openai-proxy') {
+    return {
+      fetchAvailableModels: async () => {
+        const session = await ensureOpenAiAccountSession();
+        if (!session) {
+          return [];
+        }
+        return fetchOpenAiAccountModels(session.accessToken);
       },
     };
   }
