@@ -30,9 +30,12 @@ Notes:
 - `tools/` porte les outils LangChain generalistes (FS, shell, HTTP)
 - `manager-tooling/` porte les comportements manager internes exposes via CLI (`presentWorkflowResult`, `yagrProxy`)
 - `gateway/` porte les facades + l'adaptateur events LangGraph
+- `gateway/local-open-bridge.ts` porte le bridge HTTP d'auth n8n pour les ouvertures de workflow sur surfaces distantes
 - `session/` porte le registre UI des sessions WebUI (metadata + display messages)
 - `memory/` porte le `MemoryStore` cross-session (synthetique, injecte dans le system prompt)
 - `setup/` porte la couche applicative de configuration
+- `n8n-local/tunnel-reachability.ts` porte le SSOT de wake-up des tunnels par consommateur/facade
+- `n8n-local/n8n-tunnel.ts` porte le SSOT du lifecycle `cloudflared` et de la politique `TUNNEL_DOMAIN`
 
 ## Details par bloc
 

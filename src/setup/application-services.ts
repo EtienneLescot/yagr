@@ -18,7 +18,7 @@ import {
   type YagrModelProvider,
 } from '../llm/provider-registry.js';
 import { prepareProviderRuntime } from '../llm/proxy-runtime.js';
-import { ensureN8nRelayServer, resolveDockerHostAddress } from '../llm/llm-relay-server.js';
+import { buildRelayInfo, ensureN8nRelayServer, resolveDockerHostAddress } from '../llm/llm-relay-server.js';
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import { resolveModelProvider } from '../llm/create-langchain-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
@@ -26,8 +26,8 @@ import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession, getOpenA
 import type { GatewaySurface } from '../gateway/types.js';
 import { ensureYagrProxyCredential } from '../manager-tooling/yagr-proxy.js';
 import { classifyConfiguredN8nInstance, classifyN8nInstanceCandidate, hasN8nInstanceTag, resolveN8nInstanceProfile } from '../n8n-local/instance-classification.js';
+import { ensureConfiguredLlmTunnelReachability, ensureLlmTunnelForRelayHostBaseUrl } from '../n8n-local/tunnel-reachability.js';
 import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
-import { installCloudflaredIfNeeded, startProxyTunnel } from '../n8n-local/n8n-tunnel.js';
 
 type N8nProjectClient = Pick<N8nApiClient, 'testConnection' | 'getProjects'>;
 
@@ -449,7 +449,7 @@ export class YagrSetupApplicationService {
     mode: YagrLlmProxyConfig['mode'];
     credentialBaseUrl: string;
     dockerHostAddress?: string;
-    tunnelUrl?: string;
+    llmTunnelUrl?: string;
   }> {
     const relay = await ensureN8nRelayServer();
 
@@ -457,11 +457,15 @@ export class YagrSetupApplicationService {
     // relay.baseUrl reflects the current relay port with the stored host address.
     const existingProxyConfig = this.yagrConfigService.getLocalConfig().llmProxy;
     if (existingProxyConfig?.enabled && existingProxyConfig.mode) {
+      if (existingProxyConfig.mode === 'tunnel') {
+        await ensureConfiguredLlmTunnelReachability(this.yagrConfigService);
+      }
+      const refreshedRelay = buildRelayInfo((await ensureN8nRelayServer()).port);
       return {
         mode: existingProxyConfig.mode,
-        credentialBaseUrl: relay.baseUrl,
+        credentialBaseUrl: refreshedRelay.baseUrl,
         dockerHostAddress: existingProxyConfig.dockerHostAddress,
-        tunnelUrl: existingProxyConfig.tunnelUrl,
+        llmTunnelUrl: this.yagrConfigService.getLocalConfig().llmProxy?.llmTunnelUrl,
       };
     }
 
@@ -474,7 +478,7 @@ export class YagrSetupApplicationService {
     if (hasN8nInstanceTag(classification, 'CLOUD')) {
       // Cloud/external n8n cannot reach loopback; spawn a Cloudflare tunnel.
       const tunnel = await this.startCloudflareTunnel(relay.hostBaseUrl);
-      return { mode: 'tunnel', credentialBaseUrl: `${tunnel}/v1`, tunnelUrl: tunnel };
+      return { mode: 'tunnel', credentialBaseUrl: `${tunnel}/v1`, llmTunnelUrl: tunnel };
     }
 
     if (hasN8nInstanceTag(classification, 'DOCKER')) {
@@ -489,8 +493,7 @@ export class YagrSetupApplicationService {
   }
 
   private async startCloudflareTunnel(targetUrl: string): Promise<string> {
-    const bin = await installCloudflaredIfNeeded();
-    return startProxyTunnel(targetUrl, bin);
+    return ensureLlmTunnelForRelayHostBaseUrl(targetUrl, this.yagrConfigService);
   }
 
   saveLlmProxyConfig(config: YagrLlmProxyConfig): void {

@@ -89,7 +89,7 @@ export interface SetupCallbacks {
     mode: YagrLlmProxyConfig['mode'];
     credentialBaseUrl: string;
     dockerHostAddress?: string;
-    tunnelUrl?: string;
+    llmTunnelUrl?: string;
   }>;
   saveLlmProxyConfig(config: YagrLlmProxyConfig): void;
   provisionLlmProxyCredential(): Promise<void>;
@@ -1271,7 +1271,7 @@ function SetupWizard({ callbacks, options, onDone }: {
             credentialBaseUrl: phase.relayUrl,
             confirmedCredentialBaseUrl: phase.relayUrl,
             dockerHostAddress: (phase.mode === 'docker') ? phase.relayUrl.replace(/^http:\/\//, '').replace(/:\d+.*/, '') : undefined,
-            tunnelUrl: (phase.mode === 'tunnel') ? phase.relayUrl.replace(/\/v1$/, '') : undefined,
+            llmTunnelUrl: (phase.mode === 'tunnel') ? phase.relayUrl.replace(/\/v1$/, '') : undefined,
           });
           setPhase({
             kind: 'llm-proxy-setup',

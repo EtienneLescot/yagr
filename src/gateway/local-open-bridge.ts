@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
-import { getActiveWorkflowOpenTunnelState } from '../n8n-local/n8n-tunnel.js';
+import { getActiveN8nAuthTunnelState } from '../n8n-local/n8n-tunnel.js';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 
 const DEFAULT_LOCAL_BRIDGE_HOST = '127.0.0.1';
@@ -82,7 +82,7 @@ export function decodeHtmlDataUrl(dataUrl: string): string {
   return decodeURIComponent(encoded);
 }
 
-export async function ensureLocalWorkflowOpenBridgeRunning(): Promise<void> {
+export async function ensureLocalN8nAuthBridgeRunning(): Promise<void> {
   if (serverPromise) {
     await serverPromise;
     return;
@@ -129,12 +129,12 @@ export function buildHostedWorkflowOpenBridgeUrl(baseUrl: string, target: string
   return `${normalizedBaseUrl}/open/n8n-workflow/${token}`;
 }
 
-export function getLocalWorkflowOpenBridgeBaseUrl(): string {
+export function getLocalN8nAuthBridgeBaseUrl(): string {
   return `http://${DEFAULT_LOCAL_BRIDGE_HOST}:${activePort}`;
 }
 
 export function resolvePreferredWorkflowOpenBridgeUrl(target: string, fallbackBaseUrl?: string): string {
-  const tunnelBaseUrl = getActiveWorkflowOpenTunnelState()?.tunnelUrl;
+  const tunnelBaseUrl = getActiveN8nAuthTunnelState()?.publicUrl;
   if (tunnelBaseUrl) {
     return buildHostedWorkflowOpenBridgeUrl(tunnelBaseUrl, target);
   }

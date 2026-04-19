@@ -98,6 +98,33 @@ flowchart TD
     ACC --> CLM
 ```
 
+## 4b. Wake-up des tunnels
+
+```mermaid
+flowchart LR
+    C[Consumer facade or service]
+    CFG[local config + reachability mode]
+    SSOT[src/n8n-local/tunnel-reachability.ts]
+    TUN[src/n8n-local/n8n-tunnel.ts]
+    BR[gateway/local-open-bridge.ts]
+    N8N[managed n8n]
+    RELAY[llm relay]
+
+    C --> SSOT
+    CFG --> SSOT
+    SSOT --> TUN
+    SSOT --> BR
+    TUN --> N8N
+    TUN --> RELAY
+```
+
+Observation:
+
+- les decisions de wake-up des tunnels n8n / n8n-auth / llm sont centralisees dans `tunnel-reachability.ts`
+- `n8n-tunnel.ts` reste responsable du lifecycle process `cloudflared`, pas de la politique d'activation par facade
+- le mode `force-all-facades` permet de forcer les chemins publics pour test sans dupliquer la logique dans chaque facade
+- `TUNNEL_DOMAIN` est resolu dans `n8n-tunnel.ts`, ce qui evite de dupliquer la logique custom-domain dans les facades, le setup ou le relay
+
 ## 5. Regles de maintenance
 
 Quand un flux transverse change, il faut:

@@ -182,9 +182,10 @@ export function buildRelayInfo(port: number): N8nRelayInfo {
   const configService = new YagrConfigService();
   const proxyConfig = configService.getLocalConfig().llmProxy;
   const hostBaseUrl = `http://127.0.0.1:${port}/v1`;
+  const llmTunnelUrl = proxyConfig?.llmTunnelUrl;
 
-  if (proxyConfig?.mode === 'tunnel' && proxyConfig.tunnelUrl) {
-    return { port, baseUrl: `${proxyConfig.tunnelUrl}/v1`, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
+  if (proxyConfig?.mode === 'tunnel' && llmTunnelUrl) {
+    return { port, baseUrl: `${llmTunnelUrl}/v1`, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
   }
 
   if (proxyConfig?.mode === 'docker' && proxyConfig.dockerHostAddress) {

@@ -78,14 +78,19 @@ Deux couches distinctes :
 
 ### N8N Cloudflare Tunnel Exposure
 
-Yagr peut exposer toute instance n8n **locale** via un tunnel Cloudflare, rendant les webhooks accessibles depuis l'exterieur (Telegram, machines distantes, services tiers).
+Yagr peut exposer des endpoints Yagr locaux via trois tunnels Cloudflare distincts, chacun avec une responsabilite explicite:
+
+- `n8n tunnel`: exposition publique de l'instance n8n locale Yagr-managed pour les webhooks
+- `n8n auth tunnel`: exposition publique du bridge d'auth local utilise pour l'ouverture distante de workflows
+- `llm tunnel`: exposition publique du relay LLM local quand une instance n8n cloud doit joindre Yagr
 
 **Composants implementes**
 
 | Fichier | Role |
 |---|---|
-| `src/n8n-local/n8n-tunnel.ts` | Module `N8nTunnelManager` : start/stop/refresh/status, persistance dans `YAGR_HOME/n8n-tunnel-state.json`, auto-install de `cloudflared` |
-| `src/gateway/local-open-bridge.ts` | Bridge HTTP tokenise qui materialise `presentWorkflowResult.url` pour les surfaces qui ne savent pas ouvrir une `data:` URL |
+| `src/n8n-local/n8n-tunnel.ts` | SSOT du lifecycle process des tunnels Cloudflare : start/stop/refresh/status, persistance des state files, auto-install de `cloudflared`, support `trycloudflare` ou domaine DNS dedie |
+| `src/n8n-local/tunnel-reachability.ts` | SSOT de wake-up des tunnels par consommateur (`telegram`, `webui`, `tui`, `cli`, `llm`) + mode force |
+| `src/gateway/local-open-bridge.ts` | Bridge HTTP tokenise d'auth n8n qui materialise `presentWorkflowResult.url` pour les surfaces qui ne savent pas ouvrir une `data:` URL |
 | `src/config/yagr-config-service.ts` | `N8nTunnelConfig` : `enabled`, `publicUrl`, `targetUrl` |
 | `src/gateway/workflow-links.ts` | Substitution de l'URL locale par l'URL tunnel publique quand active |
 | `src/prompt/build-system-prompt.ts` | Injection de l'URL tunnel publique dans le system prompt |
@@ -96,18 +101,32 @@ Yagr peut exposer toute instance n8n **locale** via un tunnel Cloudflare, rendan
 yagr n8n tunnel start
   → resolveN8nTunnelTargetUrl()        → URL locale n8n (managed uniquement)
   → installCloudflaredIfNeeded()       → telecharge cloudflared si absent
-  → startN8nTunnel(targetUrl)          → spawn cloudflared tunnel --url <targetUrl>
+  → ensureN8nTunnel(targetUrl)         → demarre/reuse un unique tunnel cloudflared
   → detecte URL trycloudflare.com      → parse le log file
   → persiste N8nTunnelState            → YAGR_HOME/n8n-tunnel-state.json
   → restartManagedN8nForTunnel()       → redemarre n8n avec N8N_WEBHOOK_URL
 ```
 
+**Regles de cycle de vie**
+
+- Le lifecycle process des tunnels Cloudflare est centralise dans `src/n8n-local/n8n-tunnel.ts`.
+- Les decisions de wake-up par facade/consommateur sont centralisees dans `src/n8n-local/tunnel-reachability.ts`.
+- Les erreurs/timeouts de startup nettoient maintenant le processus `cloudflared` au lieu de le laisser detache.
+- Les tunnels `n8n` et `n8n auth` sont maintenant lazy: demarrage explicite au setup/CLI, puis wake-up uniquement par les consommateurs qui en ont besoin.
+- Le tunnel `llm` passe par le meme orchestrateur de reachability et se reveille uniquement si le proxy LLM est configure en mode `tunnel`.
+- Le mode `force-all-facades` permet de tester les chemins publics depuis toutes les facades sans changer les call sites metier.
+- Le support `TUNNEL_DOMAIN` est centralise dans `n8n-tunnel.ts`: il bascule du mode `trycloudflare` vers un tunnel DNS dedie et assure aussi le routage `cloudflared tunnel route dns`.
+- Variables d'environnement SSOT:
+  - `YAGR_TUNNEL_REACHABILITY_MODE` pilote la politique de wake-up des tunnels.
+  - `TUNNEL_DOMAIN` active le mode tunnel Cloudflare sur domaine DNS dedie au lieu du mode `trycloudflare`.
+  - Ces variables sont consommees depuis les modules SSOT (`tunnel-reachability.ts`, `n8n-tunnel.ts`) et sont heritees par les workers/processus detaches via `process.env`.
+
 **Portee et limitations**
 
-- Le tunnel ne s'applique qu'aux instances **locales** (Yagr-managed direct). Les instances cloud/distante sont deja publiques.
-- Deux tunnels distincts coexistent : Tunnel A (LLM Proxy) et Tunnel B (N8N Webhook Exposure).
-- Quand l'exposition n8n est active, Yagr peut aussi demarrer un tunnel public dedie au workflow open bridge pour les surfaces distantes (ex: Telegram mobile).
-- Les URL `trycloudflare.com` changent a chaque restart — le systeme supporte `refresh` manuel.
+- Le `n8n tunnel` ne s'applique qu'aux instances **Yagr-managed locales** (direct ou docker). Les instances cloud/distantes sont deja publiques.
+- Trois tunnels distincts peuvent coexister: `n8n tunnel`, `n8n auth tunnel`, `llm tunnel`.
+- Quand l'exposition n8n est active, Yagr peut aussi demarrer un tunnel public dedie au bridge d'auth n8n pour les surfaces distantes (ex: Telegram mobile).
+- Les URL `trycloudflare.com` changent a chaque restart; en mode `TUNNEL_DOMAIN`, les hostnames sont stables mais restent dependants du compte Cloudflare configure localement.
 - `N8N_WEBHOOK_URL` est positionne au demarrage n8n ; un refresh tunnel propose un redemarrage explicite.
 - Le tunnel expose une surface **non authentifiee** par defaut pour les webhooks.
 

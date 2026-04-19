@@ -50,8 +50,8 @@ export interface YagrLlmProxyConfig {
   confirmedCredentialBaseUrl?: string;
   /** docker bridge gateway address, only set when mode=docker */
   dockerHostAddress?: string;
-  /** Cloudflare tunnel URL, only set when mode=tunnel */
-  tunnelUrl?: string;
+  /** Cloudflare LLM tunnel URL, only set when mode=tunnel */
+  llmTunnelUrl?: string;
 }
 
 export interface N8nTunnelConfig {
@@ -61,6 +61,16 @@ export interface N8nTunnelConfig {
   targetUrl: string;
   /** Last known public Cloudflare URL — may be stale if the daemon was restarted. */
   publicUrl?: string;
+}
+
+export type YagrTunnelReachabilityMode = 'on-demand' | 'force-all-facades';
+
+export interface YagrTunnelBehaviorConfig {
+  /**
+   * 'on-demand': only remote consumers wake public tunnels.
+   * 'force-all-facades': wake public tunnels for every facade to test hosted access paths.
+   */
+  reachabilityMode?: YagrTunnelReachabilityMode;
 }
 
 export type YagrShellCommandsMode = 'allow-all' | 'user-approved';
@@ -82,6 +92,7 @@ export interface YagrLocalConfig {
   llmProxy?: YagrLlmProxyConfig;
   shellCommands?: YagrShellCommandsConfig;
   n8nTunnel?: N8nTunnelConfig;
+  tunnels?: YagrTunnelBehaviorConfig;
 }
 
 export interface YagrConfigStoreLike {

@@ -30,6 +30,7 @@ import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
 import { decodeHtmlDataUrl, resolvePreferredWorkflowOpenBridgeUrl, resolveStoredWorkflowOpenTarget } from './local-open-bridge.js';
 import { getWebUiConfig, getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
+import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
 import {
   createRunAccumulator,
   processStreamEvent,
@@ -124,6 +125,8 @@ class WebUiGateway implements Gateway {
     if (this.server) {
       return;
     }
+
+    await ensureFacadeTunnelReachability('webui', this.configService);
 
     this.server = createServer(async (request, response) => {
       try {

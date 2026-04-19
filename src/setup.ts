@@ -11,8 +11,8 @@ import { installManagedDockerN8n } from './n8n-local/docker-manager.js';
 import { inspectLocalN8nBootstrap } from './n8n-local/detect.js';
 import { markManagedN8nBootstrapStage } from './n8n-local/state.js';
 import {
+  ensureN8nTunnel,
   installCloudflaredIfNeeded,
-  startN8nTunnel,
 } from './n8n-local/n8n-tunnel.js';
 import { YagrSetupApplicationService } from './setup/application-services.js';
 import {
@@ -231,7 +231,7 @@ function createSetupCallbacks(
 
     async startN8nTunnel(targetUrl: string) {
       const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
-      const tunnelState = await startN8nTunnel(targetUrl, bin);
+      const tunnelState = await ensureN8nTunnel(targetUrl, bin);
       new YagrConfigService().saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: tunnelState.publicUrl });
       // Update n8nac-config.json host URL so webhook URLs are correct.
       new YagrN8nConfigService().syncN8nacHostUrl(tunnelState.publicUrl);

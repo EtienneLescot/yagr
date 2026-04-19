@@ -133,7 +133,11 @@ Regle durable:
 
 ## Cloudflare Tunnel
 
-Le module `n8n-tunnel.ts` permet d'exposer l'instance n8n locale via un tunnel Cloudflare, rendant les webhooks accessibles depuis l'exterieur.
+Les modules `n8n-tunnel.ts` et `tunnel-reachability.ts` gerent trois usages Cloudflare distincts:
+
+- `n8n tunnel` pour exposer l'instance n8n locale Yagr-managed
+- `n8n auth tunnel` pour exposer le bridge d'auth utilise par l'ouverture distante de workflows
+- `llm tunnel` pour exposer le relay LLM local aux instances n8n cloud
 
 ### Composants
 
@@ -145,16 +149,24 @@ Le module `n8n-tunnel.ts` permet d'exposer l'instance n8n locale via un tunnel C
 | `getActiveTunnelState()` | Retourne le state si le process est vivant, null sinon |
 | `installCloudflaredIfNeeded()` | Telecharge cloudflared dans `YAGR_HOME/bin` si absent du PATH |
 | `resolveN8nTunnelTargetUrl()` | Resout l'URL locale n8n cible (managed uniquement) |
-| `startProxyTunnel(targetUrl)` | Tunnel dedie pour le LLM Proxy (deduplication par targetUrl) |
+| `startLlmTunnel(targetUrl)` | Tunnel dedie pour le relay LLM (deduplication par targetUrl) |
+| `startN8nAuthTunnel(targetUrl)` | Tunnel dedie pour le bridge d'auth n8n |
+| `ensureFacadeTunnelReachability(consumer)` | Politique de wake-up par facade/consommateur |
 
 ### Persistance
 
-L'etat du tunnel est persiste dans `YAGR_HOME/n8n-tunnel-state.json`:
+L'etat des tunnels est persiste sous `YAGR_HOME`:
+
+- `n8n-tunnel-state.json`
+- `proxy-runtime/n8n-auth-tunnel.json`
+- `proxy-runtime/llm-tunnel.json`
+
+Le state d'un tunnel suit la meme structure canonique:
 
 ```typescript
-interface N8nTunnelState {
+interface TunnelState {
   publicUrl: string;   // URL trycloudflare.com
-  targetUrl: string;   // URL locale n8n
+  targetUrl: string;   // URL locale cible
   pid: number;         // PID du process cloudflared
   startedAt: string;   // ISO timestamp
 }
@@ -163,8 +175,9 @@ interface N8nTunnelState {
 ### Regles de conception
 
 - Le tunnel n8n ne s'applique qu'aux instances **Yagr-managed**.
-- Deux tunnels coexistent : Tunnel A (LLM Proxy) et Tunnel B (N8N Webhook Exposure).
-- Le tunnel du LLM proxy ne s'applique qu'aux profils `custom-cloud`.
-- Les URL `trycloudflare.com` changent a chaque restart — le systeme supporte `refresh` manuel.
+- Trois tunnels peuvent coexister : `n8n`, `n8n auth`, `llm`.
+- Le tunnel `llm` ne s'applique qu'aux profils `custom-cloud`.
+- Les URL `trycloudflare.com` changent a chaque restart ; `TUNNEL_DOMAIN` bascule sur des hostnames DNS dedies geres par `cloudflared`.
 - `N8N_WEBHOOK_URL` est positionne au demarrage n8n ; un refresh tunnel propose un redemarrage explicite.
 - Le tunnel expose une surface **non authentifiee** par defaut pour les webhooks.
+- Le wake-up des tunnels est pilote par `tunnel-reachability.ts`, pas par les facades directement.

@@ -18,6 +18,7 @@ import {
 } from './format-message.js';
 import { getWebUiGatewayStatus } from './webui-config.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
+import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 
@@ -266,6 +267,10 @@ class TelegramGateway implements Gateway {
   }
 
   async start(): Promise<void> {
+    await ensureFacadeTunnelReachability('telegram', this.configService).catch((error) => {
+      process.stderr.write(`Warning: Telegram tunnel reachability is unavailable: ${error instanceof Error ? error.message : String(error)}\n`);
+    });
+
     this.bot.start(async (ctx) => {
       const payload = typeof ctx.payload === 'string' ? ctx.payload.trim() : '';
       const chatId = String(ctx.chat.id);
