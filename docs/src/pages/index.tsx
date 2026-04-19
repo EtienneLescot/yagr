@@ -11,7 +11,7 @@ import styles from './index.module.css';
 const productPillars = [
   'Intent to workflow',
   'Workflows as memory',
-  'Backend swappable',
+  'n8n-native execution',
 ];
 
 const proofPoints = [
@@ -43,13 +43,13 @@ const proofPoints = [
     icon: '💬',
     value: 'Gateways stay thin',
     label: 'Telegram and TUI are surfaces, not the brain',
-    detail: 'The agent logic lives above the gateways so Yagr can be reached through Telegram, local UI, CLI, or future web surfaces.',
+    detail: 'The agent logic lives above the gateways so Yagr can be reached through Telegram, local UI, and CLI without moving the brain into the surface.',
   },
   {
     icon: '⚙️',
-    value: 'Orchestrator boundary',
-    label: 'n8n today, other runtimes tomorrow',
-    detail: 'Yagr uses the n8n-as-code sync and schema foundation today while keeping the orchestrator replaceable for future runtimes.',
+    value: 'n8n grounded',
+    label: 'Built on real workflow execution',
+    detail: 'Yagr uses the n8n-as-code sync and schema foundation so generated automations stay grounded in real n8n capabilities.',
   },
 ];
 
@@ -79,21 +79,21 @@ const workflowSteps = [
   {label: '2', title: 'Ground in the engine', text: 'Yagr uses the node and schema knowledge of the current backend so generation stays anchored to real capabilities.'},
   {label: '3', title: 'Generate and validate', text: 'The agent produces workflows against the execution engine rather than embedding its own brain into the runtime.'},
   {label: '4', title: 'Persist as memory', text: 'The resulting workflow becomes durable executable memory that Yagr can revisit, explain, and evolve later.'},
-  {label: '5', title: 'Operate through surfaces', text: 'TUI, Telegram, and future gateways remain thin surfaces over the same agent and engine boundary.'},
+  {label: '5', title: 'Operate through surfaces', text: 'TUI, Telegram, and the local interfaces remain thin surfaces over the same agent and n8n execution layer.'},
 ];
 
 const quickStartSteps = [
   {
     label: 'Install',
-    text: 'Install the published Yagr CLI globally with the package manager you already use.',
+    text: 'Two commands. No n8n pre-installed, no API key hunting.',
   },
   {
     label: 'Onboard',
-    text: 'Bind the current orchestrator, your model provider, and any optional integrations in one guided first-run flow.',
+    text: 'A guided TUI wizard handles n8n, model credentials, and integrations. Docker spins up automatically.',
   },
   {
     label: 'Start',
-    text: 'Launch the agent and keep operating it through the same runtime loop from its own home.',
+    text: 'Run `yagr start` then prompt naturally — Yagr builds, publishes, and runs the workflow.',
   },
 ];
 
@@ -152,11 +152,12 @@ function HomepageHeader() {
                 <span />
               </div>
               <div className={styles.panelLabel}>Agent loop</div>
-              <pre className={styles.commandBlock}>
+                <pre className={styles.commandBlock}>
                 <code>{`$ npm install -g @yagr/agent@latest
 $ yagr onboard
-$ yagr start
-$ yagr telegram onboarding`}</code>
+→ guided wizard, zero friction
+→ autologin link to n8n canvas
+$ yagr start`}</code>
               </pre>
               <div className={styles.panelCardGrid}>
                 <div className={styles.panelCard}>
@@ -177,7 +178,7 @@ $ yagr telegram onboarding`}</code>
                 <div className={styles.panelCard}>
                   <span className={styles.cardKicker}>Engine</span>
                   <strong>n8n is the current orchestrator</strong>
-                  <p>The orchestrator sits underneath the agent so the product layer can stay stable as runtimes evolve.</p>
+                  <p>n8n sits underneath the agent so the product layer stays focused on user intent while execution remains visible in the canvas.</p>
                 </div>
               </div>
             </div>
@@ -226,8 +227,8 @@ export default function Home(): ReactNode {
                 </div>
                 <pre className={styles.quickStartCode}>
                   <code>{`npm install -g @yagr/agent
-yagr onboard
-yagr start`}</code>
+yagr onboard  # guided TUI wizard
+yagr start    # prompt-to-execution`}</code>
                 </pre>
                 <p className={styles.quickStartNote}>
                   Install the CLI, run the onboarding once, then start the local agent runtime from its own home.
