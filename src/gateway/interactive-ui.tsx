@@ -705,8 +705,22 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
       }
       const checkpointId = args[0];
       try {
-        await sessions.restoreCheckpoint(threadIdRef.current, checkpointId);
-        pushEntry('result', 'Checkpoint restored', `Checkpoint ${checkpointId} has been restored. Resume your conversation.`);
+        const result = await sessions.restoreCheckpoint(threadIdRef.current, checkpointId);
+        setFeed([]);
+        setPendingRequiredActions([]);
+        setWorkflowEmbeds([]);
+        seenOperationStartRef.current = new Set();
+        seenOperationEndRef.current = new Set();
+        operationStateRef.current = new Map();
+        if (result.compactionState) {
+          compactionService.reset(threadIdRef.current);
+          for (const compactionEvent of result.compactionState.compactionHistory) {
+            compactionService.notifyCompaction(threadIdRef.current, compactionEvent);
+          }
+        } else {
+          compactionService.reset(threadIdRef.current);
+        }
+        pushEntry('result', 'Checkpoint restored', `Checkpoint ${checkpointId} has been restored. Feed cleared. Resume your conversation.`);
         setActiveOperationText('Checkpoint restored. Ready for a request.');
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

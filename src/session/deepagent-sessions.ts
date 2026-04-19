@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import path from 'path';
+import path from 'node:path';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type {
   BaseCheckpointSaver,
@@ -11,6 +11,7 @@ import type {
   PendingWrite,
 } from '@langchain/langgraph-checkpoint';
 import type { CheckpointMetadata, DeepAgentSessionRecord, DeepAgentSessionScope } from './session-types.js';
+import type { CompactionState } from '../compaction/compaction-types.js';
 
 interface SessionScopeState {
   activeByScopeKey?: Record<string, string>;
@@ -298,27 +299,31 @@ export class CheckpointManager {
     return checkpoints.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  async getCheckpoint(sessionId: string, checkpointId: string): Promise<{ tuple: CheckpointTuple; metadata: CheckpointMetadata } | undefined> {
+  async getCheckpoint(sessionId: string, checkpointId: string): Promise<{ tuple: CheckpointTuple; metadata: CheckpointMetadata; compactionState: CompactionState | null } | undefined> {
     const cpPath = this.checkpointPath(sessionId, checkpointId);
     const checkpointFile = path.join(cpPath, 'checkpoint.json');
     const metadataFile = path.join(cpPath, 'metadata.json');
+    const compactionFile = path.join(cpPath, 'compaction.json');
 
     if (!fs.existsSync(checkpointFile) || !fs.existsSync(metadataFile)) {
       return undefined;
     }
 
     try {
-      const [tuple, metadata] = await Promise.all([
+      const [tuple, metadata, compactionState] = await Promise.all([
         Promise.resolve(JSON.parse(fs.readFileSync(checkpointFile, 'utf-8')) as CheckpointTuple),
         Promise.resolve(JSON.parse(fs.readFileSync(metadataFile, 'utf-8')) as CheckpointMetadata),
+        fs.existsSync(compactionFile)
+          ? Promise.resolve(JSON.parse(fs.readFileSync(compactionFile, 'utf-8')) as CompactionState)
+          : Promise.resolve(null),
       ]);
-      return { tuple, metadata };
+      return { tuple, metadata, compactionState };
     } catch {
       return undefined;
     }
   }
 
-  async saveCheckpoint(sessionId: string): Promise<CheckpointMetadata> {
+  async saveCheckpoint(sessionId: string, compactionState?: CompactionState | null): Promise<CheckpointMetadata> {
     const checkpointTuple = await this.checkpointer.getTuple({ configurable: { thread_id: sessionId } });
     if (!checkpointTuple) {
       throw new Error(`No checkpoint found for session ${sessionId}`);
@@ -348,6 +353,14 @@ export class CheckpointManager {
       'utf-8',
     );
 
+    if (compactionState) {
+      fs.writeFileSync(
+        path.join(cpPath, 'compaction.json'),
+        JSON.stringify(compactionState, null, 2),
+        'utf-8',
+      );
+    }
+
     return metadata;
   }
 
@@ -373,7 +386,7 @@ export class CheckpointManager {
     return 0;
   }
 
-  async restoreCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
+  async restoreCheckpoint(sessionId: string, checkpointId: string): Promise<CompactionState | null> {
     const found = await this.getCheckpoint(sessionId, checkpointId);
     if (!found) {
       throw new Error(`Checkpoint ${checkpointId} not found for session ${sessionId}`);
@@ -391,6 +404,8 @@ export class CheckpointManager {
     await Promise.all(
       this.groupPendingWritesByTask(found.tuple.pendingWrites).map(([taskId, writes]) => this.checkpointer.putWrites(savedConfig, writes, taskId)),
     );
+
+    return found.compactionState;
   }
 
   async deleteCheckpoint(sessionId: string, checkpointId: string): Promise<void> {

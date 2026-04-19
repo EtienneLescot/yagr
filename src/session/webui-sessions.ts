@@ -86,6 +86,14 @@ export class WebUiSessionRegistry {
     this.save({ ...session, displayMessages });
   }
 
+  clearDisplayMessages(sessionId: string): void {
+    const session = this.get(sessionId);
+    if (!session) {
+      return;
+    }
+    this.save({ ...session, displayMessages: [] });
+  }
+
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------

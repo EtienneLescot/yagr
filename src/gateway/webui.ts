@@ -432,6 +432,7 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'Invalid session id.' });
         return;
       }
+      await this.resolveAgentHandle();
       const checkpoints = await this.sessions.listCheckpoints(sessionId);
       this.sendJson(response, 200, { checkpoints });
       return;
@@ -445,7 +446,9 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'Invalid session id.' });
         return;
       }
-      const checkpoint = await this.sessions.saveCheckpoint(sessionId);
+      const handle = await this.resolveAgentHandle();
+      const compactionState = handle.compactionService.getState(sessionId);
+      const checkpoint = await this.sessions.saveCheckpoint(sessionId, { compactionState });
       this.sendJson(response, 201, { checkpoint });
       return;
     }
@@ -463,8 +466,17 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'Checkpoint ID is required.' });
         return;
       }
-      await this.sessions.restoreCheckpoint(sessionId, checkpointId);
-      this.sendJson(response, 200, { ok: true });
+      await this.resolveAgentHandle();
+      const result = await this.sessions.restoreCheckpoint(sessionId, checkpointId);
+      this.sessionRegistry.clearDisplayMessages(sessionId);
+      if (result.compactionState) {
+        const handle = await this.resolveAgentHandle();
+        handle.compactionService.reset(sessionId);
+        for (const compactionEvent of result.compactionState.compactionHistory) {
+          handle.compactionService.notifyCompaction(sessionId, compactionEvent);
+        }
+      }
+      this.sendJson(response, 200, { ok: true, compactionRestored: !!result.compactionState });
       return;
     }
 
@@ -481,6 +493,7 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'Checkpoint ID is required.' });
         return;
       }
+      await this.resolveAgentHandle();
       await this.sessions.deleteCheckpoint(sessionId, checkpointId);
       this.sendJson(response, 200, { ok: true });
       return;
@@ -814,7 +827,8 @@ class WebUiGateway implements Gateway {
 
       if (accumulator.fileModificationDetected) {
         try {
-          await this.sessions.saveCheckpoint(sessionId);
+          const compactionState = compactionService.getState(sessionId);
+          await this.sessions.saveCheckpoint(sessionId, { compactionState });
         } catch (err) {
           console.error('[auto-checkpoint] Failed to save checkpoint:', err);
         }

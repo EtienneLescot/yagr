@@ -18,6 +18,18 @@ import type {
   DeepAgentSessionScope,
   SessionSummary,
 } from './session-types.js';
+import type { CompactionState } from '../compaction/compaction-types.js';
+
+export interface RestoreResult {
+  checkpointId: string;
+  sessionId: string;
+  compactionState: CompactionState | null;
+  restoredAt: string;
+}
+
+export interface SaveCheckpointOptions {
+  compactionState?: CompactionState | null;
+}
 
 export { deriveSessionTitle, type CreateDeepAgentSessionOptions } from './deepagent-sessions.js';
 
@@ -32,6 +44,8 @@ export class SessionService {
   private readonly sessionsDir: string;
   private checkpointer?: BaseCheckpointSaver;
   private checkpointManager?: CheckpointManager;
+  private pendingCheckpointInitializer?: () => Promise<BaseCheckpointSaver>;
+  private checkpointAccessEnsured = false;
 
   constructor(options: SessionServiceOptions) {
     this.sessionsDir = options.sessionsDir;
@@ -42,6 +56,30 @@ export class SessionService {
   setCheckpointer(checkpointer: BaseCheckpointSaver): void {
     this.checkpointer = checkpointer;
     this.checkpointManager = new CheckpointManager(checkpointer, this.sessionsDir);
+    this.checkpointAccessEnsured = true;
+  }
+
+  registerCheckpointInitializer(initializer: () => Promise<BaseCheckpointSaver>): void {
+    this.pendingCheckpointInitializer = initializer;
+  }
+
+  async ensureCheckpointAccess(): Promise<void> {
+    if (this.checkpointManager) {
+      this.checkpointAccessEnsured = true;
+      return;
+    }
+    if (this.pendingCheckpointInitializer) {
+      const checkpointer = await this.pendingCheckpointInitializer();
+      this.setCheckpointer(checkpointer);
+      return;
+    }
+    throw new Error(
+      'Checkpoint access not available. Call setCheckpointer() or register a checkpoint initializer first.',
+    );
+  }
+
+  isCheckpointAccessReady(): boolean {
+    return this.checkpointManager !== undefined;
   }
 
   list(): SessionSummary[] {
@@ -121,36 +159,42 @@ export class SessionService {
 
   async listCheckpoints(sessionId: string): Promise<CheckpointMetadata[]> {
     if (!this.checkpointManager) {
-      return [];
+      await this.ensureCheckpointAccess();
     }
-    return this.checkpointManager.listCheckpoints(sessionId);
+    return this.checkpointManager!.listCheckpoints(sessionId);
   }
 
-  async saveCheckpoint(sessionId: string): Promise<CheckpointMetadata> {
+  async saveCheckpoint(sessionId: string, options: SaveCheckpointOptions = {}): Promise<CheckpointMetadata> {
     if (!this.checkpointManager) {
-      throw new Error('Checkpoint manager not initialized. Call setCheckpointer first.');
+      await this.ensureCheckpointAccess();
     }
-    return this.checkpointManager.saveCheckpoint(sessionId);
+    return this.checkpointManager!.saveCheckpoint(sessionId, options.compactionState);
   }
 
-  async restoreCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
+  async restoreCheckpoint(sessionId: string, checkpointId: string): Promise<RestoreResult> {
     if (!this.checkpointManager) {
-      throw new Error('Checkpoint manager not initialized. Call setCheckpointer first.');
+      await this.ensureCheckpointAccess();
     }
-    return this.checkpointManager.restoreCheckpoint(sessionId, checkpointId);
+    const compactionState = await this.checkpointManager!.restoreCheckpoint(sessionId, checkpointId);
+    return {
+      checkpointId,
+      sessionId,
+      compactionState,
+      restoredAt: new Date().toISOString(),
+    };
   }
 
   async deleteCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
     if (!this.checkpointManager) {
-      throw new Error('Checkpoint manager not initialized. Call setCheckpointer first.');
+      await this.ensureCheckpointAccess();
     }
-    return this.checkpointManager.deleteCheckpoint(sessionId, checkpointId);
+    return this.checkpointManager!.deleteCheckpoint(sessionId, checkpointId);
   }
 
   async deleteAllCheckpoints(sessionId: string): Promise<void> {
     if (!this.checkpointManager) {
-      throw new Error('Checkpoint manager not initialized. Call setCheckpointer first.');
+      await this.ensureCheckpointAccess();
     }
-    return this.checkpointManager.deleteAllCheckpoints(sessionId);
+    return this.checkpointManager!.deleteAllCheckpoints(sessionId);
   }
 }

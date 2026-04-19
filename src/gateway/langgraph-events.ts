@@ -432,13 +432,22 @@ async function handleToolEnd(
 
   switch (toolName) {
     case 'execute': {
-      accumulator.fileModificationDetected = true;
       if (output?.__type === WORKFLOW_EMBED_TYPE) {
         const embed = output as unknown as WorkflowEmbedPayload;
         const enriched = enrichWorkflowEmbedPayload(embed);
         accumulator.workflowEmbeds.push(enriched);
         await callbacks.onWorkflowEmbed?.(enriched);
       }
+      break;
+    }
+
+    case 'writeFile':
+    case 'write_file':
+    case 'writeWorkspaceFile':
+    case 'deleteFile':
+    case 'moveFile':
+    case 'replaceInFile': {
+      accumulator.fileModificationDetected = true;
       break;
     }
 
