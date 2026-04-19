@@ -42,6 +42,8 @@ export interface LangGraphRunAccumulator {
   thinkingStartedAt: number;
   /** Map of event-scoped tool run keys → operation metadata for in-flight tool calls. */
   activeOperations: Map<string, YagrOperationEvent>;
+  /** Set to true when a file-modifying tool completes successfully. */
+  fileModificationDetected: boolean;
 }
 
 export interface LangGraphEventCallbacks {
@@ -65,6 +67,7 @@ export function createRunAccumulator(): LangGraphRunAccumulator {
     thinkingText: '',
     thinkingStartedAt: 0,
     activeOperations: new Map(),
+    fileModificationDetected: false,
   };
 }
 
@@ -366,6 +369,7 @@ async function handleToolEnd(
 
   switch (toolName) {
     case 'execute': {
+      accumulator.fileModificationDetected = true;
       if (output?.__type === WORKFLOW_EMBED_TYPE) {
         const embed = output as unknown as WorkflowEmbedPayload;
         const enriched = enrichWorkflowEmbedPayload(embed);
@@ -377,6 +381,7 @@ async function handleToolEnd(
 
     case 'runScript':
     case 'runShell': {
+      accumulator.fileModificationDetected = true;
       if (output?.__type === WORKFLOW_EMBED_TYPE) {
         const embed = output as unknown as WorkflowEmbedPayload;
         const enriched = enrichWorkflowEmbedPayload(embed);

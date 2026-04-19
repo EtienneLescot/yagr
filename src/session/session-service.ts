@@ -9,10 +9,11 @@
  * `setCheckpointer()` before `deleteSession()` can fully clean up.
  */
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
-import { DeepAgentSessionStore, deriveSessionTitle, type CreateDeepAgentSessionOptions, type TouchDeepAgentSessionOptions } from './deepagent-sessions.js';
+import { CheckpointManager, DeepAgentSessionStore, deriveSessionTitle, type CreateDeepAgentSessionOptions, type TouchDeepAgentSessionOptions } from './deepagent-sessions.js';
 import { MemoryStore } from '../memory/memory-store.js';
 import { extractSessionMemory } from '../memory/extract-session-memory.js';
 import type {
+  CheckpointMetadata,
   DeepAgentSessionRecord,
   DeepAgentSessionScope,
   SessionSummary,
@@ -28,15 +29,19 @@ export interface SessionServiceOptions {
 export class SessionService {
   private readonly store: DeepAgentSessionStore;
   private readonly memoryStore: MemoryStore;
+  private readonly sessionsDir: string;
   private checkpointer?: BaseCheckpointSaver;
+  private checkpointManager?: CheckpointManager;
 
   constructor(options: SessionServiceOptions) {
+    this.sessionsDir = options.sessionsDir;
     this.store = new DeepAgentSessionStore(options.sessionsDir);
     this.memoryStore = new MemoryStore(options.memoriesDir);
   }
 
   setCheckpointer(checkpointer: BaseCheckpointSaver): void {
     this.checkpointer = checkpointer;
+    this.checkpointManager = new CheckpointManager(checkpointer, this.sessionsDir);
   }
 
   list(): SessionSummary[] {
@@ -109,5 +114,40 @@ export class SessionService {
       configurable: { thread_id: sessionId },
       version: 'v2' as const,
     };
+  }
+
+  async listCheckpoints(sessionId: string): Promise<CheckpointMetadata[]> {
+    if (!this.checkpointManager) {
+      return [];
+    }
+    return this.checkpointManager.listCheckpoints(sessionId);
+  }
+
+  async saveCheckpoint(sessionId: string): Promise<CheckpointMetadata> {
+    if (!this.checkpointManager) {
+      throw new Error('Checkpoint manager not initialized. Call setCheckpointer first.');
+    }
+    return this.checkpointManager.saveCheckpoint(sessionId);
+  }
+
+  async restoreCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
+    if (!this.checkpointManager) {
+      throw new Error('Checkpoint manager not initialized. Call setCheckpointer first.');
+    }
+    return this.checkpointManager.restoreCheckpoint(sessionId, checkpointId);
+  }
+
+  async deleteCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
+    if (!this.checkpointManager) {
+      throw new Error('Checkpoint manager not initialized. Call setCheckpointer first.');
+    }
+    return this.checkpointManager.deleteCheckpoint(sessionId, checkpointId);
+  }
+
+  async deleteAllCheckpoints(sessionId: string): Promise<void> {
+    if (!this.checkpointManager) {
+      throw new Error('Checkpoint manager not initialized. Call setCheckpointer first.');
+    }
+    return this.checkpointManager.deleteAllCheckpoints(sessionId);
   }
 }
