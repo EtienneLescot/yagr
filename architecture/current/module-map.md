@@ -111,11 +111,20 @@ Note: `create-language-model.ts` (factory Vercel AI SDK) **supprimé**. Les fonc
 
 Fichiers clefs:
 
-- `deepagent-sessions.ts` — store bas niveau des sessions Deepagents (`thread_id`, scopes façade, rotation/reset)
-- `webui-sessions.ts` — `WebUiSessionRegistry` : registre fichier des sessions WebUI (metadata + display messages)
+- `session-service.ts` — **SSOT** `SessionService` : gestion unifiee des sessions pour toutes les facades
+- `deepagent-sessions.ts` — store bas niveau des sessions Deepagents (`thread_id`, scopes facade, rotation/reset)
+- `webui-sessions.ts` — `WebUiSessionRegistry` : registre fichier des sessions WebUI (metadata + display messages) — usage interne facade
 - `session-types.ts` — types partages minimaux (`SessionMessage`, `SerializedChatMessage`, `SessionSummary`)
+- `index.ts` — barrel export
 
-Note: `session-store.ts` (`SessionStore`) **supprimé**. La persistance de l'historique de conversation reste assurée par le checkpointer LangGraph (`MemorySaver`) dans deepagentsjs. `deepagent-sessions.ts` ajoute le registre de sessions bas niveau, agnostique des facades, autour des `thread_id`. `WebUiSessionRegistry` ne stocke que les metadonnees UI et les display messages.
+`SessionService` est le point d'autorite unique pour le cycle de vie des sessions:
+
+- `list()`, `get()`, `create()`, `resume()`, `delete()`
+- `getOrCreateForScope()`, `rotateForScope()`, `clearScope()` — gestion par scope (webui, telegram, tui)
+- `setCheckpointer()` — injection du checkpointer pour nettoyage des threads
+- `buildSessionConfig()` — construction de la config LangGraph avec `thread_id`
+
+Chaque facade instancie sa propre `SessionService` et delegue la gestion des sessions au service. Le checkpointer est injecte apres creation de l'agent.
 
 ### `src/tools/`
 
