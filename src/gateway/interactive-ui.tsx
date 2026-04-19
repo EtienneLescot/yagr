@@ -44,6 +44,7 @@ type RenderLine = {
 
 type InteractiveAppProps = {
   agent: YagrDeepAgentHandle['agent'];
+  compactionService: YagrDeepAgentHandle['compactionService'];
   threadIdRef: { current: string };
   options: YagrRunOptions;
   sessions: SessionService;
@@ -261,7 +262,7 @@ function RequiredActionList({ actions }: { actions: YagrRequiredAction[] }): JSX
   );
 }
 
-function YagrInteractiveApp({ agent, threadIdRef, options, sessions }: InteractiveAppProps) {
+function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, sessions }: InteractiveAppProps) {
   const app = useApp();
   const { stdout } = useStdout();
   const terminalHeight = stdout?.rows ?? 24;
@@ -565,6 +566,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, sessions }: Interacti
               setActiveOperationText(`Workflow ready: ${w.targetUrl ?? w.url}`);
             },
             onCompaction: async (compaction) => {
+              await compactionService.notifyCompaction(threadIdRef.current, compaction);
               setActiveOperationText(`Context compacted: ${compaction.messagesCompacted} msgs → ${compaction.preservedRecentMessages} preserved`);
             },
           });
@@ -612,7 +614,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, sessions }: Interacti
     } finally {
       setIsRunning(false);
     }
-  }, [agent, appendAssistantDelta, appendStreamDelta, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantStream, flushStreamBuffer, handleOperationEvent, options, pushEntry, resetStreamingBuffers, threadIdRef]);
+  }, [agent, appendAssistantDelta, appendStreamDelta, compactionService, display.showResponses, display.showThinking, display.showUserPrompts, finalizeAssistantStream, flushStreamBuffer, handleOperationEvent, options, pushEntry, resetStreamingBuffers, threadIdRef]);
 
   const submitPrompt = useCallback(async (rawPrompt: string) => {
     const prompt = rawPrompt.trim();
@@ -657,6 +659,7 @@ function YagrInteractiveApp({ agent, threadIdRef, options, sessions }: Interacti
     }
 
     if (prompt === '/reset') {
+      compactionService.reset(threadIdRef.current);
       const newSession = sessions.rotateForScope({ kind: 'tui', key: 'default' }, { title: 'Interactive session' });
       threadIdRef.current = newSession.id;
       setFeed([]);
@@ -919,7 +922,7 @@ export async function runInteractiveGateway(handle: YagrDeepAgentHandle, options
   const session = sessions.getOrCreateForScope({ kind: 'tui', key: 'default' }, { title: 'Interactive session' });
   const threadIdRef = { current: session.id };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ink = render(<YagrInteractiveApp agent={handle.agent} threadIdRef={threadIdRef} options={options} sessions={sessions} />, {
+  const ink = render(<YagrInteractiveApp agent={handle.agent} compactionService={handle.compactionService} threadIdRef={threadIdRef} options={options} sessions={sessions} />, {
     exitOnCtrlC: false,
     alternateScreen: true,
   } as any);

@@ -557,6 +557,10 @@ class TelegramGateway implements Gateway {
     const oldSessionId = oldSession.id;
 
     this.sessions.rotateForScope(scope, { title: `Telegram chat ${chatId}` });
+    if (this.agentHandlePromise) {
+      const { compactionService } = await this.resolveAgentHandle();
+      compactionService.reset(oldSessionId);
+    }
 
     // Delete old thread from checkpointer (avoid re-deleting the record since rotateForScope already closed it)
     try {
@@ -606,6 +610,8 @@ class TelegramGateway implements Gateway {
         await processStreamEvent(event, accumulator, {
           onUserVisibleUpdate: sendProgressUpdate,
           onCompaction: async (compaction) => {
+            const { compactionService } = await this.resolveAgentHandle();
+            await compactionService.notifyCompaction(threadId, compaction);
             const msg = `🗜️ <b>Context compacted</b>\n${compaction.summary}\n(${compaction.messagesCompacted} msgs → ${compaction.preservedRecentMessages} preserved)`;
             await this.sendHtml(chatId, msg);
           },

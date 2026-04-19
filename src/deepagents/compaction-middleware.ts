@@ -3,12 +3,13 @@ import type { YagrContextCompactionEvent } from '../types.js';
 import type { CompactionService } from '../compaction/compaction-service.js';
 
 export interface CompactionMiddlewareOptions {
+  sessionId: string;
   compactionService: CompactionService;
   onCompaction?: (event: YagrContextCompactionEvent) => void | Promise<void>;
 }
 
 export function createCompactionEventHandler(options: CompactionMiddlewareOptions) {
-  const { compactionService, onCompaction } = options;
+  const { sessionId, compactionService, onCompaction } = options;
 
   return async function handleCompactionEvent(event: StreamEvent): Promise<void> {
     if (!isCompactionEvent(event)) {
@@ -20,7 +21,7 @@ export function createCompactionEventHandler(options: CompactionMiddlewareOption
       return;
     }
 
-    await compactionService.notifyCompaction(compactionEvent);
+    await compactionService.notifyCompaction(sessionId, compactionEvent);
     await onCompaction?.(compactionEvent);
   };
 }
@@ -73,9 +74,10 @@ function extractCompactionEvent(event: StreamEvent): YagrContextCompactionEvent 
 
 export async function processCompactionFromStream(
   event: StreamEvent,
+  sessionId: string,
   compactionService: CompactionService,
   onCompaction?: (event: YagrContextCompactionEvent) => void | Promise<void>,
 ): Promise<void> {
-  const handler = createCompactionEventHandler({ compactionService, onCompaction });
+  const handler = createCompactionEventHandler({ sessionId, compactionService, onCompaction });
   await handler(event);
 }

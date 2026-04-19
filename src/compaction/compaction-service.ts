@@ -5,11 +5,7 @@ import { DEFAULT_COMPACTION_CONFIG, buildCompactionContextBlock } from './compac
 export class CompactionService {
   private readonly config: CompactionConfig;
   private readonly subscribers = new Set<CompactionSubscriber>();
-  private state: CompactionState = {
-    lastCompaction: null,
-    compactionHistory: [],
-    totalCompactions: 0,
-  };
+  private readonly states = new Map<string, CompactionState>();
 
   constructor(config: Partial<CompactionConfig> = {}) {
     this.config = { ...DEFAULT_COMPACTION_CONFIG, ...config };
@@ -19,16 +15,17 @@ export class CompactionService {
     return { ...this.config };
   }
 
-  getState(): CompactionState {
+  getState(sessionId: string): CompactionState {
+    const state = this.states.get(sessionId) ?? this.emptyState();
     return {
-      lastCompaction: this.state.lastCompaction,
-      compactionHistory: [...this.state.compactionHistory],
-      totalCompactions: this.state.totalCompactions,
+      lastCompaction: state.lastCompaction,
+      compactionHistory: [...state.compactionHistory],
+      totalCompactions: state.totalCompactions,
     };
   }
 
-  getContextBlock(limit = 3): string {
-    return buildCompactionContextBlock(this.state, limit);
+  getContextBlock(sessionId: string, limit = 3): string {
+    return buildCompactionContextBlock(this.getState(sessionId), limit);
   }
 
   subscribe(subscriber: CompactionSubscriber): () => void {
@@ -36,15 +33,16 @@ export class CompactionService {
     return () => this.subscribers.delete(subscriber);
   }
 
-  async notifyCompaction(event: YagrContextCompactionEvent): Promise<void> {
-    this.state = {
+  async notifyCompaction(sessionId: string, event: YagrContextCompactionEvent): Promise<void> {
+    const previousState = this.states.get(sessionId) ?? this.emptyState();
+    this.states.set(sessionId, {
       lastCompaction: event,
       compactionHistory: [
         event,
-        ...this.state.compactionHistory.slice(0, (this.config.historyLimit ?? 50) - 1),
+        ...previousState.compactionHistory.slice(0, (this.config.historyLimit ?? 50) - 1),
       ],
-      totalCompactions: this.state.totalCompactions + 1,
-    };
+      totalCompactions: previousState.totalCompactions + 1,
+    });
 
     const notifications = [...this.subscribers].map(async (s) => {
       try {
@@ -57,17 +55,20 @@ export class CompactionService {
     await Promise.allSettled(notifications);
   }
 
-  reset(): void {
-    this.state = {
+  reset(sessionId?: string): void {
+    if (!sessionId) {
+      this.states.clear();
+      return;
+    }
+
+    this.states.delete(sessionId);
+  }
+
+  private emptyState(): CompactionState {
+    return {
       lastCompaction: null,
       compactionHistory: [],
       totalCompactions: 0,
     };
   }
-}
-
-const globalCompactionService = new CompactionService();
-
-export function getGlobalCompactionService(): CompactionService {
-  return globalCompactionService;
 }

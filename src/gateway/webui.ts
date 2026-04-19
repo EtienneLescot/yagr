@@ -27,7 +27,6 @@ import {
 import { getSnapshotContextWindow } from '../llm/provider-metadata.js';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
-import { getGlobalCompactionService } from '../compaction/compaction-service.js';
 import { decodeHtmlDataUrl, resolvePreferredWorkflowOpenBridgeUrl, resolveStoredWorkflowOpenTarget } from './local-open-bridge.js';
 import { getWebUiConfig, getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
 import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
@@ -336,19 +335,28 @@ class WebUiGateway implements Gateway {
       if (sessionId && isValidSessionId(sessionId)) {
         this.sessionRegistry.delete(sessionId);
         await this.sessions.delete(sessionId);
+        this.clearCompactionState(sessionId);
       }
       this.sendJson(response, 200, { ok: true });
       return;
     }
 
     if (method === 'POST' && url.pathname === '/api/chat/compact') {
-      const compactionService = getGlobalCompactionService();
-      const state = compactionService.getState();
+      const body = await this.readJson(request);
+      const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+      if (sessionId && !isValidSessionId(sessionId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
+      const handle = this.agentHandlePromise ? await this.resolveAgentHandle() : undefined;
+      const state = sessionId && handle
+        ? handle.compactionService.getState(sessionId)
+        : { lastCompaction: null, compactionHistory: [], totalCompactions: 0 };
       this.sendJson(response, 200, {
         compacted: state.lastCompaction !== null,
         event: state.lastCompaction,
         totalCompactions: state.totalCompactions,
-        contextBlock: compactionService.getContextBlock(),
+        contextBlock: sessionId && handle ? handle.compactionService.getContextBlock(sessionId) : '',
       });
       return;
     }
@@ -386,8 +394,9 @@ class WebUiGateway implements Gateway {
       return;
     }
 
-    if (method === 'GET' && url.pathname.startsWith('/api/sessions/')) {
-      const sessionId = url.pathname.slice('/api/sessions/'.length);
+    if (method === 'GET' && url.pathname.match(/^\/api\/sessions\/[^/]+$/)) {
+      const match = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+      const sessionId = match?.[1] ?? '';
       if (!isValidSessionId(sessionId)) {
         this.sendJson(response, 400, { error: 'Invalid session id.' });
         return;
@@ -401,14 +410,16 @@ class WebUiGateway implements Gateway {
       return;
     }
 
-    if (method === 'DELETE' && url.pathname.startsWith('/api/sessions/')) {
-      const sessionId = url.pathname.slice('/api/sessions/'.length);
+    if (method === 'DELETE' && url.pathname.match(/^\/api\/sessions\/[^/]+$/)) {
+      const match = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+      const sessionId = match?.[1] ?? '';
       if (!isValidSessionId(sessionId)) {
         this.sendJson(response, 400, { error: 'Invalid session id.' });
         return;
       }
       this.sessionRegistry.delete(sessionId);
       await this.sessions.delete(sessionId);
+      this.clearCompactionState(sessionId);
       this.sendJson(response, 200, { ok: true });
       return;
     }
@@ -604,6 +615,16 @@ class WebUiGateway implements Gateway {
     );
   }
 
+  private clearCompactionState(sessionId: string): void {
+    if (!this.agentHandlePromise) {
+      return;
+    }
+
+    void this.agentHandlePromise.then((handle) => {
+      handle.compactionService.reset(sessionId);
+    });
+  }
+
   private async readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
     const chunks: Buffer[] = [];
     for await (const chunk of request) {
@@ -676,7 +697,7 @@ class WebUiGateway implements Gateway {
     try {
       writeEvent({ type: 'start', sessionId, message: 'Run started.' });
 
-      const { agent } = await this.resolveAgentHandle();
+      const { agent, compactionService } = await this.resolveAgentHandle();
       this.sessions.ensure(sessionId, {
         scope: { kind: 'webui', key: sessionId },
         title: deriveSessionTitle(message),
@@ -767,6 +788,7 @@ class WebUiGateway implements Gateway {
             });
           },
           onCompaction: (compaction) => {
+            void compactionService.notifyCompaction(sessionId, compaction);
             writeEvent({
               type: 'compaction',
               summary: compaction.summary,
