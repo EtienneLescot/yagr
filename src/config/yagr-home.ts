@@ -23,10 +23,6 @@ export interface YagrPaths {
   n8nAuthTunnelStatePath: string;
   n8nConfigPath: string;
   n8nCredentialsPath: string;
-  legacyYagrCredentialsDir: string;
-  legacyYagrCredentialsPath: string;
-  legacyN8nCredentialsDir: string;
-  legacyN8nCredentialsPath: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,27 +193,6 @@ export function getYagrDeepAgentSessionsDir(): string {
   return path.join(getYagrHomeDir(), 'deepagent-sessions');
 }
 
-export function resolveLegacyConfStorePath(
-  projectName: string,
-  configName: string,
-  env: NodeJS.ProcessEnv = process.env,
-  platform: NodeJS.Platform = process.platform,
-  homedir: string = os.homedir(),
-): string {
-  const suffix = `${projectName}-nodejs`;
-  if (platform === 'win32') {
-    const appDataDir = env.APPDATA?.trim() || path.join(homedir, 'AppData', 'Roaming');
-    return path.join(appDataDir, suffix, `${configName}.json`);
-  }
-
-  if (platform === 'darwin') {
-    return path.join(homedir, 'Library', 'Preferences', suffix, `${configName}.json`);
-  }
-
-  const xdgConfigHome = env.XDG_CONFIG_HOME?.trim() || path.join(homedir, '.config');
-  return path.join(xdgConfigHome, suffix, `${configName}.json`);
-}
-
 export function getYagrPaths(): YagrPaths {
   const launchDir = getYagrLaunchDir();
   const homeDir = getYagrHomeDir();
@@ -226,8 +201,6 @@ export function getYagrPaths(): YagrPaths {
   const proxyRuntimeDir = getYagrProxyRuntimeDir();
   const accountAuthDir = getYagrAccountAuthDir();
   const deepAgentSessionsDir = getYagrDeepAgentSessionsDir();
-  const legacyYagrCredentialsPath = resolveLegacyConfStorePath('yagr', 'credentials');
-  const legacyN8nCredentialsPath = resolveLegacyConfStorePath('n8nac', 'credentials');
 
   return {
     launchDir,
@@ -247,10 +220,6 @@ export function getYagrPaths(): YagrPaths {
     n8nAuthTunnelStatePath: path.join(proxyRuntimeDir, 'n8n-auth-tunnel.json'),
     n8nConfigPath: path.join(n8nWorkspaceDir, 'n8nac-config.json'),
     n8nCredentialsPath: path.join(homeDir, 'n8n-credentials.json'),
-    legacyYagrCredentialsDir: path.dirname(legacyYagrCredentialsPath),
-    legacyYagrCredentialsPath,
-    legacyN8nCredentialsDir: path.dirname(legacyN8nCredentialsPath),
-    legacyN8nCredentialsPath,
   };
 }
 

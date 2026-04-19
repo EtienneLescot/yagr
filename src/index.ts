@@ -16,7 +16,6 @@ export {
   registerContextMemorySource,
   registerCoreMemorySource,
   resolveBundledManagerInstructionsPath,
-  resolveLegacyConfStorePath,
   resolveYagrHomeDir,
 } from './config/yagr-home.js';
 export { runCliGateway } from './gateway/cli.js';
