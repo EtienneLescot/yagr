@@ -380,15 +380,16 @@ export class CheckpointManager {
     }
 
     const checkpointNamespace = found.tuple.config.configurable?.checkpoint_ns;
-    const restoredConfig = await this.checkpointer.put(
-      this.buildRestoreConfig(sessionId, checkpointNamespace),
+    const restoreConfig = this.buildRestoreConfig(sessionId, checkpointNamespace);
+    const savedConfig = await this.checkpointer.put(
+      restoreConfig,
       found.tuple.checkpoint,
       found.tuple.metadata ?? this.buildFallbackLangGraphMetadata(),
       {} as ChannelVersions,
     );
 
     await Promise.all(
-      this.groupPendingWritesByTask(found.tuple.pendingWrites).map(([taskId, writes]) => this.checkpointer.putWrites(restoredConfig, writes, taskId)),
+      this.groupPendingWritesByTask(found.tuple.pendingWrites).map(([taskId, writes]) => this.checkpointer.putWrites(savedConfig, writes, taskId)),
     );
   }
 
