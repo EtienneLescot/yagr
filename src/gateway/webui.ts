@@ -404,6 +404,68 @@ class WebUiGateway implements Gateway {
       return;
     }
 
+    // GET /api/sessions/:sessionId/checkpoints — list checkpoints for a session
+    if (method === 'GET' && url.pathname.match(/^\/api\/sessions\/[^/]+\/checkpoints$/)) {
+      const match = url.pathname.match(/^\/api\/sessions\/([^/]+)\/checkpoints$/);
+      const sessionId = match?.[1] ?? '';
+      if (!isValidSessionId(sessionId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
+      const checkpoints = await this.sessions.listCheckpoints(sessionId);
+      this.sendJson(response, 200, { checkpoints });
+      return;
+    }
+
+    // POST /api/sessions/:sessionId/checkpoints — create a checkpoint for a session
+    if (method === 'POST' && url.pathname.match(/^\/api\/sessions\/[^/]+\/checkpoints$/)) {
+      const match = url.pathname.match(/^\/api\/sessions\/([^/]+)\/checkpoints$/);
+      const sessionId = match?.[1] ?? '';
+      if (!isValidSessionId(sessionId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
+      const checkpoint = await this.sessions.saveCheckpoint(sessionId);
+      this.sendJson(response, 201, { checkpoint });
+      return;
+    }
+
+    // POST /api/sessions/:sessionId/restore/:checkpointId — restore a checkpoint
+    if (method === 'POST' && url.pathname.match(/^\/api\/sessions\/[^/]+\/restore\/[^/]+$/)) {
+      const match = url.pathname.match(/^\/api\/sessions\/([^/]+)\/restore\/([^/]+)$/);
+      const sessionId = match?.[1] ?? '';
+      const checkpointId = match?.[2] ?? '';
+      if (!isValidSessionId(sessionId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
+      if (!checkpointId) {
+        this.sendJson(response, 400, { error: 'Checkpoint ID is required.' });
+        return;
+      }
+      await this.sessions.restoreCheckpoint(sessionId, checkpointId);
+      this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    // DELETE /api/sessions/:sessionId/checkpoints/:checkpointId — delete a checkpoint
+    if (method === 'DELETE' && url.pathname.match(/^\/api\/sessions\/[^/]+\/checkpoints\/[^/]+$/)) {
+      const match = url.pathname.match(/^\/api\/sessions\/([^/]+)\/checkpoints\/([^/]+)$/);
+      const sessionId = match?.[1] ?? '';
+      const checkpointId = match?.[2] ?? '';
+      if (!isValidSessionId(sessionId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
+      if (!checkpointId) {
+        this.sendJson(response, 400, { error: 'Checkpoint ID is required.' });
+        return;
+      }
+      await this.sessions.deleteCheckpoint(sessionId, checkpointId);
+      this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
     // PATCH /api/sessions/:id — save rich UI display messages after each run.
     if (method === 'PATCH' && url.pathname.startsWith('/api/sessions/')) {
       const sessionId = url.pathname.slice('/api/sessions/'.length);
@@ -690,6 +752,14 @@ class WebUiGateway implements Gateway {
 
       runFinished = true;
       this.persistSessionMetadata(sessionId);
+
+      if (accumulator.fileModificationDetected) {
+        try {
+          await this.sessions.saveCheckpoint(sessionId);
+        } catch (err) {
+          console.error('[auto-checkpoint] Failed to save checkpoint:', err);
+        }
+      }
 
       writeEvent({
         type: 'final',

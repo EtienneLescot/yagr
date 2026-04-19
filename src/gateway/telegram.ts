@@ -380,6 +380,67 @@ class TelegramGateway implements Gateway {
       await ctx.reply('Chat unlinked. Use the onboarding link or QR code again to reconnect.');
     });
 
+    this.bot.command('checkpoints', async (ctx) => {
+      const chatId = String(ctx.chat.id);
+      if (!this.isLinkedChat(chatId)) {
+        await ctx.reply('This chat is not linked.');
+        return;
+      }
+      const threadId = await this.getOrCreateThreadId(chatId);
+      const checkpoints = await this.sessions.listCheckpoints(threadId);
+      if (checkpoints.length === 0) {
+        await ctx.reply('No checkpoints saved for this conversation.');
+        return;
+      }
+      const lines = checkpoints.map((cp, i) => `${i + 1}. ${new Date(cp.createdAt).toLocaleString()} - ${cp.messageCount} messages`);
+      await ctx.reply(`Checkpoints:\n${lines.join('\n')}`);
+    });
+
+    this.bot.command('checkpoint_save', async (ctx) => {
+      const chatId = String(ctx.chat.id);
+      if (!this.isLinkedChat(chatId)) {
+        await ctx.reply('This chat is not linked.');
+        return;
+      }
+      const threadId = await this.getOrCreateThreadId(chatId);
+      const checkpoint = await this.sessions.saveCheckpoint(threadId);
+      await ctx.reply(`Checkpoint saved: ${checkpoint.id}`);
+    });
+
+    this.bot.command('checkpoint_restore', async (ctx) => {
+      const chatId = String(ctx.chat.id);
+      if (!this.isLinkedChat(chatId)) {
+        await ctx.reply('This chat is not linked.');
+        return;
+      }
+      const args = ctx.message.text.split(' ').slice(1);
+      if (args.length === 0) {
+        await ctx.reply('Usage: /checkpoint_restore <checkpoint_id>');
+        return;
+      }
+      const checkpointId = args[0];
+      const threadId = await this.getOrCreateThreadId(chatId);
+      await this.sessions.restoreCheckpoint(threadId, checkpointId);
+      await ctx.reply('Checkpoint restored.');
+    });
+
+    this.bot.command('checkpoint_delete', async (ctx) => {
+      const chatId = String(ctx.chat.id);
+      if (!this.isLinkedChat(chatId)) {
+        await ctx.reply('This chat is not linked.');
+        return;
+      }
+      const args = ctx.message.text.split(' ').slice(1);
+      if (args.length === 0) {
+        await ctx.reply('Usage: /checkpoint_delete <checkpoint_id>');
+        return;
+      }
+      const checkpointId = args[0];
+      const threadId = await this.getOrCreateThreadId(chatId);
+      await this.sessions.deleteCheckpoint(threadId, checkpointId);
+      await ctx.reply('Checkpoint deleted.');
+    });
+
     this.bot.on('text', async (ctx) => {
       const chatId = String(ctx.chat.id);
       const text = ctx.message.text.trim();

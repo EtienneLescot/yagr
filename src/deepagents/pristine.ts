@@ -1,5 +1,5 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import type { MemorySaver } from '@langchain/langgraph';
+import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
 import { LocalShellBackend } from 'deepagents';
 import { getActiveMemorySourcePaths } from '../config/yagr-home.js';
 
@@ -20,7 +20,7 @@ export function buildPristineDeepAgentConfig({
   rootDir = process.cwd(),
 }: {
   model: BaseChatModel;
-  checkpointer: MemorySaver;
+  checkpointer: BaseCheckpointSaver;
   rootDir?: string;
 }) {
   return {

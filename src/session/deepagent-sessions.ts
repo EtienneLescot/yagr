@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import path from 'node:path';
+import path from 'path';
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
-import type { DeepAgentSessionRecord, DeepAgentSessionScope } from './session-types.js';
+import type { CheckpointMetadata, DeepAgentSessionRecord, DeepAgentSessionScope } from './session-types.js';
 
 interface SessionScopeState {
   activeByScopeKey?: Record<string, string>;
@@ -249,6 +249,137 @@ export class DeepAgentSessionStore {
   private ensureDir(): void {
     if (!fs.existsSync(this.sessionsDir)) {
       fs.mkdirSync(this.sessionsDir, { recursive: true });
+    }
+  }
+}
+
+export class CheckpointManager {
+  constructor(
+    private readonly checkpointer: BaseCheckpointSaver,
+    private readonly sessionsDir: string,
+  ) {}
+
+  private checkpointDir(sessionId: string): string {
+    return path.join(this.sessionsDir, sessionId, 'checkpoints');
+  }
+
+  private checkpointPath(sessionId: string, checkpointId: string): string {
+    return path.join(this.checkpointDir(sessionId), checkpointId);
+  }
+
+  async listCheckpoints(sessionId: string): Promise<CheckpointMetadata[]> {
+    const dir = this.checkpointDir(sessionId);
+    if (!fs.existsSync(dir)) {
+      return [];
+    }
+
+    const checkpoints: CheckpointMetadata[] = [];
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const metaPath = path.join(dir, entry.name, 'metadata.json');
+      if (!fs.existsSync(metaPath)) continue;
+      try {
+        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as CheckpointMetadata;
+        checkpoints.push(meta);
+      } catch {
+        // Skip invalid checkpoint metadata
+      }
+    }
+
+    return checkpoints.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async getCheckpoint(sessionId: string, checkpointId: string): Promise<{ checkpoint: unknown; metadata: CheckpointMetadata } | undefined> {
+    const cpPath = this.checkpointPath(sessionId, checkpointId);
+    const checkpointFile = path.join(cpPath, 'checkpoint.json');
+    const metadataFile = path.join(cpPath, 'metadata.json');
+
+    if (!fs.existsSync(checkpointFile) || !fs.existsSync(metadataFile)) {
+      return undefined;
+    }
+
+    try {
+      const [checkpoint, metadata] = await Promise.all([
+        Promise.resolve(JSON.parse(fs.readFileSync(checkpointFile, 'utf-8'))),
+        Promise.resolve(JSON.parse(fs.readFileSync(metadataFile, 'utf-8')) as CheckpointMetadata),
+      ]);
+      return { checkpoint, metadata };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async saveCheckpoint(sessionId: string): Promise<CheckpointMetadata> {
+    const threadChannels = await this.checkpointer.get({ configurable: { thread_id: sessionId } });
+    if (!threadChannels) {
+      throw new Error(`No checkpoint found for session ${sessionId}`);
+    }
+
+    const checkpointId = randomUUID();
+    const now = new Date().toISOString();
+    const cpPath = this.checkpointPath(sessionId, checkpointId);
+
+    fs.mkdirSync(cpPath, { recursive: true });
+
+    const metadata: CheckpointMetadata = {
+      id: checkpointId,
+      sessionId,
+      createdAt: now,
+      messageCount: this.countMessages(threadChannels),
+    };
+
+    fs.writeFileSync(
+      path.join(cpPath, 'checkpoint.json'),
+      JSON.stringify(threadChannels),
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(cpPath, 'metadata.json'),
+      JSON.stringify(metadata, null, 2),
+      'utf-8',
+    );
+
+    return metadata;
+  }
+
+  private countMessages(channelData: unknown): number {
+    if (!channelData || typeof channelData !== 'object') return 0;
+    const data = channelData as Record<string, unknown>;
+    if (Array.isArray(data.messages)) {
+      return data.messages.length;
+    }
+    if (Array.isArray(data.channel_messages)) {
+      return data.channel_messages.length;
+    }
+    return 0;
+  }
+
+  async restoreCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
+    const found = await this.getCheckpoint(sessionId, checkpointId);
+    if (!found) {
+      throw new Error(`Checkpoint ${checkpointId} not found for session ${sessionId}`);
+    }
+
+    await this.checkpointer.put(
+      { configurable: { thread_id: sessionId } },
+      found.checkpoint as Parameters<typeof this.checkpointer.put>[1],
+      found.metadata as unknown as Parameters<typeof this.checkpointer.put>[2],
+      {},
+    );
+  }
+
+  async deleteCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
+    const cpPath = this.checkpointPath(sessionId, checkpointId);
+    if (fs.existsSync(cpPath)) {
+      fs.rmSync(cpPath, { recursive: true, force: true });
+    }
+  }
+
+  async deleteAllCheckpoints(sessionId: string): Promise<void> {
+    const dir = this.checkpointDir(sessionId);
+    if (fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   }
 }

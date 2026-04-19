@@ -7,8 +7,8 @@
  *   - pristine deepagents core: host-native backend + native memory loading
  *   - coding-oriented overlay: a dedicated middleware layer with generic
  *     coding guidance only
- *   - `MemorySaver` checkpointer so per-thread (=per-session) state is
- *     maintained within the process lifetime
+ *   - checkpointer so per-thread (=per-session) state is maintained and
+ *     can be persisted to disk for checkpoint/restore functionality
  *
  * Usage:
  *   const agentHandle = await createYagrDeepAgent(engine, configService);
@@ -17,6 +17,7 @@
  */
 import { createDeepAgent } from 'deepagents';
 import { MemorySaver } from '@langchain/langgraph';
+import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
 import type { YagrConfigStoreLike } from './config/yagr-config-service.js';
 import { createLangChainModel } from './llm/create-langchain-model.js';
 import { getCodingOrientedDeepAgentMiddleware } from './deepagents/coding-orientation.js';
@@ -29,7 +30,8 @@ export interface YagrDeepAgentHandle {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agent: ReturnType<typeof createDeepAgent>;
   /** The checkpointer — shared across calls so per-thread state persists. */
-  checkpointer: MemorySaver;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  checkpointer: any;
 }
 
 export const getYagrAgentMemorySources = getPristineDeepAgentMemorySources;
@@ -45,18 +47,20 @@ export const getYagrAgentMemorySources = getPristineDeepAgentMemorySources;
  *
  * @param configStore Optional config store to read LLM defaults from.
  * @param modelConfig Optional explicit model overrides (provider, model, apiKey, baseUrl).
+ * @param checkpointer Optional checkpointer instance. If not provided, a new MemorySaver is created.
  */
 export async function createYagrDeepAgent(
   configStore?: YagrConfigStoreLike,
   modelConfig?: { provider?: string; model?: string; apiKey?: string; baseUrl?: string },
+  checkpointer?: BaseCheckpointSaver,
 ): Promise<YagrDeepAgentHandle> {
   const model = await createLangChainModel(modelConfig, configStore);
-  const checkpointer = new MemorySaver();
+  const checkpointerInstance = checkpointer ?? new MemorySaver();
 
   const agent = createDeepAgent({
     ...buildPristineDeepAgentConfig({
       model,
-      checkpointer,
+      checkpointer: checkpointerInstance,
       // Use the yagr home directory as the shell root so the agent starts
       // in the same directory that the runtime path anchor advertises.
       // This avoids the mismatch where the anchor says ~/.yagr but the shell
@@ -66,5 +70,5 @@ export async function createYagrDeepAgent(
     middleware: getCodingOrientedDeepAgentMiddleware(),
   });
 
-  return { agent, checkpointer };
+  return { agent, checkpointer: checkpointerInstance };
 }
