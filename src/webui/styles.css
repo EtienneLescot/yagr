@@ -466,6 +466,7 @@ label span,
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
+  padding: 1.15rem;
 }
 
 .historyList {
