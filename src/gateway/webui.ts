@@ -47,7 +47,10 @@ const getWebUiHtml = () => `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Yagr Web UI</title>
-    <link rel="icon" href="/favicon.ico?v=${Date.now()}" type="image/x-icon" />
+    <link rel="icon" href="/favicon-32x32.png?v=${Date.now()}" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/favicon-16x16.png?v=${Date.now()}" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=${Date.now()}" sizes="180x180" />
+    <link rel="shortcut icon" href="/favicon.ico?v=${Date.now()}" type="image/x-icon" />
     <link rel="stylesheet" href="/styles.css?v=${Date.now()}" />
     <script defer src="/app.js?v=${Date.now()}"></script>
   </head>
@@ -188,7 +191,22 @@ class WebUiGateway implements Gateway {
     }
 
     if (method === 'GET' && url.pathname === '/favicon.ico') {
-      await this.sendStaticAsset(response, 'favicon.ico', 'image/x-icon');
+      await this.sendBinaryAsset(response, 'favicon.ico', 'image/x-icon');
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/favicon-32x32.png') {
+      await this.sendBinaryAsset(response, 'favicon-32x32.png', 'image/png');
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/favicon-16x16.png') {
+      await this.sendBinaryAsset(response, 'favicon-16x16.png', 'image/png');
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/apple-touch-icon.png') {
+      await this.sendBinaryAsset(response, 'apple-touch-icon.png', 'image/png');
       return;
     }
 
@@ -684,6 +702,16 @@ class WebUiGateway implements Gateway {
     const assetPath = path.resolve(__dirname, '..', 'webui', fileName);
     const content = await readFile(assetPath, 'utf-8');
     this.sendText(response, 200, content, contentType);
+  }
+
+  private async sendBinaryAsset(response: ServerResponse, fileName: string, contentType: string): Promise<void> {
+    const assetPath = path.resolve(__dirname, '..', 'webui', fileName);
+    const content = await readFile(assetPath);
+    response.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': 'no-store',
+    });
+    response.end(content);
   }
 
   private async handleStreamingChat(response: ServerResponse, sessionId: string, message: string): Promise<void> {

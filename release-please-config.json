@@ -4,7 +4,6 @@
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": true,
   "separate-pull-requests": false,
-  "group-pull-requests": true,
   "pull-request-title-pattern": "chore: release ${version}",
   "tag-separator": "@",
   "include-component-in-tag": true,
