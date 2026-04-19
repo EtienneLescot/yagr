@@ -334,6 +334,7 @@ class WebUiGateway implements Gateway {
       const sessionId = String(body.sessionId ?? '');
       if (sessionId && isValidSessionId(sessionId)) {
         this.sessionRegistry.delete(sessionId);
+        await this.resolveAgentHandle();
         await this.sessions.delete(sessionId);
         this.clearCompactionState(sessionId);
       }
@@ -418,6 +419,7 @@ class WebUiGateway implements Gateway {
         return;
       }
       this.sessionRegistry.delete(sessionId);
+      await this.resolveAgentHandle();
       await this.sessions.delete(sessionId);
       this.clearCompactionState(sessionId);
       this.sendJson(response, 200, { ok: true });
@@ -469,9 +471,9 @@ class WebUiGateway implements Gateway {
       await this.resolveAgentHandle();
       const result = await this.sessions.restoreCheckpoint(sessionId, checkpointId);
       this.sessionRegistry.clearDisplayMessages(sessionId);
+      const handle = await this.resolveAgentHandle();
+      handle.compactionService.reset(sessionId);
       if (result.compactionState) {
-        const handle = await this.resolveAgentHandle();
-        handle.compactionService.reset(sessionId);
         for (const compactionEvent of result.compactionState.compactionHistory) {
           handle.compactionService.notifyCompaction(sessionId, compactionEvent);
         }
