@@ -24,6 +24,7 @@ import {
   providerRequiresApiKey,
   YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
+import { getSnapshotContextWindow } from '../llm/provider-metadata.js';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
 import { getGlobalCompactionService } from '../compaction/compaction-service.js';
@@ -73,6 +74,7 @@ type WebUiChatStreamEvent =
     }
   | { type: 'text-delta'; delta: string }
   | { type: 'compaction'; summary: string; source: 'llm' | 'fallback'; messagesCompacted: number; preservedRecentMessages: number }
+  | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string }
   | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; openUrl?: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
@@ -695,6 +697,21 @@ class WebUiGateway implements Gateway {
         console.error('[DEBUG_AGENT_LOOP] Starting stream...');
       }
 
+      const localConfig = this.configService.getLocalConfig();
+      const provider = (localConfig.provider ?? 'anthropic') as YagrModelProvider;
+      const model = localConfig.model ?? 'claude-sonnet-4-20250514';
+      const contextWindow = getSnapshotContextWindow(provider, model) ?? 200000;
+      const estimatedPromptTokens = Math.ceil(message.length / 4);
+
+      writeEvent({
+        type: 'context-usage',
+        promptTokens: estimatedPromptTokens,
+        completionTokens: 0,
+        contextWindowTokens: contextWindow,
+        fillPercent: Math.round((estimatedPromptTokens / contextWindow) * 100),
+        source: 'estimated',
+      });
+
       for await (const event of stream) {
         eventCount++;
         const now = Date.now();
@@ -776,6 +793,17 @@ class WebUiGateway implements Gateway {
           console.error('[auto-checkpoint] Failed to save checkpoint:', err);
         }
       }
+
+      const estimatedCompletionTokens = Math.ceil(accumulator.responseText.length / 4);
+      const totalEstimatedTokens = estimatedPromptTokens + estimatedCompletionTokens;
+      writeEvent({
+        type: 'context-usage',
+        promptTokens: estimatedPromptTokens,
+        completionTokens: estimatedCompletionTokens,
+        contextWindowTokens: contextWindow,
+        fillPercent: Math.min(100, Math.round((totalEstimatedTokens / contextWindow) * 100)),
+        source: 'estimated',
+      });
 
       writeEvent({
         type: 'final',
