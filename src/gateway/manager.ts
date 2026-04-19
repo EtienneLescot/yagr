@@ -1,6 +1,6 @@
 import qrcode from 'qrcode-terminal';
 import { YagrConfigService, type YagrConfigStoreLike, type YagrGatewayConfig } from '../config/yagr-config-service.js';
-import { stopAllTunnels } from '../n8n-local/n8n-tunnel.js';
+import { stopN8nAuthTunnel } from '../n8n-local/n8n-tunnel.js';
 import type { YagrRunOptions } from '../types.js';
 import type { GatewayRuntimeHandle, GatewaySurface } from './types.js';
 import { createTelegramGatewayRuntime, getTelegramGatewayStatus, type TelegramGatewayStatus } from './telegram.js';
@@ -149,10 +149,20 @@ export function getGatewaySupervisorStatus(configService: YagrConfigStoreLike = 
   );
 }
 
-async function stopRuntimeHandles(runtimes: GatewayRuntimeHandle[]): Promise<void> {
+export async function stopGatewayRuntimes(runtimes: GatewayRuntimeHandle[]): Promise<void> {
   await Promise.allSettled(runtimes.map(async (runtime) => {
     await runtime.gateway.stop();
   }));
+}
+
+export async function stopGatewayShutdownResources(
+  runtimes: GatewayRuntimeHandle[],
+  stopAuthTunnel: () => Promise<void> = stopN8nAuthTunnel,
+): Promise<void> {
+  await Promise.allSettled([
+    stopGatewayRuntimes(runtimes),
+    stopAuthTunnel(),
+  ]);
 }
 
 /**
@@ -250,7 +260,7 @@ export async function runGatewaySurfaces(
       }
     }
   } catch (error) {
-    await stopRuntimeHandles(runtimes);
+    await stopGatewayRuntimes(runtimes);
     throw error;
   }
 
@@ -258,8 +268,7 @@ export async function runGatewaySurfaces(
 
   await new Promise<void>((resolve) => {
     const stop = async () => {
-      await stopRuntimeHandles(runtimes);
-      await stopAllTunnels();
+      await stopGatewayShutdownResources(runtimes);
       resolve();
     };
 
@@ -335,7 +344,7 @@ export async function runGatewaySupervisor(
       }
     }
   } catch (error) {
-    await stopRuntimeHandles(runtimes);
+    await stopGatewayRuntimes(runtimes);
     throw error;
   }
 
@@ -350,8 +359,7 @@ export async function runGatewaySupervisor(
 
   await new Promise<void>((resolve) => {
     const stop = async () => {
-      await stopRuntimeHandles(runtimes);
-      await stopAllTunnels();
+      await stopGatewayShutdownResources(runtimes);
       // Clean up PID file if it points to this process
       try {
         const { readGatewayPid, clearGatewayPid } = await import('../config/gateway-daemon.js');

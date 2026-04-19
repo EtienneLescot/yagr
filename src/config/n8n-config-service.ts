@@ -190,6 +190,7 @@ export class YagrN8nConfigService {
   }
 
   getApiKey(host: string): string | undefined {
+    this.migrateLegacyCredentials();
     const credentials = this.globalStore.get('hosts') ?? {};
     const normalizedHost = this.normalizeHost(host);
     if (credentials[normalizedHost]) {

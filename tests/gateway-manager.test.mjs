@@ -3,7 +3,11 @@ import test from 'node:test';
 
 import { getGatewayRestartDelayMs } from '../dist/cli.js';
 import { normalizeGatewaySurfaces } from '../dist/config/yagr-config-service.js';
-import { buildGatewaySupervisorStatus } from '../dist/gateway/manager.js';
+import {
+  buildGatewaySupervisorStatus,
+  stopGatewayRuntimes,
+  stopGatewayShutdownResources,
+} from '../dist/gateway/manager.js';
 
 test('normalizeGatewaySurfaces keeps supported surfaces once', () => {
   assert.deepEqual(
@@ -53,4 +57,68 @@ test('getGatewayRestartDelayMs uses capped exponential backoff', () => {
   assert.equal(getGatewayRestartDelayMs(2), 240_000);
   assert.equal(getGatewayRestartDelayMs(6), 300_000);
   assert.equal(getGatewayRestartDelayMs(20), 300_000);
+});
+
+test('stopGatewayRuntimes only stops facade runtimes and tolerates stop failures', async () => {
+  const stopped = [];
+  const runtimes = [
+    {
+      gateway: {
+        async start() {},
+        async stop() {
+          stopped.push('webui');
+        },
+        async reply() {},
+      },
+      startupMessages: [],
+    },
+    {
+      gateway: {
+        async start() {},
+        async stop() {
+          stopped.push('telegram');
+          throw new Error('simulated stop failure');
+        },
+        async reply() {},
+      },
+      startupMessages: [],
+    },
+  ];
+
+  await assert.doesNotReject(() => stopGatewayRuntimes(runtimes));
+  assert.deepEqual(stopped.sort(), ['telegram', 'webui']);
+});
+
+test('stopGatewayShutdownResources stops facade runtimes and the auth tunnel cleanup', async () => {
+  const stopped = [];
+  let authTunnelStopped = 0;
+  const runtimes = [
+    {
+      gateway: {
+        async start() {},
+        async stop() {
+          stopped.push('webui');
+        },
+        async reply() {},
+      },
+      startupMessages: [],
+    },
+    {
+      gateway: {
+        async start() {},
+        async stop() {
+          stopped.push('telegram');
+          throw new Error('simulated stop failure');
+        },
+        async reply() {},
+      },
+      startupMessages: [],
+    },
+  ];
+
+  await assert.doesNotReject(() => stopGatewayShutdownResources(runtimes, async () => {
+    authTunnelStopped += 1;
+  }));
+  assert.deepEqual(stopped.sort(), ['telegram', 'webui']);
+  assert.equal(authTunnelStopped, 1);
 });

@@ -62,10 +62,6 @@ Les facades restent minces et deleguent au reachability SSOT:
 - `src/gateway/webui.ts`: appelle `ensureFacadeTunnelReachability('webui', configService)`
 - `src/cli.ts`: appelle `ensureFacadeTunnelReachability('tui')` et `ensureFacadeTunnelReachability('cli')`; `ensureTunnelAtLaunch()` supprime de `runGatewayWorker()`; `yagr stop` et `yagr restart` appellent `stopAllTunnels()`
 
-### Gateway Shutdown Tunnel Cleanup
-
-`src/gateway/manager.ts`: `runGatewaySupervisor()` et `runGatewaySurfaces()` appellent `stopAllTunnels()` sur SIGINT/SIGTERM avant de quitter.
-
 ### Config Rename
 
 - `YagrLlmProxyConfig.tunnelUrl` supprime (pas de legacy)
@@ -79,6 +75,13 @@ Les facades restent minces et deleguent au reachability SSOT:
 ### Lazy Start
 
 Les tunnels demarrent au setup uniquement. Les surfaces wake les tunnels on demand via `ensureFacadeTunnelReachability()`. Aucun demarrage automatique generique.
+
+### Shutdown Ownership
+
+- L'arret d'une facade ou du process gateway ne detruit pas les tunnels autonomes (`n8n`, `llm`).
+- Les facades sont des consommateurs qui peuvent wake les tunnels, pas des proprietaires de leur teardown.
+- Le `n8n auth tunnel` reste un cas a part: il est nettoye avec le gateway tant que le bridge d'auth local tourne dans ce process.
+- Le teardown global des tunnels reste reserve aux flows explicites de lifecycle (`yagr stop`, `yagr restart`, commandes explicites de stop tunnel, reset destructif).
 
 ### TUNNEL_DOMAIN
 
