@@ -355,7 +355,7 @@ export async function startN8nTunnel(targetUrl: string, cloudflaredBin?: string)
 
     if (tunnelConfig.mode === 'custom-domain') {
       const state: N8nTunnelState = {
-        publicUrl: `https://${tunnelConfig.domain}`,
+        publicUrl: `https://${tunnelConfig.hostname}`,
         targetUrl,
         pid,
         startedAt: new Date().toISOString(),

@@ -49,6 +49,7 @@ import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, st
 import {
   getActiveTunnelState,
   getActiveWorkflowOpenTunnelState,
+  getTunnelConfig,
   installCloudflaredIfNeeded,
   isCloudflaredAvailable,
   isLocalUrl,
@@ -820,6 +821,10 @@ async function ensureRelayAtLaunch(): Promise<void> {
 }
 
 async function checkTunnelHealth(tunnelUrl: string): Promise<boolean> {
+  const tunnelConfig = getTunnelConfig();
+  if (tunnelConfig.mode === 'quick') {
+    return true;
+  }
   try {
     const response = await fetch(`${tunnelUrl}/health`, {
       method: 'GET',
