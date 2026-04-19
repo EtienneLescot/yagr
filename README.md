@@ -1,31 +1,21 @@
 <div align="center">
 
-<table>
-<tr>
-<td align="center" width="180">
-	<img src="res/yagr-logo.png" alt="Yagr logo" width="140">
-</td>
-<td align="left">
-
 # Yagr
 
 ### (Y)our (A)gent (G)rounded in (R)eality
 
 **The autonomous agent that turns intent into live n8n automations.**
 
-</td>
-</tr>
-</table>
+<img src="res/yagr-logo.png" alt="Yagr logo" width="130">
 
 [![CI](https://github.com/EtienneLescot/yagr/actions/workflows/ci.yml/badge.svg)](https://github.com/EtienneLescot/yagr/actions/workflows/ci.yml)
 [![Documentation](https://github.com/EtienneLescot/yagr/actions/workflows/docs.yml/badge.svg)](https://yagr.dev/docs/)
 [![Yagr Docs](https://img.shields.io/badge/docs-yagr-black?logo=gitbook)](https://yagr.dev/)
-[![orchestrator:n8n](https://img.shields.io/badge/orchestrator-n8n-FE5A16?logo=n8n&logoColor=white)](https://n8n.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Setting up automation should not be harder than the automation itself.**
 
-Yagr is the red-carpet experience for n8n: a guided autonomous agent that takes you from a blank terminal to a live workflow, without the usual setup maze.
+Yagr is the red-carpet experience for n8n: a guided autonomous agent that takes you from a blank terminal to a live workflow, without the usual setup maze. <img src="n8n-color.png" alt="n8n" width="80" style="vertical-align: middle;">
 
 <table>
 <tr>
@@ -273,6 +263,12 @@ npm run yagr:start
 
 These scripts intentionally target `.yagr-test-workspace` so local development does not pollute your real `~/.yagr` home.
 
+## Acknowledgments
+
+Yagr is built on top of the incredible work from the n8n team.
+
+[n8n](https://github.com/n8n-io/n8n) is a powerful and flexible workflow automation platform. Go show them some love.
+
 ## Read Next
 
 - [Yagr overview](https://yagr.dev/)
@@ -280,3 +276,4 @@ These scripts intentionally target `.yagr-test-workspace` so local development d
 - [Yagr command reference](https://yagr.dev/docs/reference/commands/)
 - [n8n-as-code repo](https://github.com/EtienneLescot/n8n-as-code)
 - [n8n-as-code docs](https://n8nascode.dev/docs/)
+- [n8n repo](https://github.com/n8n-io/n8n)
