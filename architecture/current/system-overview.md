@@ -89,6 +89,7 @@ Yagr peut exposer des endpoints Yagr locaux via trois tunnels Cloudflare distinc
 | Fichier | Role |
 |---|---|
 | `src/n8n-local/n8n-tunnel.ts` | SSOT du lifecycle process des tunnels Cloudflare : start/stop/refresh/status, persistance des state files, auto-install de `cloudflared`, support `trycloudflare` ou domaine DNS dedie |
+| `src/n8n-local/public-exposure-service.ts` | SSOT de l'orchestration applicative des expositions publiques : compose lifecycle tunnel, bridge auth, relay LLM et effets de bord config/restart |
 | `src/n8n-local/tunnel-reachability.ts` | SSOT de wake-up des tunnels par consommateur (`telegram`, `webui`, `tui`, `cli`, `llm`). `force-all-facades` est le defaut depuis ce changement. |
 | `src/gateway/local-open-bridge.ts` | Bridge HTTP tokenise interne a `workflow-links.ts`. Les facades ne l'appellent pas directement — `presentWorkflowResult` est la seule source d'autorite pour l'URL de workflow. |
 | `src/config/yagr-config-service.ts` | `N8nTunnelConfig` : `enabled`, `publicUrl`, `targetUrl` |
@@ -110,6 +111,7 @@ yagr n8n tunnel start
 **Regles de cycle de vie**
 
 - Le lifecycle process des tunnels Cloudflare est centralise dans `src/n8n-local/n8n-tunnel.ts`.
+- L'orchestration metier des expositions publiques (`n8n`, `n8n auth`, `llm`) est centralisee dans `src/n8n-local/public-exposure-service.ts`.
 - Les decisions de wake-up par facade/consommateur sont centralisees dans `src/n8n-local/tunnel-reachability.ts`.
 - Les erreurs/timeouts de startup nettoient maintenant le processus `cloudflared` au lieu de le laisser detache.
 - Les tunnels `n8n` et `n8n auth` sont maintenant lazy: demarrage explicite au setup/CLI, puis wake-up uniquement par les consommateurs qui en ont besoin.

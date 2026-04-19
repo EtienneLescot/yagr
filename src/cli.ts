@@ -51,13 +51,14 @@ import {
   getActiveN8nAuthTunnelState,
   installCloudflaredIfNeeded,
   isCloudflaredAvailable,
-  refreshN8nTunnel,
   resolveN8nTunnelTargetUrl,
-  startN8nTunnel,
-  stopN8nTunnel,
-  stopN8nAuthTunnel,
   stopAllTunnels,
 } from './n8n-local/n8n-tunnel.js';
+import {
+  ensureConfiguredN8nPublicExposure,
+  stopN8nPublicExposureSet,
+  type ManagedN8nRestartHooks,
+} from './n8n-local/public-exposure-service.js';
 import { ensureStartupTunnelReachability, ensureFacadeTunnelReachability } from './n8n-local/tunnel-reachability.js';
 import { ensureN8nRelayServer } from './llm/llm-relay-server.js';
 
@@ -817,33 +818,19 @@ async function ensureRelayAtLaunch(): Promise<void> {
   }
 }
 
-/**
- * If a Yagr-managed n8n instance is currently running, restart it so it picks
- * up the new N8N_WEBHOOK_URL. The managers inject the URL from the active
- * tunnel state, so we just need to trigger a stop → start cycle.
- */
-async function restartManagedN8nForTunnel(publicUrl: string): Promise<void> {
-  const managedState = getConfiguredManagedN8nState();
-  if (!managedState || managedState.status === 'stopped') return;
-
-  // Keep n8nac's host URL in sync with the active tunnel public URL
-  // so that webhook URLs constructed by n8nac use the correct public origin.
-  new YagrN8nConfigService().syncN8nacHostUrl(publicUrl);
-
-  process.stdout.write(`\nRestarting managed n8n so it picks up N8N_WEBHOOK_URL=${publicUrl}…\n`);
-  try {
-    if (managedState.strategy === 'docker') {
-      await stopManagedDockerN8n();
-      await startManagedDockerN8n();
-    } else {
-      await stopManagedDirectN8n();
-      await startManagedDirectN8n();
-    }
-    process.stdout.write(`n8n restarted. Webhook URLs in the editor now show the public URL.\n`);
-  } catch (err) {
-    process.stderr.write(`Warning: could not restart managed n8n: ${err instanceof Error ? err.message : String(err)}\n`);
-    process.stderr.write(`Run \`yagr n8n local start\` manually to apply the new webhook URL.\n`);
-  }
+function buildManagedN8nRestartHooks(): ManagedN8nRestartHooks {
+  return {
+    onStart: (publicUrl) => {
+      process.stdout.write(`\nRestarting managed n8n so it picks up N8N_WEBHOOK_URL=${publicUrl}…\n`);
+    },
+    onSuccess: () => {
+      process.stdout.write('n8n restarted. Webhook URLs in the editor now show the public URL.\n');
+    },
+    onError: (error) => {
+      process.stderr.write(`Warning: could not restart managed n8n: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.stderr.write('Run `yagr n8n local start` manually to apply the new webhook URL.\n');
+    },
+  };
 }
 
 function getVersion(): string {
@@ -1028,13 +1015,12 @@ async function main(): Promise<void> {
         try {
           const targetUrl = resolveN8nTunnelTargetUrl();
           const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
-          const tunnelState = await runWithSpinner(
+          const { state } = await runWithSpinner(
             `Starting Cloudflare Tunnel for ${targetUrl}…`,
-            () => startN8nTunnel(targetUrl, bin),
+            () => ensureConfiguredN8nPublicExposure({ action: 'start', cloudflaredBin: bin, configService }),
             'Waiting for cloudflared to emit a public URL (up to 30s).',
           );
-          configService.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: tunnelState.publicUrl });
-          process.stdout.write(`\nTunnel ready: ${tunnelState.publicUrl}\n`);
+          process.stdout.write(`\nTunnel ready: ${state.publicUrl}\n`);
           process.stdout.write('Gateway surfaces can wake this tunnel later if it is not running.\n');
         } catch (err) {
           process.stdout.write(`Tunnel setup skipped: ${(err as Error).message}\n`);
@@ -1221,55 +1207,43 @@ async function main(): Promise<void> {
       }
 
       const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
-      const state = await runWithSpinner(
+      const { state } = await runWithSpinner(
         `Starting Cloudflare Tunnel for ${targetUrl}…`,
-        () => startN8nTunnel(targetUrl, bin),
+        () => ensureConfiguredN8nPublicExposure({
+          action: 'start',
+          cloudflaredBin: bin,
+          configService,
+          restartHooks: buildManagedN8nRestartHooks(),
+        }),
         'Waiting for cloudflared to emit a public URL (up to 30s).',
       );
-      const config = new YagrConfigService();
-      config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
-
-      // Update n8nac-config.json host URL so webhook URLs are correct.
-      new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
-
       process.stdout.write(`\nTunnel ready: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
       process.stdout.write('n8n auth tunnels are started lazily by the surfaces that need them.\n');
-      await restartManagedN8nForTunnel(state.publicUrl);
       return;
     }
 
     if (args.command === 'n8n-tunnel-start') {
       const targetUrl = resolveN8nTunnelTargetUrl();
       const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
-      const state = await runWithSpinner(
+      const { state } = await runWithSpinner(
         `Starting Cloudflare Tunnel for ${targetUrl}…`,
-        () => startN8nTunnel(targetUrl, bin),
+        () => ensureConfiguredN8nPublicExposure({
+          action: 'start',
+          cloudflaredBin: bin,
+          configService,
+          restartHooks: buildManagedN8nRestartHooks(),
+        }),
         'Waiting for cloudflared to emit a public URL (up to 30s).',
       );
-      const config = new YagrConfigService();
-      config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
-
-      // Update n8nac-config.json host URL so webhook URLs are correct.
-      new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
-
       process.stdout.write(`Tunnel started: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
       process.stdout.write('n8n auth tunnels are started lazily by the surfaces that need them.\n');
-      await restartManagedN8nForTunnel(state.publicUrl);
       return;
     }
 
     if (args.command === 'n8n-tunnel-stop') {
-      await stopN8nTunnel();
-      await stopN8nAuthTunnel();
-      const config = new YagrConfigService();
-      config.clearN8nTunnelConfig();
-
-      // Revert n8nac-config.json host back to the local n8n URL.
-      const managedState = readManagedN8nState();
-      const localHost = `http://127.0.0.1:${managedState?.port ?? 5678}`;
-      new YagrN8nConfigService().syncN8nacHostUrl(localHost);
+      await stopN8nPublicExposureSet(configService);
 
       process.stdout.write('Tunnel set stopped (n8n + n8n auth tunnel).\n');
       return;
@@ -1278,21 +1252,19 @@ async function main(): Promise<void> {
     if (args.command === 'n8n-tunnel-refresh') {
       const targetUrl = resolveN8nTunnelTargetUrl();
       const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
-      const state = await runWithSpinner(
+      const { state } = await runWithSpinner(
         `Refreshing Cloudflare Tunnel for ${targetUrl}…`,
-        () => refreshN8nTunnel(targetUrl, bin),
+        () => ensureConfiguredN8nPublicExposure({
+          action: 'refresh',
+          cloudflaredBin: bin,
+          configService,
+          restartHooks: buildManagedN8nRestartHooks(),
+        }),
         'Stopping current tunnel and starting a new one.',
       );
-      const config = new YagrConfigService();
-      config.saveN8nTunnelConfig({ enabled: true, targetUrl, publicUrl: state.publicUrl });
-
-      // Update n8nac-config.json host URL so webhook URLs are correct.
-      new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
-
       process.stdout.write(`Tunnel refreshed: ${state.publicUrl}\n`);
       process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
       process.stdout.write('n8n auth tunnels will be recreated lazily by the surfaces that need them.\n');
-      await restartManagedN8nForTunnel(state.publicUrl);
       return;
     }
 
