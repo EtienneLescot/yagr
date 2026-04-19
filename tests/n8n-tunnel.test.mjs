@@ -8,10 +8,12 @@ import { promisify } from 'node:util';
 
 import {
   getActiveTunnelState,
+  getActiveN8nAuthTunnelState,
   isLocalUrl,
   resolveN8nTunnelTargetUrl,
   startN8nTunnel,
   stopN8nTunnel,
+  stopN8nAuthTunnel,
 } from '../dist/n8n-local/n8n-tunnel.js';
 import { buildManagedN8nState, writeManagedN8nState } from '../dist/n8n-local/state.js';
 
@@ -279,3 +281,96 @@ test('resolveN8nTunnelTargetUrl throws for non-managed instances', () => {
 // profiles or manually.  In CI/unit contexts, cloudflared availability is
 // not guaranteed and the check would depend on runner-specific PATH state.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// n8n-auth tunnel state — llm-tunnel.json and n8n-auth-tunnel.json
+// ---------------------------------------------------------------------------
+
+test('stopN8nAuthTunnel removes the n8n-auth state file and is idempotent', async () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nauth-tunnel-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    await stopN8nAuthTunnel();
+    const stateFile = path.join(tempHome, 'proxy-runtime', 'n8n-auth-tunnel.json');
+    assert.equal(fs.existsSync(stateFile), false);
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('stopN8nAuthTunnel cleans up n8n-auth state file with dead PID', async () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nauth-tunnel-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const stateFile = path.join(tempHome, 'proxy-runtime', 'n8n-auth-tunnel.json');
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    fs.writeFileSync(stateFile, JSON.stringify({
+      publicUrl: 'https://stale.trycloudflare.com',
+      targetUrl: 'http://127.0.0.1:3791',
+      pid: 9_999_999,
+      startedAt: new Date().toISOString(),
+    }));
+    await stopN8nAuthTunnel();
+    assert.equal(fs.existsSync(stateFile), false);
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('n8n-auth tunnel state is stored under proxy-runtime/n8n-auth-tunnel.json', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nauth-tunnel-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const stateFile = path.join(tempHome, 'proxy-runtime', 'n8n-auth-tunnel.json');
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    fs.writeFileSync(stateFile, JSON.stringify({
+      publicUrl: 'https://auth-bridge.trycloudflare.com',
+      targetUrl: 'http://127.0.0.1:3791',
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+    }));
+    const result = getActiveN8nAuthTunnelState();
+    assert.notEqual(result, null);
+    assert.equal(result?.publicUrl, 'https://auth-bridge.trycloudflare.com');
+    assert.equal(result?.targetUrl, 'http://127.0.0.1:3791');
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('getActiveN8nAuthTunnelState returns null when state file uses old tunnelUrl field', () => {
+  // Ensures backward compat is NOT maintained — old files with tunnelUrl are ignored
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8nauth-tunnel-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const stateFile = path.join(tempHome, 'proxy-runtime', 'n8n-auth-tunnel.json');
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    // Write stale state with the old field name
+    fs.writeFileSync(stateFile, JSON.stringify({
+      tunnelUrl: 'https://old-field.trycloudflare.com',
+      targetUrl: 'http://127.0.0.1:3791',
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+    }));
+    const result = getActiveN8nAuthTunnelState();
+    assert.equal(result, null);
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});

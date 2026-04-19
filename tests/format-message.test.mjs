@@ -102,9 +102,9 @@ test('workflow open links prefer the public bridge tunnel when active', () => {
   try {
     const proxyRuntimeDir = path.join(tempHome, 'proxy-runtime');
     fs.mkdirSync(proxyRuntimeDir, { recursive: true });
-    fs.writeFileSync(path.join(proxyRuntimeDir, 'workflow-open-tunnel.json'), JSON.stringify({
+    fs.writeFileSync(path.join(proxyRuntimeDir, 'n8n-auth-tunnel.json'), JSON.stringify({
       pid: process.pid,
-      tunnelUrl: 'https://workflow-open.example.trycloudflare.com',
+      publicUrl: 'https://workflow-open.example.trycloudflare.com',
       targetUrl: 'http://127.0.0.1:3791',
       startedAt: new Date().toISOString(),
     }, null, 2));

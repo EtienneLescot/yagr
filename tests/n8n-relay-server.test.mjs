@@ -1,7 +1,24 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
-import { translateResponsesRequestToChatCompletionsBody } from '../dist/llm/llm-relay-server.js';
+import { translateResponsesRequestToChatCompletionsBody, buildRelayInfo } from '../dist/llm/llm-relay-server.js';
+import { YagrConfigService } from '../dist/config/yagr-config-service.js';
+
+function withTempHome(run) {
+  const previousHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-relay-info-'));
+  process.env.YAGR_HOME = tempHome;
+  try {
+    return run(tempHome);
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+}
 
 test('translateResponsesRequestToChatCompletionsBody converts responses input to chat messages', () => {
   const body = Buffer.from(JSON.stringify({
@@ -47,4 +64,99 @@ test('translateResponsesRequestToChatCompletionsBody maps response tools to chat
       strict: true,
     },
   }]);
+});
+
+test('buildRelayInfo returns baseUrl from llmTunnelUrl when mode is tunnel', () => {
+  withTempHome((tempHome) => {
+    const configService = new YagrConfigService();
+    configService.updateLocalConfig((cfg) => ({
+      ...cfg,
+      llmProxy: {
+        enabled: true,
+        mode: 'tunnel',
+        credentialBaseUrl: 'https://my-llm-tunnel.example.com/v1',
+        llmTunnelUrl: 'https://my-llm-tunnel.example.com',
+      },
+    }));
+    const relayPort = 11437;
+    const result = buildRelayInfo(relayPort);
+    assert.equal(result.port, relayPort);
+    assert.equal(result.baseUrl, 'https://my-llm-tunnel.example.com/v1');
+    assert.equal(result.hostBaseUrl, `http://127.0.0.1:${relayPort}/v1`);
+    assert.equal(result.apiKey, 'yagr-relay-key');
+  });
+});
+
+test('buildRelayInfo falls back to hostBaseUrl when mode is tunnel but llmTunnelUrl is missing', () => {
+  withTempHome(() => {
+    const configService = new YagrConfigService();
+    configService.updateLocalConfig((cfg) => ({
+      ...cfg,
+      llmProxy: {
+        enabled: true,
+        mode: 'tunnel',
+        credentialBaseUrl: 'https://my-llm-tunnel.example.com/v1',
+        // no llmTunnelUrl
+      },
+    }));
+    const relayPort = 11437;
+    const result = buildRelayInfo(relayPort);
+    assert.equal(result.baseUrl, `http://127.0.0.1:${relayPort}/v1`);
+  });
+});
+
+test('buildRelayInfo uses dockerHostAddress when mode is docker', () => {
+  withTempHome(() => {
+    const configService = new YagrConfigService();
+    configService.updateLocalConfig((cfg) => ({
+      ...cfg,
+      llmProxy: {
+        enabled: true,
+        mode: 'docker',
+        credentialBaseUrl: 'http://host.docker.internal:11437/v1',
+        dockerHostAddress: 'host.docker.internal',
+      },
+    }));
+    const relayPort = 11437;
+    const result = buildRelayInfo(relayPort);
+    assert.equal(result.baseUrl, `http://host.docker.internal:${relayPort}/v1`);
+    assert.equal(result.hostBaseUrl, `http://127.0.0.1:${relayPort}/v1`);
+  });
+});
+
+test('buildRelayInfo returns hostBaseUrl when mode is local', () => {
+  withTempHome(() => {
+    const configService = new YagrConfigService();
+    configService.updateLocalConfig((cfg) => ({
+      ...cfg,
+      llmProxy: {
+        enabled: true,
+        mode: 'local',
+        credentialBaseUrl: `http://127.0.0.1:${11437}/v1`,
+      },
+    }));
+    const relayPort = 11437;
+    const result = buildRelayInfo(relayPort);
+    assert.equal(result.baseUrl, `http://127.0.0.1:${relayPort}/v1`);
+  });
+});
+
+test('buildRelayInfo ignores tunnelUrl field (no legacy fallback)', () => {
+  withTempHome(() => {
+    const configService = new YagrConfigService();
+    configService.updateLocalConfig((cfg) => ({
+      ...cfg,
+      llmProxy: {
+        enabled: true,
+        mode: 'tunnel',
+        credentialBaseUrl: 'https://old-tunnel.example.com/v1',
+        // @ts-ignore — injecting legacy field to verify it is NOT read
+        tunnelUrl: 'https://should-be-ignored.example.com',
+      },
+    }));
+    const relayPort = 11437;
+    const result = buildRelayInfo(relayPort);
+    // tunnelUrl should be ignored; since llmTunnelUrl is absent, falls back to local
+    assert.equal(result.baseUrl, `http://127.0.0.1:${relayPort}/v1`);
+  });
 });
