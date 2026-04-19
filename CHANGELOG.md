@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.2.22](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.21...yagr@v0.2.22) (2026-04-19)
+
+
+### Features
+
+* add debug logging for event stream processing in YagrInteractiveApp ([a1d5db2](https://github.com/EtienneLescot/yagr/commit/a1d5db218227163f9e8d21f5d2e018423290cdb6))
+* add ensureFacadeTunnelReachability for Telegram and WebUI gateways ([ffe54a7](https://github.com/EtienneLescot/yagr/commit/ffe54a7f29815d30713125f2e4ee82e1b2a5f5a3))
+* add support for n8n auth tunnel reachability and management ([ffe54a7](https://github.com/EtienneLescot/yagr/commit/ffe54a7f29815d30713125f2e4ee82e1b2a5f5a3))
+* **app:** add category property to stream event handling ([6f322ba](https://github.com/EtienneLescot/yagr/commit/6f322bac538a28f05698a6e3887136ff1b63d55a))
+* **chat-codex-oauth:** add debug logging for stream processing ([6a75931](https://github.com/EtienneLescot/yagr/commit/6a759310346b86e3ce1b23d10b7ab7023a6a4829))
+* **cli:** add 'restart' and 'gateway' commands to CLI; enhance gateway management ([9c01ec8](https://github.com/EtienneLescot/yagr/commit/9c01ec8d329d983bef2bc21cd8a637dc046b3ce4))
+* **cli:** enhance tunnel management and add 'restart' command for gateway ([0b56202](https://github.com/EtienneLescot/yagr/commit/0b562027d48d0fab702f9c294fac52c3d2cae13b))
+* **cli:** increase gateway restart delay and improve tunnel health check logic ([7fcd043](https://github.com/EtienneLescot/yagr/commit/7fcd043c24695d687f4a0c76af73a15832c2c21a))
+* enhance reasoning effort configuration across models and setup wizard ([a7fe078](https://github.com/EtienneLescot/yagr/commit/a7fe078deed9be3ef473004e5a7c408010cc9067))
+* enhance YagrInteractiveApp UI with improved separator styling ([5a7ebf2](https://github.com/EtienneLescot/yagr/commit/5a7ebf27f8f8df1308ead3ad70e3fff538a5acd0))
+* enhance YagrInteractiveApp with loading animation and shell block management ([aaa390b](https://github.com/EtienneLescot/yagr/commit/aaa390b7d6ed0ac63b47988d5261685540ff9116))
+* **gateway:** implement locking mechanism for gateway daemon start and stop ([dc2fa3d](https://github.com/EtienneLescot/yagr/commit/dc2fa3dd061fe5a8058fb2c3f95cd5e8d2fcd7fd))
+* implement collapsible details for operation rows to enhance UI clarity ([1886f74](https://github.com/EtienneLescot/yagr/commit/1886f74f797f36053da45def30e6f97b3ca7fb92))
+* **langgraph-events:** add debug logging for presentWorkflowResult tool end ([6f322ba](https://github.com/EtienneLescot/yagr/commit/6f322bac538a28f05698a6e3887136ff1b63d55a))
+* **llm:** implement loop guard and add ChatCodexOAuth support ([98e40a6](https://github.com/EtienneLescot/yagr/commit/98e40a6e6199426f5e0f307c70b31f94117927f5))
+* refactor YagrInteractiveApp to consolidate feed management and enhance scrolling functionality ([5dfc327](https://github.com/EtienneLescot/yagr/commit/5dfc327979082881bfaf1baaefcf5cbb5a0041e3))
+* refactor YagrInteractiveApp to manage history and shell feeds separately ([dd7e437](https://github.com/EtienneLescot/yagr/commit/dd7e4379a8eb9d16ec12bd87b0952f9e38df8bc2))
+* remove tool_choice assignment from boundCallOptions in ChatCodexOAuth ([9e7beb5](https://github.com/EtienneLescot/yagr/commit/9e7beb5286d1685350ca3a40d1f136ca637370fc))
+* remove unused stdout reference and clean up YagrInteractiveApp component ([62974b9](https://github.com/EtienneLescot/yagr/commit/62974b9caf15d6c266a7ec4927ccedd736ebd83e))
+* simplify message and operation row components with new styling ([cc895c0](https://github.com/EtienneLescot/yagr/commit/cc895c0de4fdd6d680a6e849257d2dd3c70f0d81))
+* **store:** enhance upsertOperation to support inserting before a specified entry ([230351d](https://github.com/EtienneLescot/yagr/commit/230351dc08745a53f6c7ac472f045436958bfc81))
+* **tunnel:** add support for custom domain tunneling ([4edd395](https://github.com/EtienneLescot/yagr/commit/4edd395a9783f0d2bdab14ff657612aa3fe5bcd4))
+* **tunnel:** enhance cloudflared credential retrieval and configuration management ([cb77550](https://github.com/EtienneLescot/yagr/commit/cb77550fbc4379c9a287bc47817ef5ef5d5526c0))
+* **tunnel:** implement retry logic and health check endpoint ([b49db21](https://github.com/EtienneLescot/yagr/commit/b49db2127eac84b18d9afb2507b900fe76b94e70))
+* update web UI HTML generation and improve layout styling ([5ae2fa7](https://github.com/EtienneLescot/yagr/commit/5ae2fa75c93d7b5036d6e82c34617c74b754bcf1))
+* update YagrInteractiveApp to manage input version on shell block operations ([242f4a8](https://github.com/EtienneLescot/yagr/commit/242f4a8e7000a50372b25e4b98d5c4dbe3b015ef))
+* **webui:** add message icons for user and assistant with styling ([88d49d9](https://github.com/EtienneLescot/yagr/commit/88d49d9b3e14a0c8e0b02c3fee1544fea88b1ff8))
+* **webui:** enhance message row styles and add user/assistant indicators ([369386a](https://github.com/EtienneLescot/yagr/commit/369386af77a8a5c1d8756ef33b075592198933de))
+* **webui:** enhance workflow execution result display and styling ([c626b66](https://github.com/EtienneLescot/yagr/commit/c626b667f365e36bb0d4e4953936f8eeeda93a27))
+
+
+### Bug Fixes
+
+* **build:** use fs module to set executable permission for cli.js in build script ([4f8c991](https://github.com/EtienneLescot/yagr/commit/4f8c991806035359b825ada3c6a95ebb529c6582))
+* **clean:** update clean script to use fs module for improved reliability ([1991daa](https://github.com/EtienneLescot/yagr/commit/1991daa354b31ae67857a1e1ab2c0dcc6aa85ba1))
+* **package.json:** update build and clean scripts for improved workflow ([436d215](https://github.com/EtienneLescot/yagr/commit/436d215c6dd986417dd140a8edd97dd2cadd867c))
+* **timeout:** increase health timeout to 300 seconds for better stability ([1529b4c](https://github.com/EtienneLescot/yagr/commit/1529b4c728bfcf25c4375c54dc5554c7a6416208))
+* **timeout:** update health timeout to use environment variable for better configurability ([97e3daf](https://github.com/EtienneLescot/yagr/commit/97e3daf3d4db3e04d8f3277f760a90e4aa32035a))
+* **tunnel:** implement cooldown mechanism for tunnel restarts to prevent rapid retries ([7b9d9af](https://github.com/EtienneLescot/yagr/commit/7b9d9afec53e7d4827592d13a886e2bf1f6ab92a))
+* **tunnel:** update public URL construction to use hostname instead of domain ([4d7adf1](https://github.com/EtienneLescot/yagr/commit/4d7adf1d27c860d744abdfbb495aeca203b33103))
+* update LLM relay server to use new tunnel management functions ([ffe54a7](https://github.com/EtienneLescot/yagr/commit/ffe54a7f29815d30713125f2e4ee82e1b2a5f5a3))
+* update setup process to use new tunnel management functions ([ffe54a7](https://github.com/EtienneLescot/yagr/commit/ffe54a7f29815d30713125f2e4ee82e1b2a5f5a3))
+* **webui:** disable animation for non-animated assistant message icons ([e4af1c2](https://github.com/EtienneLescot/yagr/commit/e4af1c2f3bbad63ddb4a063c136325c64ced810d))
+* **webui:** filter out tool category from operation rows ([c62bcb5](https://github.com/EtienneLescot/yagr/commit/c62bcb5e4ce4cc4dd49c1bcc72f2fc6ee3abd86c))
+* **webui:** update OperationRow to only render for 'phase' category and simplify AssistantBodyRow rendering ([c7cdc51](https://github.com/EtienneLescot/yagr/commit/c7cdc51b0952e9fe9c753bd560dff3f7fa3a6538))
+
 ## [0.2.21](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.20...yagr@v0.2.21) (2026-04-17)
 
 
