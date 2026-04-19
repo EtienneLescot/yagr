@@ -56,21 +56,28 @@ function getTunnelCredentialsPath(tunnelName: string): string {
   return path.join(getYagrPaths().homeDir, 'tunnels', `${tunnelName}.json`);
 }
 
-function findCloudflaredCredentials(tunnelName: string): string | null {
-  const cloudflaredDir = path.join(os.homedir(), '.cloudflared');
-  if (!fs.existsSync(cloudflaredDir)) return null;
-  const files = fs.readdirSync(cloudflaredDir);
-  let newest: { path: string; mtime: number } | null = null;
-  for (const file of files) {
-    if (file.endsWith('.json') && file !== 'cert.pem') {
-      const filePath = path.join(cloudflaredDir, file);
-      const stat = fs.statSync(filePath);
-      if (!newest || stat.mtimeMs > newest.mtime) {
-        newest = { path: filePath, mtime: stat.mtimeMs };
+async function findCloudflaredCredentialsByName(bin: string, tunnelName: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(bin, ['tunnel', 'list', '--output', 'json']);
+    const tunnels = JSON.parse(stdout);
+    const tunnel = tunnels.find((t: { name: string; id: string }) => t.name === tunnelName);
+    if (!tunnel) return null;
+
+    const cloudflaredDir = path.join(os.homedir(), '.cloudflared');
+    const files = fs.readdirSync(cloudflaredDir);
+    for (const file of files) {
+      if (file.endsWith('.json') && file !== 'cert.pem') {
+        const filePath = path.join(cloudflaredDir, file);
+        try {
+          const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+          if (content.TunnelID === tunnel.id) {
+            return filePath;
+          }
+        } catch { /* ignore */ }
       }
     }
-  }
-  return newest?.path ?? null;
+  } catch { /* ignore */ }
+  return null;
 }
 
 async function ensurePersistentTunnel(bin: string, tunnelName: string, domain: string): Promise<string> {
@@ -89,7 +96,7 @@ async function ensurePersistentTunnel(bin: string, tunnelName: string, domain: s
     // Tunnel might already exist, find its credentials
   }
 
-  const sourceCreds = findCloudflaredCredentials(tunnelName);
+  const sourceCreds = await findCloudflaredCredentialsByName(bin, tunnelName);
   if (!sourceCreds) {
     throw new Error(`Failed to find credentials for tunnel ${tunnelName}`);
   }
@@ -332,7 +339,17 @@ export async function startN8nTunnel(targetUrl: string, cloudflaredBin?: string)
   if (tunnelConfig.mode === 'custom-domain' && tunnelConfig.hostname && tunnelConfig.tunnelName) {
     const credsPath = await ensurePersistentTunnel(bin, tunnelConfig.tunnelName, tunnelConfig.hostname);
     publicUrl = `https://${tunnelConfig.hostname}`;
-    cloudflaredArgs = ['tunnel', '--hostname', tunnelConfig.hostname, '--url', targetUrl, '--no-autoupdate', '--logfile', logFile, '--credential-file', credsPath];
+    const configPath = path.join(os.tmpdir(), `cloudflared-${tunnelConfig.tunnelName}.yml`);
+    const configContent = [
+      `tunnel: ${tunnelConfig.tunnelName}`,
+      `credentials-file: ${credsPath}`,
+      `ingress:`,
+      `  - hostname: ${tunnelConfig.hostname}`,
+      `    service: ${targetUrl}`,
+      `  - service: http_status:404`,
+    ].join('\n');
+    fs.writeFileSync(configPath, configContent);
+    cloudflaredArgs = ['--config', configPath, 'tunnel', 'run'];
   } else {
     cloudflaredArgs = ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', logFile];
     publicUrl = ''; // Will be extracted from log
@@ -533,7 +550,17 @@ async function startNamedTunnel(targetUrl: string, statePath: string, tunnelName
 
   if (tunnelConfig.mode === 'custom-domain' && tunnelConfig.hostname && tunnelConfig.tunnelName) {
     const credsPath = await ensurePersistentTunnel(bin, tunnelConfig.tunnelName, tunnelConfig.hostname);
-    cloudflaredArgs = ['tunnel', '--hostname', tunnelConfig.hostname, '--url', targetUrl, '--no-autoupdate', '--logfile', logFile, '--credential-file', credsPath];
+    const configPath = path.join(os.tmpdir(), `cloudflared-${tunnelConfig.tunnelName}.yml`);
+    const configContent = [
+      `tunnel: ${tunnelConfig.tunnelName}`,
+      `credentials-file: ${credsPath}`,
+      `ingress:`,
+      `  - hostname: ${tunnelConfig.hostname}`,
+      `    service: ${targetUrl}`,
+      `  - service: http_status:404`,
+    ].join('\n');
+    fs.writeFileSync(configPath, configContent);
+    cloudflaredArgs = ['--config', configPath, 'tunnel', 'run'];
   } else {
     cloudflaredArgs = ['tunnel', '--url', targetUrl, '--no-autoupdate', '--logfile', logFile];
   }
