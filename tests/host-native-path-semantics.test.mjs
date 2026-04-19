@@ -15,11 +15,13 @@ test('host-native backend resolves relative paths from Yagr home and keeps absol
     const backend = new LocalShellBackend({ rootDir: tempRoot, inheritEnv: true });
     await backend.initialize();
 
-    const relativeContent = await backend.read('n8n-workspace/n8nac-config.json', 0, 20);
+    const relativeResult = await backend.read('n8n-workspace/n8nac-config.json', 0, 20);
+    const relativeContent = typeof relativeResult === 'string' ? relativeResult : relativeResult.content;
     assert.match(relativeContent, /ok/);
 
-    const fakeVirtualAbsolute = await backend.read('/n8n-workspace/n8nac-config.json', 0, 20);
-    assert.match(fakeVirtualAbsolute, /not found|Error reading file/i);
+    const fakeVirtualResult = await backend.read('/n8n-workspace/n8nac-config.json', 0, 20);
+    const fakeVirtualError = typeof fakeVirtualResult === 'string' ? fakeVirtualResult : fakeVirtualResult.error;
+    assert.match(fakeVirtualError, /not found|Error reading file/i);
 
     await backend.close();
   } finally {
