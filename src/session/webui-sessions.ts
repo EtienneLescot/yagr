@@ -8,7 +8,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import type { SerializedChatMessage, SessionSummary } from './session-types.js';
+import type { SessionSummary } from './session-types.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ export interface WebUiSession {
   title: string;
   createdAt: string;
   updatedAt: string;
-  displayMessages?: SerializedChatMessage[];
+  displayThread?: unknown[];
 }
 
 // ─── Class ────────────────────────────────────────────────────────────────────
@@ -74,24 +74,32 @@ export class WebUiSessionRegistry {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Display messages
-  // ---------------------------------------------------------------------------
-
-  setDisplayMessages(sessionId: string, displayMessages: SerializedChatMessage[]): void {
+  setTitle(sessionId: string, title: string): void {
     const session = this.get(sessionId);
     if (!session) {
       return;
     }
-    this.save({ ...session, displayMessages });
+    this.save({ ...session, title, updatedAt: new Date().toISOString() });
   }
 
-  clearDisplayMessages(sessionId: string): void {
+  // ---------------------------------------------------------------------------
+  // Display thread
+  // ---------------------------------------------------------------------------
+
+  setDisplayThread(sessionId: string, displayThread: unknown[]): void {
     const session = this.get(sessionId);
     if (!session) {
       return;
     }
-    this.save({ ...session, displayMessages: [] });
+    this.save({ ...session, displayThread });
+  }
+
+  clearDisplayThread(sessionId: string): void {
+    const session = this.get(sessionId);
+    if (!session) {
+      return;
+    }
+    this.save({ ...session, displayThread: [] });
   }
 
   // ---------------------------------------------------------------------------
@@ -104,7 +112,7 @@ export class WebUiSessionRegistry {
       title: session.title,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
-      messageCount: session.displayMessages?.length ?? 0,
+      messageCount: session.displayThread?.length ?? 0,
     };
   }
 
