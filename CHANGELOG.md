@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.2.24](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.23...yagr@v0.2.24) (2026-04-19)
+
+
+### Features
+
+* add deepagent conversation checkpoint management with restore abilities ([1e3fa94](https://github.com/EtienneLescot/yagr/commit/1e3fa94706dc19f624ad72bd0a3d35e3dd9a75ba))
+* **compaction:** add context gauge to webui and tui, emit context-usage events ([34bb250](https://github.com/EtienneLescot/yagr/commit/34bb25007bb5753e1fa8f5d756bcc96cafb0e23d))
+* **compaction:** implement deepagentjs native compaction history mechanism ([8e23704](https://github.com/EtienneLescot/yagr/commit/8e23704b8d19ad7ba7b1d117c9ff7c3692f15a2e))
+* **compaction:** refactor compaction configuration and state management ([8e9ee69](https://github.com/EtienneLescot/yagr/commit/8e9ee699fd7cc384f512249a49c639583d5eb93d))
+* implement SessionService SSOT for unified session management across façades ([1b15a71](https://github.com/EtienneLescot/yagr/commit/1b15a7119d719421095c2dc783df09c2fbfd6784))
+* implement SessionService SSOT for unified session management across façades ([68ce943](https://github.com/EtienneLescot/yagr/commit/68ce9437532bc4d1116c9da7c81c8ec610beb215))
+* **llm:** add MiniMax API and MiniMax Token Plan providers ([ffbf7ed](https://github.com/EtienneLescot/yagr/commit/ffbf7edcbff00f983c7c4c08cb20f2126282eed3))
+* **session:** persist and restore compaction state with checkpoints ([899287a](https://github.com/EtienneLescot/yagr/commit/899287a9b07bd158400edbc29e4922863756eb1b))
+
+
+### Bug Fixes
+
+* add /resume and /checkpoints commands to TUI, fix reset ordering, add error logging ([a2d7e1e](https://github.com/EtienneLescot/yagr/commit/a2d7e1e5d0ed7e8e15346aebdebae611d20b1996))
+* checkpoint restore tuple contract, compaction SSOT per-session, route order, auto-checkpoint scope ([2979c33](https://github.com/EtienneLescot/yagr/commit/2979c3388c9c94a2c5ebcb6c3f6d938d8b8f1e62))
+* **checkpoint:** use savedConfig from checkpointer.put() in putWrites call ([99de3c8](https://github.com/EtienneLescot/yagr/commit/99de3c871fd129a80f02f043d2469cb2b002c46c))
+* **llm:** update openai model discovery and selection logic ([693d99a](https://github.com/EtienneLescot/yagr/commit/693d99a93bf6b05b32c3c488c3c539024fc9c619))
+* remove legacy migration and TUI bridge startup for faster boot ([c81f64f](https://github.com/EtienneLescot/yagr/commit/c81f64fe1fa10168bd14bafa4f5c6b7fcaa7d74f))
+* **tests:** update host-native-path-semantics test for deepagents 1.9.0 API ([6618860](https://github.com/EtienneLescot/yagr/commit/6618860596ae393246c90fb97644265d317e9bba))
+* **tunnel:** decouple tunnel shutdown from facade/gateway lifecycle ([0a540d5](https://github.com/EtienneLescot/yagr/commit/0a540d51f7dff28d628b164c3ee15b80810da50b))
+* **tunnel:** probe stale public URLs before credential sync at startup ([bc13001](https://github.com/EtienneLescot/yagr/commit/bc130010f094fff7dd9a66de67b8af4b13ca5503))
+* **webui:** remove redundant system notice on session creation ([0d9a31d](https://github.com/EtienneLescot/yagr/commit/0d9a31d157be9873cd62732815c4ef5ee77bc5ab))
+
 ## [0.2.23](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.22...yagr@v0.2.23) (2026-04-19)
 
 
