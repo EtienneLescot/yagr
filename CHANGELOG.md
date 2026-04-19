@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.23](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.22...yagr@v0.2.23) (2026-04-19)
+
+
+### Bug Fixes
+
+* **docs:** correct accent in AGENTS.md for release trigger ([b33c65f](https://github.com/EtienneLescot/yagr/commit/b33c65f1c11135e9c2a1b9bd380043083ced89f7))
+
 ## [0.2.22](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.21...yagr@v0.2.22) (2026-04-19)
 
 
