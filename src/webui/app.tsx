@@ -962,7 +962,6 @@ function App() {
         // Server creates the session file immediately → it appears in the list right away.
         const { id } = await request<{ id: string }>('/api/sessions', { method: 'POST' });
         switchSession(id);
-        setThread([{ kind: 'system-notice', id: crypto.randomUUID(), text: 'New conversation. How can Yagr help?' }]);
         void refreshSessions();
       } catch (error) {
         notify(error instanceof Error ? error.message : String(error), 'error');
