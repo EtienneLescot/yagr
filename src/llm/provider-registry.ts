@@ -11,7 +11,9 @@ export type YagrModelProvider =
   | 'openrouter'
   | 'openai-proxy'
   | 'anthropic-proxy'
-  | 'copilot-proxy';
+  | 'copilot-proxy'
+  | 'minimax'
+  | 'minimax-token-plan';
 
 export interface YagrProviderDefinition {
   id: YagrModelProvider;
@@ -142,6 +144,32 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     requiresApiKey: false,
     usesOpenAiCompatibleApi: true,
     setupHint: 'Copilot subscription, no API key required',
+  },
+  minimax: {
+    id: 'minimax',
+    displayName: 'MiniMax',
+    defaultModel: 'MiniMax-M2.7',
+    defaultBaseUrl: 'https://api.minimax.io/anthropic',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: false,
+    modelDiscovery: {
+      buildUrl: () => 'https://api.minimax.io/v1/models',
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  'minimax-token-plan': {
+    id: 'minimax-token-plan',
+    displayName: 'MiniMax Token Plan',
+    defaultModel: 'MiniMax-M2.7',
+    defaultBaseUrl: 'https://api.minimax.io/anthropic',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: false,
+    modelDiscovery: {
+      buildUrl: () => 'https://api.minimax.io/v1/models',
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
   },
 };
 
