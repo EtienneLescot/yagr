@@ -3,10 +3,11 @@ import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
-import { getYagrDeepAgentSessionsDir } from '../config/yagr-home.js';
+import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-home.js';
+import { ensureLocalN8nAuthBridgeRunning } from './local-open-bridge.js';
 import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
-import { DeepAgentSessionStore } from '../session/deepagent-sessions.js';
+import { SessionService } from '../session/index.js';
 import {
   formatWorkflowLinkTerminal,
   type WorkflowEmbed,
@@ -45,7 +46,7 @@ type InteractiveAppProps = {
   agent: YagrDeepAgentHandle['agent'];
   threadIdRef: { current: string };
   options: YagrRunOptions;
-  createSessionId: () => string;
+  sessions: SessionService;
 };
 
 function stateColor(state: YagrAgentState): string {
@@ -255,7 +256,7 @@ function RequiredActionList({ actions }: { actions: YagrRequiredAction[] }): JSX
   );
 }
 
-function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: InteractiveAppProps) {
+function YagrInteractiveApp({ agent, threadIdRef, options, sessions }: InteractiveAppProps) {
   const app = useApp();
   const { stdout } = useStdout();
   const terminalHeight = stdout?.rows ?? 24;
@@ -641,7 +642,8 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
     }
 
     if (prompt === '/reset') {
-      threadIdRef.current = createSessionId();
+      const newSession = sessions.rotateForScope({ kind: 'tui', key: 'default' }, { title: 'Interactive session' });
+      threadIdRef.current = newSession.id;
       setFeed([]);
       setPendingRequiredActions([]);
       setCurrentState('idle');
@@ -889,12 +891,16 @@ function YagrInteractiveApp({ agent, threadIdRef, options, createSessionId }: In
 }
 
 export async function runInteractiveGateway(handle: YagrDeepAgentHandle, options: YagrRunOptions): Promise<void> {
-  const sessionStore = new DeepAgentSessionStore(getYagrDeepAgentSessionsDir());
-  const createSessionId = () => sessionStore.create({ title: 'Interactive session' }).id;
-  const session = { id: createSessionId() };
+  await ensureLocalN8nAuthBridgeRunning();
+  const sessions = new SessionService({
+    sessionsDir: getYagrDeepAgentSessionsDir(),
+    memoriesDir: getYagrMemoriesDir(),
+  });
+  sessions.setCheckpointer(handle.checkpointer);
+  const session = sessions.getOrCreateForScope({ kind: 'tui', key: 'default' }, { title: 'Interactive session' });
   const threadIdRef = { current: session.id };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ink = render(<YagrInteractiveApp agent={handle.agent} threadIdRef={threadIdRef} options={options} createSessionId={createSessionId} />, {
+  const ink = render(<YagrInteractiveApp agent={handle.agent} threadIdRef={threadIdRef} options={options} sessions={sessions} />, {
     exitOnCtrlC: false,
     alternateScreen: true,
   } as any);
