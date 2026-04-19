@@ -9,7 +9,7 @@ import {
 } from 'n8nac';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
 import { WebUiSessionRegistry } from '../session/webui-sessions.js';
-import type { SerializedChatMessage, SessionSummary } from '../session/session-types.js';
+import type { SessionSummary } from '../session/session-types.js';
 import { SessionService, deriveSessionTitle } from '../session/index.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
@@ -297,10 +297,12 @@ class WebUiGateway implements Gateway {
       }
 
       const { agent } = await this.resolveAgentHandle();
+      const derivedTitle = deriveSessionTitle(message);
       this.sessions.ensure(sessionId, {
         scope: { kind: 'webui', key: sessionId },
-        title: deriveSessionTitle(message),
+        title: derivedTitle,
       });
+      this.sessionRegistry.setTitle(sessionId, derivedTitle);
       const result = await agent.invoke(
         { messages: [{ role: 'user', content: message }] },
         this.sessions.buildSessionConfig(sessionId),
@@ -470,7 +472,7 @@ class WebUiGateway implements Gateway {
       }
       await this.resolveAgentHandle();
       const result = await this.sessions.restoreCheckpoint(sessionId, checkpointId);
-      this.sessionRegistry.clearDisplayMessages(sessionId);
+      this.sessionRegistry.clearDisplayThread(sessionId);
       const handle = await this.resolveAgentHandle();
       if (result.compactionState) {
         handle.compactionService.setState(sessionId, result.compactionState);
@@ -508,12 +510,12 @@ class WebUiGateway implements Gateway {
         return;
       }
       const body = await this.readJson(request);
-      const displayMessages = body.displayMessages as SerializedChatMessage[] | undefined;
-      if (!Array.isArray(displayMessages)) {
-        this.sendJson(response, 400, { error: 'displayMessages must be an array.' });
+      const displayThread = body.displayThread as unknown[] | undefined;
+      if (!Array.isArray(displayThread)) {
+        this.sendJson(response, 400, { error: 'displayThread must be an array.' });
         return;
       }
-      this.sessionRegistry.setDisplayMessages(sessionId, displayMessages);
+      this.sessionRegistry.setDisplayThread(sessionId, displayThread);
       this.sendJson(response, 200, { ok: true });
       return;
     }
@@ -716,10 +718,12 @@ class WebUiGateway implements Gateway {
       writeEvent({ type: 'start', sessionId, message: 'Run started.' });
 
       const { agent, compactionService } = await this.resolveAgentHandle();
+      const derivedTitle = deriveSessionTitle(message);
       this.sessions.ensure(sessionId, {
         scope: { kind: 'webui', key: sessionId },
-        title: deriveSessionTitle(message),
+        title: derivedTitle,
       });
+      this.sessionRegistry.setTitle(sessionId, derivedTitle);
       const accumulator = createRunAccumulator();
 
       const stream = agent.streamEvents(
