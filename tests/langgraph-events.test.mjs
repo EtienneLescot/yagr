@@ -141,3 +141,87 @@ test('processStreamEvent emits a workflow embed from execute object output', asy
   assert.equal(embeds[0].workflowId, 'wf-456');
   assert.equal(accumulator.workflowEmbeds.length, 1);
 });
+
+test('processStreamEvent does not set fileModificationDetected for execute tool', async () => {
+  const accumulator = createRunAccumulator();
+  assert.equal(accumulator.fileModificationDetected, false);
+
+  await processStreamEvent({
+    event: 'on_tool_end',
+    name: 'execute',
+    run_id: 'run-execute',
+    data: { output: 'some output\n[Command succeeded with exit code 0]' },
+  }, accumulator);
+
+  assert.equal(accumulator.fileModificationDetected, false);
+});
+
+test('processStreamEvent sets fileModificationDetected for writeFile tool', async () => {
+  const accumulator = createRunAccumulator();
+  assert.equal(accumulator.fileModificationDetected, false);
+
+  await processStreamEvent({
+    event: 'on_tool_end',
+    name: 'writeFile',
+    run_id: 'run-writefile',
+    data: { output: '{"ok": true}' },
+  }, accumulator);
+
+  assert.equal(accumulator.fileModificationDetected, true);
+});
+
+test('processStreamEvent sets fileModificationDetected for write_file tool', async () => {
+  const accumulator = createRunAccumulator();
+  assert.equal(accumulator.fileModificationDetected, false);
+
+  await processStreamEvent({
+    event: 'on_tool_end',
+    name: 'write_file',
+    run_id: 'run-write-file',
+    data: { output: '{"ok": true}' },
+  }, accumulator);
+
+  assert.equal(accumulator.fileModificationDetected, true);
+});
+
+test('processStreamEvent sets fileModificationDetected for deleteFile tool', async () => {
+  const accumulator = createRunAccumulator();
+  assert.equal(accumulator.fileModificationDetected, false);
+
+  await processStreamEvent({
+    event: 'on_tool_end',
+    name: 'deleteFile',
+    run_id: 'run-deletefile',
+    data: { output: '{"ok": true}' },
+  }, accumulator);
+
+  assert.equal(accumulator.fileModificationDetected, true);
+});
+
+test('processStreamEvent sets fileModificationDetected for moveFile tool', async () => {
+  const accumulator = createRunAccumulator();
+  assert.equal(accumulator.fileModificationDetected, false);
+
+  await processStreamEvent({
+    event: 'on_tool_end',
+    name: 'moveFile',
+    run_id: 'run-movefile',
+    data: { output: '{"ok": true}' },
+  }, accumulator);
+
+  assert.equal(accumulator.fileModificationDetected, true);
+});
+
+test('processStreamEvent sets fileModificationDetected for replaceInFile tool', async () => {
+  const accumulator = createRunAccumulator();
+  assert.equal(accumulator.fileModificationDetected, false);
+
+  await processStreamEvent({
+    event: 'on_tool_end',
+    name: 'replaceInFile',
+    run_id: 'run-replaceinfile',
+    data: { output: '{"ok": true}' },
+  }, accumulator);
+
+  assert.equal(accumulator.fileModificationDetected, true);
+});

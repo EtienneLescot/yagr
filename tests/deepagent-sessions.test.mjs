@@ -133,3 +133,131 @@ test('SessionService.delete removes persisted checkpoint directories', async () 
   assert.equal(fs.existsSync(checkpointDir), false);
   assert.equal(await checkpointer.getTuple({ configurable: { thread_id: 'session-2' } }), undefined);
 });
+
+test('CheckpointManager saves and restores compaction state alongside checkpoint', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-checkpoints-compaction-'));
+  const checkpointer = new MemorySaver();
+  const manager = new CheckpointManager(checkpointer, tempDir);
+
+  await checkpointer.put(
+    { configurable: { thread_id: 'session-compaction' } },
+    {
+      v: 4,
+      id: 'checkpoint-compaction',
+      ts: new Date().toISOString(),
+      channel_values: { messages: ['hello'] },
+      channel_versions: { messages: 1 },
+      versions_seen: {},
+    },
+    { source: 'loop', step: 1, parents: {} },
+    {},
+  );
+
+  const compactionState = {
+    lastCompaction: { summary: 'test summary', source: 'llm', messagesCompacted: 10, preservedRecentMessages: 4 },
+    compactionHistory: [],
+    totalCompactions: 1,
+  };
+
+  const saved = await manager.saveCheckpoint('session-compaction', compactionState);
+  await checkpointer.deleteThread('session-compaction');
+
+  const restoredCompaction = await manager.restoreCheckpoint('session-compaction', saved.id);
+
+  assert.equal(restoredCompaction?.totalCompactions, 1);
+  assert.equal(restoredCompaction?.lastCompaction?.summary, 'test summary');
+  assert.equal(restoredCompaction?.lastCompaction?.messagesCompacted, 10);
+});
+
+test('CheckpointManager restoreCheckpoint returns null when no compaction state was saved', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-checkpoints-nocompaction-'));
+  const checkpointer = new MemorySaver();
+  const manager = new CheckpointManager(checkpointer, tempDir);
+
+  await checkpointer.put(
+    { configurable: { thread_id: 'session-nocompaction' } },
+    {
+      v: 4,
+      id: 'checkpoint-nocompaction',
+      ts: new Date().toISOString(),
+      channel_values: { messages: ['hello'] },
+      channel_versions: { messages: 1 },
+      versions_seen: {},
+    },
+    { source: 'loop', step: 1, parents: {} },
+    {},
+  );
+
+  const saved = await manager.saveCheckpoint('session-nocompaction');
+  await checkpointer.deleteThread('session-compaction');
+
+  const restoredCompaction = await manager.restoreCheckpoint('session-nocompaction', saved.id);
+
+  assert.equal(restoredCompaction, null);
+});
+
+test('SessionService.ensureCheckpointAccess throws when no initializer and no checkpointer set', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-session-service-noaccess-'));
+  const sessionsDir = path.join(rootDir, 'sessions');
+  const memoriesDir = path.join(rootDir, 'memories');
+  const service = new SessionService({ sessionsDir, memoriesDir });
+
+  await assert.rejects(
+    async () => service.listCheckpoints('some-session'),
+    /Checkpoint access not available/,
+  );
+});
+
+test('SessionService.registerCheckpointInitializer enables lazy checkpoint access', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-session-service-init-'));
+  const sessionsDir = path.join(rootDir, 'sessions');
+  const memoriesDir = path.join(rootDir, 'memories');
+  const service = new SessionService({ sessionsDir, memoriesDir });
+  const checkpointer = new MemorySaver();
+
+  service.registerCheckpointInitializer(async () => checkpointer);
+
+  await service.ensureCheckpointAccess();
+  assert.equal(service.isCheckpointAccessReady(), true);
+});
+
+test('SessionService.restoreCheckpoint returns RestoreResult with compaction state', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-session-service-restore-'));
+  const sessionsDir = path.join(rootDir, 'sessions');
+  const memoriesDir = path.join(rootDir, 'memories');
+  const service = new SessionService({ sessionsDir, memoriesDir });
+  const checkpointer = new MemorySaver();
+  service.setCheckpointer(checkpointer);
+
+  service.create({ id: 'session-restore-test', title: 'Test session' });
+  await checkpointer.put(
+    { configurable: { thread_id: 'session-restore-test' } },
+    {
+      v: 4,
+      id: 'checkpoint-restore-test',
+      ts: new Date().toISOString(),
+      channel_values: { messages: ['hello'] },
+      channel_versions: { messages: 1 },
+      versions_seen: {},
+    },
+    { source: 'loop', step: 1, parents: {} },
+    {},
+  );
+
+  const compactionState = {
+    lastCompaction: { summary: 'restore test', source: 'llm', messagesCompacted: 5, preservedRecentMessages: 4 },
+    compactionHistory: [],
+    totalCompactions: 1,
+  };
+
+  const saved = await service.saveCheckpoint('session-restore-test', { compactionState });
+  await checkpointer.deleteThread('session-restore-test');
+
+  const result = await service.restoreCheckpoint('session-restore-test', saved.id);
+
+  assert.equal(result.checkpointId, saved.id);
+  assert.equal(result.sessionId, 'session-restore-test');
+  assert.equal(result.compactionState?.totalCompactions, 1);
+  assert.equal(result.compactionState?.lastCompaction?.summary, 'restore test');
+  assert.ok(result.restoredAt);
+});

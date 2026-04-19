@@ -386,6 +386,7 @@ class TelegramGateway implements Gateway {
         await ctx.reply('This chat is not linked.');
         return;
       }
+      const handle = await this.resolveAgentHandle();
       const threadId = await this.getOrCreateThreadId(chatId);
       const checkpoints = await this.sessions.listCheckpoints(threadId);
       if (checkpoints.length === 0) {
@@ -402,8 +403,10 @@ class TelegramGateway implements Gateway {
         await ctx.reply('This chat is not linked.');
         return;
       }
+      const handle = await this.resolveAgentHandle();
       const threadId = await this.getOrCreateThreadId(chatId);
-      const checkpoint = await this.sessions.saveCheckpoint(threadId);
+      const compactionState = handle.compactionService.getState(threadId);
+      const checkpoint = await this.sessions.saveCheckpoint(threadId, { compactionState });
       await ctx.reply(`Checkpoint saved: ${checkpoint.id}`);
     });
 
@@ -419,9 +422,18 @@ class TelegramGateway implements Gateway {
         return;
       }
       const checkpointId = args[0];
+      const handle = await this.resolveAgentHandle();
       const threadId = await this.getOrCreateThreadId(chatId);
-      await this.sessions.restoreCheckpoint(threadId, checkpointId);
-      await ctx.reply('Checkpoint restored.');
+      const result = await this.sessions.restoreCheckpoint(threadId, checkpointId);
+      if (result.compactionState) {
+        handle.compactionService.reset(threadId);
+        for (const compactionEvent of result.compactionState.compactionHistory) {
+          handle.compactionService.notifyCompaction(threadId, compactionEvent);
+        }
+      } else {
+        handle.compactionService.reset(threadId);
+      }
+      await ctx.reply('Checkpoint restored. Note: Telegram messages sent after the checkpoint are still visible, but the backend state has been restored.');
     });
 
     this.bot.command('checkpoint_delete', async (ctx) => {
@@ -436,6 +448,7 @@ class TelegramGateway implements Gateway {
         return;
       }
       const checkpointId = args[0];
+      await this.resolveAgentHandle();
       const threadId = await this.getOrCreateThreadId(chatId);
       await this.sessions.deleteCheckpoint(threadId, checkpointId);
       await ctx.reply('Checkpoint deleted.');
