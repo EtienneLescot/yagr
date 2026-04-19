@@ -69,6 +69,8 @@ function getApiKeyForProvider(
     google: ['GOOGLE_GENERATIVE_AI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_LLM_API_KEY', 'GOOGLE_LLM_API_KEY'],
     mistral: ['MISTRAL_API_KEY', 'MISTRAL_LLM_API_KEY'],
     openrouter: ['OPENROUTER_API_KEY', 'OPENROUTER_LLM_API_KEY'],
+    minimax: ['MINIMAX_API_KEY'],
+    'minimax-token-plan': ['MINIMAX_TOKEN_PLAN_API_KEY'],
   };
 
   if (!preferEnvironmentCredentials()) {
@@ -294,6 +296,14 @@ export async function createLangChainModel(
         completions: new CopilotCompletionsModel(copilotFields),
       });
     }
+
+    case 'minimax':
+    case 'minimax-token-plan':
+      return new ChatAnthropic({
+        apiKey,
+        model,
+        anthropicApiUrl: baseUrl ?? 'https://api.minimax.io/anthropic',
+      });
 
     default:
       throw new Error(`Unsupported provider for LangChain runtime: ${provider as string}. Run \`yagr setup\` to configure a supported provider.`);
