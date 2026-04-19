@@ -1,5 +1,6 @@
 import qrcode from 'qrcode-terminal';
 import { YagrConfigService, type YagrConfigStoreLike, type YagrGatewayConfig } from '../config/yagr-config-service.js';
+import { stopAllTunnels } from '../n8n-local/n8n-tunnel.js';
 import type { YagrRunOptions } from '../types.js';
 import type { GatewayRuntimeHandle, GatewaySurface } from './types.js';
 import { createTelegramGatewayRuntime, getTelegramGatewayStatus, type TelegramGatewayStatus } from './telegram.js';
@@ -258,6 +259,7 @@ export async function runGatewaySurfaces(
   await new Promise<void>((resolve) => {
     const stop = async () => {
       await stopRuntimeHandles(runtimes);
+      await stopAllTunnels();
       resolve();
     };
 
@@ -349,6 +351,7 @@ export async function runGatewaySupervisor(
   await new Promise<void>((resolve) => {
     const stop = async () => {
       await stopRuntimeHandles(runtimes);
+      await stopAllTunnels();
       // Clean up PID file if it points to this process
       try {
         const { readGatewayPid, clearGatewayPid } = await import('../config/gateway-daemon.js');

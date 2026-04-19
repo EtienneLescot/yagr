@@ -648,6 +648,19 @@ export async function stopN8nAuthTunnel(): Promise<void> {
   const descriptor = getN8nAuthTunnelDescriptor();
   await stopTunnelByPath(descriptor.statePath);
 }
+
+/**
+ * Stops all tunnel processes (n8n, n8n-auth, llm) and clears their state files.
+ * Used by `yagr stop` to ensure no orphaned cloudflared processes remain.
+ */
+export async function stopAllTunnels(): Promise<void> {
+  await Promise.allSettled([
+    stopTunnelByPath(getTunnelStatePath()),
+    stopTunnelByPath(getYagrPaths().llmTunnelStatePath),
+    stopTunnelByPath(getYagrPaths().n8nAuthTunnelStatePath),
+  ]);
+}
+
 /**
  * Resolves the local n8n URL that should be used as the tunnel target.
  *

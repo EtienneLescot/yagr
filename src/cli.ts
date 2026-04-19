@@ -56,6 +56,7 @@ import {
   startN8nTunnel,
   stopN8nTunnel,
   stopN8nAuthTunnel,
+  stopAllTunnels,
 } from './n8n-local/n8n-tunnel.js';
 import { ensureConfiguredLlmTunnelReachability, ensureFacadeTunnelReachability } from './n8n-local/tunnel-reachability.js';
 import { ensureN8nRelayServer } from './llm/llm-relay-server.js';
@@ -1385,6 +1386,7 @@ async function main(): Promise<void> {
     await new Promise<void>((resolve) => setTimeout(resolve, 500));
     clearGatewayPid();
     releaseLock();
+    await stopAllTunnels();
     process.stdout.write(`Gateway stopped (PID ${running.pid}).\n`);
     return;
   }
@@ -1398,6 +1400,7 @@ async function main(): Promise<void> {
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
       clearGatewayPid();
     }
+    await stopAllTunnels();
     await runGatewayOrFallback(args, configService);
     return;
   }
