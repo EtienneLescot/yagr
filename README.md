@@ -125,7 +125,6 @@ After onboarding, operate Yagr day to day with:
 yagr start           # start gateways in the background
 yagr tui             # open a terminal chat session
 yagr webui           # open the local web interface
-yagr n8n local open  # jump into the local n8n editor
 yagr stop            # stop the background gateway
 ```
 
