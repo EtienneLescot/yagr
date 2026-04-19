@@ -15,7 +15,7 @@
 
 **Setting up automation should not be harder than the automation itself.**
 
-Yagr is the red-carpet experience for n8n: a guided autonomous agent that takes you from a blank terminal to a live workflow, without the usual setup maze. <img src="n8n-color.png" alt="n8n" width="80" style="vertical-align: middle;">
+Yagr is the red-carpet experience for n8n --  <img src="n8n-color.png" alt="n8n" width="80" style="vertical-align: middle;">   -- a guided autonomous agent that takes you from a blank terminal to a live workflow, without the usual setup maze.
 
 <table>
 <tr>
