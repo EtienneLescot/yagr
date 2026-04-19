@@ -200,6 +200,7 @@ export class YagrConfigService {
   }
 
   getApiKey(provider: YagrModelProvider): string | undefined {
+    this.migrateLegacyCredentials();
     const credentials = (this.globalStore.get('providers') as Record<string, string> | undefined) ?? {};
     return credentials[provider];
   }
