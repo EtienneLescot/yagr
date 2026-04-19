@@ -47,8 +47,9 @@ export const YAGR_PROVIDER_TEST_MODEL_CONFIG: Partial<Record<YagrModelProvider, 
   },
   'openai-proxy': {
     preferredModels: [
+      'gpt-5.4',
+      'gpt-5.4-mini',
       'gpt-5.3-codex',
-      'gpt-5.1',
     ],
   },
   'anthropic-proxy': {

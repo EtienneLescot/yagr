@@ -17,7 +17,7 @@ import { normalizeFunctionToolParametersSchema } from './tool-schema.js';
 import { CODEX_UPSTREAM_TIMEOUT_MS, RETRY_CONFIG, withRetry, timeoutSignal } from './utils.js';
 
 export const OPENAI_ACCOUNT_BASE_URL = 'https://chatgpt.com/backend-api';
-export const OPENAI_ACCOUNT_DEFAULT_MODEL = 'gpt-5.1-codex-mini';
+export const OPENAI_ACCOUNT_DEFAULT_MODEL = 'gpt-5.4';
 
 /**
  * Reasoning effort level for Codex responses API.
@@ -66,18 +66,6 @@ const MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /** JWT claim namespace used by OpenAI to embed ChatGPT account metadata. */
 const JWT_ACCOUNT_CLAIM = 'https://api.openai.com/auth';
-
-/** Known models served by the ChatGPT Codex backend (chatgpt.com/backend-api). */
-export const KNOWN_CODEX_MODELS = [
-  'gpt-5.1',
-  'gpt-5.1-codex-max',
-  'gpt-5.1-codex-mini',
-  'gpt-5.2',
-  'gpt-5.2-codex',
-  'gpt-5.3-codex',
-  'gpt-5.3-codex-spark',
-  'gpt-5.4',
-];
 
 // ─── OAuth / PKCE constants ────────────────────────────────────────────────────
 
@@ -406,6 +394,7 @@ export function getOpenAiAccountSession(): OpenAiAccountSession | undefined {
 
 /** Fetches available models from the ChatGPT Codex backend with ETag caching.
  *  Uses `/codex/models` endpoint with conditional requests to minimize API calls.
+ *  Returns only models explicitly exposed by the account backend.
  *  Falls back to cached models on network failure or 304 Not Modified responses. */
 export async function fetchOpenAiAccountModels(accessToken: string): Promise<string[]> {
   const now = Date.now();
@@ -445,16 +434,24 @@ export async function fetchOpenAiAccountModels(accessToken: string): Promise<str
       throw new Error(`Model discovery failed: ${response.status} ${response.statusText}`);
     }
 
-    const data = (await response.json()) as Record<string, unknown>;
-    console.warn(`[openai-account] /codex/models response:`, JSON.stringify(data).slice(0, 500));
-    const models = (data.data as Array<{ id?: string }> | undefined)
-      ?.map((m) => m.id)
-      .filter((id): id is string => typeof id === 'string')
-      ?? [];
+    const data = (await response.json()) as {
+      models?: Array<{
+        slug?: string;
+        visibility?: string;
+        supported_in_api?: boolean;
+        priority?: number;
+      }>;
+    };
+    const models = (data.models ?? [])
+      .filter((model) => typeof model.slug === 'string' && model.slug.trim().length > 0)
+      .filter((model) => (model.visibility ?? 'list') === 'list')
+      .filter((model) => model.supported_in_api !== false)
+      .sort((left, right) => (left.priority ?? Number.MAX_SAFE_INTEGER) - (right.priority ?? Number.MAX_SAFE_INTEGER))
+      .map((model) => model.slug!.trim());
 
     if (models.length === 0) {
-      // API returned empty model list, don't overwrite cache
-      return modelDiscoveryCache?.models ?? [...KNOWN_CODEX_MODELS];
+      // API returned no compatible models, don't overwrite cache with an empty list.
+      return modelDiscoveryCache?.models ?? [];
     }
 
     // Update cache
@@ -466,12 +463,12 @@ export async function fetchOpenAiAccountModels(accessToken: string): Promise<str
 
     return models;
   } catch (error) {
-    // On error, return cached data if available, otherwise fall back to known models
+    // On error, return cached data if available. Avoid inventing models the account may not support.
     if (modelDiscoveryCache?.models.length) {
       return modelDiscoveryCache.models;
     }
-    console.warn(`[openai-account] Model discovery failed: ${error instanceof Error ? error.message : String(error)}. Using fallback model list.`);
-    return [...KNOWN_CODEX_MODELS];
+    console.warn(`[openai-account] Model discovery failed: ${error instanceof Error ? error.message : String(error)}.`);
+    return [];
   }
 }
 
