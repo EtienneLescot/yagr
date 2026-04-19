@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.25](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.24...yagr@v0.2.25) (2026-04-19)
+
+
+### Features
+
+* **webui:** add favicon support and update release-please action version ([7e1ab23](https://github.com/EtienneLescot/yagr/commit/7e1ab234eed1b4bdde1bb4cc0e3c9a3e31c6f786))
+* **webui:** implement binary asset delivery and update release workflow ([66ebd64](https://github.com/EtienneLescot/yagr/commit/66ebd64f2e94576757d6ced81eb7ef1b6528f6a7))
+
 ## [0.2.24](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.23...yagr@v0.2.24) (2026-04-19)
 
 
