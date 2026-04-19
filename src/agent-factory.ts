@@ -64,9 +64,7 @@ export async function createYagrDeepAgent(
   const checkpointerInstance = checkpointer ?? new MemorySaver();
 
   const compactionService = new CompactionService({
-    autoCompactContext: runOptions?.autoCompactContext ?? true,
-    compactContextThresholdPercent: runOptions?.compactContextThresholdPercent ?? 80,
-    compactPreserveRecentMessages: runOptions?.compactPreserveRecentMessages ?? 4,
+    historyLimit: runOptions?.historyLimit ?? 50,
   });
 
   const agent = createDeepAgent({

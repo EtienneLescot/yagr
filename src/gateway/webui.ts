@@ -472,11 +472,10 @@ class WebUiGateway implements Gateway {
       const result = await this.sessions.restoreCheckpoint(sessionId, checkpointId);
       this.sessionRegistry.clearDisplayMessages(sessionId);
       const handle = await this.resolveAgentHandle();
-      handle.compactionService.reset(sessionId);
       if (result.compactionState) {
-        for (const compactionEvent of result.compactionState.compactionHistory) {
-          handle.compactionService.notifyCompaction(sessionId, compactionEvent);
-        }
+        handle.compactionService.setState(sessionId, result.compactionState);
+      } else {
+        handle.compactionService.reset(sessionId);
       }
       this.sendJson(response, 200, { ok: true, compactionRestored: !!result.compactionState });
       return;

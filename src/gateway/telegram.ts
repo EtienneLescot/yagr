@@ -426,10 +426,7 @@ class TelegramGateway implements Gateway {
       const threadId = await this.getOrCreateThreadId(chatId);
       const result = await this.sessions.restoreCheckpoint(threadId, checkpointId);
       if (result.compactionState) {
-        handle.compactionService.reset(threadId);
-        for (const compactionEvent of result.compactionState.compactionHistory) {
-          handle.compactionService.notifyCompaction(threadId, compactionEvent);
-        }
+        handle.compactionService.setState(threadId, result.compactionState);
       } else {
         handle.compactionService.reset(threadId);
       }

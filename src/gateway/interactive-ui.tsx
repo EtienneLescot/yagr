@@ -713,10 +713,7 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
         seenOperationEndRef.current = new Set();
         operationStateRef.current = new Map();
         if (result.compactionState) {
-          compactionService.reset(threadIdRef.current);
-          for (const compactionEvent of result.compactionState.compactionHistory) {
-            compactionService.notifyCompaction(threadIdRef.current, compactionEvent);
-          }
+          compactionService.setState(threadIdRef.current, result.compactionState);
         } else {
           compactionService.reset(threadIdRef.current);
         }

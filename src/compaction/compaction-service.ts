@@ -64,6 +64,14 @@ export class CompactionService {
     this.states.delete(sessionId);
   }
 
+  setState(sessionId: string, state: CompactionState): void {
+    this.states.set(sessionId, {
+      lastCompaction: state.lastCompaction,
+      compactionHistory: [...state.compactionHistory],
+      totalCompactions: state.totalCompactions,
+    });
+  }
+
   private emptyState(): CompactionState {
     return {
       lastCompaction: null,
