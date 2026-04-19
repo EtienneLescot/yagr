@@ -124,6 +124,7 @@ Observation:
 - `n8n-tunnel.ts` reste responsable du lifecycle process `cloudflared`, pas de la politique d'activation par facade
 - le mode `force-all-facades` permet de forcer les chemins publics pour test sans dupliquer la logique dans chaque facade
 - `TUNNEL_DOMAIN` est resolu dans `n8n-tunnel.ts`, ce qui evite de dupliquer la logique custom-domain dans les facades, le setup ou le relay
+- l'arret d'une facade/gateway ne detruit pas les tunnels autonomes (`n8n`, `llm`); le `n8n auth tunnel` reste nettoye avec le gateway tant que son bridge vit dans ce process
 
 ## 4c. Startup preflight des tunnels
 
