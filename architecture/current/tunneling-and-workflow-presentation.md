@@ -10,9 +10,10 @@ Three Cloudflare Tunnel use-cases exist in Yagr, with separate operational scope
 | **n8n auth tunnel** | Remote surfaces opening workflows | Expose the local n8n auth bridge publicly | Not modified |
 | **llm tunnel** | Cloud n8n instances | Allow cloud n8n to reach the local LLM relay | Not modified |
 
-The tunnel policy is split across two SSOT modules:
+The tunnel policy is split across three SSOT modules:
 
 - `src/n8n-local/n8n-tunnel.ts` owns the `cloudflared` process lifecycle, state files, and `TUNNEL_DOMAIN` custom-domain handling
+- `src/n8n-local/public-exposure-service.ts` owns application-level orchestration for the three public exposure use-cases (`n8n`, `n8n auth`, `llm`)
 - `src/n8n-local/tunnel-reachability.ts` owns wake-up policy by consumer/facade and the `YAGR_TUNNEL_REACHABILITY_MODE` override
 
 ## Workflow Presentation URL Resolution

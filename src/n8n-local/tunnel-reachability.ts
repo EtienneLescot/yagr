@@ -1,18 +1,14 @@
-import { YagrConfigService, type YagrConfigStoreLike, type YagrLocalConfig, type YagrLlmProxyConfig, type YagrTunnelReachabilityMode } from '../config/yagr-config-service.js';
-import { YagrN8nConfigService } from '../config/n8n-config-service.js';
-import { ensureLocalN8nAuthBridgeRunning, getLocalN8nAuthBridgeBaseUrl } from '../gateway/local-open-bridge.js';
+import { YagrConfigService, type YagrConfigStoreLike, type YagrLocalConfig, type YagrTunnelReachabilityMode } from '../config/yagr-config-service.js';
 import { ensureN8nRelayServer } from '../llm/llm-relay-server.js';
 import {
-  ensureN8nTunnel,
-  ensureN8nAuthTunnel,
-  installCloudflaredIfNeeded,
   resolveN8nTunnelTargetUrl,
-  refreshLlmTunnel,
-  refreshN8nTunnel,
 } from './n8n-tunnel.js';
-import { getConfiguredManagedN8nState } from './managed-runtime.js';
-import { startManagedDirectN8n, stopManagedDirectN8n } from './direct-manager.js';
-import { startManagedDockerN8n, stopManagedDockerN8n } from './docker-manager.js';
+import {
+  ensureConfiguredLlmPublicExposure,
+  ensureN8nAuthPublicExposure,
+  ensureN8nPublicExposure,
+  refreshLlmPublicExposureForRelayHostBaseUrl,
+} from './public-exposure-service.js';
 
 export type TunnelReachabilityConsumer = 'telegram' | 'webui' | 'tui' | 'cli' | 'setup' | 'llm';
 const YAGR_TUNNEL_REACHABILITY_MODE_ENV = 'YAGR_TUNNEL_REACHABILITY_MODE';
@@ -57,29 +53,6 @@ async function probePublicUrl(publicUrl: string): Promise<boolean> {
   }
 }
 
-async function restartManagedN8nForTunnel(publicUrl: string): Promise<void> {
-  const managedState = getConfiguredManagedN8nState();
-  if (!managedState || managedState.status === 'stopped') return;
-
-  new YagrN8nConfigService().syncN8nacHostUrl(publicUrl);
-
-  if (managedState.strategy === 'docker') {
-    await stopManagedDockerN8n();
-    await startManagedDockerN8n();
-    return;
-  }
-
-  await stopManagedDirectN8n();
-  await startManagedDirectN8n();
-}
-
-function updateLlmProxyConfig(configService: YagrConfigStoreLike, updater: (cfg: YagrLlmProxyConfig) => YagrLlmProxyConfig): void {
-  configService.updateLocalConfig((localConfig) => ({
-    ...localConfig,
-    llmProxy: localConfig.llmProxy ? updater(localConfig.llmProxy) : localConfig.llmProxy,
-  }));
-}
-
 export async function ensureConfiguredN8nTunnelReachability(
   consumer: TunnelReachabilityConsumer,
   configService: YagrConfigService = new YagrConfigService(),
@@ -94,15 +67,7 @@ export async function ensureConfiguredN8nTunnelReachability(
     return;
   }
 
-  const previousPublicUrl = tunnelConfig.publicUrl;
-  const bin = await installCloudflaredIfNeeded();
-  const state = await ensureN8nTunnel(targetUrl, bin);
-  configService.saveN8nTunnelConfig({ ...tunnelConfig, targetUrl, publicUrl: state.publicUrl });
-  new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
-
-  if (state.publicUrl !== previousPublicUrl) {
-    await restartManagedN8nForTunnel(state.publicUrl);
-  }
+  await ensureN8nPublicExposure(targetUrl, { action: 'ensure', configService });
 }
 
 export async function ensureN8nAuthTunnelReachability(
@@ -113,10 +78,7 @@ export async function ensureN8nAuthTunnelReachability(
     return;
   }
 
-  await ensureLocalN8nAuthBridgeRunning();
-  const bridgeUrl = getLocalN8nAuthBridgeBaseUrl();
-  const bin = await installCloudflaredIfNeeded();
-  await ensureN8nAuthTunnel(bridgeUrl, bin);
+  await ensureN8nAuthPublicExposure();
 }
 
 export async function ensureFacadeTunnelReachability(
@@ -130,27 +92,14 @@ export async function ensureFacadeTunnelReachability(
 export async function ensureConfiguredLlmTunnelReachability(
   configService: YagrConfigStoreLike = new YagrConfigService(),
 ): Promise<void> {
-  const proxyConfig = configService.getLocalConfig().llmProxy;
-  if (!proxyConfig?.enabled || proxyConfig.mode !== 'tunnel') {
-    return;
-  }
-
-  const relay = await ensureN8nRelayServer();
-  await ensureLlmTunnelForRelayHostBaseUrl(relay.hostBaseUrl, configService);
+  await ensureConfiguredLlmPublicExposure(configService);
 }
 
 export async function ensureLlmTunnelForRelayHostBaseUrl(
   hostBaseUrl: string,
   configService: YagrConfigStoreLike = new YagrConfigService(),
 ): Promise<string> {
-  const bin = await installCloudflaredIfNeeded();
-  const tunnelUrl = await refreshLlmTunnel(hostBaseUrl, bin);
-  updateLlmProxyConfig(configService, (current) => ({
-    ...current,
-    llmTunnelUrl: tunnelUrl,
-    credentialBaseUrl: `${tunnelUrl}/v1`,
-  }));
-  return tunnelUrl;
+  return refreshLlmPublicExposureForRelayHostBaseUrl(hostBaseUrl, configService);
 }
 
 export function getTunnelReachabilityDebugSnapshot(configService: YagrConfigStoreLike = new YagrConfigService()): {
@@ -193,14 +142,7 @@ async function refreshLlmTunnelIfStale(
 
   if (storedUrl && !(await probePublicUrl(storedUrl))) {
     try {
-      const bin = await installCloudflaredIfNeeded();
-      const newUrl = await refreshLlmTunnel(relay.hostBaseUrl, bin);
-      configService.updateLocalConfig((localConfig) => ({
-        ...localConfig,
-        llmProxy: localConfig.llmProxy
-          ? { ...localConfig.llmProxy, llmTunnelUrl: newUrl, credentialBaseUrl: `${newUrl}/v1` }
-          : localConfig.llmProxy,
-      }));
+      const newUrl = await refreshLlmPublicExposureForRelayHostBaseUrl(relay.hostBaseUrl, configService);
       return { refreshed: true, publicUrl: newUrl, skipped: false };
     } catch {
       return { refreshed: false, publicUrl: storedUrl, skipped: false, reason: 'refresh failed, keeping stale URL' };
@@ -226,11 +168,7 @@ async function refreshN8nTunnelIfStale(
   const storedUrl = tunnelConfig.publicUrl;
   if (storedUrl && !(await probePublicUrl(storedUrl))) {
     try {
-      const bin = await installCloudflaredIfNeeded();
-      const state = await refreshN8nTunnel(targetUrl, bin);
-      configService.saveN8nTunnelConfig({ ...tunnelConfig, targetUrl, publicUrl: state.publicUrl });
-      new YagrN8nConfigService().syncN8nacHostUrl(state.publicUrl);
-      await restartManagedN8nForTunnel(state.publicUrl);
+      const { state } = await ensureN8nPublicExposure(targetUrl, { action: 'refresh', configService });
       return { refreshed: true, publicUrl: state.publicUrl, skipped: false };
     } catch {
       return { refreshed: false, publicUrl: storedUrl, skipped: false, reason: 'refresh failed, keeping stale URL' };

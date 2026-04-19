@@ -26,7 +26,7 @@ import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession, getOpenA
 import type { GatewaySurface } from '../gateway/types.js';
 import { ensureYagrProxyCredential } from '../manager-tooling/yagr-proxy.js';
 import { classifyConfiguredN8nInstance, classifyN8nInstanceCandidate, hasN8nInstanceTag, resolveN8nInstanceProfile } from '../n8n-local/instance-classification.js';
-import { ensureConfiguredLlmTunnelReachability, ensureLlmTunnelForRelayHostBaseUrl } from '../n8n-local/tunnel-reachability.js';
+import { ensureConfiguredLlmPublicExposure, refreshLlmPublicExposureForRelayHostBaseUrl } from '../n8n-local/public-exposure-service.js';
 import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
 
 type N8nProjectClient = Pick<N8nApiClient, 'testConnection' | 'getProjects'>;
@@ -458,7 +458,7 @@ export class YagrSetupApplicationService {
     const existingProxyConfig = this.yagrConfigService.getLocalConfig().llmProxy;
     if (existingProxyConfig?.enabled && existingProxyConfig.mode) {
       if (existingProxyConfig.mode === 'tunnel') {
-        await ensureConfiguredLlmTunnelReachability(this.yagrConfigService);
+        await ensureConfiguredLlmPublicExposure(this.yagrConfigService);
       }
       const refreshedRelay = buildRelayInfo((await ensureN8nRelayServer()).port);
       return {
@@ -493,7 +493,7 @@ export class YagrSetupApplicationService {
   }
 
   private async startCloudflareTunnel(targetUrl: string): Promise<string> {
-    return ensureLlmTunnelForRelayHostBaseUrl(targetUrl, this.yagrConfigService);
+    return refreshLlmPublicExposureForRelayHostBaseUrl(targetUrl, this.yagrConfigService);
   }
 
   saveLlmProxyConfig(config: YagrLlmProxyConfig): void {

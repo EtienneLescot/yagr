@@ -36,6 +36,7 @@ Notes:
 - `memory/` porte le `MemoryStore` cross-session (synthetique, injecte dans le system prompt)
 - `compaction/` porte le `CompactionService` SSOT pour les evenements de compaction de contexte (historique, context block, subscribers)
 - `setup/` porte la couche applicative de configuration
+- `n8n-local/public-exposure-service.ts` porte le SSOT de l'orchestration produit des expositions publiques (`n8n`, `n8n auth`, `llm`)
 - `n8n-local/tunnel-reachability.ts` porte le SSOT de wake-up des tunnels par consommateur/facade
 - `n8n-local/n8n-tunnel.ts` porte le SSOT du lifecycle `cloudflared` et de la politique `TUNNEL_DOMAIN`
 
