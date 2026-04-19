@@ -54,12 +54,13 @@ yagr n8n local open          # open the editor in the browser
 
 ## n8n — Cloudflare Tunnel
 
-Exposes a local n8n instance to the internet. Requires `cloudflared` to be installed separately.
+Exposes a local n8n instance to the internet. `cloudflared` is downloaded automatically on first setup.
 See [Exposing n8n via Cloudflare Tunnel](../usage/n8n-tunnel) for a full guide.
 
 ```bash
+yagr n8n tunnel setup        # install cloudflared + start tunnel (run once)
 yagr n8n tunnel start        # start the tunnel — prints the public URL
-yagr n8n tunnel stop         # stop the tunnel
+yagr n8n tunnel stop         # stop all tunnels (n8n + n8n auth + llm)
 yagr n8n tunnel refresh      # renew (stop + start, new public URL)
 yagr n8n tunnel status       # show tunnel state (JSON)
 yagr n8n tunnel url          # print only the public URL

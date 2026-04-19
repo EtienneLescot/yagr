@@ -39,6 +39,10 @@ Yagr downloads the correct `cloudflared` binary for your platform (Linux x64/arm
 
 After setup, the tunnel restarts **automatically** every time you run `yagr start`.
 
+## Stopping
+
+When you run `yagr stop`, Yagr terminates all tunnel processes (n8n tunnel, n8n auth tunnel, and llm tunnel) before shutting down the gateway worker. This prevents orphaned `cloudflared` processes from leaking and spamming your Cloudflare account.
+
 ## Commands
 
 ```bash
