@@ -125,6 +125,45 @@ Observation:
 - le mode `force-all-facades` permet de forcer les chemins publics pour test sans dupliquer la logique dans chaque facade
 - `TUNNEL_DOMAIN` est resolu dans `n8n-tunnel.ts`, ce qui evite de dupliquer la logique custom-domain dans les facades, le setup ou le relay
 
+## 4c. Startup preflight des tunnels
+
+Avant la synchronisation de la credential LLM proxy au demarrage, Yagr execute un preflight tunnel en une seule passe. Cela permet de detecter et reactiver les tunnels Cloudflare devenue inaccessibles (URL `trycloudflare` perimée) avant deprovisionner la credential.
+
+```mermaid
+sequenceDiagram
+    participant CLI as CLI / Gateway startup
+    participant RELAY as LLM relay
+    participant PRE as ensureStartupTunnelReachability()
+    participant TUN as n8n-tunnel.ts
+    participant N8N as managed n8n
+    participant CRED as syncProxyCredentialIfEnabled()
+
+    CLI->>RELAY: ensureN8nRelayServer()
+    RELAY-->>CLI: relay port
+    CLI->>PRE: ensureStartupTunnelReachability()
+    Note over PRE: probe LLM tunnel URL
+    Note over PRE: probe n8n tunnel URL
+    alt LLM tunnel stale
+        PRE->>TUN: refreshLlmTunnel(targetUrl)
+        TUN-->>PRE: new publicUrl
+    end
+    alt n8n tunnel stale
+        PRE->>TUN: refreshN8nTunnel(targetUrl)
+        TUN-->>PRE: new publicUrl
+        PRE->>N8N: restart managed n8n
+    end
+    PRE-->>CLI: result (refreshed/skipped)
+    CLI->>CRED: syncProxyCredentialIfEnabled()
+```
+
+Regles du preflight:
+
+- Sondes les URLs publiques stockees AVANT tout redemarrage cloudflared — aucun restart aveugle.
+- Ne redemarre que les tunnels vraiment inaccessibles (erreur reseau / timeout sur l'URL publique).
+- Ne declenche pas le tunnel n8n auth au demarrage — il reste consumer-driven.
+- Ne touche pas a la credential si le refresh echoue — la configuration existante est conservee.
+- Le resultat du preflight est expose pour debugging via `getTunnelReachabilityDebugSnapshot()`.
+
 ## 5. Regles de maintenance
 
 Quand un flux transverse change, il faut:
