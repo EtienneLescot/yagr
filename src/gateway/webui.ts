@@ -621,7 +621,11 @@ class WebUiGateway implements Gateway {
     }
 
     void this.agentHandlePromise.then((handle) => {
-      handle.compactionService.reset(sessionId);
+      try {
+        handle.compactionService.reset(sessionId);
+      } catch (err) {
+        console.error('[WebUiGateway] Failed to clear compaction state:', err);
+      }
     });
   }
 

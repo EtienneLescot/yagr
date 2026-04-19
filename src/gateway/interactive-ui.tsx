@@ -659,22 +659,60 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
     }
 
     if (prompt === '/reset') {
-      compactionService.reset(threadIdRef.current);
-      const newSession = sessions.rotateForScope({ kind: 'tui', key: 'default' }, { title: 'Interactive session' });
-      threadIdRef.current = newSession.id;
-      setFeed([]);
-      setPendingRequiredActions([]);
-      setCurrentState('idle');
-      setPhaseStatusText('Conversation reset.');
-      resetStreamingBuffers();
-      setLastUserPrompt('');
-      setActiveOperationText('Ready for a request.');
-      setWorkflowEmbeds([]);
-      seenOperationStartRef.current = new Set();
-      seenOperationEndRef.current = new Set();
-      operationStateRef.current = new Map();
+      try {
+        compactionService.reset(threadIdRef.current);
+        const newSession = sessions.rotateForScope({ kind: 'tui', key: 'default' }, { title: 'Interactive session' });
+        threadIdRef.current = newSession.id;
+        setFeed([]);
+        setPendingRequiredActions([]);
+        setCurrentState('idle');
+        setPhaseStatusText('Conversation reset.');
+        resetStreamingBuffers();
+        setLastUserPrompt('');
+        setActiveOperationText('Ready for a request.');
+        setWorkflowEmbeds([]);
+        seenOperationStartRef.current = new Set();
+        seenOperationEndRef.current = new Set();
+        operationStateRef.current = new Map();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setActiveOperationText(`Reset failed: ${message}`);
+      }
       return;
+    }
 
+    if (prompt === '/checkpoints') {
+      try {
+        const checkpoints = await sessions.listCheckpoints(threadIdRef.current);
+        if (checkpoints.length === 0) {
+          setActiveOperationText('No checkpoints saved for this session.');
+        } else {
+          pushEntry('result', 'Checkpoints', checkpoints.map((cp, i) => `${i + 1}. ${new Date(cp.createdAt).toLocaleString()} - ${cp.messageCount} msgs`).join('\n'));
+          setActiveOperationText(`${checkpoints.length} checkpoint(s). Use /resume <id> to restore.`);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setActiveOperationText(`Failed to list checkpoints: ${message}`);
+      }
+      return;
+    }
+
+    if (prompt.startsWith('/resume')) {
+      const args = prompt.split(' ').slice(1);
+      if (args.length === 0) {
+        setActiveOperationText('Usage: /resume <checkpoint_id>. Use /checkpoints to list available checkpoints.');
+        return;
+      }
+      const checkpointId = args[0];
+      try {
+        await sessions.restoreCheckpoint(threadIdRef.current, checkpointId);
+        pushEntry('result', 'Checkpoint restored', `Checkpoint ${checkpointId} has been restored. Resume your conversation.`);
+        setActiveOperationText('Checkpoint restored. Ready for a request.');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setActiveOperationText(`Failed to restore checkpoint: ${message}`);
+      }
+      return;
     }
 
     if (prompt === '/toggle-thinking' || prompt === '/toggle-agent-thinking') {
@@ -736,7 +774,7 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
     }
 
     await runPrompt(prompt);
-  }, [agent, app, handleCompact, isRunning, pendingRequiredActions, pushEntry, runPrompt, workflowEmbeds, collapseAllShellBlocks, expandAllShellBlocks]);
+  }, [agent, app, compactionService, handleCompact, isRunning, pendingRequiredActions, pushEntry, runPrompt, sessions, threadIdRef, workflowEmbeds, collapseAllShellBlocks, expandAllShellBlocks]);
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
