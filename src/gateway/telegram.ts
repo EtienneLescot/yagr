@@ -16,7 +16,6 @@ import {
   markdownToTelegramHtml,
   escapeHtml,
 } from './format-message.js';
-import { getWebUiGatewayStatus } from './webui-config.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
 import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
 
@@ -649,9 +648,7 @@ class TelegramGateway implements Gateway {
           diagram: embed.diagram,
           executionResult: embed.executionResult,
         }));
-        const banner = buildWorkflowBannerHtml(embeds, {
-          openBaseUrl: getWebUiGatewayStatus(this.configService).url,
-        });
+        const banner = buildWorkflowBannerHtml(embeds);
         if (banner) {
           htmlSections.push(banner);
         }

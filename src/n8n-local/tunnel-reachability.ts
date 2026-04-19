@@ -21,7 +21,7 @@ function resolveTunnelReachabilityMode(configService: YagrConfigStoreLike = new 
   if (envMode === 'force-all-facades' || envMode === 'on-demand') {
     return envMode;
   }
-  return configService.getLocalConfig().tunnels?.reachabilityMode ?? 'on-demand';
+  return configService.getLocalConfig().tunnels?.reachabilityMode ?? 'force-all-facades';
 }
 
 function shouldForceAllFacades(configService: YagrConfigStoreLike = new YagrConfigService()): boolean {

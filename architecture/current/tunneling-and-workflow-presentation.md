@@ -28,21 +28,18 @@ presentWorkflowResultCli(workflowId, workflowUrl?)
      │     → local n8n host + workflow path
      │     → substitutes tunnel origin if active
      │
-     ├─ resolveWorkflowOpenLink(canonicalUrl, {
+     └─ resolveWorkflowOpenLink(canonicalUrl, {
            n8nTunnelPublicUrl: getActiveTunnelState()?.publicUrl
          })
-     │     → via 'direct': plain URL (no credentials)
-     │     → via 'self-contained-auth': bridge URL via auth bridge
-     │
-     └─ buildLocalWorkflowOpenBridgeUrl() / resolvePreferredWorkflowOpenBridgeUrl()
-           → local HTTP bridge server (port 3791) handles auth via
-             helper popup window to n8n /rest/login, then redirects
-           → when tunnel active: tunnel URL routes to bridge server
+           → via 'direct': plain workflow URL
+           → via 'self-contained-auth': bridge HTTP URL (local or tunnelized)
 ```
+
+`resolveWorkflowOpenLink()` calls `resolvePreferredWorkflowOpenBridgeUrl()` internally when credentials are found, so `payload.url` is always the final consumable URL. No facade-side re-resolution is needed.
 
 ### `via` field
 
-The `WorkflowEmbedPayload` includes a `via: 'direct' | 'self-contained-auth'` field so consumers know how the URL was resolved. When `via: 'self-contained-auth'`, the URL points to the local n8n auth bridge which handles authentication via a helper popup window.
+The `WorkflowEmbedPayload` includes a `via: 'direct' | 'self-contained-auth'` field for observability and light UI branching. When `via: 'self-contained-auth'`, `payload.url` is the bridge URL; the bridge serves the auth HTML and handles the helper popup login flow.
 
 ## n8nac Host Sync
 
@@ -91,15 +88,15 @@ A local HTTP server (default `127.0.0.1:3791`) that:
 | Scenario | URL Resolution |
 |----------|----------------|
 | No tunnel, no credentials | Direct URL to local n8n |
-| No tunnel, has credentials | Bridge URL with data: page containing auth form |
+| No tunnel, has credentials | Local bridge URL (`http://127.0.0.1:3791/open/n8n-workflow/{token}`) |
 | Tunnel active, no credentials | Direct URL to tunnel public URL |
-| Tunnel active, has credentials | Tunnel URL routed to bridge server |
+| Tunnel active, has credentials | Tunnel bridge URL (`https://{tunnel}/open/n8n-workflow/{token}`) |
 
 ### Auth Flow (with credentials)
 
 1. `resolveWorkflowOpenLink()` detects owner credentials exist
-2. Generates a bridge URL: `http://127.0.0.1:3791/open/n8n-workflow/{token}`
-3. The bridge serves a data: URL page containing an HTML form
+2. Calls `resolvePreferredWorkflowOpenBridgeUrl()` internally, which registers the target and returns a bridge URL
+3. The bridge serves an HTML auth page via a helper popup window
 4. A helper popup window POSTs credentials to n8n `/rest/login`
 5. After 1.2s, the popup closes and main window redirects to workflow
 
@@ -112,25 +109,26 @@ When a Cloudflare tunnel is active for n8n auth:
 
 ### Reachability policy
 
-- `n8n tunnel` and `n8n auth tunnel` are lazy: they are started explicitly during setup/CLI flows, then woken only by consumers that need them
+- `n8n tunnel` and `n8n auth tunnel` are lazy: they are started explicitly during setup/CLI flows, then woken by facades that need them
 - `llm tunnel` is also policy-driven, but only when `llmProxy.mode === 'tunnel'`
-- `force-all-facades` is a test mode used to wake all public tunnel paths from every façade without changing the business call sites
+- `force-all-facades` (**default since this change**): all facades wake public tunnels so URLs are uniform and shareable across surfaces. Set `YAGR_TUNNEL_REACHABILITY_MODE=on-demand` to revert to lazy behavior
 
 ## Deprecated middleware
 
 `enrichWorkflowEmbed()` in `src/gateway/n8n-workflow-middleware.ts` is deprecated. URL resolution is now done at the source in `presentWorkflowResultCli()`. The middleware is retained for backward compatibility with `langgraph-events.ts` but will be removed in a future version.
 
-## Files changed
+Facade-side bridge URL re-resolution is also deprecated: `resolvePreferredWorkflowOpenBridgeUrl()` must not be called on top-level workflow embeds in gateway consumers. `presentWorkflowResultCli()` is the single authoritative source for the final URL.
+
+## Files changed (this refactor)
 
 | File | Change |
 |------|--------|
-| `src/manager-tooling/present-workflow.ts` | `presentWorkflowResultCli()` now calls `resolveWorkflowOpenLink()`; `via` field added to payload |
-| `src/gateway/n8n-workflow-middleware.ts` | `enrichWorkflowEmbed()` deprecated; `via` field added to return type |
-| `src/gateway/local-open-bridge.ts` | n8n auth bridge server for workflow opening with helper popup auth |
-| `src/n8n-local/browser-auth.ts` | Helper popup window auth (not iframe-based) for self-contained auth |
-| `src/types.ts` | `via` field added to `YagrToolEvent.embed` |
-| `src/config/n8n-config-service.ts` | `syncN8nacHostUrl()` added |
-| `src/cli.ts` | n8nac host sync wired into tunnel lifecycle |
+| `src/gateway/workflow-links.ts` | `self-contained-auth` now returns bridge URL via `resolvePreferredWorkflowOpenBridgeUrl()` instead of a data: URL |
+| `src/gateway/webui.ts` | Removed facade-side bridge URL re-resolution in `onWorkflowEmbed` |
+| `src/gateway/format-message.ts` | Removed `resolvePreferredWorkflowOpenBridgeUrl()` calls; facades consume `embed.url` directly |
+| `src/gateway/telegram.ts` | Removed `openBaseUrl` fallback argument to `buildWorkflowBannerHtml` |
+| `src/n8n-local/tunnel-reachability.ts` | `force-all-facades` is now the default reachability mode |
+| `src/config/yagr-config-service.ts` | Updated `YagrTunnelBehaviorConfig` comment to reflect the new default |
 
 ## Tests
 

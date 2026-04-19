@@ -167,12 +167,12 @@ test('getActiveN8nAuthTunnelState uses publicUrl field name (not tunnelUrl)', ()
 // getTunnelReachabilityDebugSnapshot — YAGR_TUNNEL_REACHABILITY_MODE resolution
 // ---------------------------------------------------------------------------
 
-test('getTunnelReachabilityDebugSnapshot defaults to on-demand mode', () => {
+test('getTunnelReachabilityDebugSnapshot defaults to force-all-facades mode', () => {
   withEnvVar('YAGR_TUNNEL_REACHABILITY_MODE', undefined, () => {
     withTempHome(() => {
       const snapshot = getTunnelReachabilityDebugSnapshot();
-      assert.equal(snapshot.reachabilityMode, 'on-demand');
-      assert.equal(snapshot.forceAllFacades, false);
+      assert.equal(snapshot.reachabilityMode, 'force-all-facades');
+      assert.equal(snapshot.forceAllFacades, true);
     });
   });
 });
@@ -201,8 +201,8 @@ test('getTunnelReachabilityDebugSnapshot ignores invalid env var values', () => 
   withEnvVar('YAGR_TUNNEL_REACHABILITY_MODE', 'invalid-value', () => {
     withTempHome(() => {
       const snapshot = getTunnelReachabilityDebugSnapshot();
-      assert.equal(snapshot.reachabilityMode, 'on-demand');
-      assert.equal(snapshot.forceAllFacades, false);
+      assert.equal(snapshot.reachabilityMode, 'force-all-facades');
+      assert.equal(snapshot.forceAllFacades, true);
     });
   });
 });

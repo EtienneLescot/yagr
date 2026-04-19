@@ -80,7 +80,7 @@ test('formatWorkflowLinkHtml outputs an anchor tag', () => {
   assert.match(result, /https:\/\/n8n\.example\.com\/workflow\/abc/);
 });
 
-test('buildWorkflowFooterHtml can resolve tokenized hosted bridge links', () => {
+test('buildWorkflowFooterHtml uses embed.url directly without re-resolution', () => {
   const previousHome = process.env.YAGR_HOME;
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-footer-html-'));
   process.env.YAGR_HOME = tempHome;
@@ -88,14 +88,11 @@ test('buildWorkflowFooterHtml can resolve tokenized hosted bridge links', () => 
     const result = buildWorkflowFooterHtml([
       {
         workflowId: 'abc',
-        url: 'data:text/html;charset=utf-8,%3Chtml%3Ebridge%3C%2Fhtml%3E',
+        url: 'https://workflow.example.com/open/n8n-workflow/a5ff38f992f35596',
         title: 'Test WF',
       },
-    ], {
-      openBaseUrl: 'http://127.0.0.1:3789',
-    });
-    assert.match(result, /<a href="http:\/\/127\.0\.0\.1:3789\/open\/n8n-workflow\/[0-9a-f]{16}">Test WF<\/a>/);
-    assert.ok(!result.includes('data:text/html'));
+    ]);
+    assert.match(result, /<a href="https:\/\/workflow\.example\.com\/open\/n8n-workflow\/a5ff38f992f35596">Test WF<\/a>/);
   } finally {
     if (previousHome === undefined) {
       delete process.env.YAGR_HOME;
@@ -106,40 +103,18 @@ test('buildWorkflowFooterHtml can resolve tokenized hosted bridge links', () => 
   }
 });
 
-test('workflow open links prefer the public bridge tunnel when active', () => {
+test('resolveTerminalWorkflowOpenUrl returns embed.url directly', () => {
   const previousHome = process.env.YAGR_HOME;
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-open-bridge-'));
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-terminal-direct-'));
   process.env.YAGR_HOME = tempHome;
-
   try {
-    const proxyRuntimeDir = path.join(tempHome, 'proxy-runtime');
-    fs.mkdirSync(proxyRuntimeDir, { recursive: true });
-    fs.writeFileSync(path.join(proxyRuntimeDir, 'n8n-auth-tunnel.json'), JSON.stringify({
-      pid: process.pid,
-      publicUrl: 'https://workflow-open.example.trycloudflare.com',
-      targetUrl: 'http://127.0.0.1:3791',
-      startedAt: new Date().toISOString(),
-    }, null, 2));
-
-    const dataUrl = 'data:text/html;charset=utf-8,%3Chtml%3Ebridge%3C%2Fhtml%3E';
+    const url = 'https://workflow.example.com/open/n8n-workflow/a5ff38f992f35596';
     const terminalUrl = resolveTerminalWorkflowOpenUrl({
       workflowId: 'abc',
-      url: dataUrl,
+      url,
       title: 'Test WF',
     });
-    assert.match(terminalUrl, /^https:\/\/workflow-open\.example\.trycloudflare\.com\/open\/n8n-workflow\/[0-9a-f]{16}$/);
-
-    const html = buildWorkflowFooterHtml([
-      {
-        workflowId: 'abc',
-        url: dataUrl,
-        title: 'Test WF',
-      },
-    ], {
-      openBaseUrl: 'http://127.0.0.1:3789',
-    });
-    assert.match(html, /https:\/\/workflow-open\.example\.trycloudflare\.com\/open\/n8n-workflow\/[0-9a-f]{16}/);
-    assert.ok(!html.includes('127.0.0.1:3789/open/n8n-workflow/'));
+    assert.equal(terminalUrl, url);
   } finally {
     if (previousHome === undefined) {
       delete process.env.YAGR_HOME;
@@ -178,7 +153,7 @@ test('formatWorkflowLinkTerminal renders an alias label', () => {
       title: 'Test WF',
     });
     assert.ok(result.includes('Test WF'));
-    assert.ok(result.includes('\x1b]8;;http://127.0.0.1:'));
+    assert.ok(result.includes('\x1b]8;;https://n8n.example.com/workflow/abc\x07'));
   } finally {
     if (previousHome === undefined) {
       delete process.env.YAGR_HOME;
@@ -189,20 +164,18 @@ test('formatWorkflowLinkTerminal renders an alias label', () => {
   }
 });
 
-test('formatWorkflowLinkTerminal always aliases the embed url through the local bridge', () => {
+test('formatWorkflowLinkTerminal formats the embed url as an alias link', () => {
   const previousHome = process.env.YAGR_HOME;
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-terminal-bridge-'));
   process.env.YAGR_HOME = tempHome;
   try {
-    const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent('<html><body>hello</body></html>')}`;
     const result = formatWorkflowLinkTerminal({
       workflowId: 'abc',
-      url: dataUrl,
+      url: 'http://127.0.0.1:3791/open/n8n-workflow/a5ff38f992f35596',
       targetUrl: 'http://127.0.0.1:5678/workflow/abc',
       title: 'Test WF',
     });
-    assert.match(result, /\x1b]8;;http:\/\/127\.0\.0\.1:\d+\/open\/n8n-workflow\/[0-9a-f]{16}\x07/);
-    assert.ok(!result.includes('data:text/html'));
+    assert.match(result, /\x1b]8;;http:\/\/127\.0\.0\.1:3791\/open\/n8n-workflow\/a5ff38f992f35596\x07/);
   } finally {
     if (previousHome === undefined) {
       delete process.env.YAGR_HOME;
