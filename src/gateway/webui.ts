@@ -47,6 +47,7 @@ const getWebUiHtml = () => `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Yagr Web UI</title>
+    <link rel="icon" href="/favicon.ico?v=${Date.now()}" type="image/x-icon" />
     <link rel="stylesheet" href="/styles.css?v=${Date.now()}" />
     <script defer src="/app.js?v=${Date.now()}"></script>
   </head>
@@ -183,6 +184,11 @@ class WebUiGateway implements Gateway {
 
     if (method === 'GET' && url.pathname === '/app.js') {
       await this.sendStaticAsset(response, 'app.js', 'application/javascript; charset=utf-8');
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/favicon.ico') {
+      await this.sendStaticAsset(response, 'favicon.ico', 'image/x-icon');
       return;
     }
 
