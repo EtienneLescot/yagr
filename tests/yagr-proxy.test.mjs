@@ -58,7 +58,7 @@ test('buildRelayInfo returns tunnel URL when proxy mode is tunnel', () => {
     llmProxy: {
       enabled: true,
       mode: 'tunnel',
-      tunnelUrl: 'https://abc123.trycloudflare.com',
+      llmTunnelUrl: 'https://abc123.trycloudflare.com',
       credentialBaseUrl: 'https://abc123.trycloudflare.com/v1',
       consentVersion: '1',
       consentAcceptedAt: '2026-01-01T00:00:00.000Z',
