@@ -1,6 +1,6 @@
 # AGENT.md
 
-Ce fichier decrit les regles de travail et les bonnes pratiques a respecter dans ce repo.
+Ce fichier décrit les règles de travail et les bonnes pratiques a respecter dans ce repo.
 
 Il complete la documentation architecturale situee dans [architecture/README.md](./architecture/README.md).
 
