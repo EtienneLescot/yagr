@@ -53,8 +53,7 @@ test('resolveWorkflowOpenLink uses a self-contained auth bridge for managed loca
 
     assert.equal(result.via, 'self-contained-auth');
     assert.equal(result.targetUrl, 'http://127.0.0.1:5678/workflow/abc');
-    assert.match(result.openUrl, /^data:text\/html;charset=utf-8,/);
-    assert.match(decodeURIComponent(result.openUrl), /http:\/\/127\.0\.0\.1:5678\/workflow\/abc/);
+    assert.match(result.openUrl, /^http:\/\/127\.0\.0\.1:\d+\/open\/n8n-workflow\/[0-9a-f]{16}$/);
   } finally {
     if (previousHome === undefined) delete process.env.YAGR_HOME;
     else process.env.YAGR_HOME = previousHome;
@@ -100,7 +99,7 @@ test('resolveWorkflowOpenLink falls back to direct when the workflow origin does
   }
 });
 
-test('resolveWorkflowOpenLink uses data: URI self-contained auth when tunnel is active with local credentials', () => {
+test('resolveWorkflowOpenLink uses bridge URL when tunnel is active with local credentials', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-workflow-link-'));
   const previousHome = process.env.YAGR_HOME;
   process.env.YAGR_HOME = tempHome;
@@ -119,7 +118,6 @@ test('resolveWorkflowOpenLink uses data: URI self-contained auth when tunnel is 
       createdAt: new Date().toISOString(),
     });
 
-    // Simulate a workflow URL from local n8n with an active tunnel
     const result = resolveWorkflowOpenLink('http://127.0.0.1:5678/workflow/abc', {
       n8nConfigService,
       ownerCredentialService,
@@ -128,11 +126,7 @@ test('resolveWorkflowOpenLink uses data: URI self-contained auth when tunnel is 
 
     assert.equal(result.via, 'self-contained-auth');
     assert.equal(result.targetUrl, 'https://example-tunnel.trycloudflare.com/workflow/abc');
-    assert.match(result.openUrl, /^data:text\/html;charset=utf-8,/);
-    // The data URI should contain the tunnel URL and login URL
-    const decoded = decodeURIComponent(result.openUrl);
-    assert.match(decoded, /https:\/\/example-tunnel\.trycloudflare\.com\/workflow\/abc/);
-    assert.match(decoded, /https:\/\/example-tunnel\.trycloudflare\.com\/rest\/login/);
+    assert.match(result.openUrl, /^https:\/\/example-tunnel\.trycloudflare\.com\/open\/n8n-workflow\/[0-9a-f]{16}$/);
   } finally {
     if (previousHome === undefined) delete process.env.YAGR_HOME;
     else process.env.YAGR_HOME = previousHome;
@@ -217,10 +211,7 @@ test('resolveWorkflowOpenLink still uses self-contained auth when the workflow U
 
     assert.equal(result.via, 'self-contained-auth');
     assert.equal(result.targetUrl, 'https://example-tunnel.trycloudflare.com/workflow/abc');
-    assert.match(result.openUrl, /^data:text\/html;charset=utf-8,/);
-    const decoded = decodeURIComponent(result.openUrl);
-    assert.match(decoded, /https:\/\/example-tunnel\.trycloudflare\.com\/workflow\/abc/);
-    assert.match(decoded, /https:\/\/example-tunnel\.trycloudflare\.com\/rest\/login/);
+    assert.match(result.openUrl, /^https:\/\/example-tunnel\.trycloudflare\.com\/open\/n8n-workflow\/[0-9a-f]{16}$/);
   } finally {
     if (previousHome === undefined) delete process.env.YAGR_HOME;
     else process.env.YAGR_HOME = previousHome;

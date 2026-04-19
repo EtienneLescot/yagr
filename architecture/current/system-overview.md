@@ -89,8 +89,8 @@ Yagr peut exposer des endpoints Yagr locaux via trois tunnels Cloudflare distinc
 | Fichier | Role |
 |---|---|
 | `src/n8n-local/n8n-tunnel.ts` | SSOT du lifecycle process des tunnels Cloudflare : start/stop/refresh/status, persistance des state files, auto-install de `cloudflared`, support `trycloudflare` ou domaine DNS dedie |
-| `src/n8n-local/tunnel-reachability.ts` | SSOT de wake-up des tunnels par consommateur (`telegram`, `webui`, `tui`, `cli`, `llm`) + mode force |
-| `src/gateway/local-open-bridge.ts` | Bridge HTTP tokenise d'auth n8n qui materialise `presentWorkflowResult.url` pour les surfaces qui ne savent pas ouvrir une `data:` URL |
+| `src/n8n-local/tunnel-reachability.ts` | SSOT de wake-up des tunnels par consommateur (`telegram`, `webui`, `tui`, `cli`, `llm`). `force-all-facades` est le defaut depuis ce changement. |
+| `src/gateway/local-open-bridge.ts` | Bridge HTTP tokenise interne a `workflow-links.ts`. Les facades ne l'appellent pas directement — `presentWorkflowResult` est la seule source d'autorite pour l'URL de workflow. |
 | `src/config/yagr-config-service.ts` | `N8nTunnelConfig` : `enabled`, `publicUrl`, `targetUrl` |
 | `src/gateway/workflow-links.ts` | Substitution de l'URL locale par l'URL tunnel publique quand active |
 | `src/prompt/build-system-prompt.ts` | Injection de l'URL tunnel publique dans le system prompt |
@@ -114,7 +114,7 @@ yagr n8n tunnel start
 - Les erreurs/timeouts de startup nettoient maintenant le processus `cloudflared` au lieu de le laisser detache.
 - Les tunnels `n8n` et `n8n auth` sont maintenant lazy: demarrage explicite au setup/CLI, puis wake-up uniquement par les consommateurs qui en ont besoin.
 - Le tunnel `llm` passe par le meme orchestrateur de reachability et se reveille uniquement si le proxy LLM est configure en mode `tunnel`.
-- Le mode `force-all-facades` permet de tester les chemins publics depuis toutes les facades sans changer les call sites metier.
+- Le mode `force-all-facades` est le defaut: toutes les facades reveillent les tunnels publics pour que les URLs soient homogenes et partageables. Mettre `YAGR_TUNNEL_REACHABILITY_MODE=on-demand` pour revenir au comportement lazy.
 - Le support `TUNNEL_DOMAIN` est centralise dans `n8n-tunnel.ts`: il bascule du mode `trycloudflare` vers un tunnel DNS dedie et assure aussi le routage `cloudflared tunnel route dns`.
 - Variables d'environnement SSOT:
   - `YAGR_TUNNEL_REACHABILITY_MODE` pilote la politique de wake-up des tunnels.

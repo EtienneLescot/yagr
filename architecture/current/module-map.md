@@ -89,7 +89,7 @@ Fichiers clefs:
 - `interactive-ui.tsx` — gateway TUI Ink
 - `cli.ts` — gateway CLI non-interactif
 - `manager.ts` — superviseur multi-gateway (`GatewaySupervisor`)
-- `local-open-bridge.ts` — bridge HTTP tokenise pour materialiser `presentWorkflowResult.url` selon la surface
+- `local-open-bridge.ts` — bridge HTTP tokenise interne a la resolution d'URL dans `presentWorkflowResult`. Les facades ne l'appellent pas directement.
 
 Toutes les gateways consomment `YagrDeepAgentHandle` (deepagentsjs).
 Aucune ne depend du runtime supprimé (`YagrRunEngine`).
