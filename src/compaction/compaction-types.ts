@@ -11,16 +11,10 @@ export interface CompactionSubscriber {
 }
 
 export interface CompactionConfig {
-  autoCompactContext: boolean;
-  compactContextThresholdPercent: number;
-  compactPreserveRecentMessages: number;
   historyLimit?: number;
 }
 
 export const DEFAULT_COMPACTION_CONFIG: CompactionConfig = {
-  autoCompactContext: true,
-  compactContextThresholdPercent: 80,
-  compactPreserveRecentMessages: 4,
   historyLimit: 50,
 };
 

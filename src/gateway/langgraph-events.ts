@@ -444,6 +444,7 @@ async function handleToolEnd(
     case 'writeFile':
     case 'write_file':
     case 'writeWorkspaceFile':
+    case 'edit_file':
     case 'deleteFile':
     case 'moveFile':
     case 'replaceInFile': {

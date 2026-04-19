@@ -335,9 +335,7 @@ export interface YagrRunOptions extends YagrLanguageModelConfig {
   abortSignal?: AbortSignal;
   maxSteps?: number;
   rememberConversation?: boolean;
-  autoCompactContext?: boolean;
-  compactContextThresholdPercent?: number;
-  compactPreserveRecentMessages?: number;
+  historyLimit?: number;
   charsPerToken?: number;
   contextWindowTokens?: number;
   reservedOutputTokens?: number;
