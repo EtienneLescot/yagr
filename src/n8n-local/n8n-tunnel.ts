@@ -484,9 +484,14 @@ async function waitForTunnelPublicUrl(pid: number, logFile: string): Promise<str
   });
 }
 
-async function startTunnel(descriptor: TunnelDescriptor, targetUrl: string, cloudflaredBin?: string): Promise<StoredTunnelState> {
+async function startTunnel(
+  descriptor: TunnelDescriptor,
+  targetUrl: string,
+  cloudflaredBin?: string,
+  forceRestart = false,
+): Promise<StoredTunnelState> {
   const existing = getActiveTunnelStateByPath(descriptor.statePath);
-  if (existing?.targetUrl === targetUrl) {
+  if (!forceRestart && existing?.targetUrl === targetUrl) {
     return existing;
   }
 
@@ -628,6 +633,22 @@ function toPublicAuxTunnelState(state: StoredTunnelState | null): PublicAuxTunne
 export async function startLlmTunnel(targetUrl: string, cloudflaredBin?: string): Promise<string> {
   const state = await startTunnel(getLlmTunnelDescriptor(), targetUrl, cloudflaredBin);
   return state.publicUrl;
+}
+
+/**
+ * Stops the LLM tunnel if it is running and clears its state file.
+ */
+export async function stopLlmTunnel(): Promise<void> {
+  await stopTunnelByPath(getYagrPaths().llmTunnelStatePath);
+}
+
+/**
+ * Stops any existing LLM tunnel and starts a fresh one.
+ * Used by startup preflight when the stored public URL is stale.
+ */
+export async function refreshLlmTunnel(targetUrl: string, cloudflaredBin?: string): Promise<string> {
+  await stopLlmTunnel();
+  return startLlmTunnel(targetUrl, cloudflaredBin);
 }
 
 export function getActiveN8nAuthTunnelState(): PublicAuxTunnelState | null {
