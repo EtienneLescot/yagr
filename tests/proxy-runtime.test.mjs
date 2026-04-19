@@ -74,15 +74,26 @@ test('prepareProviderRuntime resolves the local Codex ChatGPT session for openai
   process.env.YAGR_SKIP_CODEX_RUNTIME_VALIDATION = '1';
 
   try {
-    // Model discovery is static (no HTTP call) — no fetch mock needed.
-    const result = await prepareProviderRuntime('openai-proxy');
+    await withMockedFetch(async (url) => {
+      assert.equal(String(url), 'https://chatgpt.com/backend-api/codex/models?client_version=1.0.0');
+      return new Response(JSON.stringify({
+        models: [
+          { slug: 'gpt-5.1-codex-mini', visibility: 'list', supported_in_api: true, priority: 2 },
+          { slug: 'gpt-5.4', visibility: 'list', supported_in_api: true, priority: 1 },
+          { slug: 'hidden-model', visibility: 'hidden', supported_in_api: true, priority: 3 },
+        ],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }, async () => {
+      const result = await prepareProviderRuntime('openai-proxy');
 
-    assert.equal(result.ready, true);
-    assert.equal(result.runtime?.baseUrl, 'https://chatgpt.com/backend-api');
-    assert.equal(result.runtime?.apiKey, 'test-access-token');
-    // Models come from the static KNOWN_CODEX_MODELS list.
-    assert.ok(Array.isArray(result.runtime?.models));
-    assert.ok(result.runtime.models.includes('gpt-5.1-codex-mini'));
+      assert.equal(result.ready, true);
+      assert.equal(result.runtime?.baseUrl, 'https://chatgpt.com/backend-api');
+      assert.equal(result.runtime?.apiKey, 'test-access-token');
+      assert.deepEqual(result.runtime?.models, ['gpt-5.4', 'gpt-5.1-codex-mini']);
+    });
   } finally {
     if (previousSkipValidation === undefined) {
       delete process.env.YAGR_SKIP_CODEX_RUNTIME_VALIDATION;
