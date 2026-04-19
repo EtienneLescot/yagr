@@ -140,7 +140,6 @@ export class YagrConfigService {
     });
     this.localConfigPath = paths.yagrConfigPath;
     this.legacyCredentialsPath = paths.legacyYagrCredentialsPath;
-    this.migrateLegacyCredentials();
   }
 
   getLocalConfig(): YagrLocalConfig {

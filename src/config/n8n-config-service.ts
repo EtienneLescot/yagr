@@ -142,7 +142,6 @@ export class YagrN8nConfigService {
     });
     this.localConfigPath = paths.n8nConfigPath;
     this.legacyCredentialsPath = paths.legacyN8nCredentialsPath;
-    this.migrateLegacyCredentials();
     this.syncCompatibilityCredentials();
   }
 

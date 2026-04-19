@@ -485,17 +485,9 @@ label span,
 }
 
 .historyItem {
-  display: grid;
-  gap: 0.12rem;
-  padding: 0.55rem 1rem;
-  text-align: left;
-  background: transparent;
-  border: none;
+  display: flex;
+  align-items: stretch;
   border-top: 1px solid var(--panel-border);
-  cursor: pointer;
-  color: var(--ink);
-  transition: background 0.1s;
-  width: 100%;
 }
 
 .historyItem:first-child {
@@ -512,6 +504,57 @@ label span,
 
 .historyItemRunning .historyItemTitle {
   color: var(--blue-deep);
+}
+
+.historyItemMain {
+  flex: 1 1 0;
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--ink);
+  transition: background 0.1s;
+  min-width: 0;
+}
+
+.historyItemDelete {
+  flex: 0 0 auto;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  padding: 0;
+  margin: 0.3rem 0.5rem 0.3rem 0;
+  background: transparent;
+  border: none;
+  border-radius: 0.35rem;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.historyItem:hover .historyItemDelete {
+  display: inline-flex;
+}
+
+.historyItemDelete:hover {
+  background: var(--panel-strong);
+  color: #d94778;
+}
+
+.historyItemDelete:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--blue-deep) 52%, transparent);
+  outline-offset: 2px;
+  display: inline-flex;
+}
+
+.historyItemDelete svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  display: block;
 }
 
 .runningDot {
