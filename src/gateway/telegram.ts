@@ -532,7 +532,7 @@ class TelegramGateway implements Gateway {
 
   private async resolveAgentHandle(): Promise<YagrDeepAgentHandle> {
     if (!this.agentHandlePromise) {
-      this.agentHandlePromise = createYagrDeepAgent(this.configService);
+      this.agentHandlePromise = createYagrDeepAgent(this.configService, undefined, undefined, this.options);
       const handle = await this.agentHandlePromise;
       this.sessions.setCheckpointer(handle.checkpointer);
     }
@@ -605,6 +605,10 @@ class TelegramGateway implements Gateway {
       for await (const event of stream) {
         await processStreamEvent(event, accumulator, {
           onUserVisibleUpdate: sendProgressUpdate,
+          onCompaction: async (compaction) => {
+            const msg = `🗜️ <b>Context compacted</b>\n${compaction.summary}\n(${compaction.messagesCompacted} msgs → ${compaction.preservedRecentMessages} preserved)`;
+            await this.sendHtml(chatId, msg);
+          },
         });
       }
 
