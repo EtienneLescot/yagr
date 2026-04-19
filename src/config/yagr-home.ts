@@ -21,6 +21,7 @@ export interface YagrPaths {
   n8nRelayStatePath: string;
   llmTunnelStatePath: string;
   n8nAuthTunnelStatePath: string;
+  localOpenBridgeStatePath: string;
   n8nConfigPath: string;
   n8nCredentialsPath: string;
 }
@@ -218,6 +219,7 @@ export function getYagrPaths(): YagrPaths {
     n8nRelayStatePath: path.join(proxyRuntimeDir, 'llm-relay.json'),
     llmTunnelStatePath: path.join(proxyRuntimeDir, 'llm-tunnel.json'),
     n8nAuthTunnelStatePath: path.join(proxyRuntimeDir, 'n8n-auth-tunnel.json'),
+    localOpenBridgeStatePath: path.join(proxyRuntimeDir, 'local-open-bridge.json'),
     n8nConfigPath: path.join(n8nWorkspaceDir, 'n8nac-config.json'),
     n8nCredentialsPath: path.join(homeDir, 'n8n-credentials.json'),
   };

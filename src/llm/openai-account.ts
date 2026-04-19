@@ -421,6 +421,13 @@ export async function fetchOpenAiAccountModels(accessToken: string): Promise<str
       'Content-Type': 'application/json',
     };
 
+    try {
+      const accountId = extractChatGptAccountId(accessToken);
+      headers['chatgpt-account-id'] = accountId;
+    } catch {
+      // Account ID not available in token, proceed without it
+    }
+
     // Include If-None-Match if we have an ETag from previous request
     if (modelDiscoveryCache?.etag) {
       headers['If-None-Match'] = modelDiscoveryCache.etag;
@@ -438,8 +445,12 @@ export async function fetchOpenAiAccountModels(accessToken: string): Promise<str
       throw new Error(`Model discovery failed: ${response.status} ${response.statusText}`);
     }
 
-    const data = (await response.json()) as { data?: Array<{ id?: string }> };
-    const models = data.data?.map((m) => m.id).filter((id): id is string => typeof id === 'string') ?? [];
+    const data = (await response.json()) as Record<string, unknown>;
+    console.warn(`[openai-account] /codex/models response:`, JSON.stringify(data).slice(0, 500));
+    const models = (data.data as Array<{ id?: string }> | undefined)
+      ?.map((m) => m.id)
+      .filter((id): id is string => typeof id === 'string')
+      ?? [];
 
     if (models.length === 0) {
       // API returned empty model list, don't overwrite cache

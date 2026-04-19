@@ -115,7 +115,7 @@ yagr n8n tunnel start
 - Les tunnels `n8n` et `n8n auth` sont maintenant lazy: demarrage explicite au setup/CLI, puis wake-up uniquement par les consommateurs qui en ont besoin.
 - Le tunnel `llm` passe par le meme orchestrateur de reachability et se reveille uniquement si le proxy LLM est configure en mode `tunnel`.
 - Le mode `force-all-facades` est le defaut: toutes les facades reveillent les tunnels publics pour que les URLs soient homogenes et partageables. Mettre `YAGR_TUNNEL_REACHABILITY_MODE=on-demand` pour revenir au comportement lazy.
-- L'arret d'une facade ou du gateway ne tue pas les tunnels autonomes deja demarres (`n8n`, `llm`), mais le `n8n auth tunnel` reste nettoye avec le gateway tant que son bridge local vit dans ce process.
+- L'arret d'une facade ou du gateway ne tue pas les tunnels deja demarres (`n8n`, `n8n auth`, `llm`). Le bridge local d'auth tourne lui aussi hors des facades et survit au kill d'une surface.
 - Le support `TUNNEL_DOMAIN` est centralise dans `n8n-tunnel.ts`: il bascule du mode `trycloudflare` vers un tunnel DNS dedie et assure aussi le routage `cloudflared tunnel route dns`.
 - Variables d'environnement SSOT:
   - `YAGR_TUNNEL_REACHABILITY_MODE` pilote la politique de wake-up des tunnels.

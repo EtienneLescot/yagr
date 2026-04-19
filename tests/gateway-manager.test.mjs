@@ -6,7 +6,6 @@ import { normalizeGatewaySurfaces } from '../dist/config/yagr-config-service.js'
 import {
   buildGatewaySupervisorStatus,
   stopGatewayRuntimes,
-  stopGatewayShutdownResources,
 } from '../dist/gateway/manager.js';
 
 test('normalizeGatewaySurfaces keeps supported surfaces once', () => {
@@ -87,38 +86,4 @@ test('stopGatewayRuntimes only stops facade runtimes and tolerates stop failures
 
   await assert.doesNotReject(() => stopGatewayRuntimes(runtimes));
   assert.deepEqual(stopped.sort(), ['telegram', 'webui']);
-});
-
-test('stopGatewayShutdownResources stops facade runtimes and the auth tunnel cleanup', async () => {
-  const stopped = [];
-  let authTunnelStopped = 0;
-  const runtimes = [
-    {
-      gateway: {
-        async start() {},
-        async stop() {
-          stopped.push('webui');
-        },
-        async reply() {},
-      },
-      startupMessages: [],
-    },
-    {
-      gateway: {
-        async start() {},
-        async stop() {
-          stopped.push('telegram');
-          throw new Error('simulated stop failure');
-        },
-        async reply() {},
-      },
-      startupMessages: [],
-    },
-  ];
-
-  await assert.doesNotReject(() => stopGatewayShutdownResources(runtimes, async () => {
-    authTunnelStopped += 1;
-  }));
-  assert.deepEqual(stopped.sort(), ['telegram', 'webui']);
-  assert.equal(authTunnelStopped, 1);
 });

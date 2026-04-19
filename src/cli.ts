@@ -967,6 +967,12 @@ async function main(): Promise<void> {
         throw new Error('Refusing to remove local state without --yes. Use --dry-run to preview the cleanup plan.');
       }
 
+      if (!args.dryRun) {
+        const { stopLocalN8nAuthBridge } = await import('./gateway/local-open-bridge.js');
+        await stopAllTunnels();
+        await stopLocalN8nAuthBridge();
+      }
+
       const result = await resetYagrLocalState(scope, { dryRun: args.dryRun });
       const payload = {
         scope,
@@ -1369,9 +1375,12 @@ async function main(): Promise<void> {
 
   if (args.command === 'stop') {
     const { isGatewayRunning, clearGatewayPid, releaseLock } = await import('./config/gateway-daemon.js');
+    const { stopLocalN8nAuthBridge } = await import('./gateway/local-open-bridge.js');
     const running = isGatewayRunning();
     if (!running.running || !running.pid) {
       releaseLock();
+      await stopAllTunnels();
+      await stopLocalN8nAuthBridge();
       process.stdout.write('No gateway is currently running.\n');
       return;
     }
@@ -1381,12 +1390,14 @@ async function main(): Promise<void> {
     clearGatewayPid();
     releaseLock();
     await stopAllTunnels();
+    await stopLocalN8nAuthBridge();
     process.stdout.write(`Gateway stopped (PID ${running.pid}).\n`);
     return;
   }
 
   if (args.command === 'restart') {
     const { isGatewayRunning, clearGatewayPid, releaseLock } = await import('./config/gateway-daemon.js');
+    const { stopLocalN8nAuthBridge } = await import('./gateway/local-open-bridge.js');
     const running = isGatewayRunning();
     if (running.running && running.pid) {
       process.stdout.write(`Stopping gateway (PID ${running.pid})...\n`);
@@ -1395,6 +1406,7 @@ async function main(): Promise<void> {
       clearGatewayPid();
     }
     await stopAllTunnels();
+    await stopLocalN8nAuthBridge();
     await runGatewayOrFallback(args, configService);
     return;
   }

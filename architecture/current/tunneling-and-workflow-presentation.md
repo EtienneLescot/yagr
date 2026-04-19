@@ -112,7 +112,7 @@ When a Cloudflare tunnel is active for n8n auth:
 - `n8n tunnel` and `n8n auth tunnel` are lazy: they are started explicitly during setup/CLI flows, then woken by facades that need them
 - `llm tunnel` is also policy-driven, but only when `llmProxy.mode === 'tunnel'`
 - `force-all-facades` (**default since this change**): all facades wake public tunnels so URLs are uniform and shareable across surfaces. Set `YAGR_TUNNEL_REACHABILITY_MODE=on-demand` to revert to lazy behavior
-- Facade or gateway shutdown is non-destructive for autonomous tunnels (`n8n`, `llm`), but `n8n auth tunnel` is still cleaned up with gateway shutdown because its local auth bridge lives in the gateway process
+- Facade or gateway shutdown is non-destructive for all public tunnels (`n8n`, `n8n auth`, `llm`); the local auth bridge also runs in a detached shared runtime and survives facade shutdown
 
 ## Deprecated middleware
 

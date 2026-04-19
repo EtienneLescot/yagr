@@ -78,10 +78,10 @@ Les tunnels demarrent au setup uniquement. Les surfaces wake les tunnels on dema
 
 ### Shutdown Ownership
 
-- L'arret d'une facade ou du process gateway ne detruit pas les tunnels autonomes (`n8n`, `llm`).
+- L'arret d'une facade ou du process gateway ne detruit pas les tunnels autonomes (`n8n`, `n8n auth`, `llm`).
 - Les facades sont des consommateurs qui peuvent wake les tunnels, pas des proprietaires de leur teardown.
-- Le `n8n auth tunnel` reste un cas a part: il est nettoye avec le gateway tant que le bridge d'auth local tourne dans ce process.
-- Le teardown global des tunnels reste reserve aux flows explicites de lifecycle (`yagr stop`, `yagr restart`, commandes explicites de stop tunnel, reset destructif).
+- Le bridge d'auth local tourne dans un runtime detache partage, au meme titre que le relay LLM ou les processus `cloudflared` qu'il supporte.
+- Le teardown global des tunnels et du bridge reste reserve aux flows explicites de lifecycle (`yagr stop`, `yagr restart`, commandes explicites de stop tunnel, reset destructif).
 
 ### TUNNEL_DOMAIN
 

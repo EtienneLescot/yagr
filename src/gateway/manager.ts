@@ -1,6 +1,5 @@
 import qrcode from 'qrcode-terminal';
 import { YagrConfigService, type YagrConfigStoreLike, type YagrGatewayConfig } from '../config/yagr-config-service.js';
-import { stopN8nAuthTunnel } from '../n8n-local/n8n-tunnel.js';
 import type { YagrRunOptions } from '../types.js';
 import type { GatewayRuntimeHandle, GatewaySurface } from './types.js';
 import { createTelegramGatewayRuntime, getTelegramGatewayStatus, type TelegramGatewayStatus } from './telegram.js';
@@ -155,16 +154,6 @@ export async function stopGatewayRuntimes(runtimes: GatewayRuntimeHandle[]): Pro
   }));
 }
 
-export async function stopGatewayShutdownResources(
-  runtimes: GatewayRuntimeHandle[],
-  stopAuthTunnel: () => Promise<void> = stopN8nAuthTunnel,
-): Promise<void> {
-  await Promise.allSettled([
-    stopGatewayRuntimes(runtimes),
-    stopAuthTunnel(),
-  ]);
-}
-
 /**
  * Start the given gateway surfaces and return a `stop()` function for cleanup.
  * Unlike `runGatewaySurfaces`, this does NOT block waiting for SIGINT — callers
@@ -268,7 +257,7 @@ export async function runGatewaySurfaces(
 
   await new Promise<void>((resolve) => {
     const stop = async () => {
-      await stopGatewayShutdownResources(runtimes);
+      await stopGatewayRuntimes(runtimes);
       resolve();
     };
 
@@ -359,7 +348,7 @@ export async function runGatewaySupervisor(
 
   await new Promise<void>((resolve) => {
     const stop = async () => {
-      await stopGatewayShutdownResources(runtimes);
+      await stopGatewayRuntimes(runtimes);
       // Clean up PID file if it points to this process
       try {
         const { readGatewayPid, clearGatewayPid } = await import('../config/gateway-daemon.js');
