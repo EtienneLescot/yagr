@@ -1,6 +1,6 @@
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
-import { buildManagedN8nWorkflowOpenDataUrl } from '../n8n-local/browser-auth.js';
 import { ManagedN8nOwnerCredentialService } from '../n8n-local/owner-credentials.js';
+import { resolvePreferredWorkflowOpenBridgeUrl } from './local-open-bridge.js';
 
 export interface WorkflowOpenLink {
   openUrl: string;
@@ -57,17 +57,11 @@ export function resolveWorkflowOpenLink(
     (tunnelTargetOrigin ? ownerCredentialService.get(tunnelTargetOrigin) : undefined) ??
     (shouldUseConfiguredHostFallback ? ownerCredentialService.get(configuredHostOrigin!) : undefined);
 
-  // If we have credentials, generate the self-contained auth URL.
-  // The data: URI contains a form that POSTs directly to the tunnel domain
-  // via a hidden iframe — no CORS issues, cookies are set correctly.
+  // If we have credentials, generate the bridge URL.
+  // The bridge serves the auth HTML page and handles the login flow.
   if (ownerCredentials) {
-    const loginUrl = new URL('/rest/login', resolvedTarget.origin).toString();
     return {
-      openUrl: buildManagedN8nWorkflowOpenDataUrl({
-        targetUrl: resolvedTarget.toString(),
-        loginUrl,
-        credentials: ownerCredentials,
-      }),
+      openUrl: resolvePreferredWorkflowOpenBridgeUrl(resolvedTarget.toString(), options.n8nTunnelPublicUrl),
       targetUrl: resolvedTarget.toString(),
       via: 'self-contained-auth',
     };

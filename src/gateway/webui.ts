@@ -27,7 +27,7 @@ import {
 import { getSnapshotContextWindow } from '../llm/provider-metadata.js';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
-import { decodeHtmlDataUrl, resolvePreferredWorkflowOpenBridgeUrl, resolveStoredWorkflowOpenTarget } from './local-open-bridge.js';
+import { decodeHtmlDataUrl, resolveStoredWorkflowOpenTarget } from './local-open-bridge.js';
 import { getWebUiConfig, getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
 import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
 import {
@@ -802,7 +802,7 @@ class WebUiGateway implements Gateway {
               kind: embed.kind,
               workflowId: embed.workflowId,
               url: embed.url,
-              openUrl: resolvePreferredWorkflowOpenBridgeUrl(embed.url, this.status.url),
+              openUrl: embed.url,
               targetUrl: embed.targetUrl,
               title: embed.title,
               diagram: embed.diagram,

@@ -4,7 +4,6 @@
  */
 
 import type { YagrToolEvent } from '../types.js';
-import { resolvePreferredWorkflowOpenBridgeUrl } from './local-open-bridge.js';
 
 // ---------------------------------------------------------------------------
 // Workflow embed extraction (from tool events)
@@ -75,16 +74,10 @@ export function buildWorkflowBannerPlain(embeds: WorkflowEmbed[]): string {
   return uniqueEmbeds.map(formatWorkflowLinkPlain).join('\n');
 }
 
-export function buildWorkflowBannerHtml(
-  embeds: WorkflowEmbed[],
-  options?: { openBaseUrl?: string },
-): string {
+export function buildWorkflowBannerHtml(embeds: WorkflowEmbed[]): string {
   const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
   if (uniqueEmbeds.length === 0) return '';
-  return uniqueEmbeds.map((embed) => {
-    const openUrl = resolvePreferredWorkflowOpenBridgeUrl(embed.url, options?.openBaseUrl);
-    return formatWorkflowLinkHtml(embed, openUrl);
-  }).join('\n');
+  return uniqueEmbeds.map((embed) => formatWorkflowLinkHtml(embed, embed.url)).join('\n');
 }
 
 export function buildWorkflowBannerTerminal(embeds: WorkflowEmbed[]): string {
@@ -107,7 +100,7 @@ export function escapeHtml(text: string): string {
 }
 
 export function resolveTerminalWorkflowOpenUrl(embed: WorkflowEmbed): string {
-  return resolvePreferredWorkflowOpenBridgeUrl(embed.url);
+  return embed.url;
 }
 
 function dedupeWorkflowEmbeds(embeds: WorkflowEmbed[]): WorkflowEmbed[] {

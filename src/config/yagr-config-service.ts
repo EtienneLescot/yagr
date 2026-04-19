@@ -67,8 +67,8 @@ export type YagrTunnelReachabilityMode = 'on-demand' | 'force-all-facades';
 
 export interface YagrTunnelBehaviorConfig {
   /**
+   * 'force-all-facades' (default): all facades wake public tunnels for uniform public URL sharing.
    * 'on-demand': only remote consumers wake public tunnels.
-   * 'force-all-facades': wake public tunnels for every facade to test hosted access paths.
    */
   reachabilityMode?: YagrTunnelReachabilityMode;
 }
