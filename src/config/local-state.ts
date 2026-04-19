@@ -55,8 +55,6 @@ export function buildYagrCleanupPlan(scope: YagrResetScope = 'config+creds'): Ya
   const credentialPaths = uniquePaths([
     paths.yagrCredentialsPath,
     paths.n8nCredentialsPath,
-    paths.legacyYagrCredentialsDir,
-    paths.legacyN8nCredentialsDir,
   ]);
   const { workspacePaths, preservedWorkspacePaths } = resolveWorkspacePaths(paths);
 
@@ -69,7 +67,7 @@ export function buildYagrCleanupPlan(scope: YagrResetScope = 'config+creds'): Ya
       deletePaths = [...configPaths, ...credentialPaths];
       break;
     case 'full':
-      deletePaths = [paths.homeDir, paths.legacyYagrCredentialsDir, paths.legacyN8nCredentialsDir];
+      deletePaths = [paths.homeDir];
       break;
     default:
       deletePaths = [...configPaths, ...credentialPaths];

@@ -13,7 +13,6 @@ import {
   getYagrPaths,
   registerContextMemorySource,
   registerCoreMemorySource,
-  resolveLegacyConfStorePath,
   resolveYagrHomeDir,
 } from '../dist/config/yagr-home.js';
 
@@ -179,28 +178,4 @@ test('explicit n8n workspace helper resolves under YAGR_HOME', () => {
       delete process.env.YAGR_HOME;
     }
   }
-});
-
-test('resolveLegacyConfStorePath follows the Linux XDG config convention', () => {
-  const legacyPath = resolveLegacyConfStorePath(
-    'yagr',
-    'credentials',
-    { XDG_CONFIG_HOME: '/tmp/xdg-config' },
-    'linux',
-    '/tmp/home',
-  );
-
-  assert.equal(legacyPath, path.join('/tmp/xdg-config', 'yagr-nodejs', 'credentials.json'));
-});
-
-test('resolveLegacyConfStorePath uses platform separators on Windows', () => {
-  const legacyPath = resolveLegacyConfStorePath(
-    'yagr',
-    'credentials',
-    { APPDATA: path.join('C:', 'Users', 'etienne', 'AppData', 'Roaming') },
-    'win32',
-    path.join('C:', 'Users', 'etienne'),
-  );
-
-  assert.equal(legacyPath, path.join('C:', 'Users', 'etienne', 'AppData', 'Roaming', 'yagr-nodejs', 'credentials.json'));
 });

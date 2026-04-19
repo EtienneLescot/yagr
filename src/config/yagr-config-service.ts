@@ -129,7 +129,6 @@ interface YagrCredentialStore {
 export class YagrConfigService {
   private readonly globalStore: Conf<YagrCredentialStore>;
   private readonly localConfigPath: string;
-  private readonly legacyCredentialsPath: string;
 
   constructor() {
     const paths = getYagrPaths();
@@ -139,7 +138,6 @@ export class YagrConfigService {
       configName: 'credentials',
     });
     this.localConfigPath = paths.yagrConfigPath;
-    this.legacyCredentialsPath = paths.legacyYagrCredentialsPath;
   }
 
   getLocalConfig(): YagrLocalConfig {
@@ -200,7 +198,6 @@ export class YagrConfigService {
   }
 
   getApiKey(provider: YagrModelProvider): string | undefined {
-    this.migrateLegacyCredentials();
     const credentials = (this.globalStore.get('providers') as Record<string, string> | undefined) ?? {};
     return credentials[provider];
   }
@@ -266,29 +263,5 @@ export class YagrConfigService {
 
   clearN8nTunnelConfig(): YagrLocalConfig {
     return this.updateLocalConfig(({ n8nTunnel: _removed, ...rest }) => rest);
-  }
-
-  private migrateLegacyCredentials(): void {
-    if (this.globalStore.path === this.legacyCredentialsPath) {
-      return;
-    }
-
-    const currentProviders = this.globalStore.get('providers') ?? {};
-    const currentBotToken = this.globalStore.get('telegram.botToken');
-    if ((Object.keys(currentProviders).length > 0 || currentBotToken) || !fs.existsSync(this.legacyCredentialsPath)) {
-      return;
-    }
-
-    try {
-      const content = JSON.parse(fs.readFileSync(this.legacyCredentialsPath, 'utf-8')) as YagrCredentialStore;
-      if (content.providers && Object.keys(content.providers).length > 0) {
-        this.globalStore.set('providers', content.providers);
-      }
-      if (content.telegram?.botToken) {
-        this.globalStore.set('telegram.botToken', content.telegram.botToken);
-      }
-    } catch {
-      // Ignore malformed legacy files and start fresh in the Yagr home.
-    }
   }
 }

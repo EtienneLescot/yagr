@@ -127,7 +127,6 @@ export class YagrN8nConfigService {
   private readonly globalStore: Conf<N8nCredentialStore>;
   private readonly compatibilityStore: Conf<N8nCredentialStore>;
   private readonly localConfigPath: string;
-  private readonly legacyCredentialsPath: string;
 
   constructor() {
     const paths = getYagrPaths();
@@ -141,7 +140,6 @@ export class YagrN8nConfigService {
       configName: 'credentials',
     });
     this.localConfigPath = paths.n8nConfigPath;
-    this.legacyCredentialsPath = paths.legacyN8nCredentialsPath;
     this.syncCompatibilityCredentials();
   }
 
@@ -190,7 +188,6 @@ export class YagrN8nConfigService {
   }
 
   getApiKey(host: string): string | undefined {
-    this.migrateLegacyCredentials();
     const credentials = this.globalStore.get('hosts') ?? {};
     const normalizedHost = this.normalizeHost(host);
     if (credentials[normalizedHost]) {
@@ -355,27 +352,6 @@ export class YagrN8nConfigService {
         : {};
     } catch {
       return {};
-    }
-  }
-
-  private migrateLegacyCredentials(): void {
-    if (this.globalStore.path === this.legacyCredentialsPath) {
-      return;
-    }
-
-    const currentHosts = this.globalStore.get('hosts') ?? {};
-    if (Object.keys(currentHosts).length > 0 || !fs.existsSync(this.legacyCredentialsPath)) {
-      return;
-    }
-
-    try {
-      const content = JSON.parse(fs.readFileSync(this.legacyCredentialsPath, 'utf-8')) as N8nCredentialStore;
-      const legacyHosts = content.hosts ?? {};
-      if (Object.keys(legacyHosts).length > 0) {
-        this.globalStore.set('hosts', legacyHosts);
-      }
-    } catch {
-      // Ignore malformed legacy files and start fresh in the Yagr home.
     }
   }
 
