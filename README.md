@@ -264,8 +264,6 @@ These scripts intentionally target `.yagr-test-workspace` so local development d
 
 ## Acknowledgments
 
-Yagr is built on top of the incredible work from the n8n team.
-
 [n8n](https://github.com/n8n-io/n8n) is a powerful and flexible workflow automation platform. Go show them some love.
 
 ## Read Next
