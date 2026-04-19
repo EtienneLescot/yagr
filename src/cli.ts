@@ -58,7 +58,7 @@ import {
   stopN8nAuthTunnel,
   stopAllTunnels,
 } from './n8n-local/n8n-tunnel.js';
-import { ensureConfiguredLlmTunnelReachability, ensureFacadeTunnelReachability } from './n8n-local/tunnel-reachability.js';
+import { ensureStartupTunnelReachability, ensureFacadeTunnelReachability } from './n8n-local/tunnel-reachability.js';
 import { ensureN8nRelayServer } from './llm/llm-relay-server.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
@@ -810,9 +810,7 @@ async function ensureRelayAtLaunch(): Promise<void> {
   if (!llmProxy?.enabled) return;
   try {
     await ensureN8nRelayServer();
-    await ensureConfiguredLlmTunnelReachability(configService);
-    // Sync the n8n credential after the relay is up. This self-heals stale or
-    // missing credentials caused by relay port changes between restarts.
+    await ensureStartupTunnelReachability(configService);
     await syncProxyCredentialIfEnabled();
   } catch (error) {
     process.stderr.write(`Warning: LLM relay server failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
