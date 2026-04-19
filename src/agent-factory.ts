@@ -23,6 +23,8 @@ import { createLangChainModel } from './llm/create-langchain-model.js';
 import { getCodingOrientedDeepAgentMiddleware } from './deepagents/coding-orientation.js';
 import { buildPristineDeepAgentConfig, getPristineDeepAgentMemorySources } from './deepagents/pristine.js';
 import { getYagrHomeDir } from './config/yagr-home.js';
+import type { YagrRunOptions } from './types.js';
+import { CompactionService } from './compaction/compaction-service.js';
 
 /** Returned by `createYagrDeepAgent`. */
 export interface YagrDeepAgentHandle {
@@ -32,6 +34,8 @@ export interface YagrDeepAgentHandle {
   /** The checkpointer — shared across calls so per-thread state persists. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   checkpointer: any;
+  /** Compaction service — tracks context compaction events and history. */
+  compactionService: CompactionService;
 }
 
 export const getYagrAgentMemorySources = getPristineDeepAgentMemorySources;
@@ -48,27 +52,31 @@ export const getYagrAgentMemorySources = getPristineDeepAgentMemorySources;
  * @param configStore Optional config store to read LLM defaults from.
  * @param modelConfig Optional explicit model overrides (provider, model, apiKey, baseUrl).
  * @param checkpointer Optional checkpointer instance. If not provided, a new MemorySaver is created.
+ * @param runOptions Optional run options including compaction configuration.
  */
 export async function createYagrDeepAgent(
   configStore?: YagrConfigStoreLike,
   modelConfig?: { provider?: string; model?: string; apiKey?: string; baseUrl?: string },
   checkpointer?: BaseCheckpointSaver,
+  runOptions?: YagrRunOptions,
 ): Promise<YagrDeepAgentHandle> {
   const model = await createLangChainModel(modelConfig, configStore);
   const checkpointerInstance = checkpointer ?? new MemorySaver();
+
+  const compactionService = new CompactionService({
+    autoCompactContext: runOptions?.autoCompactContext ?? true,
+    compactContextThresholdPercent: runOptions?.compactContextThresholdPercent ?? 80,
+    compactPreserveRecentMessages: runOptions?.compactPreserveRecentMessages ?? 4,
+  });
 
   const agent = createDeepAgent({
     ...buildPristineDeepAgentConfig({
       model,
       checkpointer: checkpointerInstance,
-      // Use the yagr home directory as the shell root so the agent starts
-      // in the same directory that the runtime path anchor advertises.
-      // This avoids the mismatch where the anchor says ~/.yagr but the shell
-      // was actually at process.cwd() (the yagr launch directory).
       rootDir: getYagrHomeDir(),
     }),
     middleware: getCodingOrientedDeepAgentMiddleware(),
   });
 
-  return { agent, checkpointer: checkpointerInstance };
+  return { agent, checkpointer: checkpointerInstance, compactionService };
 }

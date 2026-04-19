@@ -10,9 +10,10 @@
  *   - Workflow embed extraction from `presentWorkflowResult` tool output
  *   - `write_todos` (deepagents planning tool) mapped to a plan-phase update
  *   - `YagrOperationEvent` for per-tool and thinking operation cards
+ *   - `YagrContextCompactionEvent` for context compaction events
  */
 import type { StreamEvent } from '@langchain/core/tracers/log_stream';
-import type { YagrOperationEvent, YagrRequiredAction, YagrToolEvent } from '../types.js';
+import type { YagrContextCompactionEvent, YagrOperationEvent, YagrRequiredAction, YagrToolEvent } from '../types.js';
 import {
   type YagrUserVisibleUpdate,
   makeToolStartOperationEvent,
@@ -44,6 +45,8 @@ export interface LangGraphRunAccumulator {
   activeOperations: Map<string, YagrOperationEvent>;
   /** Set to true when a file-modifying tool completes successfully. */
   fileModificationDetected: boolean;
+  /** Compaction events that occurred during this run. */
+  compactions: YagrContextCompactionEvent[];
 }
 
 export interface LangGraphEventCallbacks {
@@ -57,6 +60,8 @@ export interface LangGraphEventCallbacks {
    * Callers patch by `operationId` — a second call for the same id is an update.
    */
   onOperation?: (event: YagrOperationEvent) => void | Promise<void>;
+  /** Called when a context compaction event occurs. */
+  onCompaction?: (event: YagrContextCompactionEvent) => void | Promise<void>;
 }
 
 export function createRunAccumulator(): LangGraphRunAccumulator {
@@ -68,6 +73,7 @@ export function createRunAccumulator(): LangGraphRunAccumulator {
     thinkingStartedAt: 0,
     activeOperations: new Map(),
     fileModificationDetected: false,
+    compactions: [],
   };
 }
 
@@ -210,6 +216,25 @@ export async function processStreamEvent(
       break;
     }
 
+    case 'on_llm_new_token': {
+      const compactionEvent = extractCompactionFromChunk(event.data?.chunk);
+      if (compactionEvent) {
+        accumulator.compactions.push(compactionEvent);
+        await callbacks.onCompaction?.(compactionEvent);
+      }
+      break;
+    }
+
+    case 'on_chain_stream':
+    case 'on_chain_end': {
+      const compactionEvent = extractCompactionFromChunk(event.data?.chunk);
+      if (compactionEvent) {
+        accumulator.compactions.push(compactionEvent);
+        await callbacks.onCompaction?.(compactionEvent);
+      }
+      break;
+    }
+
     default:
       break;
   }
@@ -282,6 +307,44 @@ function extractDeltas(chunk: unknown): ExtractedDeltas {
 /** @deprecated Use extractDeltas — kept for callers that only need text. */
 function extractTextDelta(chunk: unknown): string {
   return extractDeltas(chunk).textDelta;
+}
+
+// ---------------------------------------------------------------------------
+// Compaction event extraction
+// ---------------------------------------------------------------------------
+
+function extractCompactionFromChunk(chunk: unknown): YagrContextCompactionEvent | null {
+  if (!chunk || typeof chunk !== 'object') {
+    return null;
+  }
+
+  const c = chunk as Record<string, unknown>;
+
+  if (c.type === 'compaction' || c.__type === 'compaction') {
+    return {
+      summary: String(c.summary ?? 'Context compacted'),
+      source: (c.source as 'llm' | 'fallback') ?? 'llm',
+      estimatedTokens: Number(c.estimatedTokens ?? 0),
+      thresholdTokens: Number(c.thresholdTokens ?? 0),
+      messagesCompacted: Number(c.messagesCompacted ?? 0),
+      preservedRecentMessages: Number(c.preservedRecentMessages ?? 4),
+      fallbackReason: c.fallbackReason as string | undefined,
+    };
+  }
+
+  if (c.type === 'context_compaction') {
+    return {
+      summary: String(c.summary ?? 'Context compacted'),
+      source: (c.source as 'llm' | 'fallback') ?? 'llm',
+      estimatedTokens: Number(c.estimatedTokens ?? 0),
+      thresholdTokens: Number(c.thresholdTokens ?? 0),
+      messagesCompacted: Number(c.messagesCompacted ?? 0),
+      preservedRecentMessages: Number(c.preservedRecentMessages ?? 4),
+      fallbackReason: c.fallbackReason as string | undefined,
+    };
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
