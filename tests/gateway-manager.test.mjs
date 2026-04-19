@@ -48,9 +48,9 @@ test('buildGatewaySupervisorStatus exposes startable surfaces and warnings', () 
 });
 
 test('getGatewayRestartDelayMs uses capped exponential backoff', () => {
-  assert.equal(getGatewayRestartDelayMs(0), 1_000);
-  assert.equal(getGatewayRestartDelayMs(1), 2_000);
-  assert.equal(getGatewayRestartDelayMs(2), 4_000);
-  assert.equal(getGatewayRestartDelayMs(6), 30_000);
-  assert.equal(getGatewayRestartDelayMs(20), 30_000);
+  assert.equal(getGatewayRestartDelayMs(0), 60_000);
+  assert.equal(getGatewayRestartDelayMs(1), 120_000);
+  assert.equal(getGatewayRestartDelayMs(2), 240_000);
+  assert.equal(getGatewayRestartDelayMs(6), 300_000);
+  assert.equal(getGatewayRestartDelayMs(20), 300_000);
 });

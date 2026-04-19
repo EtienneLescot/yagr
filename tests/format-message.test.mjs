@@ -81,17 +81,29 @@ test('formatWorkflowLinkHtml outputs an anchor tag', () => {
 });
 
 test('buildWorkflowFooterHtml can resolve tokenized hosted bridge links', () => {
-  const result = buildWorkflowFooterHtml([
-    {
-      workflowId: 'abc',
-      url: 'data:text/html;charset=utf-8,%3Chtml%3Ebridge%3C%2Fhtml%3E',
-      title: 'Test WF',
-    },
-  ], {
-    openBaseUrl: 'http://127.0.0.1:3789',
-  });
-  assert.match(result, /<a href="http:\/\/127\.0\.0\.1:3789\/open\/n8n-workflow\/[0-9a-f]{16}">Test WF<\/a>/);
-  assert.ok(!result.includes('data:text/html'));
+  const previousHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-footer-html-'));
+  process.env.YAGR_HOME = tempHome;
+  try {
+    const result = buildWorkflowFooterHtml([
+      {
+        workflowId: 'abc',
+        url: 'data:text/html;charset=utf-8,%3Chtml%3Ebridge%3C%2Fhtml%3E',
+        title: 'Test WF',
+      },
+    ], {
+      openBaseUrl: 'http://127.0.0.1:3789',
+    });
+    assert.match(result, /<a href="http:\/\/127\.0\.0\.1:3789\/open\/n8n-workflow\/[0-9a-f]{16}">Test WF<\/a>/);
+    assert.ok(!result.includes('data:text/html'));
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.YAGR_HOME;
+    } else {
+      process.env.YAGR_HOME = previousHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
 test('workflow open links prefer the public bridge tunnel when active', () => {
@@ -156,25 +168,49 @@ test('formatTerminalLink produces an OSC 8 alias link', () => {
 });
 
 test('formatWorkflowLinkTerminal renders an alias label', () => {
-  const result = formatWorkflowLinkTerminal({
-    workflowId: 'abc',
-    url: 'https://n8n.example.com/workflow/abc',
-    title: 'Test WF',
-  });
-  assert.ok(result.includes('Test WF'));
-  assert.ok(result.includes('\x1b]8;;http://127.0.0.1:'));
+  const previousHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-terminal-alias-'));
+  process.env.YAGR_HOME = tempHome;
+  try {
+    const result = formatWorkflowLinkTerminal({
+      workflowId: 'abc',
+      url: 'https://n8n.example.com/workflow/abc',
+      title: 'Test WF',
+    });
+    assert.ok(result.includes('Test WF'));
+    assert.ok(result.includes('\x1b]8;;http://127.0.0.1:'));
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.YAGR_HOME;
+    } else {
+      process.env.YAGR_HOME = previousHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
 test('formatWorkflowLinkTerminal always aliases the embed url through the local bridge', () => {
-  const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent('<html><body>hello</body></html>')}`;
-  const result = formatWorkflowLinkTerminal({
-    workflowId: 'abc',
-    url: dataUrl,
-    targetUrl: 'http://127.0.0.1:5678/workflow/abc',
-    title: 'Test WF',
-  });
-  assert.match(result, /\x1b]8;;http:\/\/127\.0\.0\.1:\d+\/open\/n8n-workflow\/[0-9a-f]{16}\x07/);
-  assert.ok(!result.includes('data:text/html'));
+  const previousHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-terminal-bridge-'));
+  process.env.YAGR_HOME = tempHome;
+  try {
+    const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent('<html><body>hello</body></html>')}`;
+    const result = formatWorkflowLinkTerminal({
+      workflowId: 'abc',
+      url: dataUrl,
+      targetUrl: 'http://127.0.0.1:5678/workflow/abc',
+      title: 'Test WF',
+    });
+    assert.match(result, /\x1b]8;;http:\/\/127\.0\.0\.1:\d+\/open\/n8n-workflow\/[0-9a-f]{16}\x07/);
+    assert.ok(!result.includes('data:text/html'));
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.YAGR_HOME;
+    } else {
+      process.env.YAGR_HOME = previousHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
 test('enrichWorkflowEmbed preserves an already-resolved workflow target', () => {
