@@ -72,6 +72,9 @@ export class SessionService {
   }
 
   async delete(id: string): Promise<void> {
+    if (this.checkpointManager) {
+      await this.checkpointManager.deleteAllCheckpoints(id);
+    }
     this.store.delete(id);
     this.memoryStore.delete(id);
     if (this.checkpointer) {

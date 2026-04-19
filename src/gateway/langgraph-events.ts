@@ -444,7 +444,6 @@ async function handleToolEnd(
 
     case 'runScript':
     case 'runShell': {
-      accumulator.fileModificationDetected = true;
       if (output?.__type === WORKFLOW_EMBED_TYPE) {
         const embed = output as unknown as WorkflowEmbedPayload;
         const enriched = enrichWorkflowEmbedPayload(embed);

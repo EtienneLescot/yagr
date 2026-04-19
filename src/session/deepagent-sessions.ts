@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'path';
-import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
+import type { RunnableConfig } from '@langchain/core/runnables';
+import type {
+  BaseCheckpointSaver,
+  ChannelVersions,
+  CheckpointMetadata as LangGraphCheckpointMetadata,
+  CheckpointPendingWrite,
+  CheckpointTuple,
+  PendingWrite,
+} from '@langchain/langgraph-checkpoint';
 import type { CheckpointMetadata, DeepAgentSessionRecord, DeepAgentSessionScope } from './session-types.js';
 
 interface SessionScopeState {
@@ -290,7 +298,7 @@ export class CheckpointManager {
     return checkpoints.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  async getCheckpoint(sessionId: string, checkpointId: string): Promise<{ checkpoint: unknown; metadata: CheckpointMetadata } | undefined> {
+  async getCheckpoint(sessionId: string, checkpointId: string): Promise<{ tuple: CheckpointTuple; metadata: CheckpointMetadata } | undefined> {
     const cpPath = this.checkpointPath(sessionId, checkpointId);
     const checkpointFile = path.join(cpPath, 'checkpoint.json');
     const metadataFile = path.join(cpPath, 'metadata.json');
@@ -300,19 +308,19 @@ export class CheckpointManager {
     }
 
     try {
-      const [checkpoint, metadata] = await Promise.all([
-        Promise.resolve(JSON.parse(fs.readFileSync(checkpointFile, 'utf-8'))),
+      const [tuple, metadata] = await Promise.all([
+        Promise.resolve(JSON.parse(fs.readFileSync(checkpointFile, 'utf-8')) as CheckpointTuple),
         Promise.resolve(JSON.parse(fs.readFileSync(metadataFile, 'utf-8')) as CheckpointMetadata),
       ]);
-      return { checkpoint, metadata };
+      return { tuple, metadata };
     } catch {
       return undefined;
     }
   }
 
   async saveCheckpoint(sessionId: string): Promise<CheckpointMetadata> {
-    const threadChannels = await this.checkpointer.get({ configurable: { thread_id: sessionId } });
-    if (!threadChannels) {
+    const checkpointTuple = await this.checkpointer.getTuple({ configurable: { thread_id: sessionId } });
+    if (!checkpointTuple) {
       throw new Error(`No checkpoint found for session ${sessionId}`);
     }
 
@@ -326,12 +334,12 @@ export class CheckpointManager {
       id: checkpointId,
       sessionId,
       createdAt: now,
-      messageCount: this.countMessages(threadChannels),
+      messageCount: this.countMessages(checkpointTuple.checkpoint),
     };
 
     fs.writeFileSync(
       path.join(cpPath, 'checkpoint.json'),
-      JSON.stringify(threadChannels),
+      JSON.stringify(checkpointTuple),
       'utf-8',
     );
     fs.writeFileSync(
@@ -346,6 +354,16 @@ export class CheckpointManager {
   private countMessages(channelData: unknown): number {
     if (!channelData || typeof channelData !== 'object') return 0;
     const data = channelData as Record<string, unknown>;
+    const channelValues = data.channel_values;
+    if (channelValues && typeof channelValues === 'object') {
+      const values = channelValues as Record<string, unknown>;
+      if (Array.isArray(values.messages)) {
+        return values.messages.length;
+      }
+      if (Array.isArray(values.channel_messages)) {
+        return values.channel_messages.length;
+      }
+    }
     if (Array.isArray(data.messages)) {
       return data.messages.length;
     }
@@ -361,11 +379,16 @@ export class CheckpointManager {
       throw new Error(`Checkpoint ${checkpointId} not found for session ${sessionId}`);
     }
 
-    await this.checkpointer.put(
-      { configurable: { thread_id: sessionId } },
-      found.checkpoint as Parameters<typeof this.checkpointer.put>[1],
-      found.metadata as unknown as Parameters<typeof this.checkpointer.put>[2],
-      {},
+    const checkpointNamespace = found.tuple.config.configurable?.checkpoint_ns;
+    const restoredConfig = await this.checkpointer.put(
+      this.buildRestoreConfig(sessionId, checkpointNamespace),
+      found.tuple.checkpoint,
+      found.tuple.metadata ?? this.buildFallbackLangGraphMetadata(),
+      {} as ChannelVersions,
+    );
+
+    await Promise.all(
+      this.groupPendingWritesByTask(found.tuple.pendingWrites).map(([taskId, writes]) => this.checkpointer.putWrites(restoredConfig, writes, taskId)),
     );
   }
 
@@ -381,5 +404,37 @@ export class CheckpointManager {
     if (fs.existsSync(dir)) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  }
+
+  private buildRestoreConfig(sessionId: string, checkpointNamespace?: string): RunnableConfig {
+    return {
+      configurable: {
+        thread_id: sessionId,
+        ...(checkpointNamespace ? { checkpoint_ns: checkpointNamespace } : {}),
+      },
+    };
+  }
+
+  private buildFallbackLangGraphMetadata(): LangGraphCheckpointMetadata {
+    return {
+      source: 'fork',
+      step: -1,
+      parents: {},
+    };
+  }
+
+  private groupPendingWritesByTask(pendingWrites: CheckpointPendingWrite[] | undefined): Array<[string, PendingWrite[]]> {
+    if (!pendingWrites?.length) {
+      return [];
+    }
+
+    const writesByTask = new Map<string, PendingWrite[]>();
+    for (const [taskId, channel, value] of pendingWrites) {
+      const existing = writesByTask.get(taskId) ?? [];
+      existing.push([channel, value]);
+      writesByTask.set(taskId, existing);
+    }
+
+    return [...writesByTask.entries()];
   }
 }

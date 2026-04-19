@@ -3,12 +3,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { MemorySaver } from '@langchain/langgraph';
 
 import {
+  CheckpointManager,
   DeepAgentSessionStore,
   buildDeepAgentSessionConfig,
   deriveSessionTitle,
 } from '../dist/session/deepagent-sessions.js';
+import { SessionService } from '../dist/session/index.js';
 
 test('DeepAgentSessionStore resolves one active session per scope and can rotate it', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-deepagent-sessions-'));
@@ -64,4 +67,69 @@ test('deriveSessionTitle trims and truncates prompt text', () => {
     deriveSessionTitle('a'.repeat(100)).length,
     80,
   );
+});
+
+test('CheckpointManager saves and restores the full LangGraph checkpoint tuple', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-checkpoints-'));
+  const checkpointer = new MemorySaver();
+  const manager = new CheckpointManager(checkpointer, tempDir);
+
+  const checkpointConfig = await checkpointer.put(
+    { configurable: { thread_id: 'session-1' } },
+    {
+      v: 4,
+      id: 'checkpoint-1',
+      ts: new Date().toISOString(),
+      channel_values: { messages: ['hello', 'world'] },
+      channel_versions: { messages: 1 },
+      versions_seen: {},
+    },
+    { source: 'loop', step: 3, parents: {} },
+    {},
+  );
+  await checkpointer.putWrites(checkpointConfig, [['messages', { id: 'write-1', value: 'pending' }]], 'task-1');
+
+  const saved = await manager.saveCheckpoint('session-1');
+  await checkpointer.deleteThread('session-1');
+
+  await manager.restoreCheckpoint('session-1', saved.id);
+
+  const restored = await checkpointer.getTuple({ configurable: { thread_id: 'session-1' } });
+  assert.ok(restored);
+  assert.deepEqual(restored.checkpoint.channel_values.messages, ['hello', 'world']);
+  assert.deepEqual(restored.metadata, { source: 'loop', step: 3, parents: {} });
+  assert.deepEqual(restored.pendingWrites, [['task-1', 'messages', { id: 'write-1', value: 'pending' }]]);
+});
+
+test('SessionService.delete removes persisted checkpoint directories', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-session-service-'));
+  const sessionsDir = path.join(rootDir, 'sessions');
+  const memoriesDir = path.join(rootDir, 'memories');
+  const service = new SessionService({ sessionsDir, memoriesDir });
+  const checkpointer = new MemorySaver();
+  service.setCheckpointer(checkpointer);
+
+  service.create({ id: 'session-2', title: 'Session 2' });
+  await checkpointer.put(
+    { configurable: { thread_id: 'session-2' } },
+    {
+      v: 4,
+      id: 'checkpoint-2',
+      ts: new Date().toISOString(),
+      channel_values: { messages: ['persist me'] },
+      channel_versions: { messages: 1 },
+      versions_seen: {},
+    },
+    { source: 'loop', step: 1, parents: {} },
+    {},
+  );
+
+  const saved = await service.saveCheckpoint('session-2');
+  const checkpointDir = path.join(sessionsDir, 'session-2', 'checkpoints', saved.id);
+  assert.equal(fs.existsSync(checkpointDir), true);
+
+  await service.delete('session-2');
+
+  assert.equal(fs.existsSync(checkpointDir), false);
+  assert.equal(await checkpointer.getTuple({ configurable: { thread_id: 'session-2' } }), undefined);
 });
