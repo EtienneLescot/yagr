@@ -700,6 +700,14 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
           resetStreamingBuffers();
           setLastUserPrompt('');
         },
+        approvePendingPermissions: () => {
+          const permissionActions = pendingRequiredActions.filter((action) => action.kind === 'permission');
+          if (permissionActions.length === 0) {
+            return 0;
+          }
+          setPendingRequiredActions((previous) => previous.filter((action) => action.kind !== 'permission'));
+          return permissionActions.length;
+        },
         openExternalUrl: async (url) => {
           await openExternalUrl(url);
         },
@@ -725,6 +733,16 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
           pushEntry('result', 'Checkpoint saved', result.message);
         } else if (parsed.command === 'restore') {
           pushEntry('result', 'Restored', result.message);
+        } else if (parsed.command === 'approve') {
+          const data = result.data && typeof result.data === 'object' ? result.data : undefined;
+          if (data && 'approvedCount' in data && Number(data.approvedCount) > 0) {
+            pushEntry('result', 'Permissions', result.message);
+            if ('resumePrompt' in data && typeof data.resumePrompt === 'string') {
+              await runPrompt(data.resumePrompt);
+            }
+          } else {
+            setActiveOperationText(result.message);
+          }
         } else {
           setActiveOperationText(result.message);
         }
