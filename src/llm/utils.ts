@@ -1,5 +1,5 @@
 /** Default timeout for upstream Codex API calls (ms). */
-export const CODEX_UPSTREAM_TIMEOUT_MS = Number(process.env.YAGR_CODEX_UPSTREAM_TIMEOUT_MS || 300_000);
+export const CODEX_UPSTREAM_TIMEOUT_MS = parseCodexUpstreamTimeoutMs(process.env.YAGR_CODEX_UPSTREAM_TIMEOUT_MS);
 
 /** Default retry configuration for transient failures. */
 export const RETRY_CONFIG = {
@@ -36,4 +36,22 @@ export function timeoutSignal(timeoutMs: number, _label: string): AbortSignal {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   if (typeof timer.unref === 'function') timer.unref();
   return controller.signal;
+}
+
+export function parseCodexUpstreamTimeoutMs(value: string | undefined, fallback = 300_000): number {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
 }
