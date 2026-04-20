@@ -568,6 +568,7 @@ export function createOpenAiAccountLanguageModel(
           modelId,
           ...(execution.responseId ? { id: execution.responseId } : {}),
           ...(execution.assistantPhase ? { assistantPhase: execution.assistantPhase } : {}),
+          ...(execution.rawOutputItems ? { rawOutputItems: execution.rawOutputItems } : {}),
         },
       };
     },
@@ -642,6 +643,7 @@ export function createOpenAiAccountLanguageModel(
       const toolCalls = new Map<string, LanguageModelV1FunctionToolCall>();
       let responseId: string | undefined;
       let assistantPhase: string | undefined;
+      let rawOutputItems: Array<Record<string, unknown>> | undefined;
 
       const stream = new ReadableStream<LanguageModelV1StreamPart>({
         async pull(controller) {
@@ -704,6 +706,9 @@ export function createOpenAiAccountLanguageModel(
               responseId = readOptionalString(resp?.id);
               inputTokens = resp?.usage?.input_tokens ?? 0;
               outputTokens = resp?.usage?.output_tokens ?? 0;
+              rawOutputItems = Array.isArray(resp?.output)
+                ? resp.output.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+                : undefined;
               for (const item of Array.isArray(resp?.output) ? resp.output : []) {
                 const toolCall = extractCodexToolCallFromItem(item, toolCalls.size);
                 if (toolCall) toolCalls.set(toolCall.toolCallId, toolCall);
@@ -724,8 +729,8 @@ export function createOpenAiAccountLanguageModel(
             type: 'finish',
             finishReason,
             usage: { promptTokens: inputTokens, completionTokens: outputTokens },
-            ...((responseId || assistantPhase)
-              ? { providerMetadata: { ...(responseId ? { responseId } : {}), ...(assistantPhase ? { assistantPhase } : {}) } }
+            ...((responseId || assistantPhase || rawOutputItems)
+              ? { providerMetadata: { ...(responseId ? { responseId } : {}), ...(assistantPhase ? { assistantPhase } : {}), ...(rawOutputItems ? { rawOutputItems } : {}) } }
               : {}),
           });
           controller.close();
@@ -762,6 +767,7 @@ async function runOpenAiAccountCompletion(
   warnings: LanguageModelV1CallWarning[];
   responseId?: string;
   assistantPhase?: string;
+  rawOutputItems?: Array<Record<string, unknown>>;
 }> {
   const session = await ensureOpenAiAccountSession();
   if (!session) {
@@ -830,6 +836,7 @@ async function runOpenAiAccountCompletion(
   const toolCalls = new Map<string, LanguageModelV1FunctionToolCall>();
   let responseId: string | undefined;
   let assistantPhase: string | undefined;
+  let rawOutputItems: Array<Record<string, unknown>> | undefined;
 
   for await (const event of parseCodexSSE(responseBody)) {
     const type = typeof event.type === 'string' ? event.type : undefined;
@@ -889,6 +896,9 @@ async function runOpenAiAccountCompletion(
       responseId = readOptionalString(resp?.id);
       inputTokens = resp?.usage?.input_tokens ?? 0;
       outputTokens = resp?.usage?.output_tokens ?? 0;
+      rawOutputItems = Array.isArray(resp?.output)
+        ? resp.output.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+        : undefined;
       for (const item of Array.isArray(resp?.output) ? resp.output : []) {
         const toolCall = extractCodexToolCallFromItem(item, toolCalls.size);
         if (toolCall) {
@@ -912,6 +922,7 @@ async function runOpenAiAccountCompletion(
     warnings,
     ...(responseId ? { responseId } : {}),
     ...(assistantPhase ? { assistantPhase } : {}),
+    ...(rawOutputItems ? { rawOutputItems } : {}),
   };
 }
 
@@ -951,6 +962,16 @@ function convertPromptToCodexInput(prompt: LanguageModelV1Prompt): {
       const text = (message.content as Array<{ type: string; text?: string }>).map((p) => p.type === 'text' ? (p.text ?? '') : `[${p.type}]`).join('\n');
       input.push({ role: 'user', content: [{ type: 'input_text', text }] });
     } else if (message.role === 'assistant') {
+      if (Array.isArray(message.rawOutputItems) && message.rawOutputItems.length > 0) {
+        for (const item of message.rawOutputItems) {
+          const sanitized = sanitizeResponsesOutputItem(item);
+          if (sanitized) {
+            input.push(sanitized);
+          }
+        }
+        continue;
+      }
+
       const text = (message.content as Array<{ type: string; text?: string }>)
         .filter((p) => p.type === 'text' || p.type === 'reasoning')
         .map((p) => p.text ?? '')
@@ -988,6 +1009,25 @@ function convertPromptToCodexInput(prompt: LanguageModelV1Prompt): {
     .join('\n\n') || undefined;
 
   return { instructions, input };
+}
+
+function sanitizeResponsesOutputItem(item: Record<string, unknown>): Record<string, unknown> | undefined {
+  const sanitized: Record<string, unknown> = { ...item };
+  delete sanitized.id;
+  delete sanitized.status;
+
+  if (Array.isArray(sanitized.content)) {
+    sanitized.content = sanitized.content
+      .filter((part): part is Record<string, unknown> => Boolean(part) && typeof part === 'object')
+      .map((part) => {
+        const nextPart = { ...part };
+        delete nextPart.id;
+        delete nextPart.status;
+        return nextPart;
+      });
+  }
+
+  return sanitized;
 }
 
 export function ensureCodexInstructions(instructions: string | undefined): string {
