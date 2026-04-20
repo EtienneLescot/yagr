@@ -19,6 +19,7 @@ test('syncN8nacHostUrl updates the active instance host in n8nac-config.json', (
       configPath,
       JSON.stringify({
         activeInstanceId: 'inst-1',
+        host: 'http://127.0.0.1:5678',
         instances: [
           { id: 'inst-1', host: 'http://127.0.0.1:5678', name: 'Local n8n' },
           { id: 'inst-2', host: 'https://cloud.example.com', name: 'Cloud n8n' },
@@ -30,6 +31,7 @@ test('syncN8nacHostUrl updates the active instance host in n8nac-config.json', (
     service.syncN8nacHostUrl('https://random-name.trycloudflare.com');
 
     const updated = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    assert.equal(updated.host, 'https://random-name.trycloudflare.com');
     assert.equal(updated.instances[0].host, 'https://random-name.trycloudflare.com');
     // Other instances should be unchanged
     assert.equal(updated.instances[1].host, 'https://cloud.example.com');
@@ -53,6 +55,7 @@ test('syncN8nacHostUrl skips update when host is already correct', () => {
       configPath,
       JSON.stringify({
         activeInstanceId: 'inst-1',
+        host: 'https://already-correct.trycloudflare.com',
         instances: [
           { id: 'inst-1', host: 'https://already-correct.trycloudflare.com', name: 'Local n8n' },
         ],

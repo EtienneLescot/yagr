@@ -66,3 +66,47 @@ test('resolveManagedN8nBootstrapStage returns connected for a configured managed
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
 });
+
+test('resolveManagedN8nBootstrapStage returns connected when the configured host is the public tunnel URL for a managed runtime', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-state-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    fs.writeFileSync(
+      path.join(tempHome, 'yagr-config.json'),
+      JSON.stringify({
+        n8nTunnel: {
+          enabled: true,
+          targetUrl: 'http://127.0.0.1:5678',
+          publicUrl: 'https://entered-gig-institution-tennessee.trycloudflare.com',
+        },
+      }, null, 2),
+    );
+    writeManagedN8nState(buildManagedN8nState({
+      strategy: 'docker',
+      image: 'docker.n8n.io/n8nio/n8n:stable',
+      port: 5678,
+      status: 'ready',
+      bootstrapStage: 'connected',
+    }));
+
+    const configService = new YagrN8nConfigService();
+    configService.saveApiKey('https://entered-gig-institution-tennessee.trycloudflare.com', 'test-api-key');
+    configService.saveLocalConfig({
+      host: 'https://entered-gig-institution-tennessee.trycloudflare.com',
+      syncFolder: 'workflows',
+      projectId: 'personal',
+      projectName: 'Personal',
+    });
+
+    assert.equal(resolveManagedN8nBootstrapStage('http://127.0.0.1:5678'), 'connected');
+  } finally {
+    if (previousHome !== undefined) {
+      process.env.YAGR_HOME = previousHome;
+    } else {
+      delete process.env.YAGR_HOME;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});

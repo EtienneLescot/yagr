@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
+import { YagrConfigService } from '../config/yagr-config-service.js';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import { classifyConfiguredN8nInstance, normalizeN8nUrlOrigin } from './instance-classification.js';
 
@@ -131,16 +132,26 @@ export function markManagedN8nBootstrapStage(
 
 export function resolveManagedN8nBootstrapStage(url: string): ManagedN8nInstanceState['bootstrapStage'] {
   const configService = new YagrN8nConfigService();
+  const yagrConfigService = new YagrConfigService();
   const localConfig = configService.getLocalConfig();
   const classification = classifyConfiguredN8nInstance(configService);
   const configuredHost = normalizeN8nUrlOrigin(localConfig.host);
   const managedHost = normalizeN8nUrlOrigin(url);
+  const tunnelConfig = yagrConfigService.getN8nTunnelConfig();
+  const tunnelPublicOrigin = normalizeN8nUrlOrigin(tunnelConfig?.publicUrl);
+  const tunnelTargetOrigin = normalizeN8nUrlOrigin(tunnelConfig?.targetUrl);
+  const hostReferencesManagedRuntime = Boolean(
+    configuredHost
+    && managedHost
+    && (
+      configuredHost === managedHost
+      || (tunnelConfig?.enabled && configuredHost === tunnelPublicOrigin && managedHost === tunnelTargetOrigin)
+    ),
+  );
 
   if (
     classification.kind === 'yagr-managed-local'
-    && configuredHost
-    && managedHost
-    && configuredHost === managedHost
+    && hostReferencesManagedRuntime
     && localConfig.projectId
     && localConfig.projectName
     && configService.getApiKey(localConfig.host ?? '')

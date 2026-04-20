@@ -14,7 +14,7 @@ import {
 } from './docker-manager.js';
 import type { ManagedN8nInstanceState } from './state.js';
 import { markManagedN8nBootstrapStage, resolveManagedN8nBootstrapStage } from './state.js';
-import { classifyConfiguredN8nInstance, normalizeN8nUrlOrigin, resolveN8nInstanceProfile } from './instance-classification.js';
+import { classifyConfiguredN8nInstance, doesConfiguredHostReferenceManagedRuntime, normalizeN8nUrlOrigin, resolveN8nInstanceProfile } from './instance-classification.js';
 import { resolveN8nRuntimeState } from '../config/n8n-config-service.js';
 
 export type ConfiguredN8nRuntimeMode =
@@ -59,11 +59,27 @@ interface ManagedConnectionSetupService {
     instanceProfile?: ReturnType<YagrN8nConfigService['getLocalConfig']>['instanceProfile'];
   }): Promise<{ warning?: string }>;
 }
+
+function syncConfiguredHostWithTunnelUrl(
+  configService: Pick<YagrN8nConfigService, 'getLocalConfig'>,
+): void {
+  const tunnelConfig = new YagrConfigService().getN8nTunnelConfig();
+  if (!tunnelConfig?.enabled || !tunnelConfig.publicUrl) {
+    return;
+  }
+
+  const syncableConfigService = configService as Partial<Pick<YagrN8nConfigService, 'syncN8nacHostUrl'>>;
+  if (typeof syncableConfigService.syncN8nacHostUrl === 'function') {
+    syncableConfigService.syncN8nacHostUrl(tunnelConfig.publicUrl);
+  }
+}
+
 function resolveConfiguredRuntimeMode(configService: YagrN8nConfigService): {
   source: ConfiguredN8nRuntimeMode;
   localConfig: ReturnType<YagrN8nConfigService['getLocalConfig']>;
   managedState: ManagedN8nInstanceState | undefined;
 } {
+  syncConfiguredHostWithTunnelUrl(configService);
   const localConfig = configService.getLocalConfig();
   const classification = classifyConfiguredN8nInstance(configService);
 
@@ -103,9 +119,11 @@ export async function ensureConfiguredManagedN8nRunning(
   const startDocker = dependencies.startDocker ?? startManagedDockerN8n;
   const installDocker = dependencies.installDocker ?? installManagedDockerN8n;
   const localConfig = configService.getLocalConfig();
+  const tunnelConfig = new YagrConfigService().getN8nTunnelConfig();
+  const classification = classifyConfiguredN8nInstance(configService);
   const managedState = getConfiguredManagedN8nState(configService);
-  const recovery = resolveManagedRuntimeRecovery(localConfig);
-  const compatibleManagedState = isManagedStateCompatibleWithConfig(managedState, localConfig.instanceProfile, localConfig.host)
+  const recovery = resolveManagedRuntimeRecovery(localConfig, classification.instanceProfile, tunnelConfig);
+  const compatibleManagedState = isManagedStateCompatibleWithConfig(managedState, classification.instanceProfile, localConfig.host, tunnelConfig)
     ? managedState
     : undefined;
 
@@ -212,15 +230,22 @@ export async function prepareConfiguredN8nForLaunch(
 
 function resolveManagedRuntimeRecovery(
   localConfig: ReturnType<YagrN8nConfigService['getLocalConfig']>,
+  instanceProfile: ReturnType<YagrN8nConfigService['getLocalConfig']>['instanceProfile'],
+  tunnelConfig: ReturnType<YagrConfigService['getN8nTunnelConfig']>,
 ): { strategy: 'docker' | 'direct'; port?: number } | undefined {
-  const instanceProfile = localConfig.instanceProfile;
   if (instanceProfile !== 'yagr-managed-docker' && instanceProfile !== 'yagr-managed-direct') {
     return undefined;
   }
 
+  const configuredOrigin = normalizeN8nUrlOrigin(localConfig.host);
+  const tunnelPublicOrigin = normalizeN8nUrlOrigin(tunnelConfig?.publicUrl);
+  const hostForPort = configuredOrigin && tunnelPublicOrigin && configuredOrigin === tunnelPublicOrigin
+    ? tunnelConfig?.targetUrl
+    : localConfig.host;
+
   return {
     strategy: instanceProfile === 'yagr-managed-docker' ? 'docker' : 'direct',
-    port: resolvePortFromN8nUrl(localConfig.host),
+    port: resolvePortFromN8nUrl(hostForPort),
   };
 }
 
@@ -228,6 +253,7 @@ function isManagedStateCompatibleWithConfig(
   managedState: ManagedN8nInstanceState | undefined,
   instanceProfile: ReturnType<YagrN8nConfigService['getLocalConfig']>['instanceProfile'],
   host: string | undefined,
+  tunnelConfig: ReturnType<YagrConfigService['getN8nTunnelConfig']>,
 ): boolean {
   if (!managedState) {
     return false;
@@ -241,9 +267,7 @@ function isManagedStateCompatibleWithConfig(
     return false;
   }
 
-  const configuredOrigin = normalizeN8nUrlOrigin(host);
-  const managedOrigin = normalizeN8nUrlOrigin(managedState.url);
-  if (configuredOrigin && managedOrigin && configuredOrigin !== managedOrigin) {
+  if (!doesConfiguredHostReferenceManagedRuntime({ host, managedState, tunnelConfig })) {
     return false;
   }
 

@@ -158,3 +158,54 @@ test('classifyConfiguredN8nInstance trusts the persisted instanceProfile even wh
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
 });
+
+test('classifyConfiguredN8nInstance infers a managed instance from tunnelized host when the tunnel targets the managed runtime', () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-classification-'));
+  const previousHome = process.env.YAGR_HOME;
+  process.env.YAGR_HOME = tempHome;
+
+  try {
+    const workspaceDir = path.join(tempHome, 'n8n-workspace');
+    const managedDir = path.join(tempHome, 'n8n');
+    fs.mkdirSync(workspaceDir, { recursive: true });
+    fs.mkdirSync(managedDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(tempHome, 'yagr-config.json'),
+      JSON.stringify({
+        n8nTunnel: {
+          enabled: true,
+          targetUrl: 'http://127.0.0.1:5678',
+          publicUrl: 'https://entered-gig-institution-tennessee.trycloudflare.com',
+        },
+      }, null, 2),
+    );
+    fs.writeFileSync(
+      path.join(workspaceDir, 'n8nac-config.json'),
+      JSON.stringify({
+        host: 'https://entered-gig-institution-tennessee.trycloudflare.com',
+      }, null, 2),
+    );
+    fs.writeFileSync(
+      path.join(managedDir, 'instance.json'),
+      JSON.stringify({
+        strategy: 'docker',
+        status: 'ready',
+        url: 'http://127.0.0.1:5678',
+        port: 5678,
+        bootstrapStage: 'connected',
+        dataDir: path.join(managedDir, 'data'),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }, null, 2),
+    );
+
+    const classification = classifyConfiguredN8nInstance();
+    assert.equal(classification.kind, 'yagr-managed-local');
+    assert.equal(classification.instanceProfile, 'yagr-managed-docker');
+    assert.deepEqual(classification.tags, ['YAGR_MANAGED', 'DOCKER']);
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});

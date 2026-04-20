@@ -281,12 +281,15 @@ export class YagrN8nConfigService {
       // Normalize both to `${protocol}//${host}` for reliable comparison.
       const tunnelOrigin = tunnelPublicUrl.replace(/\/+$/, '');
       const currentHost = instances[activeIndex].host?.replace(/\/+$/, '') ?? '';
-      if (currentHost === tunnelOrigin) {
+      const currentRootHost = typeof (config as { host?: string }).host === 'string'
+        ? (config as { host?: string }).host?.replace(/\/+$/, '') ?? ''
+        : '';
+      if (currentHost === tunnelOrigin && currentRootHost === tunnelOrigin) {
         return; // Already up to date.
       }
 
       instances[activeIndex] = { ...instances[activeIndex], host: tunnelPublicUrl };
-      const updated = { ...config, instances };
+      const updated = { ...config, instances, host: tunnelPublicUrl };
       fs.writeFileSync(n8nacConfigPath, JSON.stringify(updated, null, 2), 'utf-8');
     } catch {
       /* best effort */

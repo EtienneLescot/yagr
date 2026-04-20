@@ -1,3 +1,4 @@
+import { YagrConfigService, type N8nTunnelConfig } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService, type YagrN8nInstanceProfile, type YagrN8nLocalConfig } from '../config/n8n-config-service.js';
 import { readManagedN8nState, type ManagedN8nInstanceState } from './state.js';
 
@@ -33,13 +34,33 @@ export function normalizeN8nUrlOrigin(url: string | undefined): string | undefin
   }
 }
 
-function doesManagedStateMatchHost(
+function doesManagedStateMatchTunnelTarget(
   managedState: ManagedN8nInstanceState | undefined,
-  host: string | undefined,
+  tunnelConfig: N8nTunnelConfig | undefined,
 ): boolean {
   const managedOrigin = normalizeN8nUrlOrigin(managedState?.url);
-  const hostOrigin = normalizeN8nUrlOrigin(host);
-  return Boolean(managedOrigin && hostOrigin && managedOrigin === hostOrigin);
+  const targetOrigin = normalizeN8nUrlOrigin(tunnelConfig?.targetUrl);
+  return Boolean(tunnelConfig?.enabled && managedOrigin && targetOrigin && managedOrigin === targetOrigin);
+}
+
+export function doesConfiguredHostReferenceManagedRuntime(input: {
+  host?: string;
+  managedState?: ManagedN8nInstanceState;
+  tunnelConfig?: N8nTunnelConfig;
+}): boolean {
+  const managedOrigin = normalizeN8nUrlOrigin(input.managedState?.url);
+  const hostOrigin = normalizeN8nUrlOrigin(input.host);
+  if (managedOrigin && hostOrigin && managedOrigin === hostOrigin) {
+    return true;
+  }
+
+  const publicOrigin = normalizeN8nUrlOrigin(input.tunnelConfig?.publicUrl);
+  return Boolean(
+    hostOrigin
+    && publicOrigin
+    && hostOrigin === publicOrigin
+    && doesManagedStateMatchTunnelTarget(input.managedState, input.tunnelConfig),
+  );
 }
 
 export function isLocalN8nUrl(urlString: string | undefined): boolean {
@@ -79,8 +100,13 @@ export function resolveN8nInstanceProfile(input: {
   host?: string;
   instanceProfile?: YagrN8nInstanceProfile;
   managedState?: ManagedN8nInstanceState;
+  tunnelConfig?: N8nTunnelConfig;
 }): YagrN8nInstanceProfile | undefined {
-  const managedStateMatchesHost = doesManagedStateMatchHost(input.managedState, input.host);
+  const managedStateMatchesHost = doesConfiguredHostReferenceManagedRuntime({
+    host: input.host,
+    managedState: input.managedState,
+    tunnelConfig: input.tunnelConfig,
+  });
 
   if (managedStateMatchesHost) {
     const managedProfile = input.managedState?.strategy === 'docker'
@@ -105,12 +131,6 @@ export function resolveN8nInstanceProfile(input: {
   }
 
   return isLocalN8nUrl(input.host) ? 'custom-local-direct' : 'custom-cloud';
-}
-
-function resolveConfiguredInstanceProfile(
-  localConfig: Pick<YagrN8nLocalConfig, 'instanceProfile'>,
-): YagrN8nInstanceProfile | undefined {
-  return localConfig.instanceProfile;
 }
 
 function classifyConfiguredProfile(input: {
@@ -220,9 +240,19 @@ export function classifyConfiguredN8nInstance(
 ): N8nInstanceClassification {
   const managedState = readManagedN8nState();
   const localConfig = configService.getLocalConfig();
+  const tunnelConfig = new YagrConfigService().getN8nTunnelConfig();
+  const resolvedProfile = resolveN8nInstanceProfile({
+    host: localConfig.host,
+    instanceProfile: localConfig.instanceProfile,
+    managedState,
+    tunnelConfig,
+  });
   return classifyConfiguredProfile({
     host: localConfig.host,
-    instanceProfile: resolveConfiguredInstanceProfile(localConfig),
+    instanceProfile: localConfig.instanceProfile
+      ?? (resolvedProfile === 'yagr-managed-docker' || resolvedProfile === 'yagr-managed-direct'
+        ? resolvedProfile
+        : undefined),
     managedState,
   });
 }
