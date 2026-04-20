@@ -392,10 +392,24 @@ export function getOpenAiAccountSession(): OpenAiAccountSession | undefined {
 
 // ─── Model discovery ───────────────────────────────────────────────────────────
 
-/** Fetches available models from the ChatGPT Codex backend with ETag caching.
- *  Uses `/codex/models` endpoint with conditional requests to minimize API calls.
- *  Returns only models explicitly exposed by the account backend.
- *  Falls back to cached models on network failure or 304 Not Modified responses. */
+/**
+ * Fetches available models from the ChatGPT Codex backend with ETag caching.
+ *
+ * Discovery policy — all models compatible with the ChatGPT/Codex OAuth plan,
+ * shown in the account's model selector (visibility = "list").  This includes
+ * models regardless of their `supported_in_api` flag, because some plans expose
+ * models that are not yet surfaced in the standalone API but are usable through
+ * the ChatGPT UI and the Codex relay.
+ *
+ * Filter chain applied to the `/codex/models` payload:
+ *   1. non-empty slug
+ *   2. visibility === "list"  (excludes internal / hidden entries)
+ *   3. no further filter on `supported_in_api`
+ *   4. sorted by ascending `priority`
+ *
+ * Falls back to the in-memory cache on network failure or 304 Not Modified.
+ * Returns `[]` if the cache is empty and the network call fails.
+ */
 export async function fetchOpenAiAccountModels(accessToken: string): Promise<string[]> {
   const now = Date.now();
 
@@ -445,7 +459,6 @@ export async function fetchOpenAiAccountModels(accessToken: string): Promise<str
     const models = (data.models ?? [])
       .filter((model) => typeof model.slug === 'string' && model.slug.trim().length > 0)
       .filter((model) => (model.visibility ?? 'list') === 'list')
-      .filter((model) => model.supported_in_api !== false)
       .sort((left, right) => (left.priority ?? Number.MAX_SAFE_INTEGER) - (right.priority ?? Number.MAX_SAFE_INTEGER))
       .map((model) => model.slug!.trim());
 
