@@ -567,6 +567,7 @@ export function createOpenAiAccountLanguageModel(
           timestamp: new Date(),
           modelId,
           ...(execution.responseId ? { id: execution.responseId } : {}),
+          ...(execution.assistantPhase ? { assistantPhase: execution.assistantPhase } : {}),
         },
       };
     },
@@ -640,6 +641,7 @@ export function createOpenAiAccountLanguageModel(
       let finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown' = 'unknown';
       const toolCalls = new Map<string, LanguageModelV1FunctionToolCall>();
       let responseId: string | undefined;
+      let assistantPhase: string | undefined;
 
       const stream = new ReadableStream<LanguageModelV1StreamPart>({
         async pull(controller) {
@@ -664,6 +666,12 @@ export function createOpenAiAccountLanguageModel(
                   toolName: toolCall.toolName,
                   argsTextDelta: toolCall.args,
                 });
+              }
+              if (item && typeof item === 'object' && (item as { type?: unknown }).type === 'message') {
+                const phase = readOptionalString((item as { phase?: unknown }).phase);
+                if (phase) {
+                  assistantPhase = phase;
+                }
               }
             } else if (type === 'response.function_call_arguments.delta') {
               const itemId = readOptionalString(event.item_id) || readOptionalString(event.call_id);
@@ -716,7 +724,9 @@ export function createOpenAiAccountLanguageModel(
             type: 'finish',
             finishReason,
             usage: { promptTokens: inputTokens, completionTokens: outputTokens },
-            ...(responseId ? { providerMetadata: { responseId } } : {}),
+            ...((responseId || assistantPhase)
+              ? { providerMetadata: { ...(responseId ? { responseId } : {}), ...(assistantPhase ? { assistantPhase } : {}) } }
+              : {}),
           });
           controller.close();
           if (!completed) {
@@ -751,6 +761,7 @@ async function runOpenAiAccountCompletion(
   toolCalls?: LanguageModelV1FunctionToolCall[];
   warnings: LanguageModelV1CallWarning[];
   responseId?: string;
+  assistantPhase?: string;
 }> {
   const session = await ensureOpenAiAccountSession();
   if (!session) {
@@ -818,6 +829,7 @@ async function runOpenAiAccountCompletion(
   let outputTokens = 0;
   const toolCalls = new Map<string, LanguageModelV1FunctionToolCall>();
   let responseId: string | undefined;
+  let assistantPhase: string | undefined;
 
   for await (const event of parseCodexSSE(responseBody)) {
     const type = typeof event.type === 'string' ? event.type : undefined;
@@ -832,6 +844,12 @@ async function runOpenAiAccountCompletion(
       const toolCall = extractCodexToolCallFromItem(item, toolCalls.size);
       if (toolCall) {
         toolCalls.set(toolCall.toolCallId, toolCall);
+      }
+      if (item && typeof item === 'object' && (item as { type?: unknown }).type === 'message') {
+        const phase = readOptionalString((item as { phase?: unknown }).phase);
+        if (phase) {
+          assistantPhase = phase;
+        }
       }
     } else if (type === 'response.function_call_arguments.delta') {
       const itemId = readOptionalString(event.item_id) || readOptionalString(event.call_id);
@@ -893,6 +911,7 @@ async function runOpenAiAccountCompletion(
     ...(toolCalls.size > 0 ? { toolCalls: [...toolCalls.values()] } : {}),
     warnings,
     ...(responseId ? { responseId } : {}),
+    ...(assistantPhase ? { assistantPhase } : {}),
   };
 }
 
@@ -938,7 +957,7 @@ function convertPromptToCodexInput(prompt: LanguageModelV1Prompt): {
         .join('\n')
         .trim();
       if (text) {
-        input.push({ role: 'assistant', content: [{ type: 'output_text', text }] });
+        input.push({ role: 'assistant', content: [{ type: 'output_text', text }], ...(message.phase ? { phase: message.phase } : {}) });
       }
 
       for (const part of message.content) {
@@ -1087,7 +1106,8 @@ function toCodexTools(tools: LanguageModelV1FunctionTool[]): Array<Record<string
     type: 'function',
     name: tool.name,
     ...(tool.description ? { description: tool.description } : {}),
-    parameters: normalizeFunctionToolParametersSchema(tool.parameters as Record<string, unknown>),
+    parameters: normalizeFunctionToolParametersSchema(tool.parameters as Record<string, unknown>, { forceRequiredObjectProperties: true }),
+    strict: tool.strict ?? true,
   }));
 }
 

@@ -19,6 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { getYagrPaths } from '../config/yagr-home.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeFunctionToolParametersSchema } from './tool-schema.js';
 import { translateChatCompletionToResponsesApi, pipeChatCompletionsSseAsResponsesApi } from './responses-api-relay.js';
 import { CODEX_UPSTREAM_TIMEOUT_MS, withRetry, timeoutSignal } from './utils.js';
 
@@ -178,7 +179,8 @@ function translateChatCompletionsToCodex(payload: OpenAIChatCompletionsRequest):
           type: 'function',
           name: t.function.name,
           ...(t.function.description ? { description: t.function.description } : {}),
-          parameters: t.function.parameters ?? { type: 'object', properties: {} },
+          parameters: normalizeFunctionToolParametersSchema((t.function.parameters ?? { type: 'object', properties: {} }) as Record<string, unknown>, { forceRequiredObjectProperties: true }),
+          strict: true,
         }))
       : [];
 

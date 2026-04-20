@@ -828,7 +828,6 @@ function normalizeProviderSelector(value) {
   const aliases = {
     'claude-api': 'anthropic',
     'claude-token': 'anthropic-proxy',
-    'openai-proxy': 'openai-oauth',
     'github-oauth': 'copilot-proxy',
     'copilot-oauth': 'copilot-proxy',
   };
