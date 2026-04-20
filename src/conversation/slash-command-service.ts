@@ -33,7 +33,7 @@ export class SlashCommandService {
     }
     const parts = trimmed.slice(1).split(/\s+/);
     const name = parts[0]!.toLowerCase();
-    const command = resolveCommand(name);
+    const command = resolveCommand(`/${name}`);
     if (!command) {
       return undefined;
     }
