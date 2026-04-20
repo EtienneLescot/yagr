@@ -141,6 +141,17 @@ export class SessionService {
     return all.filter((r) => r.scope?.kind === scope.kind && r.scope?.key === scope.key);
   }
 
+  getActiveForScope(scope: DeepAgentSessionScope): DeepAgentSessionRecord | undefined {
+    return this.store.getActiveForScope(scope);
+  }
+
+  listCheckpointsSync(sessionId: string): CheckpointMetadata[] {
+    if (!this.checkpointManager) {
+      return [];
+    }
+    return this.checkpointManager.listCheckpointsSync(sessionId);
+  }
+
   persistMemory(sessionId: string, title: string, createdAt: string): void {
     try {
       const memory = extractSessionMemory(sessionId, title, createdAt, []);

@@ -1072,6 +1072,36 @@ function App() {
       return;
     }
 
+    if (trimmed.startsWith('/')) {
+      event.preventDefault();
+      const parts = trimmed.slice(1).split(/\s+/);
+      const command = parts[0]!.toLowerCase();
+      const args = parts.slice(1);
+      try {
+        const result = await request<{ kind: string; message: string; data?: unknown }>('/api/slash', {
+          method: 'POST',
+          body: JSON.stringify({ command, args, sessionId }),
+        });
+        if (result.message) {
+          const userMsgId = crypto.randomUUID();
+          pushEntry({ kind: 'user-message', id: userMsgId, text: trimmed });
+          const assistantMsgId = crypto.randomUUID();
+          pushEntry({ kind: 'assistant-header', id: assistantMsgId, streaming: false, phase: 'command', statusLabel: 'Command executed' });
+          pushEntry({ kind: 'assistant-body', id: crypto.randomUUID(), streaming: false, text: result.message });
+        }
+        if (command === 'sessions' || command === 'new' || command === 'delete' || command === 'resume') {
+          await refreshSessions();
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        pushEntry({ kind: 'user-message', id: crypto.randomUUID(), text: trimmed });
+        pushEntry({ kind: 'assistant-header', id: crypto.randomUUID(), streaming: false, phase: 'error', statusLabel: 'Command failed' });
+        pushEntry({ kind: 'assistant-body', id: crypto.randomUUID(), streaming: false, text: message });
+      }
+      setChatInput('');
+      return;
+    }
+
     const userMessageId = crypto.randomUUID();
     const headerId = crypto.randomUUID();
     const bodyId = crypto.randomUUID();

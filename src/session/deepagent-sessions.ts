@@ -277,6 +277,10 @@ export class CheckpointManager {
   }
 
   async listCheckpoints(sessionId: string): Promise<CheckpointMetadata[]> {
+    return this.listCheckpointsSync(sessionId);
+  }
+
+  listCheckpointsSync(sessionId: string): CheckpointMetadata[] {
     const dir = this.checkpointDir(sessionId);
     if (!fs.existsSync(dir)) {
       return [];

@@ -287,30 +287,29 @@ Le workspace `n8n-workspace` reste le sous-dossier metier principal pour les aut
 - `src/gateway/cli.ts`
 - `src/gateway/manager.ts`
 - `src/gateway/interactive-ui.tsx`
+- `src/conversation/` — SSOT des commandes slash
 
 Responsabilite actuelle:
 
 - exposer l'agent via Telegram, WebUI, CLI et TUI
-- gerer les sessions facade-side
-- afficher le statut des surfaces et demarrer les runtimes de gateway
-
-Observation actuelle:
-
-- les facades se limitent maintenant a l'I/O, aux sessions et a une orchestration legere
-- les mutations setup/config et l'etat metier associe sont delegues aux services applicatifs partages
-- les surfaces partagent maintenant une base unifiee pour les updates montrables; la prose assistant intermediaire ne doit plus etre le canal principal de progression
+- les commandes slash (/help, /sessions, /resume, /restore, etc.) sont despatiales via `src/conversation/slash-command-service.ts`
+- les facades restent minces: parse I/O, rendu, et delegation au service commun
+- les sessions et checkpoints sont gérés via `SessionService` comme SSOT
 
 ```mermaid
 flowchart LR
     UI[WebUI / Telegram / CLI / TUI]
     GW[gateway handlers]
-  SA[YagrDeepAgentHandle]
+    SC[slash commands src/conversation/]
+    SA[YagrDeepAgentHandle]
     SS[setup/status]
     AS[setup/application-services]
     CFG[config services]
     N8N[n8n-local / n8n API]
 
     UI --> GW
+    GW --> SC
+    SC --> SA
     GW --> SA
     GW --> SS
     GW --> AS

@@ -19,11 +19,13 @@ La direction cible de reference est documentee dans `yagr-engine-architecture.md
 - Extraire progressivement le couplage `n8n` encore present dans le prompt, le tooling et les flux de run
 - Unifier les edits chat et UI autour du meme pipeline de patch/validation `Yagr Engine`
 
-### Session management unifie des facades
+### Session management unifie des facades (implémenté)
 
-- Unifier le management des sessions de conversation entre TUI, WebUI et Telegram avec `SessionService` comme SSOT
-- Introduire un SSOT des commandes slash pour TUI, WebUI et Telegram, avec `/help` derive du registre central
-- Reaffecter `/resume` aux sessions de conversation et reserver `/restore` aux checkpoints
+- `src/conversation/` — SSOT slash commands avec registre canonique
+- `SessionService` enrichi: `getActiveForScope()`, `listCheckpointsSync()`
+- `/resume` → session de conversation; `/restore` → checkpoint
+- TUI, Telegram et WebUI dispatchent via `SlashCommandService`
+- `/help`, `/sessions`, `/new`, `/delete`, `/resume`, `/restore`, `/save`, `/checkpoints`, `/checkpoint_delete` disponibles sur les 3 surfaces
 
 ## Regle de vie
 
