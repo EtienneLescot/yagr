@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.27](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.26...yagr@v0.2.27) (2026-04-20)
+
+
+### Bug Fixes
+
+* **tests:** align bootstrap harness with managed runtime flows ([762d48e](https://github.com/EtienneLescot/yagr/commit/762d48e81c554448df1caa3b7a3d08dbaeb7ee4c))
+
 ## [0.2.26](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.25...yagr@v0.2.26) (2026-04-20)
 
 
