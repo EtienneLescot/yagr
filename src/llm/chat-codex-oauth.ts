@@ -134,6 +134,8 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
     const aiMessage = new AIMessage({
       content: text,
       tool_calls: toolCalls,
+      additional_kwargs: result.response?.assistantPhase ? { phase: result.response.assistantPhase } : {},
+      response_metadata: result.response?.assistantPhase ? { phase: result.response.assistantPhase } : {},
       usage_metadata: result.usage
         ? {
             input_tokens: result.usage.promptTokens,
@@ -281,7 +283,9 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
               },
               response_metadata: {
                 finishReason: part.finishReason,
+                ...(part.providerMetadata?.assistantPhase ? { phase: part.providerMetadata.assistantPhase } : {}),
               },
+              additional_kwargs: part.providerMetadata?.assistantPhase ? { phase: part.providerMetadata.assistantPhase } : {},
             }),
             text: '',
             generationInfo: {
@@ -370,6 +374,7 @@ function toLanguageModelPrompt(messages: BaseMessage[]): LanguageModelV1Prompt {
       return {
         role: 'assistant',
         content,
+        ...extractAssistantPhase(message),
       };
     }
 
@@ -378,6 +383,24 @@ function toLanguageModelPrompt(messages: BaseMessage[]): LanguageModelV1Prompt {
       content: [{ type: 'text', text: stringifyMessageContent(message.content) }],
     };
   });
+}
+
+function extractAssistantPhase(message: AIMessage): { phase?: string } {
+  const additionalPhase = message.additional_kwargs && typeof message.additional_kwargs === 'object'
+    ? (message.additional_kwargs as { phase?: unknown }).phase
+    : undefined;
+  if (typeof additionalPhase === 'string' && additionalPhase.trim()) {
+    return { phase: additionalPhase.trim() };
+  }
+
+  const responsePhase = message.response_metadata && typeof message.response_metadata === 'object'
+    ? (message.response_metadata as { phase?: unknown }).phase
+    : undefined;
+  if (typeof responsePhase === 'string' && responsePhase.trim()) {
+    return { phase: responsePhase.trim() };
+  }
+
+  return {};
 }
 
 function stringifyMessageContent(content: unknown): string {
@@ -454,6 +477,7 @@ function toLanguageModelTool(input: BindToolsInput): LanguageModelV1FunctionTool
     name,
     description: typeof candidate.description === 'string' ? candidate.description : undefined,
     parameters,
+    strict: true,
   };
 }
 
