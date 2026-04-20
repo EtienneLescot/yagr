@@ -66,7 +66,7 @@ Ne pas garder une taxonomie implicite divergente entre surfaces. Introduire un v
 - `/checkpoints`
 - `/save`
 - `/restore <checkpoint_id>`
-- `/delete-checkpoint <checkpoint_id>`
+- `/checkpoint_delete <checkpoint_id>`
 - `/pending`
 - `/approve`
 - `/compact`
@@ -314,7 +314,7 @@ Objectif:
 Travail:
 
 - faire passer les actions de session/checkpoint de la WebUI par les memes primitives metier communes
-- optionnel: accepter les slash commands saisies dans le composeur WebUI
+- accepter les slash commands saisies dans le composeur WebUI (obligatoire pour l'uniformisation `/XXX`)
 - verifier si `WebUiSessionRegistry` doit etre absorbe, renomme ou conserve comme store de presentation uniquement
 - eviter que la WebUI reste une voie parallele avec sa propre semantique
 
@@ -328,6 +328,7 @@ Fichiers probables:
 Critere d'acceptation:
 
 - les operations metier session/checkpoint de la WebUI s'appuient sur le meme contrat que les autres surfaces
+- le composeur WebUI reconnait et execute les commandes slash du registre commun
 
 ### Lot 6. Documentation et architecture
 
@@ -491,7 +492,7 @@ Le service commun ne doit pas connaitre ces details, mais le resultat structure 
 Si la migration doit rester douce, prevoir des alias temporaires:
 
 - TUI: `/resume` ancien sens -> deprecie puis remappe vers message d'aide
-- Telegram: `/checkpoint_restore`, `/checkpoint_save`, `/checkpoint_delete` -> alias vers la nouvelle taxonomie
+- Telegram: `/checkpoint_restore`, `/checkpoint_save` -> alias vers la nouvelle taxonomie (`/checkpoint_delete` est deja canonique)
 
 La deprecation doit etre centralisee dans le registre commun, pas recopiee.
 
