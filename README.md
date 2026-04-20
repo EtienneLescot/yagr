@@ -4,7 +4,7 @@
 
 ### (Y)our (A)gent (G)rounded in (R)eality
 
-**The autonomous agent that turns intent into live n8n automations.**
+**An autonomous agent that turns intent into real, running automations.**
 
 <img src="res/yagr-logo.png" alt="Yagr logo" width="130">
 
@@ -13,169 +13,185 @@
 [![Yagr Docs](https://img.shields.io/badge/docs-yagr-black?logo=gitbook)](https://yagr.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Setting up automation should not be harder than the automation itself.**
-
-Yagr is the red-carpet experience for n8n --  <img src="n8n-color.png" alt="n8n" width="80" style="vertical-align: middle;">   -- a guided autonomous agent that takes you from a blank terminal to a live workflow, without the usual setup maze.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-<strong>DIDACTIC WIZARD</strong><br><br>
-Launch a guided TUI assistant that walks the setup from A to Z instead of dropping you into raw config screens.<br><br>
-<em>Solves:</em> confusion, dead ends, and guesswork during first run.
-
-</td>
-<td width="50%" valign="top">
-
-<strong>LOW PREREQUISITES</strong><br><br>
-No pre-installed n8n required on the Docker-backed path. Yagr prepares and manages the local environment for you.<br><br>
-<em>Solves:</em> manual n8n installation before you can even try the product.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-<strong>NO MANUAL CONFIG</strong><br><br>
-Stop bouncing between terminals, dashboards, URLs, tokens, and env vars just to make the stack talk to itself.<br><br>
-<em>Solves:</em> API-key scavenger hunts and setup sprawl.
-
-</td>
-<td width="50%" valign="top">
-
-<strong>SHARED AUTH</strong><br><br>
-The agent's own LLM connection powers compatible nodes automatically during workflow generation.<br><br>
-<em>Solves:</em> repeated credential wiring across agent and workflow nodes.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-<strong>PROMPT-TO-EXECUTION</strong><br><br>
-You describe what you want. Yagr builds, publishes, and runs the workflow for you.<br><br>
-<em>Solves:</em> chat agents that stop at suggestions instead of delivering automation.
-
-</td>
-<td width="50%" valign="top">
-
-<strong>AUTOLOGIN LINK</strong><br><br>
-Jump straight back into the n8n canvas whenever you want to review or refine the result visually.<br><br>
-<em>Solves:</em> black-box behavior and painful handoff from agent to editor.
-
-</td>
-</tr>
-</table>
-
-[**Read Yagr docs**](https://yagr.dev/docs/)
-
 </div>
 
-## Why It Hits Different
+<p align="center">
+  <a href="https://yagr.dev/"><strong>Docs</strong></a> ·
+  <a href="https://yagr.dev/docs/getting-started/"><strong>Getting Started</strong></a> ·
+  <a href="https://yagr.dev/docs/reference/commands/"><strong>Commands</strong></a>
+</p>
 
-Most people do not want to spend their afternoon:
+---
 
-- installing n8n before they can even try the agent
-- hunting for API keys and pasting them in five places
-- wiring Docker manually just to get to hello world
-- figuring out how to reuse their LLM inside workflow nodes
-- losing the visual editor once the agent starts building things
+## What Yagr Is
 
-Yagr removes that setup tax.
+Yagr is an autonomous agent managing resilient orchestration — not fragile scripts.
 
-You describe what you want. Yagr helps prepare the environment, connects the model, builds the workflow, publishes it, runs it, and keeps the result editable in n8n.
+It builds **durable workflows** that execute, persist, and remain inspectable.
 
-The experience is meant to feel immediate:
+You describe what you want. Yagr turns it into a working system.
 
-1. install once
-2. run the wizard
-3. describe the automation
-4. let the agent build it
-5. open the canvas only when you want to refine visually
+* **agent** → decides
+* **n8n** → executes
+* **workflow** → persists
+
+---
+
+## Why Yagr Exists
+
+Setting up automation should not be harder than the automation itself.
+
+Two problems block adoption.
+
+### The setup tax
+
+* installing and configuring n8n before a first result
+* wiring Docker just to get started
+* pasting API keys across multiple surfaces
+* managing URLs, tokens, and environment state
+
+### Agents that don’t build systems
+
+Most agents generate scripts that are:
+
+* ephemeral
+* hard to audit
+* difficult to review
+* loosely secured
+
+They execute once and disappear. They do not produce systems you can trust or evolve.
+
+---
+
+### Yagr takes a different path
+
+Yagr removes the setup tax and replaces scripts with workflows.
+
+It relies on orchestration rather than ad-hoc execution:
+
+1. prepares the environment
+2. connects your model
+3. builds the workflow
+4. publishes it to n8n
+5. runs it
+6. keeps it editable in the visual canvas
+
+> The result is not a suggestion — it is a working system.
+
+---
+
+| Problem           | With Yagr            |
+| ----------------- | -------------------- |
+| Setup friction    | Automated onboarding |
+| Ephemeral scripts | Durable workflows    |
+| Hidden execution  | Inspectable systems  |
+
+---
 
 ## Quick Start
 
-Two commands. Then you automate.
-
-### 1. Install Yagr
+### Install
 
 ```bash
 npm install -g @yagr/agent@latest
 ```
 
-### 2. Run the wizard
+### Onboard
 
 ```bash
 yagr onboard
 ```
 
-That guided TUI handles the full first-run flow:
+The onboarding flow handles:
 
-- detects the environment
-- bootstraps a local n8n when Docker is available
-- connects your default model provider
-- stores Yagr runtime state in its own home
-- configures optional integrations such as Telegram
-- gives you an autologin path back to the visual editor
+* environment detection
+* n8n setup via Docker when available
+* model configuration
+* local runtime initialization
+* optional integrations
+* access to the visual editor
 
-After onboarding, operate Yagr day to day with:
+---
+
+## Example (30 seconds)
+
+Create a workflow that sends a Slack message when a Stripe payment succeeds.
 
 ```bash
-yagr start           # start gateways in the background
-yagr tui             # open a terminal chat session
-yagr webui           # open the local web interface
-yagr stop            # stop the background gateway
+yagr tui
 ```
+
+Then type:
+
+> "Send me a Slack message every time a Stripe payment succeeds"
+
+Yagr will:
+
+* connect Stripe
+* create the trigger
+* add the Slack action
+* deploy the workflow to n8n
+* run it
+
+Open the visual editor to inspect or refine it.
+
+---
+
+## Daily Usage
+
+```bash
+yagr start     # start services
+yagr tui       # open terminal chat
+yagr webui     # open web interface
+yagr stop      # stop services
+```
+
+---
 
 ## Zero-Friction n8n
 
-Yagr is designed so that the setup path reinforces the product promise instead of breaking it.
+| What usually hurts      | What Yagr does                      |
+| ----------------------- | ----------------------------------- |
+| Install n8n first       | Boots and manages a local instance  |
+| Add API keys everywhere | Reuses the agent's model connection |
+| Copy tokens and URLs    | Centralizes setup in one flow       |
+| Manual login            | Direct access to the editor         |
+| Hope it worked          | Produces inspectable workflows      |
 
-| What usually hurts | What Yagr does |
-| --- | --- |
-| "Install n8n first" | Boots and manages a local n8n for you when Docker is available |
-| "Now add your API keys everywhere" | Reuses the agent's LLM connection for compatible workflow nodes |
-| "Copy this token, then this URL, then this secret" | Centralizes onboarding in one guided TUI flow |
-| "Open the browser and log in manually" | Gives you direct access back to the editor when you want to tweak visually |
-| "Hope the agent did something sensible" | Produces real workflows you can inspect, edit, and run in n8n |
+---
 
-### Prerequisites
+## Prerequisites
 
-- **Node.js** `v22.16.0` or higher
-- **Docker** if you want the full zero-friction local n8n experience
+* **Node.js** `v22.16.0` or higher
+* **Docker** (optional, for local n8n bootstrap)
 
-Docker is optional if you already have an n8n instance and want Yagr to connect to it instead.
+---
 
 ## Why Yagr Is Different
 
-Most autonomous agents execute tasks by writing ephemeral scripts or firing blind API calls.
+Most agents execute work through ephemeral scripts or hidden API calls.
 
-That can work once, but it creates systems that are:
+That may work once. It does not produce a system.
 
-- hard to audit
-- hard to secure
-- hard to maintain
-- easy to break
+Yagr produces workflows you can inspect, run again, and evolve.
 
-Yagr takes a different path.
+* execution stays visible
+* behavior remains inspectable
+* systems improve over time
 
-When you ask Yagr to automate something, it should not disappear into an opaque one-off script. It should produce a real workflow you can inspect, run again, and improve over time.
+---
 
-That means:
+## Under the Hood
 
-- you start from intent, not node wiring
-- the result becomes a real workflow, not a temporary trick
-- execution stays inspectable in n8n
-- the visual editor remains part of the loop
+Yagr sits above the execution layer while staying grounded in n8n.
 
-## Under The Hood
+* agent → reasoning
+* n8n → execution
+* workflow → durable artifact
 
-Yagr is designed to sit above the execution layer while keeping the product experience centered on n8n.
+---
 
-[n8n](https://github.com/n8n-io/n8n) is the automation engine behind Yagr today. The user story is simple: describe what you want, let the agent build the automation, then inspect and evolve the resulting workflow in n8n.
-
-## Yagr And n8n-as-code
+## Yagr and n8n-as-code
 
 > <table>
 > <tr>
@@ -183,35 +199,26 @@ Yagr is designed to sit above the execution layer while keeping the product expe
 > <img src="res/logo.png" alt="n8n-as-code logo" width="84">
 > </td>
 > <td>
-> <strong>Yagr is built on top of n8n-as-code</strong><br>
-> Yagr relies on n8n-as-code for workflow GitOps foundations, schema grounding, and editor tooling while presenting a higher-level autonomous agent product on top.<br><br>
-> <a href="https://github.com/EtienneLescot/n8n-as-code">Open the n8n-as-code repository</a>
+> <strong>Built on n8n-as-code</strong><br>
+> Provides schema grounding, GitOps workflows, and editor tooling.<br><br>
+> <a href="https://github.com/EtienneLescot/n8n-as-code">Explore the repo</a>
 > </td>
 > </tr>
 > </table>
 
-If you want direct workflow engineering, GitOps operations, schema-driven tooling, and editor-centric workflow development, n8n-as-code remains a standalone product in its own right.
+---
 
-Yagr keeps the product layer above the execution layer:
+## What Setup Configures
 
-- gateways stay thin
-- the agent remains the reasoning layer
-- n8n executes the automation
-- workflows become the durable artifact you can inspect and evolve
+`yagr onboard` sets up:
 
-## What Setup Actually Configures
+1. orchestrator connection
+2. model provider
+3. integrations
 
-`yagr setup` and `yagr onboard` configure three things:
-
-1. your **current orchestrator connection**: today that means an n8n instance, API key, project, and local sync folder
-2. your **default model**: provider, model, API key, optional base URL
-3. your **optional integrations**: for example Telegram
-
-Yagr stores that state in its own home so the product is stable across sessions and independent from random shell state.
+---
 
 ## Troubleshooting
-
-If gateways are not responding or something feels stuck:
 
 ```bash
 yagr stop
@@ -219,39 +226,18 @@ yagr gateway status
 yagr start
 ```
 
-If you need to expose a local n8n instance publicly for webhooks or Telegram triggers:
-
 ```bash
 yagr n8n tunnel setup
 yagr n8n tunnel url
-yagr n8n tunnel refresh
-yagr n8n tunnel stop
 ```
 
-Yagr downloads and manages the `cloudflared` binary automatically. No Cloudflare account required.
-
-To inspect or reset local state:
-
 ```bash
-yagr paths
-yagr reset --dry-run
 yagr reset --scope full --yes
 ```
 
-To remove the global CLI package itself:
+---
 
-```bash
-npm uninstall -g @yagr/agent
-```
-
-## n8n Compatibility
-
-> **Warning**
-> The node schema bundled with n8n-as-code is built against the latest stable release of n8n. For best results, keep your n8n instance up to date. An outdated instance may render generated workflows with unsupported node type versions.
-
-## Contributing And Development
-
-If you are contributing from this repository instead of installing the published package globally, use the repo-scoped development flow:
+## Contributing
 
 ```bash
 npm install
@@ -260,17 +246,10 @@ npm run yagr:onboard
 npm run yagr:start
 ```
 
-These scripts intentionally target `.yagr-test-workspace` so local development does not pollute your real `~/.yagr` home.
-
-## Acknowledgments
-
-[n8n](https://github.com/n8n-io/n8n) is a powerful and flexible workflow automation platform. Go show them some love.
+---
 
 ## Read Next
 
-- [Yagr overview](https://yagr.dev/)
-- [Yagr getting started](https://yagr.dev/docs/getting-started/)
-- [Yagr command reference](https://yagr.dev/docs/reference/commands/)
-- [n8n-as-code repo](https://github.com/EtienneLescot/n8n-as-code)
-- [n8n-as-code docs](https://n8nascode.dev/docs/)
-- [n8n repo](https://github.com/n8n-io/n8n)
+* [https://yagr.dev/docs/](https://yagr.dev/docs/)
+* [https://github.com/EtienneLescot/n8n-as-code](https://github.com/EtienneLescot/n8n-as-code)
+* [https://github.com/n8n-io/n8n](https://github.com/n8n-io/n8n)
