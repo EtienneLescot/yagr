@@ -31,6 +31,7 @@ const PROVIDER_WIZARD_ORDER: YagrModelProvider[] = [
   'copilot-proxy',
   'mistral',
   'openrouter',
+  'openai-compatible',
 ];
 
 const SELECTABLE_PROVIDER_SET = new Set<YagrModelProvider>(YAGR_SELECTABLE_MODEL_PROVIDERS);
