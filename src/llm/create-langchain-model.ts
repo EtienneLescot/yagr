@@ -308,7 +308,7 @@ export async function createLangChainModel(
 
     case 'openai-compatible':
       return new ChatOpenAI({
-        apiKey: apiKey || 'not-needed',
+        ...(apiKey ? { apiKey } : {}),
         model,
         ...(baseUrl ? { configuration: { baseURL: baseUrl } } : {}),
       });
