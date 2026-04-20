@@ -702,7 +702,7 @@ test('openai-oauth low-level generate extracts assistant phase from responses ev
   }
 });
 
-test('openai-oauth re-emits assistant phase on incremental follow-up turns', async () => {
+test('openai-oauth includes assistant phase when a full prompt replay is required', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-phase-followup-'));
   const authPath = path.join(tempDir, 'auth.json');
   const accessToken = makeJwtWithAccountId('acct_yagr_phase_followup');
@@ -736,7 +736,6 @@ test('openai-oauth re-emits assistant phase on incremental follow-up turns', asy
 
   try {
     const model = new ChatCodexOAuth({ model: 'gpt-5.4', sessionId: 'session-phase' });
-    await model._generate([new HumanMessage('First turn')], {});
     const assistant = new AIMessage({
       content: 'First',
       additional_kwargs: { phase: 'final' },
@@ -748,8 +747,9 @@ test('openai-oauth re-emits assistant phase on incremental follow-up turns', asy
       new HumanMessage('Second turn'),
     ], {});
 
-    assert.equal(seenBodies[1].previous_response_id, 'resp_phase_1');
-    assert.equal(seenBodies[1].input[0].phase, 'final');
+    assert.equal(seenBodies[0].previous_response_id, undefined);
+    const replayedAssistant = seenBodies[0].input.find((item) => item?.role === 'assistant');
+    assert.equal(replayedAssistant.phase, 'final');
   } finally {
     globalThis.fetch = previousFetch;
     if (previousAuthPath === undefined) {
