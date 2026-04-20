@@ -134,8 +134,14 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
     const aiMessage = new AIMessage({
       content: text,
       tool_calls: toolCalls,
-      additional_kwargs: result.response?.assistantPhase ? { phase: result.response.assistantPhase } : {},
-      response_metadata: result.response?.assistantPhase ? { phase: result.response.assistantPhase } : {},
+      additional_kwargs: {
+        ...(result.response?.assistantPhase ? { phase: result.response.assistantPhase } : {}),
+        ...(result.response?.rawOutputItems ? { codex_output_items: result.response.rawOutputItems } : {}),
+      },
+      response_metadata: {
+        ...(result.response?.assistantPhase ? { phase: result.response.assistantPhase } : {}),
+        ...(result.response?.rawOutputItems ? { codex_output_items: result.response.rawOutputItems } : {}),
+      },
       usage_metadata: result.usage
         ? {
             input_tokens: result.usage.promptTokens,
@@ -284,8 +290,12 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
               response_metadata: {
                 finishReason: part.finishReason,
                 ...(part.providerMetadata?.assistantPhase ? { phase: part.providerMetadata.assistantPhase } : {}),
+                ...(part.providerMetadata?.rawOutputItems ? { codex_output_items: part.providerMetadata.rawOutputItems } : {}),
               },
-              additional_kwargs: part.providerMetadata?.assistantPhase ? { phase: part.providerMetadata.assistantPhase } : {},
+              additional_kwargs: {
+                ...(part.providerMetadata?.assistantPhase ? { phase: part.providerMetadata.assistantPhase } : {}),
+                ...(part.providerMetadata?.rawOutputItems ? { codex_output_items: part.providerMetadata.rawOutputItems } : {}),
+              },
             }),
             text: '',
             generationInfo: {
@@ -317,7 +327,10 @@ function buildIncrementalPrompt(
     return { prompt: nextPrompt };
   }
 
-  const deltaPrompt = nextPrompt.slice(previousPrompt.length);
+  let deltaPrompt = nextPrompt.slice(previousPrompt.length);
+  while (deltaPrompt[0]?.role === 'assistant') {
+    deltaPrompt = deltaPrompt.slice(1);
+  }
   if (deltaPrompt.length === 0) {
     return { prompt: nextPrompt };
   }
@@ -375,6 +388,7 @@ function toLanguageModelPrompt(messages: BaseMessage[]): LanguageModelV1Prompt {
         role: 'assistant',
         content,
         ...extractAssistantPhase(message),
+        ...extractRawOutputItems(message),
       };
     }
 
@@ -398,6 +412,24 @@ function extractAssistantPhase(message: AIMessage): { phase?: string } {
     : undefined;
   if (typeof responsePhase === 'string' && responsePhase.trim()) {
     return { phase: responsePhase.trim() };
+  }
+
+  return {};
+}
+
+function extractRawOutputItems(message: AIMessage): { rawOutputItems?: Array<Record<string, unknown>> } {
+  const fromAdditional = message.additional_kwargs && typeof message.additional_kwargs === 'object'
+    ? (message.additional_kwargs as { codex_output_items?: unknown }).codex_output_items
+    : undefined;
+  if (Array.isArray(fromAdditional)) {
+    return { rawOutputItems: fromAdditional.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') };
+  }
+
+  const fromResponse = message.response_metadata && typeof message.response_metadata === 'object'
+    ? (message.response_metadata as { codex_output_items?: unknown }).codex_output_items
+    : undefined;
+  if (Array.isArray(fromResponse)) {
+    return { rawOutputItems: fromResponse.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') };
   }
 
   return {};
