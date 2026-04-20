@@ -3,13 +3,13 @@ import { YagrConfigService } from '../config/yagr-config-service.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import { bootstrapManagedLocalN8n, type SilentManagedN8nBootstrapResult } from './bootstrap.js';
 import {
-  installManagedDirectN8n,
   getManagedDirectN8nStatus,
+  installManagedDirectN8n,
   startManagedDirectN8n,
 } from './direct-manager.js';
 import {
-  installManagedDockerN8n,
   getManagedDockerN8nStatus,
+  installManagedDockerN8n,
   startManagedDockerN8n,
 } from './docker-manager.js';
 import type { ManagedN8nInstanceState } from './state.js';
@@ -34,7 +34,7 @@ export interface ConfiguredN8nLaunchPreparation {
 interface ManagedLaunchDependencies {
   ensureManagedRunning?: (configService: YagrN8nConfigService) => Promise<{ state?: ManagedN8nInstanceState; started: boolean }>;
   bootstrapManaged?: (url: string) => Promise<SilentManagedN8nBootstrapResult>;
-  setupServiceFactory?: (configService: YagrN8nConfigService) => Pick<YagrSetupApplicationService, 'completeManagedN8nConnection'>;
+  setupServiceFactory?: (configService: YagrN8nConfigService) => ManagedConnectionSetupService;
 }
 
 interface ManagedRuntimeDependencies {
@@ -51,6 +51,14 @@ interface ManagedLaunchReconciliation {
   warning?: string;
 }
 
+interface ManagedConnectionSetupService {
+  completeManagedN8nConnection(input: {
+    host: string;
+    apiKey: string;
+    syncFolder?: string;
+    instanceProfile?: ReturnType<YagrN8nConfigService['getLocalConfig']>['instanceProfile'];
+  }): Promise<{ warning?: string }>;
+}
 function resolveConfiguredRuntimeMode(configService: YagrN8nConfigService): {
   source: ConfiguredN8nRuntimeMode;
   localConfig: ReturnType<YagrN8nConfigService['getLocalConfig']>;
@@ -130,6 +138,78 @@ export async function ensureConfiguredManagedN8nRunning(
   return { state: await installDocker({ port: recovery.port }), started: true };
 }
 
+export async function getConfiguredExternalN8nReachabilityWarning(
+  configService = new YagrN8nConfigService(),
+): Promise<string | undefined> {
+  const { source, localConfig } = resolveConfiguredRuntimeMode(configService);
+  if (source !== 'local' && source !== 'cloud') {
+    return undefined;
+  }
+
+  if (!localConfig.host) {
+    return undefined;
+  }
+
+  try {
+    const response = await fetch(new URL('/healthz', localConfig.host), {
+      method: 'GET',
+    });
+    if (response.ok) {
+      return undefined;
+    }
+  } catch {
+    // Fall through to the same warning message.
+  }
+
+  return `Configured external n8n instance is not reachable at ${localConfig.host}. Yagr will not restart manually-managed instances automatically.`;
+}
+
+export async function prepareConfiguredN8nForLaunch(
+  configService = new YagrN8nConfigService(),
+  dependencies: ManagedLaunchDependencies = {},
+): Promise<ConfiguredN8nLaunchPreparation> {
+  const { source } = resolveConfiguredRuntimeMode(configService);
+  const ensureManagedRunning = dependencies.ensureManagedRunning ?? ensureConfiguredManagedN8nRunning;
+  const bootstrapManaged = dependencies.bootstrapManaged ?? (async (url: string) => bootstrapManagedLocalN8n({ url }));
+  const setupServiceFactory = dependencies.setupServiceFactory
+    ?? ((resolvedConfigService: YagrN8nConfigService) => new YagrSetupApplicationService(
+      new YagrConfigService(),
+      resolvedConfigService,
+    ) as unknown as ManagedConnectionSetupService);
+
+  if (source === 'yagr-managed-local') {
+    const ensured = await ensureManagedRunning(configService);
+    const reconciliation = ensured.state
+      ? await reconcileManagedN8nAtLaunch(ensured.state, configService, {
+          bootstrapManaged,
+          setupService: setupServiceFactory(configService),
+        })
+      : { reconciled: false };
+    return {
+      mode: source,
+      started: ensured.started,
+      reconciled: reconciliation.reconciled,
+      state: ensured.state,
+      warning: reconciliation.warning,
+    };
+  }
+
+  if (source === 'local' || source === 'cloud') {
+    return {
+      mode: source,
+      started: false,
+      reconciled: false,
+      warning: await getConfiguredExternalN8nReachabilityWarning(configService),
+    };
+  }
+
+  return {
+    mode: source,
+    started: false,
+    reconciled: false,
+  };
+}
+
 function resolveManagedRuntimeRecovery(
   localConfig: ReturnType<YagrN8nConfigService['getLocalConfig']>,
 ): { strategy: 'docker' | 'direct'; port?: number } | undefined {
@@ -182,82 +262,12 @@ function resolvePortFromN8nUrl(url: string | undefined): number | undefined {
     return undefined;
   }
 }
-
-export async function getConfiguredExternalN8nReachabilityWarning(
-  configService = new YagrN8nConfigService(),
-): Promise<string | undefined> {
-  const { source, localConfig } = resolveConfiguredRuntimeMode(configService);
-  if (source !== 'local' && source !== 'cloud') {
-    return undefined;
-  }
-
-  if (!localConfig.host) {
-    return undefined;
-  }
-
-  try {
-    const response = await fetch(new URL('/healthz', localConfig.host), {
-      method: 'GET',
-    });
-    if (response.ok) {
-      return undefined;
-    }
-  } catch {
-    // Fall through to the same warning message.
-  }
-
-  return `Configured external n8n instance is not reachable at ${localConfig.host}. Yagr will not restart manually-managed instances automatically.`;
-}
-
-export async function prepareConfiguredN8nForLaunch(
-  configService = new YagrN8nConfigService(),
-  dependencies: ManagedLaunchDependencies = {},
-): Promise<ConfiguredN8nLaunchPreparation> {
-  const { source } = resolveConfiguredRuntimeMode(configService);
-  const ensureManagedRunning = dependencies.ensureManagedRunning ?? ensureConfiguredManagedN8nRunning;
-  const bootstrapManaged = dependencies.bootstrapManaged ?? (async (url: string) => bootstrapManagedLocalN8n({ url }));
-  const setupServiceFactory = dependencies.setupServiceFactory
-    ?? ((resolvedConfigService: YagrN8nConfigService) => new YagrSetupApplicationService(new YagrConfigService(), resolvedConfigService));
-
-  if (source === 'yagr-managed-local') {
-    const ensured = await ensureManagedRunning(configService);
-    const reconciliation = ensured.state
-      ? await reconcileManagedN8nAtLaunch(ensured.state, configService, {
-          bootstrapManaged,
-          setupService: setupServiceFactory(configService),
-        })
-      : { reconciled: false };
-    return {
-      mode: source,
-      started: ensured.started,
-      reconciled: reconciliation.reconciled,
-      state: ensured.state,
-      warning: reconciliation.warning,
-    };
-  }
-
-  if (source === 'local' || source === 'cloud') {
-    return {
-      mode: source,
-      started: false,
-      reconciled: false,
-      warning: await getConfiguredExternalN8nReachabilityWarning(configService),
-    };
-  }
-
-  return {
-    mode: source,
-    started: false,
-    reconciled: false,
-  };
-}
-
 async function reconcileManagedN8nAtLaunch(
   state: ManagedN8nInstanceState,
   configService: YagrN8nConfigService,
   dependencies: {
     bootstrapManaged: (url: string) => Promise<SilentManagedN8nBootstrapResult>;
-    setupService: Pick<YagrSetupApplicationService, 'completeManagedN8nConnection'>;
+    setupService: ManagedConnectionSetupService;
   },
 ): Promise<ManagedLaunchReconciliation> {
   if (resolveManagedN8nBootstrapStage(state.url) === 'connected') {

@@ -160,6 +160,7 @@ Role actuel:
 - `src/setup/application-services.ts`: service applicatif partage pour operations n8n, LLM et surfaces
 - `src/setup/status.ts`: calcul partage du statut setup
 - point de coordination du wizard et de l'onboarding
+- `YagrSetupApplicationService.completeManagedN8nConnection(...)`: SSOT de la finalisation de connexion d'une instance n8n Yagr-managed deja joignable (selection projet + persistance config/workspace)
 
 ### `src/n8n-local/`
 

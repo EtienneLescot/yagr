@@ -97,6 +97,7 @@ Yagr peut exposer des endpoints Yagr locaux via trois tunnels Cloudflare distinc
 | `src/n8n-local/n8n-tunnel.ts` | SSOT du lifecycle process des tunnels Cloudflare : start/stop/refresh/status, persistance des state files, auto-install de `cloudflared`, support `trycloudflare` ou domaine DNS dedie |
 | `src/n8n-local/public-exposure-service.ts` | SSOT de l'orchestration applicative des expositions publiques : compose lifecycle tunnel, bridge auth, relay LLM et effets de bord config/restart |
 | `src/n8n-local/tunnel-reachability.ts` | SSOT de wake-up des tunnels par consommateur (`telegram`, `webui`, `tui`, `cli`, `llm`). `force-all-facades` est le defaut depuis ce changement. |
+| `src/n8n-local/managed-runtime.ts` | SSOT du startup applicatif d'une instance n8n Yagr-managed : reanimation runtime a partir du profil persiste, puis reconciliation bootstrap/config si necessaire |
 | `src/gateway/local-open-bridge.ts` | Bridge HTTP tokenise interne a `workflow-links.ts`. Les facades ne l'appellent pas directement — `presentWorkflowResult` est la seule source d'autorite pour l'URL de workflow. |
 | `src/config/yagr-config-service.ts` | `N8nTunnelConfig` : `enabled`, `publicUrl`, `targetUrl` |
 | `src/gateway/workflow-links.ts` | Substitution de l'URL locale par l'URL tunnel publique quand active |

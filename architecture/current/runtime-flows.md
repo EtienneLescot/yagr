@@ -87,6 +87,41 @@ Observation:
 - les facades ne portent plus directement les mutations de config metier
 - `application-services.ts` et `status.ts` sont le point commun du setup
 
+## 3b. Startup d'une instance n8n Yagr-managed
+
+Au lancement standard (`yagr start`, `yagr gateway`, worker gateway), Yagr ne se contente plus de redemarrer le runtime local gere. Le startup reconcile aussi l'etat bootstrap/config quand l'instance est marquee `yagr-managed-*`.
+
+```mermaid
+sequenceDiagram
+    participant CLI as CLI startup
+    participant MGR as managed-runtime.ts
+    participant RT as direct/docker manager
+    participant BOOT as bootstrap.ts
+    participant APP as setup/application-services.ts
+    participant CFG as n8n config
+
+    CLI->>MGR: prepareConfiguredN8nForLaunch()
+    MGR->>CFG: read instanceProfile + saved config
+    alt runtime state present and compatible
+        MGR->>RT: start/reuse managed runtime
+    else runtime state missing or stale
+        MGR->>RT: recreate runtime from persisted yagr-managed profile
+    end
+    alt bootstrap stage not connected
+        MGR->>BOOT: bootstrapManagedLocalN8n(url)
+        MGR->>APP: completeManagedN8nConnection(...)
+        APP->>CFG: persist project/apiKey/workspace metadata
+    end
+    MGR-->>CLI: { started, reconciled, state }
+```
+
+Regles de startup managed:
+
+- `instanceProfile` persiste par le setup reste le signal produit canonique qu'une instance est `yagr-managed-docker` ou `yagr-managed-direct`
+- le state file runtime reste la source d'autorite des details runtime quand il est present et coherent
+- si ce state file est manquant ou stale, le startup peut recreer le runtime a partir du profil gere persiste au lieu de skipper silencieusement le demarrage
+- la persistance finale de la connexion n8n continue de passer par `setup/application-services.ts`, pas par la CLI
+
 ## 4. Flux provider actuel
 
 ```mermaid

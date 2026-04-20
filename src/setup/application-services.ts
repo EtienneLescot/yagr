@@ -25,9 +25,14 @@ import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotS
 import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession, getOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';
 import { ensureYagrProxyCredential } from '../manager-tooling/yagr-proxy.js';
-import { classifyConfiguredN8nInstance, classifyN8nInstanceCandidate, hasN8nInstanceTag, resolveN8nInstanceProfile } from '../n8n-local/instance-classification.js';
+import {
+  classifyConfiguredN8nInstance,
+  classifyN8nInstanceCandidate,
+  hasN8nInstanceTag,
+  normalizeN8nUrlOrigin,
+  resolveN8nInstanceProfile,
+} from '../n8n-local/instance-classification.js';
 import { ensureConfiguredLlmPublicExposure, refreshLlmPublicExposureForRelayHostBaseUrl } from '../n8n-local/public-exposure-service.js';
-import { normalizeN8nUrlOrigin } from '../n8n-local/instance-classification.js';
 import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
 
 type N8nProjectClient = Pick<N8nApiClient, 'testConnection' | 'getProjects'>;

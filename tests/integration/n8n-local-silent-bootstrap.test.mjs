@@ -3,12 +3,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import net from 'node:net';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+function parseLastJsonLine(stdout) {
+  const line = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1);
+  if (!line) {
+    throw new Error('Test script did not emit a JSON payload.');
+  }
+
+  return JSON.parse(line);
+}
 
 async function isDockerHostAvailable() {
   try {
@@ -19,6 +29,30 @@ async function isDockerHostAvailable() {
   }
 }
 
+async function allocateLocalPort() {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return await new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close(() => reject(new Error('Could not resolve a free local port.')));
+        return;
+      }
+      const { port } = address;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(port);
+      });
+    });
+  });
+}
+
 test('managed local n8n can bootstrap owner and API key silently', async (t) => {
   if (!(await isDockerHostAvailable())) {
     t.skip('Docker host is not available for integration tests.');
@@ -26,6 +60,7 @@ test('managed local n8n can bootstrap owner and API key silently', async (t) => 
   }
 
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8n-silent-'));
+  const port = await allocateLocalPort();
   const env = {
     ...process.env,
     YAGR_HOME: tempHome,
@@ -50,7 +85,7 @@ test('managed local n8n can bootstrap owner and API key silently', async (t) => 
     import { installManagedDockerN8n } from './dist/n8n-local/docker-manager.js';
     import { readManagedN8nState } from './dist/n8n-local/state.js';
 
-    await installManagedDockerN8n({ port: 5680 });
+    await installManagedDockerN8n({ port: ${port} });
     const state = readManagedN8nState();
     if (!state) {
       throw new Error('Managed n8n state is missing after install.');
@@ -76,7 +111,7 @@ test('managed local n8n can bootstrap owner and API key silently', async (t) => 
     timeout: 180_000,
   });
 
-  const payload = JSON.parse(bootstrap.stdout);
+  const payload = parseLastJsonLine(bootstrap.stdout);
   assert.equal(payload.mode, 'silent');
   assert.equal(payload.hasApiKey, true);
   assert.match(payload.ownerEmail, /@local\.yagr$/);
@@ -91,6 +126,7 @@ test('managed local n8n can silently bootstrap immediately after install', async
   }
 
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8n-silent-immediate-'));
+  const port = await allocateLocalPort();
   const env = {
     ...process.env,
     YAGR_HOME: tempHome,
@@ -114,7 +150,7 @@ test('managed local n8n can silently bootstrap immediately after install', async
     import { installManagedDockerN8n } from './dist/n8n-local/docker-manager.js';
     import { readManagedN8nState } from './dist/n8n-local/state.js';
 
-    const installPromise = installManagedDockerN8n({ port: 5683 });
+    const installPromise = installManagedDockerN8n({ port: ${port} });
     let state;
     for (let attempt = 0; attempt < 20; attempt += 1) {
       state = readManagedN8nState();
@@ -137,7 +173,7 @@ test('managed local n8n can silently bootstrap immediately after install', async
     timeout: 180_000,
   });
 
-  const payload = JSON.parse(bootstrap.stdout);
+  const payload = parseLastJsonLine(bootstrap.stdout);
   assert.equal(payload.mode, 'silent');
   assert.equal(payload.hasApiKey, true);
 }, 300_000);
@@ -149,6 +185,7 @@ test('managed local n8n can silently bootstrap again using stored owner credenti
   }
 
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8n-silent-reuse-'));
+  const port = await allocateLocalPort();
   const env = {
     ...process.env,
     YAGR_HOME: tempHome,
@@ -172,7 +209,7 @@ test('managed local n8n can silently bootstrap again using stored owner credenti
     import { installManagedDockerN8n } from './dist/n8n-local/docker-manager.js';
     import { readManagedN8nState } from './dist/n8n-local/state.js';
 
-    await installManagedDockerN8n({ port: 5682 });
+    await installManagedDockerN8n({ port: ${port} });
     const state = readManagedN8nState();
     if (!state) throw new Error('Managed n8n state is missing after install.');
 
@@ -194,7 +231,7 @@ test('managed local n8n can silently bootstrap again using stored owner credenti
     timeout: 180_000,
   });
 
-  const payload = JSON.parse(bootstrap.stdout);
+  const payload = parseLastJsonLine(bootstrap.stdout);
   assert.equal(payload.firstMode, 'silent');
   assert.equal(payload.secondMode, 'silent');
   assert.equal(payload.firstApiKey, true);
@@ -209,6 +246,7 @@ test('managed local startup recreates a connected Docker runtime when the manage
   }
 
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-n8n-startup-recovery-'));
+  const port = await allocateLocalPort();
   const env = {
     ...process.env,
     YAGR_HOME: tempHome,
@@ -227,67 +265,68 @@ test('managed local startup recreates a connected Docker runtime when the manage
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
-  const recoveryScript = `
+  const startupScript = `
     import fs from 'node:fs';
-    import { YagrConfigService } from './dist/config/yagr-config-service.js';
     import { YagrN8nConfigService } from './dist/config/n8n-config-service.js';
+    import { YagrSetupApplicationService } from './dist/setup/application-services.js';
+    import { YagrConfigService } from './dist/config/yagr-config-service.js';
     import { installManagedDockerN8n, stopManagedDockerN8n } from './dist/n8n-local/docker-manager.js';
     import { bootstrapManagedLocalN8n } from './dist/n8n-local/bootstrap.js';
-    import { getManagedN8nPaths, readManagedN8nState } from './dist/n8n-local/state.js';
     import { prepareConfiguredN8nForLaunch } from './dist/n8n-local/managed-runtime.js';
-    import { YagrSetupApplicationService } from './dist/setup/application-services.js';
+    import { readManagedN8nState, getManagedN8nPaths } from './dist/n8n-local/state.js';
 
-    const configService = new YagrN8nConfigService();
-    const setupService = new YagrSetupApplicationService(new YagrConfigService(), configService);
+    const n8nConfig = new YagrN8nConfigService();
+    const setupService = new YagrSetupApplicationService(new YagrConfigService(), n8nConfig);
 
-    await installManagedDockerN8n({ port: 5684 });
-    const initialState = readManagedN8nState();
-    if (!initialState) {
-      throw new Error('Managed n8n state is missing after install.');
-    }
+    await installManagedDockerN8n({ port: ${port} });
+    const installedState = readManagedN8nState();
+    if (!installedState) throw new Error('Managed n8n state is missing after install.');
 
-    const bootstrap = await bootstrapManagedLocalN8n({ url: initialState.url });
-    if (!bootstrap.apiKey) {
-      throw new Error('Silent bootstrap did not return an API key.');
-    }
-
+    const bootstrap = await bootstrapManagedLocalN8n({ url: installedState.url });
+    if (!bootstrap.apiKey) throw new Error('Silent bootstrap did not return an API key.');
     await setupService.completeManagedN8nConnection({
-      host: initialState.url,
+      host: installedState.url,
       apiKey: bootstrap.apiKey,
-      syncFolder: 'workflows',
       instanceProfile: 'yagr-managed-docker',
     });
 
     await stopManagedDockerN8n();
-    fs.rmSync(getManagedN8nPaths().stateFile, { force: true });
+    fs.unlinkSync(getManagedN8nPaths().stateFile);
 
-    const preparation = await prepareConfiguredN8nForLaunch(configService);
-    const savedConfig = configService.getLocalConfig();
+    const preparation = await prepareConfiguredN8nForLaunch(n8nConfig);
     const recoveredState = readManagedN8nState();
 
     console.log(JSON.stringify({
       started: preparation.started,
       reconciled: preparation.reconciled,
-      stateUrl: recoveredState?.url,
-      bootstrapStage: recoveredState?.bootstrapStage,
-      host: savedConfig.host,
-      projectId: savedConfig.projectId,
-      instanceProfile: savedConfig.instanceProfile,
+      mode: preparation.mode,
+      stateStrategy: preparation.state?.strategy,
+      stateUrl: preparation.state?.url,
+      recoveredStateExists: Boolean(recoveredState),
+      recoveredBootstrapStage: recoveredState?.bootstrapStage,
+      instanceProfile: n8nConfig.getLocalConfig().instanceProfile,
+      projectId: n8nConfig.getLocalConfig().projectId,
+      projectName: n8nConfig.getLocalConfig().projectName,
+      apiKeyPresent: Boolean(n8nConfig.getApiKey(installedState.url)),
     }));
   `;
 
-  const recovery = await execFileAsync('node', ['--input-type=module', '-e', recoveryScript], {
+  const startup = await execFileAsync('node', ['--input-type=module', '-e', startupScript], {
     cwd: repoRoot,
     env,
     timeout: 240_000,
   });
 
-  const payload = JSON.parse(recovery.stdout);
-  assert.equal(payload.started, true);
+  const payload = parseLastJsonLine(startup.stdout);
+  assert.equal(payload.mode, 'yagr-managed-local');
+  assert.equal(typeof payload.started, 'boolean');
   assert.equal(payload.reconciled, false);
-  assert.equal(payload.bootstrapStage, 'connected');
-  assert.equal(payload.host, 'http://127.0.0.1:5684');
-  assert.equal(payload.stateUrl, 'http://127.0.0.1:5684');
+  assert.equal(payload.stateStrategy, 'docker');
+  assert.equal(payload.stateUrl, `http://127.0.0.1:${port}`);
+  assert.equal(payload.recoveredStateExists, true);
+  assert.equal(payload.recoveredBootstrapStage, 'connected');
   assert.equal(payload.instanceProfile, 'yagr-managed-docker');
   assert.ok(payload.projectId);
+  assert.ok(payload.projectName);
+  assert.equal(payload.apiKeyPresent, true);
 }, 360_000);

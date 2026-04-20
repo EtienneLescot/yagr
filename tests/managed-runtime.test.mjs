@@ -197,10 +197,7 @@ test('prepareConfiguredN8nForLaunch reconciles managed startup when the instance
       return {
         async completeManagedN8nConnection(input) {
           completionCalls.push(input);
-          return {
-            project: { id: 'proj_1', name: 'Primary Project' },
-            warning: undefined,
-          };
+          return { warning: undefined };
         },
       };
     },
