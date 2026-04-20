@@ -489,16 +489,27 @@ const SCENARIOS = [
 
 function resolveTestN8nRuntime() {
   if (_managedDockerRuntime) {
-    return _managedDockerRuntime;
+    return {
+      ..._managedDockerRuntime,
+      instanceProfile: 'yagr-managed-docker',
+      instanceIdentifier: 'yagr-managed',
+    };
   }
   const configuredHost = String(process.env.N8N_HOST || process.env.YAGR_IT_N8N_HOST || '').trim();
   const configuredApiKey = String(process.env.N8N_API_KEY || process.env.YAGR_IT_N8N_API_KEY || '').trim();
   const configuredProjectId = String(process.env.N8N_PROJECT_ID || process.env.YAGR_IT_N8N_PROJECT_ID || '').trim();
+  const configuredInstanceProfile = String(process.env.YAGR_IT_N8N_INSTANCE_PROFILE || '').trim();
   const host = configuredHost;
   const apiKey = configuredApiKey;
   const projectId = configuredProjectId;
 
-  return { host, apiKey, projectId, configured: Boolean(host && apiKey) };
+  return {
+    host,
+    apiKey,
+    projectId,
+    ...(configuredInstanceProfile ? { instanceProfile: configuredInstanceProfile } : {}),
+    configured: Boolean(host && apiKey),
+  };
 }
 
 // ---------------------------------------------------------------------------

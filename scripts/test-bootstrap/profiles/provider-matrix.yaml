@@ -11,4 +11,6 @@ homePhases:
   - seed_home_agents_md
   - n8nac_init_auth_and_agents_md
   - reconcile_n8nac_workflow_dirs
-agentPrepPhases: []
+agentPrepPhases:
+  - id: llm_proxy_onboarding
+    when: n8n_required

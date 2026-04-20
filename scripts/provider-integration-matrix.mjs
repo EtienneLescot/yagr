@@ -18,6 +18,7 @@ import {
   copyIfExists,
   defaultProfilePath,
   getIsolatedWorkspaceDir,
+  runAgentPrepPhases,
   runHomeBootstrap,
 } from './test-bootstrap/index.mjs';
 
@@ -506,11 +507,16 @@ function getProviderBaseUrl(provider) {
 
 function resolveTestN8nRuntime() {
   if (managedDockerRuntime) {
-    return managedDockerRuntime;
+    return {
+      ...managedDockerRuntime,
+      instanceProfile: 'yagr-managed-docker',
+      instanceIdentifier: 'yagr-managed',
+    };
   }
   const configuredHost = String(process.env.N8N_HOST || process.env.YAGR_IT_N8N_HOST || '').trim();
   const configuredApiKey = String(process.env.N8N_API_KEY || process.env.YAGR_IT_N8N_API_KEY || '').trim();
   const configuredProjectId = String(process.env.N8N_PROJECT_ID || process.env.YAGR_IT_N8N_PROJECT_ID || '').trim();
+  const configuredInstanceProfile = String(process.env.YAGR_IT_N8N_INSTANCE_PROFILE || '').trim();
   const host = configuredHost;
   const apiKey = configuredApiKey;
   const projectId = configuredProjectId;
@@ -519,6 +525,7 @@ function resolveTestN8nRuntime() {
     host,
     apiKey,
     projectId,
+    ...(configuredInstanceProfile ? { instanceProfile: configuredInstanceProfile } : {}),
     configured: Boolean(host && apiKey),
   };
 }
@@ -854,11 +861,26 @@ async function buildAdvancedScenarioPrelude({ provider, model, prompt }) {
     testN8nRuntime,
     useManagedDocker,
     verbose: debug,
-    n8nRequired: false,
+    n8nRequired: true,
     agentsMd: {
       onUpdateAiFailure: debug ? (msg) => logDebug('SETUP', msg) : undefined,
     },
   });
+  try {
+    await runAgentPrepPhases(PROVIDER_MATRIX_BOOTSTRAP_PROFILE, {
+      homeDir: isolatedHome,
+      provider,
+      model,
+      testN8nRuntime,
+      useManagedDocker,
+      verbose: debug,
+      n8nRequired: true,
+      agentsMd: {},
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logProgress(`${provider}: advanced preflight LLM proxy bootstrap failed (non-fatal): ${truncate(singleLine(message), 220)}`);
+  }
   const workspaceScanDir = path.join(isolatedHome, 'n8n-workspace');
   const beforeSnapshot = snapshotWorkflowFiles(workspaceScanDir);
   const beforeRemoteSnapshot = await listRemoteWorkflows();

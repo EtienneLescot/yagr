@@ -70,6 +70,8 @@ export async function ensureManagedDockerTestRuntime() {
   return await withManagedTestHome(async () => {
     const { getManagedDockerN8nStatus, installManagedDockerN8n, startManagedDockerN8n } = await import('../dist/n8n-local/docker-manager.js');
     const { bootstrapManagedLocalN8n } = await import('../dist/n8n-local/bootstrap.js');
+    const { YagrSetupApplicationService } = await import('../dist/setup/application-services.js');
+    const { YagrConfigService } = await import('../dist/config/yagr-config-service.js');
     const { YagrN8nConfigService } = await import('../dist/config/n8n-config-service.js');
 
     const status = await getManagedDockerN8nStatus();
@@ -89,13 +91,22 @@ export async function ensureManagedDockerTestRuntime() {
     await assertManagedDockerRuntimeReady(state.url);
 
     const configService = new YagrN8nConfigService();
+    const setupService = new YagrSetupApplicationService(new YagrConfigService(), configService);
     const existingApiKey = configService.getApiKey(state.url);
     if (existingApiKey && await isApiKeyValid(state.url, existingApiKey)) {
+      await setupService.completeManagedN8nConnection({
+        host: state.url,
+        apiKey: existingApiKey,
+        syncFolder: 'workflows',
+        instanceProfile: 'yagr-managed-docker',
+      });
       return {
         host: state.url,
         apiKey: existingApiKey,
         projectId: 'personal',
         configured: true,
+        instanceProfile: 'yagr-managed-docker',
+        instanceIdentifier: 'yagr-managed',
         managedHome: TEST_MANAGED_HOME,
       };
     }
@@ -105,13 +116,20 @@ export async function ensureManagedDockerTestRuntime() {
       throw new Error(`Managed Docker n8n bootstrap failed: ${bootstrap.reason || 'API key was not generated.'}`);
     }
 
-    configService.saveApiKey(state.url, bootstrap.apiKey);
+    await setupService.completeManagedN8nConnection({
+      host: state.url,
+      apiKey: bootstrap.apiKey,
+      syncFolder: 'workflows',
+      instanceProfile: 'yagr-managed-docker',
+    });
 
     return {
       host: state.url,
       apiKey: bootstrap.apiKey,
       projectId: 'personal',
       configured: true,
+      instanceProfile: 'yagr-managed-docker',
+      instanceIdentifier: 'yagr-managed',
       managedHome: TEST_MANAGED_HOME,
     };
   });
