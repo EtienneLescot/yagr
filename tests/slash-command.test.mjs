@@ -102,7 +102,7 @@ test('SlashCommandService.parse returns undefined for non-slash input', () => {
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   assert.equal(slashService.parse('hello world'), undefined);
   assert.equal(slashService.parse(''), undefined);
@@ -115,7 +115,7 @@ test('SlashCommandService.parse extracts command and args', () => {
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const parsed = slashService.parse('/resume abc-123');
   assert.ok(parsed);
@@ -131,7 +131,7 @@ test('SlashCommandService.parse handles command with no args', () => {
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const parsed = slashService.parse('/sessions');
   assert.ok(parsed);
@@ -146,7 +146,7 @@ test('SlashCommandService.buildHelpResult returns all commands for surface', () 
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const result = slashService.buildHelpResult('tui');
   assert.equal(result.kind, 'ok');
@@ -164,7 +164,7 @@ test('SlashCommandService.execute /help returns command list', async () => {
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const result = await slashService.execute(
     { command: 'help', args: [], raw: '/help' },
@@ -184,7 +184,7 @@ test('SlashCommandService.execute /new creates a new session and resets local st
     setState: () => {},
     notifyCompaction: async () => {},
   };
-  const slashService = new SlashCommandService(sessions, compactionService as any);
+  const slashService = new SlashCommandService(sessions, compactionService);
 
   let resetCalled = false;
   let resumeSessionId = '';
@@ -194,7 +194,7 @@ test('SlashCommandService.execute /new creates a new session and resets local st
     { surface: 'tui', sessionId: 'default', threadId: 'thread-1' },
     {
       getActiveSessionId: () => undefined,
-      resumeSession: (_scope: any, id: string) => { resumeSessionId = id; },
+      resumeSession: (_scope, id) => { resumeSessionId = id; },
       resetLocalState: () => { resetCalled = true; },
     },
   );
@@ -213,7 +213,7 @@ test('SlashCommandService.execute /reset is alias of /new', async () => {
     setState: () => {},
     notifyCompaction: async () => {},
   };
-  const slashService = new SlashCommandService(sessions, compactionService as any);
+  const slashService = new SlashCommandService(sessions, compactionService);
 
   let resetCalled = false;
 
@@ -237,7 +237,7 @@ test('SlashCommandService.execute /resume with no args returns invalid_arguments
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const result = await slashService.execute(
     { command: 'resume', args: [], raw: '/resume' },
@@ -256,7 +256,7 @@ test('SlashCommandService.execute /resume with unknown session returns session_n
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const result = await slashService.execute(
     { command: 'resume', args: ['nonexistent-id'], raw: '/resume nonexistent-id' },
@@ -274,7 +274,7 @@ test('SlashCommandService.execute /approve resumes pending permissions when supp
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const result = await slashService.execute(
     { command: 'approve', args: [], raw: '/approve' },
@@ -299,7 +299,7 @@ test('SlashCommandService.execute /approve returns unsupported_in_surface withou
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const result = await slashService.execute(
     { command: 'approve', args: [], raw: '/approve' },
@@ -321,7 +321,7 @@ test('SlashCommandService.execute /delete with no args returns invalid_arguments
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const result = await slashService.execute(
     { command: 'delete', args: [], raw: '/delete' },
@@ -339,7 +339,7 @@ test('SlashCommandService.execute /restore with no args returns invalid_argument
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const result = await slashCommand_execute(slashService, 'restore', [], 'tui', 'thread-1');
 
@@ -353,7 +353,7 @@ test('SlashCommandService.execute /checkpoint_delete with no args returns invali
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const result = await slashService.execute(
     { command: 'checkpoint_delete', args: [], raw: '/checkpoint_delete' },
@@ -371,7 +371,7 @@ test('SlashCommandService.execute /unknown_command returns unknown_command', asy
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const parsed = slashService.parse('/foobar');
   assert.equal(parsed, undefined);
@@ -392,7 +392,7 @@ test('SlashCommandService.execute /toggle_thinking calls setDisplayOptions', asy
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   let showThinking = true;
   let showExecution = true;
@@ -405,7 +405,7 @@ test('SlashCommandService.execute /toggle_thinking calls setDisplayOptions', asy
       resumeSession: () => {},
       resetLocalState: () => {},
       getDisplayOptions: () => ({ showThinking, showExecution }),
-      setDisplayOptions: (opts: any) => {
+      setDisplayOptions: (opts) => {
         if (opts.showThinking !== undefined) showThinking = opts.showThinking;
         if (opts.showExecution !== undefined) showExecution = opts.showExecution;
       },
@@ -423,7 +423,7 @@ test('SlashCommandService.execute /toggle_thinking returns unsupported_in_surfac
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   const result = await slashService.execute(
     { command: 'toggle_thinking', args: [], raw: '/toggle_thinking' },
@@ -445,7 +445,7 @@ test('SlashCommandService.execute /sessions returns session list for scope', asy
     reset: () => {},
     setState: () => {},
     notifyCompaction: async () => {},
-  } as any);
+  });
 
   sessions.create({ scope: { kind: 'tui', key: 'default' }, title: 'First session' });
 
@@ -460,10 +460,10 @@ test('SlashCommandService.execute /sessions returns session list for scope', asy
   assert.ok(result.data && typeof result.data === 'object' && 'sessions' in result.data);
 });
 
-async function slashCommand_execute(svc: SlashCommandService, cmd: string, args: string[], surface: string, threadId: string) {
+async function slashCommand_execute(svc, cmd, args, surface, threadId) {
   return svc.execute(
-    { command: cmd as any, args, raw: `/${cmd}` },
-    { surface: surface as any, sessionId: 'default', threadId },
+    { command: cmd, args, raw: `/${cmd}` },
+    { surface, sessionId: 'default', threadId },
     { getActiveSessionId: () => undefined, resumeSession: () => {}, resetLocalState: () => {} },
   );
 }
