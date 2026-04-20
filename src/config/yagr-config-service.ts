@@ -2,7 +2,7 @@ import Conf from 'conf';
 import fs from 'node:fs';
 import { ensureYagrHomeDir, getYagrPaths } from './yagr-home.js';
 import type { GatewaySurface } from '../gateway/types.js';
-import type { YagrModelProvider } from '../llm/provider-registry.js';
+import { normalizeProviderId, type YagrModelProvider } from '../llm/provider-registry.js';
 
 export function normalizeGatewaySurfaces(surfaces: readonly string[] | undefined): GatewaySurface[] {
   const normalized: GatewaySurface[] = [];
@@ -147,18 +147,18 @@ export class YagrConfigService {
 
     try {
       const content = fs.readFileSync(this.localConfigPath, 'utf-8');
-      return JSON.parse(content) as YagrLocalConfig;
+      return normalizeLocalConfig(JSON.parse(content) as YagrLocalConfig);
     } catch {
       return {};
     }
   }
 
   saveLocalConfig(config: YagrLocalConfig): void {
-    fs.writeFileSync(this.localConfigPath, JSON.stringify(config, null, 2));
+    fs.writeFileSync(this.localConfigPath, JSON.stringify(normalizeLocalConfig(config), null, 2));
   }
 
   updateLocalConfig(updater: (config: YagrLocalConfig) => YagrLocalConfig): YagrLocalConfig {
-    const nextConfig = updater(this.getLocalConfig());
+    const nextConfig = normalizeLocalConfig(updater(this.getLocalConfig()));
     this.saveLocalConfig(nextConfig);
     return nextConfig;
   }
@@ -264,4 +264,12 @@ export class YagrConfigService {
   clearN8nTunnelConfig(): YagrLocalConfig {
     return this.updateLocalConfig(({ n8nTunnel: _removed, ...rest }) => rest);
   }
+}
+
+function normalizeLocalConfig(config: YagrLocalConfig): YagrLocalConfig {
+  const provider = normalizeProviderId(config.provider);
+  return {
+    ...config,
+    ...(provider ? { provider } : {}),
+  };
 }

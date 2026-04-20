@@ -163,14 +163,14 @@ export class YagrSetupApplicationService {
     if (provider === 'copilot-proxy') {
       return (await ensureGitHubCopilotSession()) !== undefined;
     }
-    if (provider === 'openai-proxy') {
+    if (provider === 'openai-oauth') {
       return (await ensureOpenAiAccountSession()) !== undefined;
     }
     return false;
   }
 
   async startAccountAuth(provider: YagrModelProvider) {
-    if (provider === 'openai-proxy') {
+    if (provider === 'openai-oauth') {
       // Always start a fresh Codex OAuth flow when the user explicitly asks to sign in.
       // Do NOT check for an existing session here — that check lives in hasAccountSession
       // and determines whether to show the reuse screen. Once the user is on the auth
@@ -233,7 +233,7 @@ export class YagrSetupApplicationService {
   }
 
   async completeAccountAuth(provider: YagrModelProvider, input: string, state?: string) {
-    if (provider === 'openai-proxy') {
+    if (provider === 'openai-oauth') {
       await completeCodexAuth();
       const session = getOpenAiAccountSession();
       if (!session) {

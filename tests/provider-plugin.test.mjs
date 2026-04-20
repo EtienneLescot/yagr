@@ -6,7 +6,7 @@ import { YAGR_SELECTABLE_MODEL_PROVIDERS } from '../dist/llm/provider-registry.j
 
 test('provider plugin exposes transport facts for openai-compatible and oauth providers', () => {
   const openRouterPlugin = getProviderPlugin('openrouter');
-  const openAiProxyPlugin = getProviderPlugin('openai-proxy');
+  const openAiProxyPlugin = getProviderPlugin('openai-oauth');
   const anthropicPlugin = getProviderPlugin('anthropic');
 
   assert.equal(openRouterPlugin.transport.usesOpenAiCompatibleApi, true);

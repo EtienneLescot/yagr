@@ -1,7 +1,7 @@
 /**
  * Local type definitions that replicate the Vercel AI SDK provider interface
  * (formerly imported from '@ai-sdk/provider'). Keeping them local removes the
- * runtime dependency entirely, since the openai-proxy/Codex backend is the only
+ * runtime dependency entirely, since the openai-oauth/Codex backend is the only
  * consumer of these types within Yagr.
  */
 
@@ -94,7 +94,7 @@ export type LanguageModelV1StreamPart =
   | { type: 'text-delta'; textDelta: string }
   | { type: 'tool-call-delta'; toolCallType: 'function'; toolCallId: string; toolName: string; argsTextDelta: string }
   | { type: 'tool-call'; toolCallType: 'function'; toolCallId: string; toolName: string; args: string }
-  | { type: 'finish'; finishReason: LanguageModelV1FinishReason; usage: { promptTokens: number; completionTokens: number } }
+  | { type: 'finish'; finishReason: LanguageModelV1FinishReason; usage: { promptTokens: number; completionTokens: number }; providerMetadata?: { responseId?: string } }
   | { type: 'error'; error: unknown };
 
 // ─── Generate result ──────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ export interface LanguageModelV1GenerateResult {
   usage: { promptTokens: number; completionTokens: number };
   rawCall: { rawPrompt: unknown; rawSettings: Record<string, unknown> };
   warnings?: LanguageModelV1CallWarning[];
-  response?: { timestamp: Date; modelId: string };
+  response?: { timestamp: Date; modelId: string; id?: string };
 }
 
 // ─── Language model interface ─────────────────────────────────────────────────

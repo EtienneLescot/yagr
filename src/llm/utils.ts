@@ -1,5 +1,5 @@
 /** Default timeout for upstream Codex API calls (ms). */
-export const CODEX_UPSTREAM_TIMEOUT_MS = 60_000;
+export const CODEX_UPSTREAM_TIMEOUT_MS = Number(process.env.YAGR_CODEX_UPSTREAM_TIMEOUT_MS || 300_000);
 
 /** Default retry configuration for transient failures. */
 export const RETRY_CONFIG = {
