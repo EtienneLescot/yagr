@@ -13,7 +13,8 @@ export type YagrModelProvider =
   | 'anthropic-proxy'
   | 'copilot-proxy'
   | 'minimax'
-  | 'minimax-token-plan';
+  | 'minimax-token-plan'
+  | 'openai-compatible';
 
 export interface YagrProviderDefinition {
   id: YagrModelProvider;
@@ -171,6 +172,18 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
       mapResponse: MODEL_LIST_MAPPER,
     },
   },
+  'openai-compatible': {
+    id: 'openai-compatible',
+    displayName: 'OpenAI Compatible',
+    defaultModel: '',
+    requiresApiKey: false,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: (baseUrl?: string) => baseUrl ? `${baseUrl}/models` : undefined,
+      authMode: 'bearer-optional',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
 };
 
 export const YAGR_MODEL_PROVIDERS = Object.freeze(Object.keys(YAGR_PROVIDER_DEFINITIONS) as YagrModelProvider[]);
@@ -206,7 +219,7 @@ export function providerNeedsBaseUrlInput(provider: YagrModelProvider): boolean 
     return false;
   }
 
-  return provider.endsWith('-proxy') || provider === 'mistral' || provider === 'openrouter';
+  return provider.endsWith('-proxy') || provider === 'mistral' || provider === 'openrouter' || provider === 'openai-compatible';
 }
 
 export function providerRequiresApiKey(provider: YagrModelProvider): boolean {
