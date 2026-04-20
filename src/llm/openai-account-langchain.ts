@@ -36,7 +36,7 @@ export class OpenAiAccountChatModel extends BaseChatModel<OpenAiAccountChatCallO
 
   override _identifyingParams(): Record<string, unknown> {
     return {
-      provider: 'openai-proxy',
+      provider: 'openai-oauth',
       model: this.model,
     };
   }

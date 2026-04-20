@@ -9,7 +9,7 @@ export type YagrModelProvider =
   | 'google'
   | 'mistral'
   | 'openrouter'
-  | 'openai-proxy'
+  | 'openai-oauth'
   | 'anthropic-proxy'
   | 'copilot-proxy'
   | 'minimax'
@@ -114,8 +114,8 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
       mapResponse: MODEL_LIST_MAPPER,
     },
   },
-  'openai-proxy': {
-    id: 'openai-proxy',
+  'openai-oauth': {
+    id: 'openai-oauth',
     displayName: 'OpenAI',
     defaultModel: OPENAI_ACCOUNT_DEFAULT_MODEL,
     defaultBaseUrl: OPENAI_ACCOUNT_BASE_URL,
@@ -230,7 +230,23 @@ export function getProviderDisplayName(provider: YagrModelProvider): string {
 }
 
 export function isOAuthAccountProvider(provider: YagrModelProvider): boolean {
-  return provider === 'openai-proxy' || provider === 'anthropic-proxy' || provider === 'copilot-proxy';
+  return provider === 'openai-oauth' || provider === 'anthropic-proxy' || provider === 'copilot-proxy';
+}
+
+export function normalizeProviderId(provider: string | undefined): YagrModelProvider | undefined {
+  if (!provider) {
+    return undefined;
+  }
+
+  if (provider === 'openai-proxy') {
+    return 'openai-oauth';
+  }
+
+  if (provider in YAGR_PROVIDER_DEFINITIONS) {
+    return provider as YagrModelProvider;
+  }
+
+  return undefined;
 }
 
 export function isProviderConfigured(localConfig: YagrLocalConfig, getApiKey: (provider: YagrModelProvider) => string | undefined): boolean {

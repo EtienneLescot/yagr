@@ -17,6 +17,7 @@ import { YagrConfigService, type YagrConfigStoreLike } from '../config/yagr-conf
 import {
   getDefaultBaseUrlForProvider,
   getDefaultModelForProvider,
+  normalizeProviderId,
   YAGR_MODEL_PROVIDERS,
 } from './provider-registry.js';
 export type { YagrModelProvider } from './provider-registry.js';
@@ -116,12 +117,12 @@ export function resolveModelProvider(
   configStore: YagrLanguageModelConfigStore = new YagrConfigService(),
 ): import('./provider-registry.js').YagrModelProvider {
   if (explicitProvider) {
-    return explicitProvider as import('./provider-registry.js').YagrModelProvider;
+    return normalizeProviderId(explicitProvider) ?? explicitProvider as import('./provider-registry.js').YagrModelProvider;
   }
 
   const localConfig = configStore.getLocalConfig();
   if (localConfig.provider) {
-    return localConfig.provider;
+    return normalizeProviderId(localConfig.provider) ?? localConfig.provider;
   }
 
   const detectedProvider = KNOWN_MODEL_PROVIDERS.find((provider) => Boolean(configStore.getApiKey(provider)));
@@ -214,7 +215,7 @@ class CopilotCompletionsModel extends ChatOpenAICompletions {
 /**
  * Instantiate the LangChain `BaseChatModel` for the currently-configured
  * Yagr provider.  Async because OAuth-account providers (copilot-proxy,
- * openai-proxy) need to exchange a short-lived API token at construction time.
+ * openai-oauth) need to exchange a short-lived API token at construction time.
  *
  * @param config Optional explicit overrides (provider, model, apiKey, baseUrl).
  *   When omitted, values are read from the config store / environment.
@@ -260,7 +261,7 @@ export async function createLangChainModel(
       return new ChatAnthropic({ apiKey: session.apiKey, model });
     }
 
-    case 'openai-proxy': {
+    case 'openai-oauth': {
       const session = getOpenAiAccountSession();
       if (!session?.accessToken) {
         throw new Error('OpenAI account session not found. Run `yagr setup` first.');

@@ -3,7 +3,7 @@
  * (chatgpt.com/backend-api/codex/responses).
  *
  * The Yagr LLM relay receives requests in OpenAI Chat Completions format from n8n
- * (via lmChatOpenAi nodes). When the active provider is openai-proxy, these requests
+ * (via lmChatOpenAi nodes). When the active provider is openai-oauth, these requests
  * are translated into the Codex Responses API format, forwarded with the required
  * ChatGPT session headers, and the Codex SSE stream is translated back to the
  * OpenAI Chat Completions format. Both streaming and non-streaming modes are supported.
@@ -14,10 +14,13 @@
  */
 
 import http from 'node:http';
-import os from 'node:os';
-import { OPENAI_ACCOUNT_BASE_URL, ensureOpenAiAccountSession } from './openai-account.js';
+import { OPENAI_ACCOUNT_BASE_URL, ensureCodexInstructions, ensureCodexSessionId, ensureOpenAiAccountSession } from './openai-account.js';
+import { randomUUID } from 'node:crypto';
+import { getYagrPaths } from '../config/yagr-home.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import { translateChatCompletionToResponsesApi, pipeChatCompletionsSseAsResponsesApi } from './responses-api-relay.js';
-import { withRetry, timeoutSignal } from './utils.js';
+import { CODEX_UPSTREAM_TIMEOUT_MS, withRetry, timeoutSignal } from './utils.js';
 
 const CODEX_RESPONSES_PATH = '/codex/responses';
 const JWT_ACCOUNT_CLAIM = 'https://api.openai.com/auth';
@@ -53,6 +56,38 @@ interface OpenAIChatCompletionsRequest {
   tools?: OpenAITool[];
   tool_choice?: unknown;
   [key: string]: unknown;
+}
+
+function buildRelayCodexUserAgent(): string {
+  return 'codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown';
+}
+
+function getRelaySessionId(payload: OpenAIChatCompletionsRequest): string {
+  const direct = typeof payload.session_id === 'string' ? payload.session_id : undefined;
+  const metadata = payload.metadata && typeof payload.metadata === 'object'
+    ? payload.metadata as Record<string, unknown>
+    : undefined;
+  const metaSession = typeof metadata?.session_id === 'string' ? metadata.session_id : undefined;
+  const metaLite = typeof metadata?.litellm_session_id === 'string' ? metadata.litellm_session_id : undefined;
+  return ensureCodexSessionId(direct || metaSession || metaLite || randomUUID());
+}
+
+function getRelayInstallationId(): string {
+  const installPath = path.join(getYagrPaths().homeDir, 'installation_id');
+  try {
+    const existing = fs.readFileSync(installPath, 'utf8').trim();
+    if (existing) return existing;
+  } catch {
+    // ignore and generate below
+  }
+  const generated = randomUUID();
+  try {
+    fs.mkdirSync(path.dirname(installPath), { recursive: true });
+    fs.writeFileSync(installPath, generated);
+  } catch {
+    return generated;
+  }
+  return generated;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -162,7 +197,7 @@ function translateChatCompletionsToCodex(payload: OpenAIChatCompletionsRequest):
   }
 
   return {
-    instructions: instructions || 'You are a helpful assistant.',
+    instructions: ensureCodexInstructions(instructions),
     input,
     tools,
     tool_choice,
@@ -437,6 +472,9 @@ export async function handleOpenAiAccountRelay(
 
   const { instructions, input, tools, tool_choice } = translateChatCompletionsToCodex(payload);
   const isStreaming = Boolean(payload.stream);
+  const sessionId = getRelaySessionId(payload);
+  const windowId = `${sessionId}:0`;
+  const installationId = getRelayInstallationId();
 
   const codexBody = {
     model: payload.model,
@@ -444,7 +482,11 @@ export async function handleOpenAiAccountRelay(
     stream: true, // Codex always streams — we accumulate for non-streaming callers
     instructions,
     input,
-    text: { verbosity: 'medium' },
+    include: ['reasoning.encrypted_content'],
+    client_metadata: {
+      'x-codex-installation-id': installationId,
+      'x-codex-window-id': windowId,
+    },
     ...(tools.length > 0 ? { tools, tool_choice, parallel_tool_calls: true } : { tool_choice: 'auto' }),
   };
 
@@ -459,15 +501,19 @@ export async function handleOpenAiAccountRelay(
         'Authorization': `Bearer ${session.accessToken}`,
         'chatgpt-account-id': accountId,
         'OpenAI-Beta': 'responses=experimental',
-        'originator': 'pi',
-        'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
+        'originator': 'codex_cli_rs',
+        'User-Agent': buildRelayCodexUserAgent(),
+        'x-client-request-id': sessionId,
+        'x-codex-window-id': windowId,
+        'x-codex-installation-id': installationId,
         'accept': 'text/event-stream',
         'content-type': 'application/json',
+        'session_id': sessionId,
       },
       body: JSON.stringify(codexBody),
       signal: AbortSignal.any([
         clientDisconnectController.signal,
-        timeoutSignal(60_000, 'openai-account-relay'),
+        timeoutSignal(CODEX_UPSTREAM_TIMEOUT_MS, 'openai-account-relay'),
       ]),
     });
 

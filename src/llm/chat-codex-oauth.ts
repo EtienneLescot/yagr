@@ -17,7 +17,7 @@ import { ChatGenerationChunk, type ChatResult } from '@langchain/core/outputs';
 import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
 import type { Runnable } from '@langchain/core/runnables';
 import { z } from 'zod';
-import { createOpenAiAccountLanguageModel, CodexReasoningEffort } from './openai-account.js';
+import { createOpenAiAccountLanguageModel, CodexReasoningEffort, ensureCodexSessionId, getDefaultCodexReasoningEffort } from './openai-account.js';
 
 interface ChatCodexOAuthCallOptions extends BaseChatModelCallOptions {
   tools?: LanguageModelV1FunctionTool[];
@@ -33,23 +33,35 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
 
   readonly reasoningEffort: CodexReasoningEffort;
 
+  readonly sessionId: string;
+
   private readonly boundTools?: LanguageModelV1FunctionTool[];
 
   private readonly boundCallOptions?: Partial<ChatCodexOAuthCallOptions>;
+
+  private previousPrompt?: LanguageModelV1Prompt;
+
+  private previousResponseId?: string;
 
   constructor(
     fields: BaseChatModelParams & {
       model: string;
       reasoningEffort?: CodexReasoningEffort;
+      sessionId?: string;
       boundTools?: LanguageModelV1FunctionTool[];
       boundCallOptions?: Partial<ChatCodexOAuthCallOptions>;
+      previousPrompt?: LanguageModelV1Prompt;
+      previousResponseId?: string;
     },
   ) {
     super(fields);
     this.model = fields.model;
-    this.reasoningEffort = fields.reasoningEffort ?? 'medium';
+    this.reasoningEffort = fields.reasoningEffort ?? getDefaultCodexReasoningEffort(fields.model);
+    this.sessionId = ensureCodexSessionId(fields.sessionId);
     this.boundTools = fields.boundTools;
     this.boundCallOptions = fields.boundCallOptions;
+    this.previousPrompt = fields.previousPrompt;
+    this.previousResponseId = fields.previousResponseId;
   }
 
   _llmType(): string {
@@ -58,10 +70,11 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
 
   override _identifyingParams(): Record<string, unknown> {
     return {
-      provider: 'openai-codex-auth',
-      model: this.model,
-      reasoningEffort: this.reasoningEffort,
-    };
+        provider: 'openai-codex-auth',
+        model: this.model,
+        reasoningEffort: this.reasoningEffort,
+        sessionId: this.sessionId,
+      };
   }
 
   override bindTools(tools: BindToolsInput[], kwargs?: Partial<ChatCodexOAuthCallOptions>): Runnable {
@@ -74,10 +87,13 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
     return new ChatCodexOAuth({
       model: this.model,
       reasoningEffort: this.reasoningEffort,
+      sessionId: this.sessionId,
       disableStreaming: this.disableStreaming,
       outputVersion: this.outputVersion,
       boundTools: normalizedTools,
       boundCallOptions,
+      previousPrompt: this.previousPrompt,
+      previousResponseId: this.previousResponseId,
       ...(kwargs?.callbacks ? { callbacks: kwargs.callbacks } : {}),
       ...(kwargs?.tags ? { tags: kwargs.tags } : {}),
       ...(kwargs?.metadata ? { metadata: kwargs.metadata } : {}),
@@ -89,8 +105,10 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
     options: this['ParsedCallOptions'],
     _runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
-    const model = createOpenAiAccountLanguageModel(this.model, this.reasoningEffort);
+    const model = createOpenAiAccountLanguageModel(this.model, this.reasoningEffort, this.sessionId);
     const boundToolChoice = this.boundCallOptions?.tool_choice;
+    const prompt = toLanguageModelPrompt(messages);
+    const incremental = buildIncrementalPrompt(this.previousPrompt, prompt, this.previousResponseId);
     const result = await model.doGenerate({
       inputFormat: 'prompt',
       mode: {
@@ -98,9 +116,12 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
         tools: options.tools ?? this.boundTools ?? [],
         toolChoice: normalizeToolChoice(options.tool_choice ?? boundToolChoice),
       },
-      prompt: toLanguageModelPrompt(messages),
+      prompt: incremental.prompt,
+      ...(incremental.previousResponseId ? { headers: { 'x-yagr-previous-response-id': incremental.previousResponseId } } : {}),
       abortSignal: options.signal,
     });
+    this.previousPrompt = prompt;
+    this.previousResponseId = result.response?.id;
 
     const text = result.text ?? '';
 
@@ -147,11 +168,13 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
     const DEBUG_STREAM = process.env.DEBUG_CODEX_STREAM === '1';
     if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] _streamResponseChunks() called');
 
-    const model = createOpenAiAccountLanguageModel(this.model, this.reasoningEffort);
+    const model = createOpenAiAccountLanguageModel(this.model, this.reasoningEffort, this.sessionId);
     const boundToolChoice = this.boundCallOptions?.tool_choice;
 
     if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] Calling model.doStream()');
 
+    const prompt = toLanguageModelPrompt(messages);
+    const incremental = buildIncrementalPrompt(this.previousPrompt, prompt, this.previousResponseId);
     const result = await model.doStream({
       inputFormat: 'prompt',
       mode: {
@@ -159,7 +182,8 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
         tools: options.tools ?? this.boundTools ?? [],
         toolChoice: normalizeToolChoice(options.tool_choice ?? boundToolChoice),
       },
-      prompt: toLanguageModelPrompt(messages),
+      prompt: incremental.prompt,
+      ...(incremental.previousResponseId ? { headers: { 'x-yagr-previous-response-id': incremental.previousResponseId } } : {}),
       abortSignal: options.signal,
     });
 
@@ -244,6 +268,8 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
           } as ConstructorParameters<typeof AIMessageChunk>[0]);
           yield new ChatGenerationChunk({ message, text: '' });
         } else if (part.type === 'finish') {
+          this.previousPrompt = prompt;
+          this.previousResponseId = part.providerMetadata?.responseId;
           if (DEBUG_STREAM) console.error('[DEBUG_CODEX_STREAM] Got finish:', part.finishReason);
           yield new ChatGenerationChunk({
             message: new AIMessageChunk({
@@ -271,6 +297,31 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
       reader.releaseLock();
     }
   }
+}
+
+function buildIncrementalPrompt(
+  previousPrompt: LanguageModelV1Prompt | undefined,
+  nextPrompt: LanguageModelV1Prompt,
+  previousResponseId: string | undefined,
+): { prompt: LanguageModelV1Prompt; previousResponseId?: string } {
+  if (!previousPrompt || !previousResponseId || previousPrompt.length >= nextPrompt.length) {
+    return { prompt: nextPrompt };
+  }
+
+  const samePrefix = previousPrompt.every((message, index) => JSON.stringify(message) === JSON.stringify(nextPrompt[index]));
+  if (!samePrefix) {
+    return { prompt: nextPrompt };
+  }
+
+  const deltaPrompt = nextPrompt.slice(previousPrompt.length);
+  if (deltaPrompt.length === 0) {
+    return { prompt: nextPrompt };
+  }
+
+  return {
+    prompt: deltaPrompt,
+    previousResponseId,
+  };
 }
 
 function toLanguageModelPrompt(messages: BaseMessage[]): LanguageModelV1Prompt {
