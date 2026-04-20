@@ -1089,7 +1089,15 @@ function App() {
           pushEntry({ kind: 'assistant-header', id: assistantMsgId, streaming: false, phase: 'command', statusLabel: 'Command executed' });
           pushEntry({ kind: 'assistant-body', id: crypto.randomUUID(), streaming: false, text: result.message });
         }
-        if (command === 'sessions' || command === 'new' || command === 'delete' || command === 'resume') {
+        const slashData = result.data;
+        const nextSessionId = (slashData && typeof slashData === 'object' && 'sessionId' in slashData
+          && typeof slashData.sessionId === 'string')
+          ? slashData.sessionId
+          : undefined;
+
+        if (nextSessionId && nextSessionId !== sessionId) {
+          onSwitchSession(nextSessionId);
+        } else if (command === 'sessions' || command === 'new' || command === 'delete' || command === 'resume') {
           await refreshSessions();
         }
       } catch (err) {
