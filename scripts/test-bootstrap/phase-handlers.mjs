@@ -98,15 +98,15 @@ export async function phaseLlmProxyOnboarding(ctx) {
   const yagrConfig = new YagrConfigService();
   const n8nConfig = new YagrN8nConfigService();
   const setup = new YagrSetupApplicationService(yagrConfig, n8nConfig);
-  const instanceProfile = ctx.useManagedDocker ? 'yagr-managed-docker' : undefined;
+  const instanceProfile = ctx.testN8nRuntime?.instanceProfile
+    ?? (ctx.useManagedDocker ? 'yagr-managed-docker' : undefined);
   const result = await setup.setupLlmProxy(host, instanceProfile);
   setup.saveLlmProxyConfig({
     enabled: true,
     mode: result.mode,
     credentialBaseUrl: result.credentialBaseUrl,
-    confirmedCredentialBaseUrl: result.credentialBaseUrl,
     ...(result.dockerHostAddress ? { dockerHostAddress: result.dockerHostAddress } : {}),
-    ...(result.tunnelUrl ? { tunnelUrl: result.tunnelUrl } : {}),
+    ...(result.llmTunnelUrl ? { llmTunnelUrl: result.llmTunnelUrl } : {}),
   });
   await setup.provisionLlmProxyCredential();
 }

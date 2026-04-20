@@ -8,7 +8,13 @@ import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { getDefaultBaseUrlForProvider } from '../../dist/llm/provider-registry.js';
 
-/** @typedef {{ host?: string, apiKey?: string, projectId?: string }} TestN8nRuntime */
+/** @typedef {{
+ *   host?: string,
+ *   apiKey?: string,
+ *   projectId?: string,
+ *   instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud',
+ *   instanceIdentifier?: string,
+ * }} TestN8nRuntime */
 
 export function getIsolatedWorkspaceDir(homeDir) {
   return path.join(homeDir, 'n8n-workspace');
@@ -195,6 +201,9 @@ export function initializeTestN8nConfig(n8nWorkspaceDir, testN8nRuntime = {}) {
   const host = String(testN8nRuntime.host || '').trim() || 'http://127.0.0.1:5678';
   const projectId = String(testN8nRuntime.projectId || '').trim() || 'personal';
   const projectName = projectId === 'personal' ? 'Personal' : projectId;
+  const instanceProfile = String(testN8nRuntime.instanceProfile || '').trim() || undefined;
+  const instanceIdentifier = String(testN8nRuntime.instanceIdentifier || '').trim()
+    || (instanceProfile?.startsWith('yagr-managed-') ? 'yagr-managed' : 'test');
 
   const config = {
     version: 2,
@@ -207,7 +216,8 @@ export function initializeTestN8nConfig(n8nWorkspaceDir, testN8nRuntime = {}) {
         syncFolder: 'workflows',
         projectId,
         projectName,
-        instanceIdentifier: 'test',
+        instanceIdentifier,
+        ...(instanceProfile ? { instanceProfile } : {}),
         verification: {
           status: 'verified',
           normalizedHost: host,
@@ -222,7 +232,8 @@ export function initializeTestN8nConfig(n8nWorkspaceDir, testN8nRuntime = {}) {
     syncFolder: 'workflows',
     projectId,
     projectName,
-    instanceIdentifier: 'test',
+    instanceIdentifier,
+    ...(instanceProfile ? { instanceProfile } : {}),
   };
 
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
