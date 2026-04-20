@@ -159,7 +159,7 @@ test('classifyConfiguredN8nInstance trusts the persisted instanceProfile even wh
   }
 });
 
-test('classifyConfiguredN8nInstance infers a managed instance from tunnelized host when the tunnel targets the managed runtime', () => {
+test('classifyConfiguredN8nInstance does not infer a managed instance from tunnelized host without explicit instanceProfile', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-classification-'));
   const previousHome = process.env.YAGR_HOME;
   process.env.YAGR_HOME = tempHome;
@@ -200,9 +200,9 @@ test('classifyConfiguredN8nInstance infers a managed instance from tunnelized ho
     );
 
     const classification = classifyConfiguredN8nInstance();
-    assert.equal(classification.kind, 'yagr-managed-local');
-    assert.equal(classification.instanceProfile, 'yagr-managed-docker');
-    assert.deepEqual(classification.tags, ['YAGR_MANAGED', 'DOCKER']);
+    assert.equal(classification.kind, 'unconfigured');
+    assert.equal(classification.instanceProfile, undefined);
+    assert.deepEqual(classification.tags, []);
   } finally {
     if (previousHome === undefined) delete process.env.YAGR_HOME;
     else process.env.YAGR_HOME = previousHome;

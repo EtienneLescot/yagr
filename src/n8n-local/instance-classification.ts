@@ -1,4 +1,4 @@
-import { YagrConfigService, type N8nTunnelConfig } from '../config/yagr-config-service.js';
+import type { N8nTunnelConfig } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService, type YagrN8nInstanceProfile, type YagrN8nLocalConfig } from '../config/n8n-config-service.js';
 import { readManagedN8nState, type ManagedN8nInstanceState } from './state.js';
 
@@ -240,19 +240,9 @@ export function classifyConfiguredN8nInstance(
 ): N8nInstanceClassification {
   const managedState = readManagedN8nState();
   const localConfig = configService.getLocalConfig();
-  const tunnelConfig = new YagrConfigService().getN8nTunnelConfig();
-  const resolvedProfile = resolveN8nInstanceProfile({
-    host: localConfig.host,
-    instanceProfile: localConfig.instanceProfile,
-    managedState,
-    tunnelConfig,
-  });
   return classifyConfiguredProfile({
     host: localConfig.host,
-    instanceProfile: localConfig.instanceProfile
-      ?? (resolvedProfile === 'yagr-managed-docker' || resolvedProfile === 'yagr-managed-direct'
-        ? resolvedProfile
-        : undefined),
+    instanceProfile: localConfig.instanceProfile,
     managedState,
   });
 }
