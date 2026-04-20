@@ -24,6 +24,7 @@ const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', 
 
 const PROVIDER_WIZARD_ORDER: YagrModelProvider[] = [
   'openai',
+  'openai-compatible',
   'openai-proxy',
   'anthropic',
   'anthropic-proxy',
