@@ -493,7 +493,7 @@ function getProviderApiKey(provider) {
       || process.env.GOOGLE_LLM_API_KEY,
     mistral: process.env.MISTRAL_API_KEY || process.env.MISTRAL_LLM_API_KEY,
     openrouter: process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_LLM_API_KEY,
-    'openai-proxy': process.env.YAGR_OPENAI_PROXY_TOKEN,
+    'openai-oauth': process.env.YAGR_OPENAI_OAUTH_TOKEN || process.env.YAGR_OPENAI_PROXY_TOKEN,
     'anthropic-proxy': process.env.YAGR_ANTHROPIC_SETUP_TOKEN,
     'copilot-proxy': process.env.YAGR_COPILOT_TOKEN,
   };
@@ -572,7 +572,7 @@ function configureWritableOAuthPaths() {
 }
 
 function getProviderCredentialWarning(provider) {
-  if (provider === 'openai-proxy') {
+  if (provider === 'openai-oauth') {
     const authPath = process.env.YAGR_CODEX_AUTH_PATH || path.join(os.homedir(), '.codex', 'auth.json');
     return `Missing OpenAI OAuth credentials. Expected a Codex auth file at ${authPath}. Run yagr llm setup for OpenAI on this machine before running provider tests.`;
   }
@@ -828,7 +828,7 @@ function normalizeProviderSelector(value) {
   const aliases = {
     'claude-api': 'anthropic',
     'claude-token': 'anthropic-proxy',
-    'openai-oauth': 'openai-proxy',
+    'openai-proxy': 'openai-oauth',
     'github-oauth': 'copilot-proxy',
     'copilot-oauth': 'copilot-proxy',
   };

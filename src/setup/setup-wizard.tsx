@@ -25,7 +25,7 @@ const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', 
 const PROVIDER_WIZARD_ORDER: YagrModelProvider[] = [
   'openai',
   'openai-compatible',
-  'openai-proxy',
+  'openai-oauth',
   'anthropic',
   'anthropic-proxy',
   'google',
@@ -172,7 +172,7 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
   body: string[];
   continueLabel: string;
 } {
-  if (provider === 'openai-proxy') {
+  if (provider === 'openai-oauth') {
     return {
       title: 'Connect OpenAI account',
       body: [
@@ -893,7 +893,7 @@ function SetupWizard({ callbacks, options, onDone }: {
   }, [callbacks, llmDef, transitionToLlmModelsLoading]);
 
   const saveLlmAndContinue = useCallback((provider: YagrModelProvider, apiKey: string, model: string, note?: string) => {
-    if (provider === 'openai-proxy') {
+    if (provider === 'openai-oauth') {
       const currentEffort = llmDef.provider === provider ? llmDef.reasoningEffort : undefined;
       const effortOptions = ['low', 'medium', 'high'] as const;
       const selectedCursor = Math.max(0, effortOptions.indexOf((currentEffort === 'low' || currentEffort === 'medium' || currentEffort === 'high') ? currentEffort : 'medium'));
@@ -1156,7 +1156,7 @@ function SetupWizard({ callbacks, options, onDone }: {
           return;
         }
         const model = selected;
-        if (phase.provider === 'openai-proxy') {
+        if (phase.provider === 'openai-oauth') {
           saveLlmAndContinue(phase.provider, phase.apiKey, model, phase.note);
           return;
         }
@@ -1857,7 +1857,7 @@ function SetupWizard({ callbacks, options, onDone }: {
                   onSubmit={(v) => {
                     const m = v.trim() || phase.defModel || '';
                     if (!m) return;
-                    if (phase.provider === 'openai-proxy') {
+                    if (phase.provider === 'openai-oauth') {
                       saveLlmAndContinue(phase.provider, phase.apiKey, m, phase.note);
                       return;
                     }

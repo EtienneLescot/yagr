@@ -126,7 +126,7 @@ function buildProviderDiscovery(
     };
   }
 
-  if (provider === 'openai-proxy') {
+  if (provider === 'openai-oauth') {
     return {
       fetchAvailableModels: async () => {
         const session = await ensureOpenAiAccountSession();

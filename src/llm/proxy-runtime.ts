@@ -68,7 +68,7 @@ export async function prepareProviderRuntime(
   provider: YagrModelProvider,
   options: { apiKey?: string; baseUrl?: string } = {},
 ): Promise<PrepareProviderRuntimeResult> {
-  if (provider === 'openai-proxy') {
+  if (provider === 'openai-oauth') {
     const session = await ensureOpenAiAccountSession();
     if (!session) {
       return {

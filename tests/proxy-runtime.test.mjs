@@ -56,7 +56,7 @@ test('prepareProviderRuntime keeps configured openai-compatible providers usable
   });
 });
 
-test('prepareProviderRuntime resolves the local Codex ChatGPT session for openai-proxy', async () => {
+test('prepareProviderRuntime resolves the local Codex ChatGPT session for openai-oauth', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-codex-auth-'));
   const authPath = path.join(tempDir, 'auth.json');
   fs.writeFileSync(authPath, JSON.stringify({
@@ -87,7 +87,7 @@ test('prepareProviderRuntime resolves the local Codex ChatGPT session for openai
         headers: { 'Content-Type': 'application/json' },
       });
     }, async () => {
-      const result = await prepareProviderRuntime('openai-proxy');
+      const result = await prepareProviderRuntime('openai-oauth');
 
       assert.equal(result.ready, true);
       assert.equal(result.runtime?.baseUrl, 'https://chatgpt.com/backend-api');

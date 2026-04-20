@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { getYagrPaths } from '../config/yagr-home.js';
 import type {
   LanguageModelV1,
   LanguageModelV1CallOptions,
@@ -20,6 +21,17 @@ export const OPENAI_ACCOUNT_BASE_URL = 'https://chatgpt.com/backend-api';
 export const OPENAI_ACCOUNT_DEFAULT_MODEL = 'gpt-5.4';
 
 /**
+ * The originator value sent in the `originator` header.
+ * Matches the value used by the official Codex CLI, so the backend
+ * can attribute requests to a known client family.
+ */
+const CODEX_ORIGINATOR = 'codex_cli_rs';
+const YAGR_INSTALLATION_ID_FILENAME = 'installation_id';
+const CODEX_DEFAULT_INSTRUCTIONS = `You are Codex, based on GPT-5. You are running as a coding agent inside Yagr on the user's computer.
+
+Prefer acting with the available tools over prolonged deliberation. In Yagr, use the dedicated file tools for reading and editing files instead of shell commands when possible, and use shell tools primarily for commands, package managers, git, and runtime checks.`;
+
+/**
  * Reasoning effort level for Codex responses API.
  * Corresponds to the `reasoning_effort` parameter accepted by the API.
  * - 'none': No reasoning (fastest)
@@ -32,7 +44,11 @@ export const OPENAI_ACCOUNT_DEFAULT_MODEL = 'gpt-5.4';
 export const CODEX_REASONING_EFFORT_OPTIONS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 export type CodexReasoningEffort = typeof CODEX_REASONING_EFFORT_OPTIONS[number];
 
-function toCodexReasoningPayload(reasoningEffort: CodexReasoningEffort): Record<string, unknown> {
+export function getDefaultCodexReasoningEffort(modelId: string): CodexReasoningEffort {
+  return /^gpt-5\.4(?:$|[-.])/i.test(modelId) ? 'none' : 'medium';
+}
+
+function toCodexReasoningPayload(modelId: string, reasoningEffort: CodexReasoningEffort): Record<string, unknown> {
   if (reasoningEffort === 'none') {
     return {};
   }
@@ -46,6 +62,7 @@ function toCodexReasoningPayload(reasoningEffort: CodexReasoningEffort): Record<
   return {
     reasoning: {
       effort,
+      ...(/^gpt-5/i.test(modelId) ? { summary: 'auto' } : {}),
     },
   };
 }
@@ -524,17 +541,18 @@ export async function validateOpenAiAccountRuntime(modelId = OPENAI_ACCOUNT_DEFA
 
 export function createOpenAiAccountLanguageModel(
   modelId: string,
-  reasoningEffort: CodexReasoningEffort = 'medium',
+  reasoningEffort: CodexReasoningEffort = getDefaultCodexReasoningEffort(modelId),
+  sessionId?: string,
 ): LanguageModelV1 {
   return {
     specificationVersion: 'v1',
-    provider: 'openai-proxy.account',
+    provider: 'openai-oauth.account',
     modelId,
     defaultObjectGenerationMode: undefined,
     supportsImageUrls: false,
     supportsStructuredOutputs: false,
     async doGenerate(options) {
-      const execution = await runOpenAiAccountCompletion(modelId, options, reasoningEffort);
+      const execution = await runOpenAiAccountCompletion(modelId, options, reasoningEffort, sessionId);
       return {
         text: execution.text,
         finishReason: execution.finishReason,
@@ -548,6 +566,7 @@ export function createOpenAiAccountLanguageModel(
         response: {
           timestamp: new Date(),
           modelId,
+          ...(execution.responseId ? { id: execution.responseId } : {}),
         },
       };
     },
@@ -561,15 +580,20 @@ export function createOpenAiAccountLanguageModel(
       const tools = getFunctionTools(options.mode);
       const accountId = extractChatGptAccountId(session.accessToken);
       const { instructions, input } = convertPromptToCodexInput(options.prompt);
-      const reasoning = toCodexReasoningPayload(reasoningEffort);
+      const reasoning = toCodexReasoningPayload(modelId, reasoningEffort);
+      const previousResponseId = readOptionalString(options.headers?.['x-yagr-previous-response-id']);
+      const codexIdentity = buildCodexIdentity(sessionId);
 
       const body = {
         model: modelId,
         store: false,
         stream: true,
-        instructions: instructions || 'You are a helpful assistant.',
+        instructions: ensureCodexInstructions(instructions),
         input,
         ...reasoning,
+        include: ['reasoning.encrypted_content'],
+        client_metadata: codexIdentity.clientMetadata,
+        ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
         ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice), parallel_tool_calls: true } : { tool_choice: 'auto' }),
       };
 
@@ -580,10 +604,14 @@ export function createOpenAiAccountLanguageModel(
             'Authorization': `Bearer ${session.accessToken}`,
             'chatgpt-account-id': accountId,
             'OpenAI-Beta': 'responses=experimental',
-            'originator': 'pi',
-            'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
+            'originator': CODEX_ORIGINATOR,
+            'User-Agent': buildCodexUserAgent(),
+            'x-client-request-id': codexIdentity.requestId,
+            'x-codex-window-id': codexIdentity.windowId,
+            'x-codex-installation-id': codexIdentity.installationId,
             'accept': 'text/event-stream',
             'content-type': 'application/json',
+            ...(sessionId ? { 'session_id': sessionId } : {}),
           },
           body: JSON.stringify(body),
           signal: options.abortSignal
@@ -611,9 +639,11 @@ export function createOpenAiAccountLanguageModel(
       let outputTokens = 0;
       let finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown' = 'unknown';
       const toolCalls = new Map<string, LanguageModelV1FunctionToolCall>();
+      let responseId: string | undefined;
 
       const stream = new ReadableStream<LanguageModelV1StreamPart>({
         async pull(controller) {
+          let completed = false;
           for await (const event of parseCodexSSE(response.body!)) {
             const type = typeof event.type === 'string' ? event.type : undefined;
             if (!type) continue;
@@ -640,14 +670,15 @@ export function createOpenAiAccountLanguageModel(
               if (!itemId) continue;
               const existing = toolCalls.get(itemId);
               if (!existing || typeof event.delta !== 'string') continue;
-              const newArgs = `${existing.args}${event.delta}`;
+              const delta = event.delta;
+              const newArgs = `${existing.args}${delta}`;
               toolCalls.set(itemId, { ...existing, args: newArgs });
               controller.enqueue({
                 type: 'tool-call-delta',
                 toolCallType: 'function',
                 toolCallId: itemId,
                 toolName: existing.toolName,
-                argsTextDelta: newArgs,
+                argsTextDelta: delta,
               });
             } else if (type === 'response.function_call_arguments.done') {
               const itemId = readOptionalString(event.item_id) || readOptionalString(event.call_id);
@@ -658,15 +689,19 @@ export function createOpenAiAccountLanguageModel(
               toolCalls.set(itemId, { ...existing, args: finalArgs });
             } else if (type === 'response.completed') {
               const resp = event.response as {
+                id?: string;
                 usage?: { input_tokens?: number; output_tokens?: number };
                 output?: unknown[];
               } | undefined;
+              responseId = readOptionalString(resp?.id);
               inputTokens = resp?.usage?.input_tokens ?? 0;
               outputTokens = resp?.usage?.output_tokens ?? 0;
               for (const item of Array.isArray(resp?.output) ? resp.output : []) {
                 const toolCall = extractCodexToolCallFromItem(item, toolCalls.size);
                 if (toolCall) toolCalls.set(toolCall.toolCallId, toolCall);
               }
+              completed = true;
+              break;
             } else if (type === 'response.failed') {
               const resp = event.response as { error?: { message?: string } } | undefined;
               throw new Error(resp?.error?.message || 'Codex response failed.');
@@ -681,8 +716,12 @@ export function createOpenAiAccountLanguageModel(
             type: 'finish',
             finishReason,
             usage: { promptTokens: inputTokens, completionTokens: outputTokens },
+            ...(responseId ? { providerMetadata: { responseId } } : {}),
           });
           controller.close();
+          if (!completed) {
+            return;
+          }
         },
       });
 
@@ -702,14 +741,16 @@ export function createOpenAiAccountLanguageModel(
 
 async function runOpenAiAccountCompletion(
   modelId: string,
-  options: Pick<LanguageModelV1CallOptions, 'prompt' | 'mode' | 'inputFormat'>,
-  reasoningEffort: CodexReasoningEffort = 'medium',
+  options: Pick<LanguageModelV1CallOptions, 'prompt' | 'mode' | 'inputFormat' | 'headers'>,
+  reasoningEffort: CodexReasoningEffort = getDefaultCodexReasoningEffort(modelId),
+  sessionId?: string,
 ): Promise<{
   text: string;
   finishReason: 'stop' | 'error' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'unknown';
   usage: { promptTokens: number; completionTokens: number };
   toolCalls?: LanguageModelV1FunctionToolCall[];
   warnings: LanguageModelV1CallWarning[];
+  responseId?: string;
 }> {
   const session = await ensureOpenAiAccountSession();
   if (!session) {
@@ -721,16 +762,20 @@ async function runOpenAiAccountCompletion(
   const warnings = buildCodexWarnings(options, tools);
   const accountId = extractChatGptAccountId(session.accessToken);
   const { instructions, input } = convertPromptToCodexInput(options.prompt);
-  const reasoning = toCodexReasoningPayload(reasoningEffort);
+  const reasoning = toCodexReasoningPayload(modelId, reasoningEffort);
+  const previousResponseId = readOptionalString(options.headers?.['x-yagr-previous-response-id']);
+  const codexIdentity = buildCodexIdentity(sessionId);
 
   const body = {
     model: modelId,
     store: false,
     stream: true,
-    // The Codex backend requires a non-empty instructions field.
-    instructions: instructions || 'You are a helpful assistant.',
+    instructions: ensureCodexInstructions(instructions),
     input,
     ...reasoning,
+    include: ['reasoning.encrypted_content'],
+    client_metadata: codexIdentity.clientMetadata,
+    ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
     ...(tools.length > 0 ? { tools: toCodexTools(tools), tool_choice: toCodexToolChoice(regularMode?.toolChoice), parallel_tool_calls: true } : { tool_choice: 'auto' }),
   };
 
@@ -741,10 +786,14 @@ async function runOpenAiAccountCompletion(
         'Authorization': `Bearer ${session.accessToken}`,
         'chatgpt-account-id': accountId,
         'OpenAI-Beta': 'responses=experimental',
-        'originator': 'pi',
-        'User-Agent': `pi (${os.platform()} ${os.release()}; ${os.arch()})`,
+        'originator': CODEX_ORIGINATOR,
+        'User-Agent': buildCodexUserAgent(),
+        'x-client-request-id': codexIdentity.requestId,
+        'x-codex-window-id': codexIdentity.windowId,
+        'x-codex-installation-id': codexIdentity.installationId,
         'accept': 'text/event-stream',
         'content-type': 'application/json',
+        ...(sessionId ? { 'session_id': sessionId } : {}),
       },
       body: JSON.stringify(body),
       signal: timeoutSignal(CODEX_UPSTREAM_TIMEOUT_MS, 'codex-non-streaming'),
@@ -768,6 +817,7 @@ async function runOpenAiAccountCompletion(
   let inputTokens = 0;
   let outputTokens = 0;
   const toolCalls = new Map<string, LanguageModelV1FunctionToolCall>();
+  let responseId: string | undefined;
 
   for await (const event of parseCodexSSE(responseBody)) {
     const type = typeof event.type === 'string' ? event.type : undefined;
@@ -814,9 +864,11 @@ async function runOpenAiAccountCompletion(
       }
     } else if (type === 'response.completed') {
       const resp = event.response as {
+        id?: string;
         usage?: { input_tokens?: number; output_tokens?: number };
         output?: unknown[];
       } | undefined;
+      responseId = readOptionalString(resp?.id);
       inputTokens = resp?.usage?.input_tokens ?? 0;
       outputTokens = resp?.usage?.output_tokens ?? 0;
       for (const item of Array.isArray(resp?.output) ? resp.output : []) {
@@ -840,6 +892,7 @@ async function runOpenAiAccountCompletion(
     usage: { promptTokens: inputTokens, completionTokens: outputTokens },
     ...(toolCalls.size > 0 ? { toolCalls: [...toolCalls.values()] } : {}),
     warnings,
+    ...(responseId ? { responseId } : {}),
   };
 }
 
@@ -865,12 +918,14 @@ function convertPromptToCodexInput(prompt: LanguageModelV1Prompt): {
   instructions: string | undefined;
   input: Array<Record<string, unknown>>;
 } {
-  let instructions: string | undefined;
+  const instructionParts: string[] = [];
   const input: Array<Record<string, unknown>> = [];
 
   for (const message of prompt) {
     if (message.role === 'system') {
-      instructions = message.content;
+      if (message.content) {
+        instructionParts.push(message.content);
+      }
       continue;
     }
     if (message.role === 'user') {
@@ -908,7 +963,69 @@ function convertPromptToCodexInput(prompt: LanguageModelV1Prompt): {
     }
   }
 
+  const instructions = instructionParts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join('\n\n') || undefined;
+
   return { instructions, input };
+}
+
+export function ensureCodexInstructions(instructions: string | undefined): string {
+  const trimmed = instructions?.trim();
+  if (!trimmed) {
+    return CODEX_DEFAULT_INSTRUCTIONS;
+  }
+  if (trimmed.includes('You are Codex, based on GPT-5.')) {
+    return trimmed;
+  }
+  return `${CODEX_DEFAULT_INSTRUCTIONS}\n\n${trimmed}`;
+}
+
+export function ensureCodexSessionId(sessionId?: string): string {
+  const trimmed = sessionId?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : randomUUID();
+}
+
+function buildCodexIdentity(sessionId?: string): {
+  installationId: string;
+  requestId: string;
+  windowId: string;
+  clientMetadata: Record<string, string>;
+} {
+  const requestId = ensureCodexSessionId(sessionId);
+  const windowId = `${requestId}:0`;
+  const installationId = ensureYagrInstallationId();
+  return {
+    installationId,
+    requestId,
+    windowId,
+    clientMetadata: {
+      'x-codex-installation-id': installationId,
+      'x-codex-window-id': windowId,
+    },
+  };
+}
+
+function ensureYagrInstallationId(): string {
+  const installPath = path.join(getYagrPaths().homeDir, YAGR_INSTALLATION_ID_FILENAME);
+  try {
+    const existing = fs.readFileSync(installPath, 'utf8').trim();
+    if (existing) {
+      return existing;
+    }
+  } catch {
+    // fall through to generate and persist a new id
+  }
+
+  const installationId = randomUUID();
+  try {
+    fs.mkdirSync(path.dirname(installPath), { recursive: true });
+    fs.writeFileSync(installPath, installationId);
+  } catch {
+    return installationId;
+  }
+  return installationId;
 }
 
 async function* parseCodexSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<Record<string, unknown>> {
@@ -951,7 +1068,7 @@ function buildCodexWarnings(
     .map((tool) => ({
       type: 'unsupported-tool' as const,
       tool,
-      details: 'openai-proxy currently supports only function tools on the Codex backend.',
+      details: 'openai-oauth currently supports only function tools on the Codex backend.',
     }));
 }
 
@@ -1045,4 +1162,36 @@ function stringifyToolResult(value: unknown): string {
 
 function readOptionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function buildCodexUserAgent(): string {
+  const termProgram = process.env.TERM_PROGRAM;
+  const termProgramVersion = process.env.TERM_PROGRAM_VERSION;
+  const termSessionId = process.env.TERM_SESSION_ID;
+  const weztermVersion = process.env.WEZTERM_VERSION;
+  const isKitty = process.env.KITTY_WINDOW_ID || (process.env.TERM || '').includes('kitty');
+  const isAlacritty = process.env.ALACRITTY_SOCKET || process.env.TERM === 'alacritty';
+  const isGnomeTerminal = process.env.GNOME_TERMINAL_SCREEN;
+  const isWindowsTerminal = process.env.WT_SESSION;
+
+  let terminal = 'unknown';
+  if (termProgram) {
+    terminal = termProgramVersion ? `${termProgram}/${termProgramVersion}` : termProgram;
+  } else if (weztermVersion) {
+    terminal = `WezTerm/${weztermVersion}`;
+  } else if (isKitty) {
+    terminal = 'kitty';
+  } else if (isAlacritty) {
+    terminal = 'Alacritty';
+  } else if (isGnomeTerminal) {
+    terminal = 'gnome-terminal';
+  } else if (isWindowsTerminal) {
+    terminal = 'WindowsTerminal';
+  } else if (termSessionId) {
+    terminal = 'Apple_Terminal';
+  } else if (process.env.TERM) {
+    terminal = process.env.TERM || 'unknown';
+  }
+
+  return `${CODEX_ORIGINATOR}/0.0.0 (${os.platform()} ${os.release()}; ${os.arch()}) ${terminal}`;
 }
