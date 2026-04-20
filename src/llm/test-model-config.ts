@@ -45,7 +45,7 @@ export const YAGR_PROVIDER_TEST_MODEL_CONFIG: Partial<Record<YagrModelProvider, 
       'google/gemini-3-flash-preview',
     ],
   },
-  'openai-proxy': {
+  'openai-oauth': {
     preferredModels: [
       'gpt-5.4',
       'gpt-5.4-mini',

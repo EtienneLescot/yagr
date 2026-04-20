@@ -6,7 +6,7 @@
  * Used by:
  *   - The transparent proxy path for providers like Google/Gemini
  *   - The Anthropic relay handler (anthropic, anthropic-proxy)
- *   - The OpenAI account relay handler (openai-proxy / Codex)
+ *   - The OpenAI account relay handler (openai-oauth / Codex)
  */
 
 import http from 'node:http';

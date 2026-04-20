@@ -48,6 +48,12 @@ test('resolveModelProvider uses persisted provider from setup', () => {
   assert.equal(resolveModelProvider(undefined, configStore), 'openrouter');
 });
 
+test('resolveModelProvider normalizes legacy openai-proxy config to openai-oauth', () => {
+  const configStore = createConfigStore({ provider: 'openai-proxy' }, {});
+
+  assert.equal(resolveModelProvider(undefined, configStore), 'openai-oauth');
+});
+
 test('resolveModelProvider falls back to stored credentials when local provider is missing', () => {
   const configStore = createConfigStore({}, { anthropic: 'test-key' });
 
@@ -106,12 +112,12 @@ test('resolveLanguageModelConfig supports proxy providers without api keys', () 
 
 test('resolveLanguageModelConfig supports OpenAI account-backed provider without api key', () => {
   const configStore = createConfigStore(
-    { provider: 'openai-proxy', model: 'gpt-5.4' },
+    { provider: 'openai-oauth', model: 'gpt-5.4' },
     {},
   );
 
   assert.deepEqual(resolveLanguageModelConfig({}, configStore), {
-    provider: 'openai-proxy',
+    provider: 'openai-oauth',
     model: 'gpt-5.4',
     apiKey: undefined,
     baseUrl: 'https://chatgpt.com/backend-api',

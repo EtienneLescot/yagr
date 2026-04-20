@@ -541,9 +541,9 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
     return;
   }
 
-  // OpenAI account (openai-proxy) uses chatgpt.com/backend-api/codex/responses,
+  // OpenAI account (openai-oauth) uses chatgpt.com/backend-api/codex/responses,
   // not the standard /chat/completions endpoint — use the dedicated translation layer.
-  if (provider === 'openai-proxy') {
+  if (provider === 'openai-oauth') {
     const body = await readBody(req);
     const normalizedBody = fromResponsesApi ? translateResponsesRequestToChatCompletionsBody(body) : body;
     await handleOpenAiAccountRelay(req, res, injectModel(normalizedBody, resolvedModel), { fromResponsesApi });
