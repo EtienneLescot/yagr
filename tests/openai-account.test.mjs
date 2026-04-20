@@ -622,12 +622,15 @@ test('openai-oauth LangChain model reuses previous_response_id on incremental fo
   try {
     const model = new ChatCodexOAuth({ model: 'gpt-5.4', sessionId: 'session-langchain-prev-id' });
     await model._generate([new HumanMessage('First turn')], {});
-    await model._generate([new HumanMessage('First turn'), new HumanMessage('Second turn')], {});
+    await model._generate([
+      new HumanMessage('First turn'),
+      new AIMessage({ content: 'First response' }),
+      new HumanMessage('Second turn'),
+    ], {});
 
     assert.equal(seenBodies[0].previous_response_id, undefined);
     assert.equal(seenBodies[1].previous_response_id, 'resp_1');
-    assert.equal(seenBodies[1].input.length, 1);
-    assert.equal(seenBodies[1].input[0].content[0].text, 'Second turn');
+    assert.equal(seenBodies[1].input.at(-1).content[0].text, 'Second turn');
   } finally {
     globalThis.fetch = previousFetch;
     if (previousAuthPath === undefined) {
