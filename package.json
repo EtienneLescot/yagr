@@ -1,6 +1,6 @@
 {
   "name": "@yagr/agent",
-  "version": "0.2.26",
+  "version": "0.2.27",
   "description": "Autonomous automation agent grounded in deterministic workflow infrastructure",
   "type": "module",
   "bin": {
