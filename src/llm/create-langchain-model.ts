@@ -71,6 +71,7 @@ function getApiKeyForProvider(
     openrouter: ['OPENROUTER_API_KEY', 'OPENROUTER_LLM_API_KEY'],
     minimax: ['MINIMAX_API_KEY'],
     'minimax-token-plan': ['MINIMAX_TOKEN_PLAN_API_KEY'],
+    'openai-compatible': ['OPENAI_COMPATIBLE_API_KEY'],
   };
 
   if (!preferEnvironmentCredentials()) {
@@ -303,6 +304,13 @@ export async function createLangChainModel(
         apiKey,
         model,
         anthropicApiUrl: baseUrl ?? 'https://api.minimax.io/anthropic',
+      });
+
+    case 'openai-compatible':
+      return new ChatOpenAI({
+        apiKey: apiKey || 'not-needed',
+        model,
+        ...(baseUrl ? { configuration: { baseURL: baseUrl } } : {}),
       });
 
     default:
