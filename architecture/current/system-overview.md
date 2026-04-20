@@ -78,6 +78,12 @@ Deux couches distinctes :
 
 ### N8N Cloudflare Tunnel Exposure
 
+Pour le cycle de vie d'une instance n8n Yagr-managed, la frontiere applicative actuelle est la suivante:
+
+- `src/n8n-local/managed-runtime.ts` orchestre le startup preflight produit: redemarrage/recreation du runtime gere a partir du `instanceProfile` persiste, puis reconciliation bootstrap si l'instance n'est pas deja `connected`
+- `src/n8n-local/bootstrap.ts` reste le SSOT du bootstrap silencieux owner/API key contre une instance n8n vivante
+- `src/setup/application-services.ts` reste le SSOT de persistance finale host/API key/projet/workspace
+
 Yagr peut exposer des endpoints Yagr locaux via trois tunnels Cloudflare distincts, chacun avec une responsabilite explicite:
 
 - `n8n tunnel`: exposition publique de l'instance n8n locale Yagr-managed pour les webhooks

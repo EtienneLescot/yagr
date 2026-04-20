@@ -161,6 +161,15 @@ Role actuel:
 - `src/setup/status.ts`: calcul partage du statut setup
 - point de coordination du wizard et de l'onboarding
 
+### `src/n8n-local/`
+
+Role actuel:
+
+- `managed-runtime.ts`: SSOT du preflight de demarrage des instances `yagr-managed-*`; relance ou recree le runtime gere depuis le `instanceProfile` persiste, puis declenche la reconciliation bootstrap/config si necessaire
+- `bootstrap.ts`: SSOT du bootstrap silencieux owner/API key contre une instance n8n joignable
+- `docker-manager.ts` et `direct-manager.ts`: SSOT du lifecycle runtime bas niveau pour les strategies Docker et direct
+- `state.ts`: persistance locale de l'etat runtime gere et resolution du bootstrap stage
+
 ### `src/config/`
 
 Role actuel:

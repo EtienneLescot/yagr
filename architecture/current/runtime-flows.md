@@ -131,6 +131,13 @@ Observation:
 
 ## 4c. Startup preflight des tunnels
 
+Au demarrage (`yagr start`, gateway, worker), le preflight passe d'abord par `managed-runtime.ts` pour les instances `yagr-managed-local`.
+
+- le runtime n8n gere par Yagr est relance si necessaire
+- si le state runtime local a disparu mais que le `instanceProfile` persiste reste `yagr-managed-*`, `managed-runtime.ts` recree aussi le runtime a partir de ce signal d'autorite produit
+- si l'instance n'est pas deja `connected`, le preflight complete aussi la reconciliation bootstrap/config en reutilisant `bootstrap.ts` puis `setup/application-services.ts`
+- ce preflight reste en amont du refresh workspace et du preflight relay/tunnels, afin que les etapes aval consomment un host, une API key et un projet deja persistés
+
 Avant la synchronisation de la credential LLM proxy au demarrage, Yagr execute un preflight tunnel en une seule passe. Cela permet de detecter et reactiver les tunnels Cloudflare devenue inaccessibles (URL `trycloudflare` perimée) avant deprovisionner la credential.
 
 ```mermaid

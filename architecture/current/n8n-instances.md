@@ -99,6 +99,8 @@ Le signal encore valide des anciens plans est:
 - le runtime direct existe comme fallback
 - les preconditions machine sont detectees avant d'essayer un bootstrap
 - l'ownership et les credentials sont traites comme un sous-probleme explicite, pas comme un detail implicite
+- au demarrage, `managed-runtime.ts` est le SSOT de preparation d'une instance Yagr-managed: il remet le runtime en route, ou le recree si le state runtime a disparu mais que le `instanceProfile` persiste reste Yagr-managed, puis reconcilie si besoin le bootstrap silencieux et la persistance finale via `setup/application-services.ts`
+- une instance Yagr-managed redemarree apres suppression du container/runtime doit revenir automatiquement vers un etat `connected`, pas seulement `ready`
 
 Ce qui est important ici n'est pas de garder les anciennes phases de planification, mais de conserver ces invariants.
 

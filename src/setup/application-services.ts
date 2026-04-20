@@ -27,6 +27,7 @@ import type { GatewaySurface } from '../gateway/types.js';
 import { ensureYagrProxyCredential } from '../manager-tooling/yagr-proxy.js';
 import { classifyConfiguredN8nInstance, classifyN8nInstanceCandidate, hasN8nInstanceTag, resolveN8nInstanceProfile } from '../n8n-local/instance-classification.js';
 import { ensureConfiguredLlmPublicExposure, refreshLlmPublicExposureForRelayHostBaseUrl } from '../n8n-local/public-exposure-service.js';
+import { normalizeN8nUrlOrigin } from '../n8n-local/instance-classification.js';
 import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
 
 type N8nProjectClient = Pick<N8nApiClient, 'testConnection' | 'getProjects'>;
@@ -619,6 +620,34 @@ export class YagrSetupApplicationService {
     return client.getProjects();
   }
 
+  async completeManagedN8nConnection(input: {
+    host: string;
+    apiKey: string;
+    syncFolder?: string;
+    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
+  }): Promise<{ project: IProject; warning?: string }> {
+    const host = input.host.trim();
+    const apiKey = input.apiKey.trim();
+    if (!host) {
+      throw new Error('n8n host is required.');
+    }
+    if (!apiKey) {
+      throw new Error('An n8n API key is required.');
+    }
+
+    const projects = await this.fetchN8nProjects(host, apiKey);
+    const project = this.selectManagedConnectionProject(host, projects);
+    const warning = await this.persistConnectedN8nConfig({
+      host,
+      apiKey,
+      project,
+      syncFolder: input.syncFolder?.trim() || this.n8nConfigService.getLocalConfig().syncFolder || 'workflows',
+      instanceProfile: input.instanceProfile,
+    });
+
+    return { project, warning };
+  }
+
   async saveN8nConfig(input: {
     host: string;
     apiKey?: string;
@@ -647,7 +676,42 @@ export class YagrSetupApplicationService {
       throw new Error('The selected n8n project could not be found. Reload projects and try again.');
     }
 
-    this.n8nConfigService.saveApiKey(host, apiKey);
+    return this.persistConnectedN8nConfig({
+      host,
+      apiKey,
+      project: selectedProject,
+      syncFolder,
+      instanceProfile: input.instanceProfile,
+    });
+  }
+
+  private selectManagedConnectionProject(host: string, projects: IProject[]): IProject {
+    if (projects.length === 0) {
+      throw new Error('No n8n projects found. Create one in n8n first, then rerun setup.');
+    }
+
+    const currentConfig = this.n8nConfigService.getLocalConfig();
+    const currentHostOrigin = normalizeN8nUrlOrigin(currentConfig.host);
+    const targetHostOrigin = normalizeN8nUrlOrigin(host);
+    const persistedProject = currentConfig.projectId && currentHostOrigin && targetHostOrigin && currentHostOrigin === targetHostOrigin
+      ? projects.find((project) => project.id === currentConfig.projectId)
+      : undefined;
+
+    return persistedProject ?? projects[0];
+  }
+
+  private async persistConnectedN8nConfig(input: {
+    host: string;
+    apiKey: string;
+    project: IProject;
+    syncFolder: string;
+    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
+  }): Promise<string | undefined> {
+    const host = input.host.trim();
+    const syncFolder = input.syncFolder.trim() || 'workflows';
+    const selectedProject = input.project;
+
+    this.n8nConfigService.saveApiKey(host, input.apiKey);
     const instanceProfile = input.instanceProfile ?? resolveN8nInstanceProfile({
       host,
     });
@@ -674,7 +738,7 @@ export class YagrSetupApplicationService {
     }
 
     try {
-      await this.refreshAiContextRunner({ host, apiKey });
+      await this.refreshAiContextRunner({ host, apiKey: input.apiKey });
       // `n8nac update-ai` rewrites `n8nac-config.json`; re-apply Yagr metadata so
       // later commands keep the instance classification chosen during setup.
       this.n8nConfigService.saveLocalConfig(persistedConfig);

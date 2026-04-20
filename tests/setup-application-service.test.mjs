@@ -178,6 +178,76 @@ test('saveN8nConfig reapplies instanceProfile after n8nac refresh rewrites the w
   assert.equal(saved.activeInstanceId, 'instance_test');
 });
 
+test('completeManagedN8nConnection reuses the persisted project when it still exists', async () => {
+  const yagrConfigStore = createYagrConfigStore();
+  const n8nConfigStore = createN8nConfigStore({
+    host: 'http://localhost:5678',
+    syncFolder: 'workflows',
+    projectId: 'proj_2',
+    projectName: 'Existing Project',
+    instanceProfile: 'yagr-managed-direct',
+  });
+
+  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
+    createN8nClient: () => ({
+      async testConnection() { return true; },
+      async getProjects() {
+        return [
+          { id: 'proj_1', name: 'First Project' },
+          { id: 'proj_2', name: 'Existing Project' },
+        ];
+      },
+    }),
+    async refreshAiContext() {},
+  });
+
+  const result = await service.completeManagedN8nConnection({
+    host: 'http://localhost:5678',
+    apiKey: 'n8n-key',
+    syncFolder: 'workflows',
+    instanceProfile: 'yagr-managed-direct',
+  });
+
+  assert.equal(result.project.id, 'proj_2');
+  assert.equal(n8nConfigStore.getLocalConfig().projectId, 'proj_2');
+  assert.equal(n8nConfigStore.getLocalConfig().projectName, 'Existing Project');
+});
+
+test('completeManagedN8nConnection falls back to the first available project when the persisted one is missing', async () => {
+  const yagrConfigStore = createYagrConfigStore();
+  const n8nConfigStore = createN8nConfigStore({
+    host: 'http://localhost:5678',
+    syncFolder: 'workflows',
+    projectId: 'missing',
+    projectName: 'Missing Project',
+    instanceProfile: 'yagr-managed-direct',
+  });
+
+  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
+    createN8nClient: () => ({
+      async testConnection() { return true; },
+      async getProjects() {
+        return [
+          { id: 'proj_1', name: 'First Project' },
+          { id: 'proj_2', name: 'Second Project' },
+        ];
+      },
+    }),
+    async refreshAiContext() {},
+  });
+
+  const result = await service.completeManagedN8nConnection({
+    host: 'http://localhost:5678',
+    apiKey: 'n8n-key',
+    syncFolder: 'workflows',
+    instanceProfile: 'yagr-managed-direct',
+  });
+
+  assert.equal(result.project.id, 'proj_1');
+  assert.equal(n8nConfigStore.getLocalConfig().projectId, 'proj_1');
+  assert.equal(n8nConfigStore.getLocalConfig().projectName, 'First Project');
+});
+
 test('saveLlmConfig writes provider model baseUrl and api key through the shared service', () => {
   const yagrConfigStore = createYagrConfigStore();
   const n8nConfigStore = createN8nConfigStore();
