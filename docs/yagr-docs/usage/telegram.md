@@ -43,3 +43,29 @@ yagr telegram onboarding
 ```
 
 Linked chats are persisted in the Yagr runtime configuration. That linked chat is then just another place where intent can enter the agent loop and be turned into workflows.
+
+## Available commands
+
+All commands work in private Telegram chats with the linked bot. Use `/help` to see the full list.
+
+### Session management
+
+- `/help` — list available commands with descriptions
+- `/sessions` — list all conversation sessions for this chat
+- `/resume <session_id>` — resume a specific conversation session
+- `/delete <session_id>` — delete a conversation session
+- `/new` or `/reset` — start a new conversation session
+
+### Checkpoints
+
+- `/checkpoints` — list all checkpoints for the current session
+- `/save` (or `/checkpoint_save`) — save a checkpoint of the current session
+- `/restore <checkpoint_id>` (or `/checkpoint_restore`) — restore a checkpoint
+- `/checkpoint_delete <checkpoint_id>` — delete a specific checkpoint
+
+### Operational commands
+
+- `/pending` — show pending required actions
+- `/approve` — grant pending permissions
+- `/compact` — compaction runs automatically; this command confirms the policy
+- `/status` — show gateway status and linked chat count

@@ -7,6 +7,7 @@ import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-
 import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import { SessionService } from '../session/index.js';
+import { SlashCommandService } from '../conversation/index.js';
 import {
   formatWorkflowLinkTerminal,
   type WorkflowEmbed,
@@ -650,141 +651,95 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
       return;
     }
 
-    setInputVersion((previous) => previous + 1);
+    const slashService = new SlashCommandService(sessions, compactionService);
+    const parsed = slashService.parse(prompt);
 
-    if (prompt === '/exit' || prompt === '/quit') {
-      app.exit();
-      return;
-    }
-
-    if (prompt === '/reset') {
-      try {
-        compactionService.reset(threadIdRef.current);
-        const newSession = sessions.rotateForScope({ kind: 'tui', key: 'default' }, { title: 'Interactive session' });
-        threadIdRef.current = newSession.id;
-        setFeed([]);
-        setPendingRequiredActions([]);
-        setCurrentState('idle');
-        setPhaseStatusText('Conversation reset.');
-        resetStreamingBuffers();
-        setLastUserPrompt('');
-        setActiveOperationText('Ready for a request.');
-        setWorkflowEmbeds([]);
-        seenOperationStartRef.current = new Set();
-        seenOperationEndRef.current = new Set();
-        operationStateRef.current = new Map();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setActiveOperationText(`Reset failed: ${message}`);
-      }
-      return;
-    }
-
-    if (prompt === '/checkpoints') {
-      try {
-        const checkpoints = await sessions.listCheckpoints(threadIdRef.current);
-        if (checkpoints.length === 0) {
-          setActiveOperationText('No checkpoints saved for this session.');
-        } else {
-          pushEntry('result', 'Checkpoints', checkpoints.map((cp, i) => `${i + 1}. ${new Date(cp.createdAt).toLocaleString()} - ${cp.messageCount} msgs`).join('\n'));
-          setActiveOperationText(`${checkpoints.length} checkpoint(s). Use /resume <id> to restore.`);
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setActiveOperationText(`Failed to list checkpoints: ${message}`);
-      }
-      return;
-    }
-
-    if (prompt.startsWith('/resume')) {
-      const args = prompt.split(' ').slice(1);
-      if (args.length === 0) {
-        setActiveOperationText('Usage: /resume <checkpoint_id>. Use /checkpoints to list available checkpoints.');
+    if (parsed) {
+      if (parsed.command === 'exit') {
+        app.exit();
         return;
       }
-      const checkpointId = args[0];
-      try {
-        const result = await sessions.restoreCheckpoint(threadIdRef.current, checkpointId);
-        setFeed([]);
-        setPendingRequiredActions([]);
-        setWorkflowEmbeds([]);
-        seenOperationStartRef.current = new Set();
-        seenOperationEndRef.current = new Set();
-        operationStateRef.current = new Map();
-        if (result.compactionState) {
-          compactionService.setState(threadIdRef.current, result.compactionState);
-        } else {
-          compactionService.reset(threadIdRef.current);
+
+      if (parsed.command === 'open') {
+        const latestEmbed = workflowEmbeds[workflowEmbeds.length - 1];
+        if (!latestEmbed) {
+          setActiveOperationText('No recent workflow to open.');
+          return;
         }
-        pushEntry('result', 'Checkpoint restored', `Checkpoint ${checkpointId} has been restored. Feed cleared. Resume your conversation.`);
-        setActiveOperationText('Checkpoint restored. Ready for a request.');
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setActiveOperationText(`Failed to restore checkpoint: ${message}`);
+        try {
+          await openExternalUrl(resolveTerminalWorkflowOpenUrl(latestEmbed));
+          pushEntry('result', 'Opened workflow', latestEmbed.targetUrl ?? latestEmbed.url);
+          setActiveOperationText(`Workflow opened: ${latestEmbed.targetUrl ?? latestEmbed.url}`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          pushEntry('interrupt', 'Workflow open failed', message);
+          setActiveOperationText(`Workflow open failed: ${message}`);
+        }
+        return;
       }
-      return;
-    }
 
-    if (prompt === '/toggle-thinking' || prompt === '/toggle-agent-thinking') {
-      setDisplay((previous) => ({ ...previous, showThinking: !previous.showThinking }));
-      return;
-    }
+      const ctx = {
+        surface: 'tui' as const,
+        sessionId: 'default',
+        threadId: threadIdRef.current,
+      };
 
-    if (prompt === '/toggle-cli' || prompt === '/toggle-command-executions') {
-      setDisplay((previous) => ({ ...previous, showExecution: !previous.showExecution }));
-      return;
-    }
+      const handler: Parameters<typeof slashService.execute>[2] = {
+        getActiveSessionId: () => sessions.getActiveForScope({ kind: 'tui', key: 'default' })?.id,
+        resumeSession: (_scope, sessionId) => {
+          threadIdRef.current = sessionId;
+          setActiveOperationText(`Switched to session: ${sessionId}`);
+        },
+        resetLocalState: () => {
+          setFeed([]);
+          setPendingRequiredActions([]);
+          setWorkflowEmbeds([]);
+          seenOperationStartRef.current = new Set();
+          seenOperationEndRef.current = new Set();
+          operationStateRef.current = new Map();
+          resetStreamingBuffers();
+          setLastUserPrompt('');
+        },
+        openExternalUrl: async (url) => {
+          await openExternalUrl(url);
+        },
+        getDisplayOptions: () => ({ showThinking: display.showThinking, showExecution: display.showExecution }),
+        setDisplayOptions: (opts) => {
+          setDisplay((prev) => ({ ...prev, ...opts }));
+        },
+      };
 
-    if (prompt === '/pending') {
-      if (pendingRequiredActions.length === 0) {
-        setActiveOperationText('No required actions pending.');
+      const result = await slashService.execute(parsed, ctx, handler);
+
+      if (result.kind === 'ok' && result.data && typeof result.data === 'object' && 'commands' in result.data) {
+        pushEntry('result', 'Commands', result.message);
+        setActiveOperationText('Use /command to see details.');
+      } else if (result.kind === 'ok' && result.message) {
+        if (parsed.command === 'help') {
+          pushEntry('result', 'Help', result.message);
+        } else if (parsed.command === 'sessions') {
+          pushEntry('result', 'Sessions', result.message);
+        } else if (parsed.command === 'checkpoints') {
+          pushEntry('result', 'Checkpoints', result.message);
+        } else if (parsed.command === 'save') {
+          pushEntry('result', 'Checkpoint saved', result.message);
+        } else if (parsed.command === 'restore') {
+          pushEntry('result', 'Restored', result.message);
+        } else {
+          setActiveOperationText(result.message);
+        }
       } else {
-        for (const action of pendingRequiredActions) {
-          pushEntry('interrupt', 'Pending', formatRequiredAction(action));
-        }
+        pushEntry('interrupt', 'Command error', result.message);
+        setActiveOperationText(result.message);
       }
+
+      setInputVersion((previous) => previous + 1);
       return;
     }
 
-    if (prompt === '/open') {
-      const latestEmbed = workflowEmbeds[workflowEmbeds.length - 1];
-      if (!latestEmbed) {
-        setActiveOperationText('No recent workflow to open.');
-        return;
-      }
-
-      try {
-        await openExternalUrl(resolveTerminalWorkflowOpenUrl(latestEmbed));
-        pushEntry('result', 'Opened workflow', latestEmbed.targetUrl ?? latestEmbed.url);
-        setActiveOperationText(`Workflow opened: ${latestEmbed.targetUrl ?? latestEmbed.url}`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        pushEntry('interrupt', 'Workflow open failed', message);
-        setActiveOperationText(`Workflow open failed: ${message}`);
-      }
-      return;
-    }
-
-    if (prompt.startsWith('/approve')) {
-      const permissionActions = pendingRequiredActions.filter((action) => action.kind === 'permission');
-      if (permissionActions.length === 0) {
-        setActiveOperationText('No permissions pending.');
-        return;
-      }
-
-      setPendingRequiredActions((previous) => previous.filter((action) => action.kind !== 'permission'));
-      pushEntry('result', 'Permissions', `Permission granted for ${permissionActions.length} action(s).`);
-      await runPrompt('Permission granted. Continue the current task and execute the previously blocked step now.');
-      return;
-    }
-
-    if (prompt === '/compact') {
-      handleCompact();
-      return;
-    }
-
+    setInputVersion((previous) => previous + 1);
     await runPrompt(prompt);
-  }, [agent, app, compactionService, handleCompact, isRunning, pendingRequiredActions, pushEntry, runPrompt, sessions, threadIdRef, workflowEmbeds, collapseAllShellBlocks, expandAllShellBlocks]);
+  }, [agent, app, compactionService, display, expandAllShellBlocks, collapseAllShellBlocks, pendingRequiredActions, pushEntry, resetStreamingBuffers, runPrompt, sessions, threadIdRef, workflowEmbeds]);
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
@@ -953,8 +908,8 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
 
       <Text dimColor>
         {latestWorkflowOpenUrl
-          ? '/expand · /collapse · /open · /stop · ↑↓ scroll'
-          : '/expand · /collapse · /stop · ↑↓ scroll'}
+          ? '/help · /sessions · /new · /expand · /collapse · /open · /stop · ↑↓ scroll'
+          : '/help · /sessions · /new · /expand · /collapse · /stop · ↑↓ scroll'}
       </Text>
     </Box>
   );

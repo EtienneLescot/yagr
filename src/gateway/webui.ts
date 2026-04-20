@@ -11,6 +11,7 @@ import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir, getYagrSessionsDir } f
 import { WebUiSessionRegistry } from '../session/webui-sessions.js';
 import type { SessionSummary } from '../session/session-types.js';
 import { SessionService, deriveSessionTitle } from '../session/index.js';
+import { SlashCommandService } from '../conversation/index.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
@@ -523,6 +524,42 @@ class WebUiGateway implements Gateway {
       await this.resolveAgentHandle();
       await this.sessions.deleteCheckpoint(sessionId, checkpointId);
       this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    // POST /api/slash — unified slash command dispatch for WebUI
+    if (method === 'POST' && url.pathname === '/api/slash') {
+      const body = await this.readJson(request);
+      const command = typeof body.command === 'string' ? body.command : '';
+      const args = Array.isArray(body.args) ? body.args as string[] : [];
+      const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+
+      if (!sessionId || !isValidSessionId(sessionId)) {
+        this.sendJson(response, 400, { error: 'Invalid session id.' });
+        return;
+      }
+
+      const handle = await this.resolveAgentHandle();
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const parsed = service.parse(`/${command} ${args.join(' ')}`.trim());
+      if (!parsed) {
+        this.sendJson(response, 400, { error: `Unknown command: /${command}` });
+        return;
+      }
+
+      const slashCtx = { surface: 'webui' as const, sessionId, threadId: sessionId };
+      const webuiHandler = {
+        getActiveSessionId: () => this.sessions.getActiveForScope({ kind: 'webui', key: sessionId })?.id,
+        resumeSession: (_scope: { kind: string; key: string }, resumeSessionId: string) => {
+          this.sessions.ensure(resumeSessionId, { scope: { kind: 'webui', key: resumeSessionId } });
+        },
+        resetLocalState: () => {
+          this.sessionRegistry.clearDisplayThread(sessionId);
+        },
+      };
+
+      const result = await service.execute(parsed, slashCtx, webuiHandler);
+      this.sendJson(response, 200, { kind: result.kind, message: result.message, data: result.data });
       return;
     }
 

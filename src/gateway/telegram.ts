@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import qrcode from 'qrcode-terminal';
-import { Telegraf } from 'telegraf';
+import { Telegraf, type Context } from 'telegraf';
 import { YagrConfigService, type YagrConfigStoreLike, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-home.js';
@@ -10,6 +10,7 @@ import type { YagrUserVisibleUpdate } from '../runtime/user-visible-updates.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import { SessionService, deriveSessionTitle } from '../session/index.js';
+import { SlashCommandService } from '../conversation/index.js';
 import {
   type WorkflowEmbed,
   buildWorkflowBannerHtml,
@@ -380,74 +381,148 @@ class TelegramGateway implements Gateway {
     });
 
     this.bot.command('checkpoints', async (ctx) => {
-      const chatId = String(ctx.chat.id);
-      if (!this.isLinkedChat(chatId)) {
-        await ctx.reply('This chat is not linked.');
-        return;
-      }
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
       const handle = await this.resolveAgentHandle();
       const threadId = await this.getOrCreateThreadId(chatId);
-      const checkpoints = await this.sessions.listCheckpoints(threadId);
-      if (checkpoints.length === 0) {
-        await ctx.reply('No checkpoints saved for this conversation.');
-        return;
-      }
-      const lines = checkpoints.map((cp, i) => `${i + 1}. ${new Date(cp.createdAt).toLocaleString()} - ${cp.messageCount} messages`);
-      await ctx.reply(`Checkpoints:\n${lines.join('\n')}`);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'checkpoints', args: [], raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
     });
 
     this.bot.command('checkpoint_save', async (ctx) => {
-      const chatId = String(ctx.chat.id);
-      if (!this.isLinkedChat(chatId)) {
-        await ctx.reply('This chat is not linked.');
-        return;
-      }
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
       const handle = await this.resolveAgentHandle();
       const threadId = await this.getOrCreateThreadId(chatId);
-      const compactionState = handle.compactionService.getState(threadId);
-      const checkpoint = await this.sessions.saveCheckpoint(threadId, { compactionState });
-      await ctx.reply(`Checkpoint saved: ${checkpoint.id}`);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'save', args: [], raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
     });
 
     this.bot.command('checkpoint_restore', async (ctx) => {
-      const chatId = String(ctx.chat.id);
-      if (!this.isLinkedChat(chatId)) {
-        await ctx.reply('This chat is not linked.');
-        return;
-      }
-      const args = ctx.message.text.split(' ').slice(1);
-      if (args.length === 0) {
-        await ctx.reply('Usage: /checkpoint_restore <checkpoint_id>');
-        return;
-      }
-      const checkpointId = args[0];
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
       const handle = await this.resolveAgentHandle();
       const threadId = await this.getOrCreateThreadId(chatId);
-      const result = await this.sessions.restoreCheckpoint(threadId, checkpointId);
-      if (result.compactionState) {
-        handle.compactionService.setState(threadId, result.compactionState);
-      } else {
-        handle.compactionService.reset(threadId);
-      }
-      await ctx.reply('Checkpoint restored. Note: Telegram messages sent after the checkpoint are still visible, but the backend state has been restored.');
+      const args = (ctx.message?.text ?? '').split(' ').slice(1);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'restore', args, raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
     });
 
     this.bot.command('checkpoint_delete', async (ctx) => {
-      const chatId = String(ctx.chat.id);
-      if (!this.isLinkedChat(chatId)) {
-        await ctx.reply('This chat is not linked.');
-        return;
-      }
-      const args = ctx.message.text.split(' ').slice(1);
-      if (args.length === 0) {
-        await ctx.reply('Usage: /checkpoint_delete <checkpoint_id>');
-        return;
-      }
-      const checkpointId = args[0];
-      await this.resolveAgentHandle();
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
+      const handle = await this.resolveAgentHandle();
       const threadId = await this.getOrCreateThreadId(chatId);
-      await this.sessions.deleteCheckpoint(threadId, checkpointId);
-      await ctx.reply('Checkpoint deleted.');
+      const args = (ctx.message?.text ?? '').split(' ').slice(1);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'checkpoint_delete', args, raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
+    });
+
+    this.bot.command('help', async (ctx) => {
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
+      const handle = await this.resolveAgentHandle();
+      const threadId = await this.getOrCreateThreadId(chatId);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'help', args: [], raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
+    });
+
+    this.bot.command('sessions', async (ctx) => {
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
+      const handle = await this.resolveAgentHandle();
+      const threadId = await this.getOrCreateThreadId(chatId);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'sessions', args: [], raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
+    });
+
+    this.bot.command('resume', async (ctx) => {
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
+      const handle = await this.resolveAgentHandle();
+      const threadId = await this.getOrCreateThreadId(chatId);
+      const args = (ctx.message?.text ?? '').split(' ').slice(1);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'resume', args, raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
+    });
+
+    this.bot.command('delete', async (ctx) => {
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
+      const handle = await this.resolveAgentHandle();
+      const threadId = await this.getOrCreateThreadId(chatId);
+      const args = (ctx.message?.text ?? '').split(' ').slice(1);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'delete', args, raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
+    });
+
+    this.bot.command('new', async (ctx) => {
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
+      const handle = await this.resolveAgentHandle();
+      const threadId = await this.getOrCreateThreadId(chatId);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'new', args: [], raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
+    });
+
+    this.bot.command('restore', async (ctx) => {
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
+      const handle = await this.resolveAgentHandle();
+      const threadId = await this.getOrCreateThreadId(chatId);
+      const args = (ctx.message?.text ?? '').split(' ').slice(1);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'restore', args, raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
     });
 
     this.bot.on('text', async (ctx) => {
@@ -550,6 +625,19 @@ class TelegramGateway implements Gateway {
 
   private getTelegramScope(chatId: string): { kind: string; key: string } {
     return { kind: 'telegram', key: chatId };
+  }
+
+  private createTelegramSlashHandler(chatId: string) {
+    const scope = this.getTelegramScope(chatId);
+    return {
+      getActiveSessionId: () => this.sessions.getActiveForScope(scope)?.id,
+      resumeSession: (_scope: { kind: string; key: string }, sessionId: string) => {
+        this.sessions.ensure(sessionId, { scope });
+      },
+      resetLocalState: () => {
+        this.pendingApprovals.delete(chatId);
+      },
+    };
   }
 
   private async getOrCreateThreadId(chatId: string): Promise<string> {

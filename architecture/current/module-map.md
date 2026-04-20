@@ -122,10 +122,28 @@ Fichiers clefs:
 
 `SessionService` est le point d'autorite unique pour le cycle de vie des sessions:
 
-- `list()`, `get()`, `create()`, `resume()`, `delete()`
-- `getOrCreateForScope()`, `rotateForScope()`, `clearScope()` — gestion par scope (webui, telegram, tui)
+- `list()`, `get()`, `create()`, `ensure()`, `resume()`, `delete()`
+- `getOrCreateForScope()`, `rotateForScope()`, `clearScope()`, `getActiveForScope()`, `listForScope()` — gestion par scope (webui, telegram, tui)
+- `listCheckpointsSync()` — liste synchronisee des checkpoints (lecture disque directe)
 - `setCheckpointer()` — injection du checkpointer pour nettoyage des threads
 - `buildSessionConfig()` — construction de la config LangGraph avec `thread_id`
+
+### `src/conversation/`
+
+**SSOT** des commandes slash unifiees pour toutes les facades (TUI, WebUI, Telegram).
+
+Fichiers clefs:
+
+- `slash-command-types.ts` — types partages (`SlashCommandName`, `SlashCommandResult`, `SlashSurface`)
+- `slash-command-registry.ts` — registre canonique des commandes, parsing, resolution d'alias
+- `slash-command-service.ts` — `SlashCommandService` : parser + dispatcher + execute pour chaque commande
+
+Responsabilites:
+
+- catalogue unique des commandes `/help`, `/sessions`, `/resume`, `/delete`, `/new`, `/reset`, `/checkpoints`, `/save`, `/restore`, `/checkpoint_delete`, `/pending`, `/approve`, `/compact`, `/open`, `/toggle_thinking`, `/toggle_cli`, `/stop`, `/exit`
+- semantique unique: `/resume` = reprise de session, `/restore` = restauration de checkpoint
+-结果的 structure independant de la facade
+- disponibilite par surface dans le registre
 
 Chaque facade instancie sa propre `SessionService` et delegue la gestion des sessions au service. Le checkpointer est injecte apres creation de l'agent.
 
@@ -205,4 +223,5 @@ Note: orthogonal a `memory/` qui porte le cross-session memory. `compaction/` ge
 - Compaction: `src/compaction/*`, `src/deepagents/compaction-middleware.ts`
 - Setup: `src/setup.ts`, `src/setup/*`, `src/n8n-local/*`
 - Sessions Deepagents + UI: `src/session/deepagent-sessions.ts`, `src/session/webui-sessions.ts`
+- Commandes slash: `src/conversation/slash-command-service.ts`, `src/conversation/slash-command-registry.ts`
 - Memoire cross-session: `src/memory/*`
