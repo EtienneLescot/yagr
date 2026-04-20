@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.28](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.27...yagr@v0.2.28) (2026-04-20)
+
+
+### Features
+
+* add generic OpenAI compatible provider ([ffa85ba](https://github.com/EtienneLescot/yagr/commit/ffa85ba39ca1aca3cbc8552a14b31499230d0c57)), closes [#33](https://github.com/EtienneLescot/yagr/issues/33)
+* **session:** unify slash command management across TUI, WebUI and Telegram ([8225fa8](https://github.com/EtienneLescot/yagr/commit/8225fa813053247048db66315b58eb27731a413a))
+
+
+### Bug Fixes
+
+* **conversation:** parse slash commands with registry-compatible input ([b30d2da](https://github.com/EtienneLescot/yagr/commit/b30d2da983ef39b811a4d43bd65271845cfc19ff))
+* **openai-proxy:** align OAuth model discovery with Codex payload ([37379fb](https://github.com/EtienneLescot/yagr/commit/37379fb4c7acdd9597a8e947fce84d4f7498261d))
+* **openai:** enhance handling of raw output items and assistant phase in responses ([c8c8f0f](https://github.com/EtienneLescot/yagr/commit/c8c8f0f47789074b553d681b6a12c256ce22ce72))
+* **openai:** support assistant phase tracking and strict tool schemas ([93d29c9](https://github.com/EtienneLescot/yagr/commit/93d29c98eab3b60ffb5a9d18e696f05b8f2dce21))
+* **openai:** validate Codex timeout env parsing ([0c416e0](https://github.com/EtienneLescot/yagr/commit/0c416e08b54638c836d37235bc23d48ca24fb0e5))
+* **plan:** use Telegram-compatible command names and make WebUI slash mandatory ([7ddf9d2](https://github.com/EtienneLescot/yagr/commit/7ddf9d2d2263ce99f19e9a4c334a3dd07f679c93))
+* **setup:** expose openai-compatible in wizard provider list ([9790dc7](https://github.com/EtienneLescot/yagr/commit/9790dc7b116eccfd9e1da63947df709ae47e3cfe))
+* **slash:** restore /approve behavior for pending permissions ([5261477](https://github.com/EtienneLescot/yagr/commit/52614777b38196bab302f47dd2e7643d4df469c4))
+* **webui:** switch active session after slash resume/new ([046546f](https://github.com/EtienneLescot/yagr/commit/046546fe3db18400724b5524166842627f6038fa))
+
 ## [0.2.27](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.26...yagr@v0.2.27) (2026-04-20)
 
 
