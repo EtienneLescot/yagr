@@ -19,6 +19,12 @@ La direction cible de reference est documentee dans `yagr-engine-architecture.md
 - Extraire progressivement le couplage `n8n` encore present dans le prompt, le tooling et les flux de run
 - Unifier les edits chat et UI autour du meme pipeline de patch/validation `Yagr Engine`
 
+### Session management unifie des facades
+
+- Unifier le management des sessions de conversation entre TUI, WebUI et Telegram avec `SessionService` comme SSOT
+- Introduire un SSOT des commandes slash pour TUI, WebUI et Telegram, avec `/help` derive du registre central
+- Reaffecter `/resume` aux sessions de conversation et reserver `/restore` aux checkpoints
+
 ## Regle de vie
 
 - Quand un item est termine, il est retire de cette page.
