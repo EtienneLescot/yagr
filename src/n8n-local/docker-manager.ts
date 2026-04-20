@@ -16,6 +16,7 @@ import {
 const execFileAsync = promisify(execFile);
 const DEFAULT_N8N_IMAGE = 'docker.n8n.io/n8nio/n8n:stable';
 const CONTAINER_N8N_PORT = 5678;
+const DEFAULT_DOCKER_COMPOSE_TIMEOUT_MS = parseInt(process.env.YAGR_N8N_DOCKER_COMPOSE_TIMEOUT_MS ?? '600000', 10);
 const DEFAULT_HEALTH_TIMEOUT_MS = parseInt(process.env.YAGR_N8N_HEALTH_TIMEOUT_MS ?? '300000', 10);
 const DEFAULT_EDITOR_TIMEOUT_MS = 90_000;
 
@@ -209,7 +210,7 @@ async function runDockerCompose(args: string[]): Promise<{ stdout: string; stder
   try {
     return await execFileAsync(cmd, cmdArgs, {
       cwd: rootDir,
-      timeout: 120_000,
+      timeout: DEFAULT_DOCKER_COMPOSE_TIMEOUT_MS,
       env: {
         ...process.env,
         COMPOSE_PROJECT_NAME: getComposeProjectName(rootDir),

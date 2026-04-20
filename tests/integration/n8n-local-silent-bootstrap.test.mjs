@@ -10,6 +10,9 @@ import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const DOCKER_COMPOSE_TIMEOUT_MS = Number.parseInt(process.env.YAGR_N8N_DOCKER_COMPOSE_TIMEOUT_MS ?? '600000', 10);
+const COLD_START_SCRIPT_TIMEOUT_MS = DOCKER_COMPOSE_TIMEOUT_MS + 60_000;
+const COLD_START_TEST_TIMEOUT_MS = COLD_START_SCRIPT_TIMEOUT_MS + 60_000;
 
 function parseLastJsonLine(stdout) {
   const line = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1);
@@ -108,7 +111,7 @@ test('managed local n8n can bootstrap owner and API key silently', async (t) => 
   const bootstrap = await execFileAsync('node', ['--input-type=module', '-e', bootstrapScript], {
     cwd: repoRoot,
     env,
-    timeout: 180_000,
+    timeout: COLD_START_SCRIPT_TIMEOUT_MS,
   });
 
   const payload = parseLastJsonLine(bootstrap.stdout);
@@ -117,7 +120,7 @@ test('managed local n8n can bootstrap owner and API key silently', async (t) => 
   assert.match(payload.ownerEmail, /@local\.yagr$/);
   assert.equal(payload.connected, true);
   assert.ok(payload.projectCount >= 1);
-}, 300_000);
+}, COLD_START_TEST_TIMEOUT_MS);
 
 test('managed local n8n can silently bootstrap immediately after install', async (t) => {
   if (!(await isDockerHostAvailable())) {
@@ -170,13 +173,13 @@ test('managed local n8n can silently bootstrap immediately after install', async
   const bootstrap = await execFileAsync('node', ['--input-type=module', '-e', bootstrapScript], {
     cwd: repoRoot,
     env,
-    timeout: 180_000,
+    timeout: COLD_START_SCRIPT_TIMEOUT_MS,
   });
 
   const payload = parseLastJsonLine(bootstrap.stdout);
   assert.equal(payload.mode, 'silent');
   assert.equal(payload.hasApiKey, true);
-}, 300_000);
+}, COLD_START_TEST_TIMEOUT_MS);
 
 test('managed local n8n can silently bootstrap again using stored owner credentials', async (t) => {
   if (!(await isDockerHostAvailable())) {
@@ -228,7 +231,7 @@ test('managed local n8n can silently bootstrap again using stored owner credenti
   const bootstrap = await execFileAsync('node', ['--input-type=module', '-e', bootstrapScript], {
     cwd: repoRoot,
     env,
-    timeout: 180_000,
+    timeout: COLD_START_SCRIPT_TIMEOUT_MS,
   });
 
   const payload = parseLastJsonLine(bootstrap.stdout);
@@ -237,7 +240,7 @@ test('managed local n8n can silently bootstrap again using stored owner credenti
   assert.equal(payload.firstApiKey, true);
   assert.equal(payload.secondApiKey, true);
   assert.equal(payload.sameEmail, true);
-}, 300_000);
+}, COLD_START_TEST_TIMEOUT_MS);
 
 test('managed local startup recreates a connected Docker runtime when the managed state file is missing', async (t) => {
   if (!(await isDockerHostAvailable())) {
@@ -314,7 +317,7 @@ test('managed local startup recreates a connected Docker runtime when the manage
   const startup = await execFileAsync('node', ['--input-type=module', '-e', startupScript], {
     cwd: repoRoot,
     env,
-    timeout: 240_000,
+    timeout: COLD_START_SCRIPT_TIMEOUT_MS,
   });
 
   const payload = parseLastJsonLine(startup.stdout);
@@ -329,4 +332,4 @@ test('managed local startup recreates a connected Docker runtime when the manage
   assert.ok(payload.projectId);
   assert.ok(payload.projectName);
   assert.equal(payload.apiKeyPresent, true);
-}, 360_000);
+}, COLD_START_TEST_TIMEOUT_MS);
