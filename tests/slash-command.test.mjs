@@ -267,6 +267,53 @@ test('SlashCommandService.execute /resume with unknown session returns session_n
   assert.equal(result.kind, 'session_not_found');
 });
 
+test('SlashCommandService.execute /approve resumes pending permissions when supported', async () => {
+  const { service: sessions } = createTempSessionService();
+  const slashService = new SlashCommandService(sessions, {
+    getState: () => null,
+    reset: () => {},
+    setState: () => {},
+    notifyCompaction: async () => {},
+  } as any);
+
+  const result = await slashService.execute(
+    { command: 'approve', args: [], raw: '/approve' },
+    { surface: 'tui', sessionId: 'default', threadId: 'thread-1' },
+    {
+      getActiveSessionId: () => undefined,
+      resumeSession: () => {},
+      resetLocalState: () => {},
+      approvePendingPermissions: () => 2,
+    },
+  );
+
+  assert.equal(result.kind, 'ok');
+  assert.ok(result.message.includes('Permission granted'));
+  assert.ok(result.data && typeof result.data === 'object' && 'resumePrompt' in result.data);
+});
+
+test('SlashCommandService.execute /approve returns unsupported_in_surface without approval handler', async () => {
+  const { service: sessions } = createTempSessionService();
+  const slashService = new SlashCommandService(sessions, {
+    getState: () => null,
+    reset: () => {},
+    setState: () => {},
+    notifyCompaction: async () => {},
+  } as any);
+
+  const result = await slashService.execute(
+    { command: 'approve', args: [], raw: '/approve' },
+    { surface: 'webui', sessionId: 'default', threadId: 'thread-1' },
+    {
+      getActiveSessionId: () => undefined,
+      resumeSession: () => {},
+      resetLocalState: () => {},
+    },
+  );
+
+  assert.equal(result.kind, 'unsupported_in_surface');
+});
+
 test('SlashCommandService.execute /delete with no args returns invalid_arguments', async () => {
   const { service: sessions } = createTempSessionService();
   const slashService = new SlashCommandService(sessions, {

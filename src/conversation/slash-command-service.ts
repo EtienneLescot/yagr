@@ -15,6 +15,7 @@ export interface SlashHandler {
   getActiveSessionId(scope: DeepAgentSessionScope): string | undefined;
   resumeSession(scope: DeepAgentSessionScope, sessionId: string): void;
   resetLocalState(): void;
+  approvePendingPermissions?(): Promise<number> | number;
   openExternalUrl?(url: string): Promise<void>;
   getDisplayOptions?(): { showThinking: boolean; showExecution: boolean };
   setDisplayOptions?(opts: { showThinking?: boolean; showExecution?: boolean }): void;
@@ -86,7 +87,10 @@ export class SlashCommandService {
         return { kind: 'ok', message: 'Use the pending actions display in the UI.' };
 
       case 'approve':
-        return { kind: 'ok', message: 'Use the UI to approve pending actions.' };
+        if (!handler.approvePendingPermissions) {
+          return { kind: 'unsupported_in_surface', message: '/approve is not available in this surface.' };
+        }
+        return this.executeApprove(handler);
 
       case 'compact':
         return { kind: 'ok', message: 'Compaction runs automatically when needed.' };
@@ -133,6 +137,21 @@ export class SlashCommandService {
       kind: 'ok',
       message: `Available commands:\n${lines.join('\n')}`,
       data: { commands },
+    };
+  }
+
+  private async executeApprove(handler: SlashHandler): Promise<SlashCommandResult> {
+    const approvedCount = await handler.approvePendingPermissions?.();
+    if (!approvedCount) {
+      return { kind: 'ok', message: 'No permissions pending.', data: { approvedCount: 0 } };
+    }
+    return {
+      kind: 'ok',
+      message: `Permission granted for ${approvedCount} action(s).`,
+      data: {
+        approvedCount,
+        resumePrompt: 'Permission granted. Continue the current task and execute the previously blocked step now.',
+      },
     };
   }
 
