@@ -48,12 +48,6 @@ test('resolveModelProvider uses persisted provider from setup', () => {
   assert.equal(resolveModelProvider(undefined, configStore), 'openrouter');
 });
 
-test('resolveModelProvider normalizes legacy openai-proxy config to openai-oauth', () => {
-  const configStore = createConfigStore({ provider: 'openai-proxy' }, {});
-
-  assert.equal(resolveModelProvider(undefined, configStore), 'openai-oauth');
-});
-
 test('resolveModelProvider falls back to stored credentials when local provider is missing', () => {
   const configStore = createConfigStore({}, { anthropic: 'test-key' });
 

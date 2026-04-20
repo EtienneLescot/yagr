@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { HumanMessage } from '@langchain/core/messages';
+import { AIMessage, HumanMessage } from '@langchain/core/messages';
 
 import { createOpenAiAccountLanguageModel, getDefaultCodexReasoningEffort } from '../dist/llm/openai-account.js';
 import { createLangChainModel } from '../dist/llm/create-langchain-model.js';
@@ -110,6 +110,7 @@ test('openai-oauth sends function tools and returns tool calls from Codex respon
     assert.equal(Array.isArray(seenBody.tools), true);
     assert.equal(seenBody.tools[0].type, 'function');
     assert.equal(seenBody.tools[0].name, 'n8nac');
+    assert.notEqual(seenBody.tools[0].strict, false);
     assert.deepEqual(seenBody.tools[0].parameters.required, ['action']);
     assert.equal(result.finishReason, 'tool-calls');
     assert.equal(Array.isArray(result.toolCalls), true);
@@ -638,6 +639,125 @@ test('openai-oauth LangChain model reuses previous_response_id on incremental fo
   }
 });
 
+test('openai-oauth low-level generate extracts assistant phase from responses events', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-phase-'));
+  const authPath = path.join(tempDir, 'auth.json');
+  const accessToken = makeJwtWithAccountId('acct_yagr_phase');
+  fs.writeFileSync(authPath, JSON.stringify({
+    auth_mode: 'chatgpt',
+    tokens: {
+      access_token: accessToken,
+      refresh_token: 'refresh-token',
+    },
+  }));
+
+  const previousAuthPath = process.env.YAGR_CODEX_AUTH_PATH;
+  const previousFetch = globalThis.fetch;
+  let seenBody;
+
+  process.env.YAGR_CODEX_AUTH_PATH = authPath;
+  globalThis.fetch = async (_url, init) => {
+    seenBody = JSON.parse(String(init?.body || '{}'));
+    return createSseResponse([
+      {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'message',
+          role: 'assistant',
+          phase: 'final',
+          content: [{ type: 'output_text', text: 'First' }],
+        },
+      },
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_phase_1',
+          usage: { input_tokens: 3, output_tokens: 1 },
+        },
+      },
+    ]);
+  };
+
+  try {
+    const model = createOpenAiAccountLanguageModel('gpt-5.4', 'none', 'session-phase');
+    const first = await model.doGenerate({
+      inputFormat: 'prompt',
+      mode: { type: 'regular' },
+      prompt: [{ role: 'user', content: [{ type: 'text', text: 'First turn' }] }],
+    });
+    assert.equal(first.response?.assistantPhase, 'final');
+    assert.equal(seenBody.input[0].role, 'user');
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousAuthPath === undefined) {
+      delete process.env.YAGR_CODEX_AUTH_PATH;
+    } else {
+      process.env.YAGR_CODEX_AUTH_PATH = previousAuthPath;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('openai-oauth re-emits assistant phase on incremental follow-up turns', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-phase-followup-'));
+  const authPath = path.join(tempDir, 'auth.json');
+  const accessToken = makeJwtWithAccountId('acct_yagr_phase_followup');
+  fs.writeFileSync(authPath, JSON.stringify({
+    auth_mode: 'chatgpt',
+    tokens: {
+      access_token: accessToken,
+      refresh_token: 'refresh-token',
+    },
+  }));
+
+  const previousAuthPath = process.env.YAGR_CODEX_AUTH_PATH;
+  const previousFetch = globalThis.fetch;
+  const seenBodies = [];
+  let callCount = 0;
+
+  process.env.YAGR_CODEX_AUTH_PATH = authPath;
+  globalThis.fetch = async (_url, init) => {
+    seenBodies.push(JSON.parse(String(init?.body || '{}')));
+    callCount += 1;
+    return createSseResponse([
+      {
+        type: 'response.completed',
+        response: {
+          id: callCount === 1 ? 'resp_phase_1' : 'resp_phase_2',
+          usage: { input_tokens: 3, output_tokens: 1 },
+        },
+      },
+    ]);
+  };
+
+  try {
+    const model = new ChatCodexOAuth({ model: 'gpt-5.4', sessionId: 'session-phase' });
+    await model._generate([new HumanMessage('First turn')], {});
+    const assistant = new AIMessage({
+      content: 'First',
+      additional_kwargs: { phase: 'final' },
+    });
+
+    await model._generate([
+      new HumanMessage('First turn'),
+      assistant,
+      new HumanMessage('Second turn'),
+    ], {});
+
+    assert.equal(seenBodies[1].previous_response_id, 'resp_phase_1');
+    assert.equal(seenBodies[1].input[0].phase, 'final');
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousAuthPath === undefined) {
+      delete process.env.YAGR_CODEX_AUTH_PATH;
+    } else {
+      process.env.YAGR_CODEX_AUTH_PATH = previousAuthPath;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('openai-oauth builds User-Agent with terminal information', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-ua-'));
   const authPath = path.join(tempDir, 'auth.json');
@@ -755,8 +875,9 @@ test('openai-oauth LangChain model preserves optional tool properties as optiona
     const result = await boundModel.invoke([new HumanMessage('Find workflow files.')]);
 
     assert.equal(seenBody.tools[0].name, 'glob');
-    assert.deepEqual(seenBody.tools[0].parameters.required, ['pattern']);
-    assert.equal(seenBody.tools[0].parameters.properties.path.type, 'string');
+    assert.equal(seenBody.tools[0].strict, true);
+    assert.deepEqual(seenBody.tools[0].parameters.required, ['pattern', 'path']);
+    assert.deepEqual(seenBody.tools[0].parameters.properties.path.type, ['string', 'null']);
     assert.equal(result.tool_calls.length, 1);
     assert.equal(result.tool_calls[0].name, 'glob');
     assert.deepEqual(result.tool_calls[0].args, { pattern: 'workflows/**/*.workflow.ts' });

@@ -30,6 +30,7 @@ export interface LanguageModelV1FunctionTool {
   name: string;
   description?: string;
   parameters: JSONSchema7;
+  strict?: boolean;
 }
 
 export type LanguageModelV1Tool = LanguageModelV1FunctionTool;
@@ -53,11 +54,12 @@ type TextPart = { type: 'text'; text: string };
 type ImagePart = { type: 'image'; image: string | Uint8Array; mimeType?: string };
 type ToolCallPart = { type: 'tool-call'; toolCallId: string; toolName: string; args: unknown };
 type ToolResultPart = { type: 'tool-result'; toolCallId: string; toolName: string; result: unknown; isError?: boolean };
+type AssistantPhase = 'analysis' | 'final' | string;
 
 export type LanguageModelV1Prompt = Array<
   | { role: 'system'; content: string }
   | { role: 'user'; content: Array<TextPart | ImagePart> }
-  | { role: 'assistant'; content: Array<TextPart | ToolCallPart> }
+  | { role: 'assistant'; content: Array<TextPart | ToolCallPart>; phase?: AssistantPhase }
   | { role: 'tool'; content: Array<ToolResultPart> }
 >;
 
@@ -94,7 +96,7 @@ export type LanguageModelV1StreamPart =
   | { type: 'text-delta'; textDelta: string }
   | { type: 'tool-call-delta'; toolCallType: 'function'; toolCallId: string; toolName: string; argsTextDelta: string }
   | { type: 'tool-call'; toolCallType: 'function'; toolCallId: string; toolName: string; args: string }
-  | { type: 'finish'; finishReason: LanguageModelV1FinishReason; usage: { promptTokens: number; completionTokens: number }; providerMetadata?: { responseId?: string } }
+  | { type: 'finish'; finishReason: LanguageModelV1FinishReason; usage: { promptTokens: number; completionTokens: number }; providerMetadata?: { responseId?: string; assistantPhase?: AssistantPhase } }
   | { type: 'error'; error: unknown };
 
 // ─── Generate result ──────────────────────────────────────────────────────────
@@ -115,7 +117,7 @@ export interface LanguageModelV1GenerateResult {
   usage: { promptTokens: number; completionTokens: number };
   rawCall: { rawPrompt: unknown; rawSettings: Record<string, unknown> };
   warnings?: LanguageModelV1CallWarning[];
-  response?: { timestamp: Date; modelId: string; id?: string };
+  response?: { timestamp: Date; modelId: string; id?: string; assistantPhase?: AssistantPhase };
 }
 
 // ─── Language model interface ─────────────────────────────────────────────────
