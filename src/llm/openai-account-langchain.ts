@@ -247,6 +247,7 @@ function toLanguageModelTool(input: BindToolsInput): LanguageModelV1FunctionTool
     name,
     description: typeof candidate.description === 'string' ? candidate.description : undefined,
     parameters,
+    strict: true,
   };
 }
 

@@ -238,10 +238,6 @@ export function normalizeProviderId(provider: string | undefined): YagrModelProv
     return undefined;
   }
 
-  if (provider === 'openai-proxy') {
-    return 'openai-oauth';
-  }
-
   if (provider in YAGR_PROVIDER_DEFINITIONS) {
     return provider as YagrModelProvider;
   }
