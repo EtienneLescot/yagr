@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.26](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.25...yagr@v0.2.26) (2026-04-20)
+
+
+### Features
+
+* update README with n8n acknowledgment and add n8n logo ([633b56b](https://github.com/EtienneLescot/yagr/commit/633b56b57f4643106edb66199aac3b9568dce304))
+
+
+### Bug Fixes
+
+* correct punctuation in Yagr description for clarity ([0cecf8a](https://github.com/EtienneLescot/yagr/commit/0cecf8aed66a42ecaba8685298b309a4980e4fa4))
+* **n8n-local:** recover managed startup after runtime loss ([7ecb6de](https://github.com/EtienneLescot/yagr/commit/7ecb6ded53658d9060efad5511203e1310f82bf8))
+* **n8n-local:** stop inferring managed instance profile from tunnel config ([bba9bdd](https://github.com/EtienneLescot/yagr/commit/bba9bdd6db887b19d755218e99d0551b6e0a095a))
+* **n8n:** enhance managed runtime synchronization with tunnel configuration ([79bc99a](https://github.com/EtienneLescot/yagr/commit/79bc99a068d1aac8655c55d02df045f82923cf4d))
+* **n8n:** normalize managed runtime startup and reconciliation ([3496cc8](https://github.com/EtienneLescot/yagr/commit/3496cc87fd3466c704eeabcbf71f0868eb37f388))
+* remove acknowledgment of n8n team from README ([03a828f](https://github.com/EtienneLescot/yagr/commit/03a828ff32be6d728aa5bfd901123f9f9874e2b1))
+* remove outdated command for local n8n editor in README ([04737e8](https://github.com/EtienneLescot/yagr/commit/04737e818e86ee1caa782297cd35be95033cd0c1))
+
 ## [0.2.25](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.24...yagr@v0.2.25) (2026-04-19)
 
 
