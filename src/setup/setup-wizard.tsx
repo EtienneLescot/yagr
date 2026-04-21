@@ -32,11 +32,26 @@ const PROVIDER_WIZARD_ORDER: YagrModelProvider[] = [
   'copilot-proxy',
   'mistral',
   'minimax',
+  'minimax-token-plan',
   'openrouter',
 ];
 
 const SELECTABLE_PROVIDER_SET = new Set<YagrModelProvider>(YAGR_SELECTABLE_MODEL_PROVIDERS);
 const VALID_PROVIDERS: YagrModelProvider[] = PROVIDER_WIZARD_ORDER.filter((provider) => SELECTABLE_PROVIDER_SET.has(provider));
+
+type ProviderFamily = 'openai' | 'openai-compatible' | 'anthropic' | 'anthropic-proxy' | 'google' | 'copilot-proxy' | 'mistral' | 'minimax' | 'openrouter';
+
+interface ProviderFamilyOption {
+  family: ProviderFamily;
+  label: string;
+  hint?: string;
+}
+
+interface ProviderVariantOption {
+  provider: YagrModelProvider;
+  label: string;
+  hint?: string;
+}
 
 function isHttpUrl(value: string): boolean {
   return /^https?:\/\//.test(value);
@@ -67,7 +82,7 @@ export interface SetupCallbacks {
     getBaseUrl(prov: YagrModelProvider): string | undefined;
     needsBaseUrl(prov: YagrModelProvider): boolean;
   };
-  prepareProvider(provider: YagrModelProvider, apiKey?: string): Promise<{
+  prepareProvider(provider: YagrModelProvider, apiKey?: string, baseUrl?: string): Promise<{
     ready: boolean;
     apiKey?: string;
     baseUrl?: string;
@@ -89,7 +104,7 @@ export interface SetupCallbacks {
     error?: string;
     apiKey?: string;
   }>;
-  fetchModels(provider: YagrModelProvider, apiKey?: string): Promise<string[]>;
+  fetchModels(provider: YagrModelProvider, apiKey?: string, baseUrl?: string): Promise<string[]>;
   saveLlmConfig(p: { provider: YagrModelProvider; apiKey?: string; model: string; baseUrl?: string; reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' }): void;
   getSurfaceDefaults(): { surfaces: GatewaySurface[] };
   getTelegramToken(): string | undefined;
@@ -144,6 +159,8 @@ type Phase =
   | { kind: 'n8n-local-ready'; url: string; instanceProfile: YagrN8nInstanceProfile; cursor: number; note?: string }
   | { kind: 'n8n-local-auth'; url: string; message: string }
   | { kind: 'llm-provider'; initial?: YagrModelProvider; cursor: number }
+  | { kind: 'llm-provider-variant'; family: 'openai' | 'minimax'; initial?: YagrModelProvider; cursor: number }
+  | { kind: 'llm-provider-endpoint'; provider: 'minimax' | 'minimax-token-plan'; cursor: number }
   | { kind: 'llm-oauth-reuse'; provider: YagrModelProvider; cursor: number }
   | { kind: 'llm-account-auth'; provider: YagrModelProvider; cursor: number }
   | { kind: 'llm-account-input'; provider: YagrModelProvider; title: string; instructions: string[]; placeholder?: string; submitLabel: string; state?: string; err?: string }
@@ -153,7 +170,7 @@ type Phase =
   | { kind: 'llm-models-loading'; provider: YagrModelProvider; apiKey: string; defModel: string | undefined; note?: string }
   | { kind: 'llm-model'; provider: YagrModelProvider; apiKey: string; models: string[]; defModel: string | undefined; cursor: number; note?: string }
   | { kind: 'llm-reasoning-effort'; provider: YagrModelProvider; apiKey: string; model: string; cursor: number }
-  | { kind: 'llm-baseurl'; provider: YagrModelProvider; apiKey: string; model: string; def: string; reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'; err?: string }
+  | { kind: 'llm-baseurl'; provider: YagrModelProvider; apiKey: string; model: string; def: string; cursor?: number; reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'; err?: string }
   | { kind: 'surfaces'; cursor: number; selected: GatewaySurface[] }
   | { kind: 'telegram-reuse-token'; surfaces: GatewaySurface[]; existing: string; cursor: number }
   | { kind: 'telegram-token'; surfaces: GatewaySurface[]; err?: string }
@@ -219,6 +236,60 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
     body: ['Yagr will verify your account session before loading models.'],
     continueLabel: 'Continue',
   };
+}
+
+const MINIMAX_ENDPOINT_OPTIONS = [
+  { value: 'https://api.minimax.io/anthropic', label: 'api.minimax.io' },
+  { value: 'https://api.minimaxi.com/anthropic', label: 'api.minimaxi.com (china mainland)' },
+] as const;
+
+const LLM_PROVIDER_FAMILY_OPTIONS: ProviderFamilyOption[] = [
+  ...(SELECTABLE_PROVIDER_SET.has('openai') || SELECTABLE_PROVIDER_SET.has('openai-oauth') ? [{ family: 'openai' as const, label: 'OpenAI' }] : []),
+  ...(SELECTABLE_PROVIDER_SET.has('openai-compatible') ? [{ family: 'openai-compatible' as const, label: 'OpenAI Compatible' }] : []),
+  ...(SELECTABLE_PROVIDER_SET.has('anthropic') ? [{ family: 'anthropic' as const, label: 'Claude' }] : []),
+  ...(SELECTABLE_PROVIDER_SET.has('anthropic-proxy') ? [{ family: 'anthropic-proxy' as const, label: 'Claude Account' }] : []),
+  ...(SELECTABLE_PROVIDER_SET.has('google') ? [{ family: 'google' as const, label: 'Gemini' }] : []),
+  ...(SELECTABLE_PROVIDER_SET.has('copilot-proxy') ? [{ family: 'copilot-proxy' as const, label: 'GitHub' }] : []),
+  ...(SELECTABLE_PROVIDER_SET.has('mistral') ? [{ family: 'mistral' as const, label: 'Mistral' }] : []),
+  ...((SELECTABLE_PROVIDER_SET.has('minimax') || SELECTABLE_PROVIDER_SET.has('minimax-token-plan')) ? [{ family: 'minimax' as const, label: 'MiniMax' }] : []),
+  ...(SELECTABLE_PROVIDER_SET.has('openrouter') ? [{ family: 'openrouter' as const, label: 'OpenRouter' }] : []),
+];
+
+function getProviderFamily(provider: YagrModelProvider | undefined): ProviderFamily | undefined {
+  if (!provider) {
+    return undefined;
+  }
+  if (provider === 'openai' || provider === 'openai-oauth') {
+    return 'openai';
+  }
+  if (provider === 'minimax' || provider === 'minimax-token-plan') {
+    return 'minimax';
+  }
+  return provider as ProviderFamily;
+}
+
+function getProviderFamilyCursor(provider: YagrModelProvider | undefined): number {
+  const family = getProviderFamily(provider);
+  const index = LLM_PROVIDER_FAMILY_OPTIONS.findIndex((option) => option.family === family);
+  return index >= 0 ? index : 0;
+}
+
+function getOpenAiVariantCursor(provider: YagrModelProvider | undefined): number {
+  return provider === 'openai' ? 1 : 0;
+}
+
+function getMiniMaxVariantCursor(provider: YagrModelProvider | undefined): number {
+  return provider === 'minimax-token-plan' ? 1 : 0;
+}
+
+function isMinimaxProvider(provider: YagrModelProvider): provider is 'minimax' | 'minimax-token-plan' {
+  return provider === 'minimax' || provider === 'minimax-token-plan';
+}
+
+function getMinimaxEndpointCursor(baseUrl: string | undefined): number {
+  const normalized = (baseUrl ?? '').trim();
+  const idx = MINIMAX_ENDPOINT_OPTIONS.findIndex((option) => option.value === normalized);
+  return idx >= 0 ? idx : 0;
 }
 
 // ─── Primitive UI components ──────────────────────────────────────────────────
@@ -562,7 +633,7 @@ function SetupWizard({ callbacks, options, onDone }: {
         return {
           kind: 'llm-provider',
           initial: llmProvider,
-          cursor: Math.max(0, VALID_PROVIDERS.indexOf(llmProvider)),
+          cursor: getProviderFamilyCursor(llmProvider),
         };
       }
 
@@ -765,7 +836,8 @@ function SetupWizard({ callbacks, options, onDone }: {
         let resolvedApiKey = phase.apiKey;
         let note = phase.note;
 
-        const prepared = await callbacks.prepareProvider(phase.provider, phase.apiKey || undefined);
+        const draftedBaseUrl = llmBaseUrlDraftsRef.current[phase.provider];
+        const prepared = await callbacks.prepareProvider(phase.provider, phase.apiKey || undefined, draftedBaseUrl);
         if (guard !== asyncGuard.current) return;
         if (prepared.ready) {
           if (prepared.baseUrl) {
@@ -787,7 +859,7 @@ function SetupWizard({ callbacks, options, onDone }: {
         }
 
         if (models.length === 0) {
-          models = await callbacks.fetchModels(phase.provider, resolvedApiKey || undefined);
+          models = await callbacks.fetchModels(phase.provider, resolvedApiKey || undefined, llmBaseUrlDraftsRef.current[phase.provider]);
         }
         if (guard !== asyncGuard.current) return;
         const displayedOptions = getDisplayedModelOptions(models);
@@ -932,6 +1004,56 @@ function SetupWizard({ callbacks, options, onDone }: {
     setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
   }, [app, callbacks, llmDef, mode, onDone, surfDef]);
 
+  const startProviderSelection = useCallback((provider: YagrModelProvider, baseUrl?: string) => {
+    const family = getProviderFamily(provider);
+    if (family === 'openai') {
+      setPhase({ kind: 'llm-provider-variant', family, initial: provider, cursor: getOpenAiVariantCursor(provider) });
+      return;
+    }
+    if (family === 'minimax') {
+      setPhase({ kind: 'llm-provider-variant', family, initial: provider, cursor: getMiniMaxVariantCursor(provider) });
+      return;
+    }
+    setPhase({ kind: 'llm-provider', initial: provider, cursor: getProviderFamilyCursor(provider) });
+    if (baseUrl) {
+      llmBaseUrlDraftsRef.current[provider] = baseUrl;
+    }
+  }, []);
+
+  const continueWithProvider = useCallback((provider: YagrModelProvider, baseUrl?: string) => {
+    if (baseUrl) {
+      llmBaseUrlDraftsRef.current[provider] = baseUrl;
+    } else {
+      delete llmBaseUrlDraftsRef.current[provider];
+    }
+    const existing = llmApiKeyDraftsRef.current[provider] ?? llmDef.getApiKey(provider);
+    if (isOAuthAccountProvider(provider)) {
+      void (async () => {
+        const hasSession = await callbacks.hasAccountSession(provider);
+        if (hasSession) {
+          setTextValue('');
+          setPhase({ kind: 'llm-oauth-reuse', provider, cursor: 0 });
+        } else {
+          setTextValue('');
+          setPhase({ kind: 'llm-account-auth', provider, cursor: 0 });
+        }
+      })();
+      return;
+    }
+    if (!providerRequiresApiKey(provider)) {
+      const defModel = llmDef.getDefaultModel(provider);
+      transitionToLlmModelsLoading(provider, existing ?? '', defModel);
+      return;
+    }
+    if (existing) {
+      setTextValue('');
+      setPhase({ kind: 'llm-reuse-apikey', provider, existing, cursor: 0 });
+      return;
+    }
+    setPhase({ kind: 'llm-apikey', provider });
+    setTextValue(llmApiKeyDraftsRef.current[provider] ?? '');
+  }, [callbacks, llmDef, transitionToLlmModelsLoading]);
+
   const handleSelectKey = useCallback((input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean; escape: boolean }) => {
     if (phase.kind === 'n8n-mode') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1), err: undefined });
@@ -1041,37 +1163,54 @@ function SetupWizard({ callbacks, options, onDone }: {
           setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
         } else {
           setTextValue('');
-          setPhase({ kind: 'llm-provider', initial: phase.provider, cursor: VALID_PROVIDERS.indexOf(phase.provider) });
+          setPhase({
+            kind: 'llm-provider',
+            initial: phase.provider,
+            cursor: getProviderFamilyCursor(phase.provider),
+          });
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-provider') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
-      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(VALID_PROVIDERS.length - 1, phase.cursor + 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(LLM_PROVIDER_FAMILY_OPTIONS.length - 1, phase.cursor + 1) });
       else if (key.return) {
-        const provider = VALID_PROVIDERS[phase.cursor];
-        const existing = llmApiKeyDraftsRef.current[provider] ?? llmDef.getApiKey(provider);
-        if (isOAuthAccountProvider(provider)) {
-          void (async () => {
-            const hasSession = await callbacks.hasAccountSession(provider);
-            if (hasSession) {
-              setTextValue('');
-              setPhase({ kind: 'llm-oauth-reuse', provider, cursor: 0 });
-            } else {
-              setTextValue('');
-              setPhase({ kind: 'llm-account-auth', provider, cursor: 0 });
-            }
-          })();
-        } else if (!providerRequiresApiKey(provider)) {
-          const defModel = llmDef.getDefaultModel(provider);
-          transitionToLlmModelsLoading(provider, existing ?? '', defModel);
-        } else if (existing) {
-          setTextValue('');
-          setPhase({ kind: 'llm-reuse-apikey', provider, existing, cursor: 0 });
+        const family = LLM_PROVIDER_FAMILY_OPTIONS[phase.cursor]?.family;
+        if (!family) {
+          return;
+        }
+        if (family === 'openai' || family === 'minimax') {
+          setPhase({
+            kind: 'llm-provider-variant',
+            family,
+            initial: phase.initial,
+            cursor: family === 'openai'
+              ? getOpenAiVariantCursor(phase.initial)
+              : getMiniMaxVariantCursor(phase.initial),
+          });
         } else {
-          setPhase({ kind: 'llm-apikey', provider });
-          setTextValue(llmApiKeyDraftsRef.current[provider] ?? '');
+          continueWithProvider(family);
         }
       } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'llm-provider-variant') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
+      else if (key.return) {
+        if (phase.family === 'openai') {
+          continueWithProvider(phase.cursor === 0 ? 'openai-oauth' : 'openai');
+        } else {
+          setPhase({ kind: 'llm-provider-endpoint', provider: phase.cursor === 0 ? 'minimax' : 'minimax-token-plan', cursor: 0 });
+        }
+      } else if (key.escape) {
+        setPhase({ kind: 'llm-provider', initial: phase.initial, cursor: getProviderFamilyCursor(phase.initial) });
+      }
+    } else if (phase.kind === 'llm-provider-endpoint') {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(MINIMAX_ENDPOINT_OPTIONS.length - 1, phase.cursor + 1) });
+      else if (key.return) {
+        continueWithProvider(phase.provider, MINIMAX_ENDPOINT_OPTIONS[phase.cursor]?.value);
+      } else if (key.escape) {
+        setPhase({ kind: 'llm-provider-variant', family: 'minimax', initial: phase.provider, cursor: getMiniMaxVariantCursor(phase.provider) });
+      }
     } else if (phase.kind === 'llm-oauth-reuse') {
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(1, phase.cursor + 1) });
@@ -1147,7 +1286,11 @@ function SetupWizard({ callbacks, options, onDone }: {
             }
           })();
         } else {
-          setPhase({ kind: 'llm-provider', initial: phase.provider, cursor: VALID_PROVIDERS.indexOf(phase.provider) });
+          setPhase({
+            kind: 'llm-provider',
+            initial: phase.provider,
+            cursor: getProviderFamilyCursor(phase.provider),
+          });
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-account-input') {
@@ -1187,7 +1330,14 @@ function SetupWizard({ callbacks, options, onDone }: {
         if (draftedBaseUrl) {
           saveLlmAndContinue(phase.provider, phase.apiKey, model, phase.note);
         } else if (needsUrl || defaultBaseUrl) {
-          setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model, def: defaultBaseUrl ?? '' });
+          setPhase({
+            kind: 'llm-baseurl',
+            provider: phase.provider,
+            apiKey: phase.apiKey,
+            model,
+            def: defaultBaseUrl ?? '',
+            ...(isMinimaxProvider(phase.provider) ? { cursor: getMinimaxEndpointCursor(defaultBaseUrl) } : {}),
+          });
           setTextValue(defaultBaseUrl ?? '');
         } else {
           saveLlmAndContinue(phase.provider, phase.apiKey, model, phase.note);
@@ -1212,7 +1362,15 @@ function SetupWizard({ callbacks, options, onDone }: {
           }
           setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
         } else if (needsUrl || defaultBaseUrl) {
-          setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model: phase.model, def: defaultBaseUrl ?? '', reasoningEffort: selectedEffort });
+          setPhase({
+            kind: 'llm-baseurl',
+            provider: phase.provider,
+            apiKey: phase.apiKey,
+            model: phase.model,
+            def: defaultBaseUrl ?? '',
+            ...(isMinimaxProvider(phase.provider) ? { cursor: getMinimaxEndpointCursor(defaultBaseUrl) } : {}),
+            reasoningEffort: selectedEffort,
+          });
           setTextValue(defaultBaseUrl ?? '');
         } else {
           callbacks.saveLlmConfig({ provider: phase.provider, apiKey: phase.apiKey, model: phase.model, reasoningEffort: selectedEffort });
@@ -1224,6 +1382,27 @@ function SetupWizard({ callbacks, options, onDone }: {
           }
           setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
         }
+      } else if (key.escape) cancel('Setup cancelled.');
+    } else if (phase.kind === 'llm-baseurl' && isMinimaxProvider(phase.provider)) {
+      if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, (phase.cursor ?? 0) - 1), err: undefined });
+      else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(MINIMAX_ENDPOINT_OPTIONS.length - 1, (phase.cursor ?? 0) + 1), err: undefined });
+      else if (key.return) {
+        const selectedBaseUrl = MINIMAX_ENDPOINT_OPTIONS[phase.cursor ?? 0]?.value ?? MINIMAX_ENDPOINT_OPTIONS[0].value;
+        llmBaseUrlDraftsRef.current[phase.provider] = selectedBaseUrl;
+        callbacks.saveLlmConfig({
+          provider: phase.provider,
+          apiKey: phase.apiKey,
+          model: phase.model,
+          baseUrl: selectedBaseUrl,
+          reasoningEffort: phase.reasoningEffort,
+        });
+        setTextValue('');
+        if (mode === 'llm-only') {
+          setPhase({ kind: 'done', n8nHost: '', n8nProject: '', provider: phase.provider, model: phase.model, surfaces: surfDef.surfaces });
+          setTimeout(() => { onDone({ ok: true }); app.exit(); }, 250);
+          return;
+        }
+        setPhase({ kind: 'surfaces', cursor: 0, selected: surfDef.surfaces });
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'surfaces') {
       const opts = SURFACE_OPTIONS.map((o) => o.value);
@@ -1284,7 +1463,7 @@ function SetupWizard({ callbacks, options, onDone }: {
               return;
             }
           }
-          setPhase({ kind: 'llm-provider', initial: llmProvider, cursor: llmProvider ? VALID_PROVIDERS.indexOf(llmProvider) : 0 });
+          setPhase({ kind: 'llm-provider', initial: llmProvider, cursor: getProviderFamilyCursor(llmProvider) });
         };
         if (phase.cursor === 0 && phase.status === 'ready' && phase.mode && phase.relayUrl) {
           // Accept: save llmProxy config then proceed
@@ -1351,9 +1530,10 @@ function SetupWizard({ callbacks, options, onDone }: {
     }
   }, [phase, cancel, callbacks, llmDef, surfDef, n8nDef.syncFolder, app, onDone]);
 
-  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-instance-location', 'n8n-local-runtime', 'n8n-project', 'llm-provider', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'llm-reasoning-effort', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
+  const isSelectPhase = ['n8n-mode', 'n8n-local-ready', 'n8n-reuse-apikey', 'n8n-instance-location', 'n8n-local-runtime', 'n8n-project', 'llm-provider', 'llm-provider-variant', 'llm-provider-endpoint', 'llm-oauth-reuse', 'llm-account-auth', 'llm-reuse-config', 'llm-reuse-apikey', 'llm-reasoning-effort', 'surfaces', 'telegram-reuse-token'].includes(phase.kind)
     || (phase.kind === 'n8n-docker-check' && phase.status === 'unavailable')
     || (phase.kind === 'llm-model' && phase.models.length > 0)
+    || (phase.kind === 'llm-baseurl' && isMinimaxProvider(phase.provider))
     || (phase.kind === 'llm-proxy-setup' && (phase.status === 'ready' || phase.status === 'failed'))
     || (phase.kind === 'n8n-tunnel-offer' && (phase.status === 'offer' || phase.status === 'done' || phase.status === 'failed'));
 
@@ -1730,23 +1910,57 @@ function SetupWizard({ callbacks, options, onDone }: {
         return (
           <Box flexDirection="column">
             <FieldLabel label="Default LLM provider" />
-            <Text color="yellow">  Warning: select only tool-capable models for Yagr agent runs.</Text>
+            
             <SelectList
-              options={VALID_PROVIDERS}
+              options={LLM_PROVIDER_FAMILY_OPTIONS}
               cursor={phase.cursor}
-              getLabel={(v) => getProviderDisplayName(v)}
-              getHint={(v) => {
-                const parts = [
-                  getProviderSetupHint(v),
-                  isExperimentalProvider(v) ? 'experimental' : undefined,
-                  v === phase.initial ? 'currently configured' : undefined,
-                ].filter(Boolean);
-                return parts.length > 0 ? parts.join(' · ') : undefined;
-              }}
+              getLabel={(v) => v.label}
+              getHint={(v) => getProviderFamily(phase.initial) === v.family ? 'currently configured' : v.hint}
               maxVisibleRows={getListViewportHeight(terminalRows, 10)}
               maxLineWidth={listLineWidth}
             />
             <HintBar hints={['↑↓  move', 'Enter ↵  select', 'Ctrl+C  cancel']} />
+          </Box>
+        );
+
+      case 'llm-provider-variant': {
+        const options: ProviderVariantOption[] = phase.family === 'openai'
+          ? [
+              { provider: 'openai-oauth', label: 'ChatGPT subscription, no API key required' },
+              { provider: 'openai', label: 'API key' },
+            ]
+          : [
+              { provider: 'minimax', label: 'API' },
+              { provider: 'minimax-token-plan', label: 'Token Plan' },
+            ];
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label={phase.family === 'openai' ? 'OpenAI access method' : 'MiniMax plan'} />
+            <SelectList
+              options={options}
+              cursor={phase.cursor}
+              getLabel={(v) => v.label}
+              getHint={(v) => v.provider === phase.initial ? 'currently configured' : v.hint}
+              maxVisibleRows={getListViewportHeight(terminalRows, 10)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  select', 'Ctrl+C  back']} />
+          </Box>
+        );
+      }
+
+      case 'llm-provider-endpoint':
+        return (
+          <Box flexDirection="column">
+            <FieldLabel label={`${getProviderDisplayName(phase.provider)} endpoint`} />
+            <SelectList
+              options={MINIMAX_ENDPOINT_OPTIONS}
+              cursor={phase.cursor}
+              getLabel={(v) => v.label}
+              maxVisibleRows={getListViewportHeight(terminalRows, 10)}
+              maxLineWidth={listLineWidth}
+            />
+            <HintBar hints={['↑↓  move', 'Enter ↵  select', 'Ctrl+C  back']} />
           </Box>
         );
 
@@ -1868,7 +2082,7 @@ function SetupWizard({ callbacks, options, onDone }: {
         return (
           <Box flexDirection="column">
             <FieldLabel label={`Default model  ·  ${getProviderDisplayName(phase.provider)}`} />
-            <Text color="yellow">  Warning: select only tool-capable models.</Text>
+            
             {phase.note ? <Text dimColor>  {phase.note}</Text> : null}
             {phase.models.length === 0 ? (
               <Box marginLeft={2}>
@@ -1888,7 +2102,14 @@ function SetupWizard({ callbacks, options, onDone }: {
                     if (draftedBaseUrl) {
                       saveLlmAndContinue(phase.provider, phase.apiKey, m, phase.note);
                     } else if (needsUrl || defaultBaseUrl) {
-                      setPhase({ kind: 'llm-baseurl', provider: phase.provider, apiKey: phase.apiKey, model: m, def: defaultBaseUrl ?? '' });
+                      setPhase({
+                        kind: 'llm-baseurl',
+                        provider: phase.provider,
+                        apiKey: phase.apiKey,
+                        model: m,
+                        def: defaultBaseUrl ?? '',
+                        ...(isMinimaxProvider(phase.provider) ? { cursor: getMinimaxEndpointCursor(defaultBaseUrl) } : {}),
+                      });
                       setTextValue(defaultBaseUrl ?? '');
                     } else {
                       saveLlmAndContinue(phase.provider, phase.apiKey, m, phase.note);
