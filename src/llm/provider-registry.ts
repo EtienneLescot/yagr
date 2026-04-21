@@ -191,7 +191,11 @@ export const YAGR_SUPPORTED_MODEL_PROVIDERS = Object.freeze(
   YAGR_MODEL_PROVIDERS.filter((provider) => YAGR_PROVIDER_DEFINITIONS[provider].supported !== false),
 );
 
-const YAGR_HIDDEN_SELECTABLE_MODEL_PROVIDERS = new Set<YagrModelProvider>(['anthropic-proxy']);
+const YAGR_HIDDEN_SELECTABLE_MODEL_PROVIDERS = new Set<YagrModelProvider>([
+  'anthropic-proxy',
+  'minimax',
+  'openai-compatible',
+]);
 
 export const YAGR_SELECTABLE_MODEL_PROVIDERS = Object.freeze(
   YAGR_SUPPORTED_MODEL_PROVIDERS.filter((provider) => {

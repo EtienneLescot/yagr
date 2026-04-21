@@ -31,12 +31,20 @@ const PROVIDER_WIZARD_ORDER: YagrModelProvider[] = [
   'google',
   'copilot-proxy',
   'mistral',
+  'minimax',
   'openrouter',
-  'openai-compatible',
 ];
 
 const SELECTABLE_PROVIDER_SET = new Set<YagrModelProvider>(YAGR_SELECTABLE_MODEL_PROVIDERS);
 const VALID_PROVIDERS: YagrModelProvider[] = PROVIDER_WIZARD_ORDER.filter((provider) => SELECTABLE_PROVIDER_SET.has(provider));
+
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//.test(value);
+}
+
+function formatTerminalLink(label: string, url: string): string {
+  return `\u001B]8;;${url}\u0007${label}\u001B]8;;\u0007`;
+}
 
 const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: string }> = [
   { value: 'telegram', label: 'Telegram', hint: 'Bot-based chat gateway' },
@@ -217,6 +225,21 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
 
 function Rule(): JSX.Element {
   return <Text dimColor>{'─'.repeat(56)}</Text>;
+}
+
+function WizardInstructionLine({ line }: { line: string }): JSX.Element {
+  if (!isHttpUrl(line)) {
+    return <Text dimColor>  {line}</Text>;
+  }
+
+  return (
+    <Text dimColor>
+      {'  '}
+      {formatTerminalLink('Open authentication URL', line)}
+      {'  '}
+      {line}
+    </Text>
+  );
 }
 
 function Header({ phase, mode }: { phase: Phase; mode: 'full' | 'n8n-only' | 'llm-only' | 'proxy-only' }): JSX.Element {
@@ -1776,7 +1799,7 @@ function SetupWizard({ callbacks, options, onDone }: {
           <Box flexDirection="column">
             <FieldLabel label={phase.title} />
             {phase.instructions.map((line, index) => (
-              <Text key={`${index}-${line}`} dimColor>  {line}</Text>
+              <WizardInstructionLine key={`${index}-${line}`} line={line} />
             ))}
             <Box marginLeft={2} marginTop={1}>
               <WizardTextInput
