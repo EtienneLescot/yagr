@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.29](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.28...yagr@v0.2.29) (2026-04-21)
+
+
+### Bug Fixes
+
+* **release:** retrigger stable release automation ([bdb35c9](https://github.com/EtienneLescot/yagr/commit/bdb35c92ee93d645240e78a77ef6e22f532be6a7))
+
 ## [0.2.28](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.27...yagr@v0.2.28) (2026-04-20)
 
 
