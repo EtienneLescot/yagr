@@ -42,8 +42,8 @@ function isHttpUrl(value: string): boolean {
   return /^https?:\/\//.test(value);
 }
 
-function formatTerminalLink(label: string, url: string): string {
-  return `\u001B]8;;${url}\u0007${label}\u001B]8;;\u0007`;
+function formatTerminalLink(url: string): string {
+  return `\u001B]8;;${url}\u0007${url}\u001B]8;;\u0007`;
 }
 
 const SURFACE_OPTIONS: Array<{ value: GatewaySurface; label: string; hint: string }> = [
@@ -233,11 +233,9 @@ function WizardInstructionLine({ line }: { line: string }): JSX.Element {
   }
 
   return (
-    <Text dimColor>
+    <Text color="cyan">
       {'  '}
-      {formatTerminalLink('Open authentication URL', line)}
-      {'  '}
-      {line}
+      {formatTerminalLink(line)}
     </Text>
   );
 }
