@@ -32,6 +32,54 @@ export interface YagrProviderPlugin {
   metadata?: YagrProviderMetadataContract;
 }
 
+const MINIMAX_DISCOVERY_CANDIDATE_MODELS = [
+  'MiniMax-M2.7',
+  'MiniMax-M2.7-highspeed',
+  'MiniMax-M2.5',
+  'MiniMax-M2.5-highspeed',
+  'MiniMax-M2.1',
+  'MiniMax-M2.1-highspeed',
+  'MiniMax-M2',
+] as const;
+
+function getMiniMaxCompletionDiscoveryUrl(baseUrl?: string): string {
+  const resolvedBaseUrl = baseUrl ?? getDefaultBaseUrlForProvider('minimax') ?? 'https://api.minimaxi.com/anthropic';
+  if (resolvedBaseUrl.endsWith('/anthropic')) {
+    return resolvedBaseUrl.replace(/\/anthropic\/?$/, '/v1/chat/completions');
+  }
+
+  return `${resolvedBaseUrl.replace(/\/$/, '')}/v1/chat/completions`;
+}
+
+async function probeMiniMaxModels(apiKey: string, baseUrl?: string): Promise<string[]> {
+  const url = getMiniMaxCompletionDiscoveryUrl(baseUrl);
+  const checks = await Promise.all(
+    MINIMAX_DISCOVERY_CANDIDATE_MODELS.map(async (model) => {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+        }),
+      });
+
+      return response.ok ? model : undefined;
+    }),
+  );
+
+  return checks.reduce<string[]>((models, model) => {
+    if (model) {
+      models.push(model);
+    }
+    return models;
+  }, []);
+}
+
 function buildProviderPlugin(provider: YagrModelProvider): YagrProviderPlugin {
   const definition = getProviderDefinition(provider);
 
@@ -134,6 +182,22 @@ function buildProviderDiscovery(
           return [];
         }
         return fetchOpenAiAccountModels(session.accessToken);
+      },
+    };
+  }
+
+  if (provider === 'minimax' || provider === 'minimax-token-plan') {
+    return {
+      fetchAvailableModels: async ({ apiKey, baseUrl }) => {
+        if (!apiKey) {
+          return [];
+        }
+
+        try {
+          return await probeMiniMaxModels(apiKey, baseUrl);
+        } catch {
+          return [];
+        }
       },
     };
   }
