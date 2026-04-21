@@ -1,5 +1,7 @@
 name: Release
 
+# Main pushes drive stable release PR creation; next pushes publish prereleases.
+
 on:
   push:
     branches: [ main, next ]
