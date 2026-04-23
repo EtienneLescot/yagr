@@ -43,6 +43,14 @@ export interface YagrProviderDefinition {
 const MODEL_LIST_MAPPER = (data: Record<string, unknown>) =>
   (data.data as Array<{ id: string }> | undefined)?.map((model) => model.id) ?? [];
 
+function getMiniMaxDiscoveryUrl(baseUrl?: string): string {
+  if (!baseUrl) {
+    return 'https://api.minimaxi.com/v1/models';
+  }
+
+  return baseUrl.replace(/\/anthropic\/?$/, '/v1/models');
+}
+
 const GOOGLE_OPENAI_MODEL_LIST_MAPPER = (data: Record<string, unknown>) =>
   (data.data as Array<{ id: string }> | undefined)
     ?.map((model) => model.id?.replace(/^models\//, ''))
@@ -154,7 +162,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
     modelDiscovery: {
-      buildUrl: () => 'https://api.minimaxi.com/v1/models',
+      buildUrl: getMiniMaxDiscoveryUrl,
       authMode: 'bearer-required',
       mapResponse: MODEL_LIST_MAPPER,
     },
@@ -167,7 +175,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
     modelDiscovery: {
-      buildUrl: () => 'https://api.minimaxi.com/v1/models',
+      buildUrl: getMiniMaxDiscoveryUrl,
       authMode: 'bearer-required',
       mapResponse: MODEL_LIST_MAPPER,
     },
