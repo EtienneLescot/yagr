@@ -936,10 +936,18 @@ function SetupWizard({ callbacks, options, onDone }: {
     if (url) {
       try { new URL(url); } catch { setPhase((p) => ({ ...p as Extract<Phase, { kind: 'llm-baseurl' }>, err: 'Enter a valid URL.' })); return; }
     }
+    if (url) {
+      llmBaseUrlDraftsRef.current[provider] = url;
+    }
+    if (!model) {
+      setTextValue(llmApiKeyDraftsRef.current[provider] ?? '');
+      setPhase({ kind: 'llm-apikey', provider });
+      return;
+    }
     callbacks.saveLlmConfig({ provider, apiKey, model, baseUrl: url || undefined, reasoningEffort });
     const currentSurfaces = surfDef.surfaces;
     setPhase({ kind: 'surfaces', cursor: 0, selected: currentSurfaces });
-  }, [callbacks, surfDef]);
+  }, [callbacks, llmDef, surfDef]);
 
   const handleTelegramTokenSubmit = useCallback((surfaces: GatewaySurface[]) => (value: string) => {
     const token = value.trim();
@@ -1044,6 +1052,14 @@ function SetupWizard({ callbacks, options, onDone }: {
     }
     if (!providerRequiresApiKey(provider)) {
       const defModel = llmDef.getDefaultModel(provider);
+      const draftedBaseUrl = llmBaseUrlDraftsRef.current[provider];
+      const defaultBaseUrl = draftedBaseUrl ?? llmDef.getBaseUrl(provider);
+      const needsUrl = llmDef.needsBaseUrl(provider);
+      if (needsUrl && !draftedBaseUrl) {
+        setTextValue('');
+        setPhase({ kind: 'llm-baseurl', provider, apiKey: existing ?? '', model: '', def: defaultBaseUrl ?? '' });
+        return;
+      }
       transitionToLlmModelsLoading(provider, existing ?? '', defModel);
       return;
     }
