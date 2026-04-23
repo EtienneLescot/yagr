@@ -361,7 +361,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   const resolution = resolveManagedN8nWorkflowOpen(target);
-  if (resolution.ok === false) {
+  if (!resolution.ok) {
     response.writeHead(resolution.statusCode, { 'content-type': 'text/plain; charset=utf-8' });
     response.end(resolution.error);
     return;

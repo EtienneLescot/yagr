@@ -699,7 +699,7 @@ class TelegramGateway implements Gateway {
       };
 
       const stream = agent.streamEvents(
-        { messages: [{ role: 'user', content: prompt }] } as never,
+        { messages: [{ role: 'user', content: prompt }] },
         this.sessions.buildSessionConfig(threadId),
       );
 
