@@ -7,14 +7,10 @@ import {
   createProjectSlug,
   resolveInstanceIdentifier,
 } from 'n8nac';
+import { resolveManagerWorkflowDir, type YagrN8nInstanceProfile } from '@yagr/plugin-n8n-manager';
 import { ensureYagrHomeDir, getYagrN8nWorkspaceDir, getYagrPaths } from './yagr-home.js';
 
-export type YagrN8nInstanceProfile =
-  | 'yagr-managed-docker'
-  | 'yagr-managed-direct'
-  | 'custom-local-docker'
-  | 'custom-local-direct'
-  | 'custom-cloud';
+export type { YagrN8nInstanceProfile };
 
 export interface YagrN8nLocalConfig {
   host?: string;
@@ -65,20 +61,7 @@ interface N8nCredentialStore {
  * This is the single source of truth for this path calculation.
  */
 export function resolveWorkflowDir(config: YagrN8nLocalConfig): string | undefined {
-  const { syncFolder, instanceIdentifier, projectName } = config;
-  if (!syncFolder || !instanceIdentifier || !projectName) {
-    return undefined;
-  }
-
-  const workspaceDir = getYagrN8nWorkspaceDir();
-  const resolvedSyncFolder = path.isAbsolute(syncFolder)
-    ? syncFolder
-    : path.join(workspaceDir, syncFolder);
-
-  // Strip characters that are invalid in Windows path components (colon, etc.)
-  // Identifiers stored on Linux/macOS may contain ':' from IP:port slugs.
-  const safeInstanceId = instanceIdentifier.replace(/[:<>"|?*]/g, '_');
-  return path.join(resolvedSyncFolder, safeInstanceId, createProjectSlug(projectName));
+  return resolveManagerWorkflowDir(config, getYagrN8nWorkspaceDir());
 }
 
 function sanitizeRuntimeValue(value: string | undefined): string | undefined {

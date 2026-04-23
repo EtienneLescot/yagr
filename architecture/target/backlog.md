@@ -21,11 +21,11 @@ La direction cible de reference est documentee dans `yagr-engine-architecture.md
 
 ### Session management unifie des facades (implémenté)
 
-- `src/conversation/` — SSOT slash commands avec registre canonique
-- `SessionService` enrichi: `getActiveForScope()`, `listCheckpointsSync()`
+- `@yagr/conversation-core` porte le registre canonique des commandes slash
+- `@yagr/conversation-service` porte leur execution metier
+- `@yagr/session-service` porte la gestion de sessions/checkpoints par scope
 - `/resume` → session de conversation; `/restore` → checkpoint
-- TUI, Telegram et WebUI dispatchent via `SlashCommandService`
-- `/help`, `/sessions`, `/new`, `/delete`, `/resume`, `/restore`, `/save`, `/checkpoints`, `/checkpoint_delete` disponibles sur les 3 surfaces
+- TUI, Telegram et WebUI consomment la couche commune extraite
 
 ## Regle de vie
 

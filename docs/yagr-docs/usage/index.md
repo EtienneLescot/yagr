@@ -1,49 +1,71 @@
 ---
 title: Usage
-description: "Understand how Yagr turns intent into automation through an execution orchestrator and simple gateway surfaces."
+description: "Use the current Yagr app surfaces while understanding the new split between core, facades, plugins, and apps."
 ---
 
 # Usage
 
-Yagr is intentionally narrow in product scope.
+The current `@yagr/agent` app still exposes Yagr through user-facing surfaces such as:
 
-The goal is not to expose every primitive of the underlying stack. The goal is to turn intent into automation, then keep those automations legible and operable over time.
+- TUI
+- WebUI
+- Telegram
 
-## Surfaces are not the brain
+But the architectural model has changed.
 
-Yagr can be reached through several surfaces:
+## Surfaces are now explicitly surfaces
 
-- **TUI / local interactive mode** for direct operator control
-- **Telegram** for remote chat-based interaction
-- **CLI and backend integration** so Yagr can operate on the actual automation workspace
+Yagr is moving toward a layered model where:
 
-But these are only entry points. The core model is:
+- runtime/session/stream logic lives in core packages
+- rendering primitives live in shared surface packages
+- domain-specific integrations live in plugins
+- the final product is an assembled app
 
-- the gateway receives user intent
-- the agent plans and selects tools
-- the engine generates, validates, and deploys workflows
-- the resulting workflow becomes durable executable memory
+That means TUI and WebUI are not the product identity anymore. They are surfaces over a reusable runtime.
 
-## Workflows are memory
+## Runtime model
 
-Yagr should not drift into a generic memory assistant product.
+The reusable runtime layer now covers:
 
-The workflows it creates already are memory:
+- deepagent bootstrap
+- providers
+- sessions and checkpoints
+- runtime events
+- stream adaptation
+- conversation handling
 
-- topology remembers how the problem was solved
-- configuration remembers what matters operationally
-- execution history remembers what happened over time
-- future Yagr sessions can inspect and evolve that artifact
+For downstream products, the intended integration layer is:
 
-## The operating model
+- `@yagr/runtime`
+- `@yagr/surfaces`
 
-- setup is the source of truth
-- runtime config is persisted
-- user configuration should not depend on shell-local environment variables
-- execution is delegated to the orchestrator boundary, not embedded into the agent brain
+## Plugins
+
+Manager-specific logic is moving behind plugins.
+
+The first explicit example is:
+
+- `@yagr/plugin-n8n-manager`
+
+The direction is that Yagr core remains reusable, while manager/integration logic moves out of core packages.
+
+## Commands you still use today
+
+```bash
+yagr onboard
+yagr start
+yagr tui
+yagr webui
+yagr stop
+```
+
+The app behavior is still familiar.
+
+What changed is the internal architecture and the intended integration model.
 
 ## Related guides
 
 - [Telegram](/docs/usage/telegram)
 - [TUI](/docs/usage/tui)
-- [Execution orchestrators](/docs/usage/n8n-backend)
+- [n8n backend](/docs/usage/n8n-backend)

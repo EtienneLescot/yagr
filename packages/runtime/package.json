@@ -1,0 +1,27 @@
+{
+  "name": "@yagr/runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@yagr/conversation-service": "file:../conversation-service",
+    "@yagr/deepagent-bootstrap": "file:../deepagent-bootstrap",
+    "@yagr/provider-runtime": "file:../provider-runtime",
+    "@yagr/runtime-events": "file:../runtime-events",
+    "@yagr/session-service": "file:../session-service",
+    "@yagr/stream-adapter": "file:../stream-adapter"
+  }
+}

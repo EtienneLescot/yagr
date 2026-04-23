@@ -7,7 +7,7 @@ import {
   getDisplayProjectName,
   type IProject,
 } from 'n8nac';
-import { getYagrDeepAgentSessionsDir, getYagrSessionsDir } from '../config/yagr-home.js';
+import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
 import type { SessionSummary } from '@yagr/session-service';
 import { SessionService, deriveSessionTitle } from '@yagr/session-service';
 import { SlashCommandService } from '@yagr/conversation-service';
@@ -115,6 +115,7 @@ class WebUiGateway implements Gateway {
   private readonly setupService: YagrSetupApplicationService;
   private readonly sessions = new SessionService({
     sessionsDir: getYagrDeepAgentSessionsDir(),
+    memoriesDir: getYagrMemoriesDir(),
     webUiSessionsDir: getYagrSessionsDir(),
   });
 
