@@ -43,7 +43,7 @@ const MINIMAX_DISCOVERY_CANDIDATE_MODELS = [
 ] as const;
 
 function getMiniMaxCompletionDiscoveryUrl(baseUrl?: string): string {
-  const resolvedBaseUrl = baseUrl ?? getDefaultBaseUrlForProvider('minimax') ?? 'https://api.minimaxi.com/anthropic';
+  const resolvedBaseUrl = baseUrl ?? getDefaultBaseUrlForProvider('minimax') ?? 'https://api.minimax.io/anthropic';
   if (resolvedBaseUrl.endsWith('/anthropic')) {
     return resolvedBaseUrl.replace(/\/anthropic\/?$/, '/v1/chat/completions');
   }

@@ -304,7 +304,7 @@ export async function createLangChainModel(
       return new ChatAnthropic({
         apiKey,
         model,
-        anthropicApiUrl: baseUrl ?? 'https://api.minimaxi.com/anthropic',
+        anthropicApiUrl: baseUrl ?? 'https://api.minimax.io/anthropic',
       });
 
     case 'openai-compatible':
