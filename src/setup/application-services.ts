@@ -22,7 +22,7 @@ import { buildRelayInfo, ensureN8nRelayServer, resolveDockerHostAddress } from '
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import { resolveModelProvider } from '../llm/create-langchain-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
-import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession, getOpenAiAccountSession } from '../llm/openai-account.js';
+import { beginCodexAuth, beginCodexDeviceAuth, completeCodexAuth, completeCodexDeviceAuth, ensureOpenAiAccountSession, getOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';
 import { ensureYagrProxyCredential } from '../manager-tooling/yagr-proxy.js';
 import {
@@ -169,8 +169,25 @@ export class YagrSetupApplicationService {
     return false;
   }
 
-  async startAccountAuth(provider: YagrModelProvider) {
+  async startAccountAuth(provider: YagrModelProvider, authMethod?: 'browser' | 'headless') {
     if (provider === 'openai-oauth') {
+      if (authMethod === 'headless') {
+        const challenge = await beginCodexDeviceAuth();
+        return {
+          kind: 'input' as const,
+          title: 'Connect OpenAI account (Device Code)',
+          instructions: [
+            `Open: ${challenge.verificationUriComplete ?? challenge.verificationUri}`,
+            `Enter code: ${challenge.userCode}`,
+            'Sign in with your ChatGPT account in the browser, then press Enter below to continue.',
+            'If device login is not enabled for your account or workspace, go back and use browser sign-in instead.',
+          ],
+          placeholder: 'Press Enter after browser authorization',
+          submitLabel: 'Continue after authorization',
+          state: JSON.stringify({ method: 'device', ...challenge }),
+        };
+      }
+
       // Always start a fresh Codex OAuth flow when the user explicitly asks to sign in.
       // Do NOT check for an existing session here — that check lives in hasAccountSession
       // and determines whether to show the reuse screen. Once the user is on the auth
@@ -187,11 +204,11 @@ export class YagrSetupApplicationService {
           challenge.authUrl,
           'This uses your ChatGPT subscription — no API credits are consumed.',
           callbackHint,
+          'If the localhost callback cannot reach this terminal, paste the final callback URL here instead of waiting.',
         ],
-        placeholder: challenge.callbackServerStarted
-          ? 'Press Enter after signing in'
-          : 'http://localhost:1455/auth/callback?code=...',
+        placeholder: 'Press Enter after signing in or paste callback URL',
         submitLabel: challenge.callbackServerStarted ? 'Continue after sign-in' : 'Submit redirect URL',
+        state: JSON.stringify({ method: 'browser' }),
       };
     }
 
@@ -234,7 +251,15 @@ export class YagrSetupApplicationService {
 
   async completeAccountAuth(provider: YagrModelProvider, input: string, state?: string) {
     if (provider === 'openai-oauth') {
-      await completeCodexAuth();
+      const parsed = state ? JSON.parse(state) as { method?: 'browser' | 'device'; deviceCode?: string; intervalMs?: number; expiresAt?: number } : undefined;
+      if (parsed?.method === 'device') {
+        if (!parsed.deviceCode || !parsed.intervalMs || !parsed.expiresAt) {
+          return { ok: false, error: 'OpenAI device flow state is missing.' };
+        }
+        await completeCodexDeviceAuth({ deviceCode: parsed.deviceCode, intervalMs: parsed.intervalMs, expiresAt: parsed.expiresAt });
+      } else {
+        await completeCodexAuth(input);
+      }
       const session = getOpenAiAccountSession();
       if (!session) {
         throw new Error('OpenAI OAuth completed but could not read session. Try again.');

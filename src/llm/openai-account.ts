@@ -87,6 +87,8 @@ const JWT_ACCOUNT_CLAIM = 'https://api.openai.com/auth';
 // ─── OAuth / PKCE constants ────────────────────────────────────────────────────
 
 const CODEX_ISSUER = 'https://auth.openai.com';
+const CODEX_TOKEN_ENDPOINT = 'https://auth0.openai.com/oauth/token';
+const CODEX_DEVICE_AUTHORIZATION_ENDPOINT = 'https://auth0.openai.com/oauth/device/code';
 const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const CODEX_CALLBACK_PORT = 1455;
 const CODEX_CALLBACK_PATH = '/auth/callback';
@@ -98,8 +100,18 @@ export interface CodexAuthChallenge {
   callbackServerStarted: boolean;
 }
 
+export interface CodexDeviceAuthChallenge {
+  verificationUri: string;
+  verificationUriComplete?: string;
+  userCode: string;
+  deviceCode: string;
+  intervalMs: number;
+  expiresAt: number;
+}
+
 interface PendingCodexCallbackServer {
   expectedState: string;
+  verifier: string;
   server: http.Server;
   waitForCode: Promise<{ code: string; verifier: string }>;
   timeout: NodeJS.Timeout;
@@ -108,6 +120,10 @@ interface PendingCodexCallbackServer {
 let pendingCodexCallbackServer: PendingCodexCallbackServer | undefined;
 // Survives stopCodexCallbackServer() so completeCodexAuth() can still await it.
 let pendingCodexResult: Promise<{ code: string; verifier: string }> | undefined;
+// Persists even when the callback server fails to bind, so pasted redirect URLs
+// can still be validated when callbackServerStarted: false.
+let pendingCodexState: string | undefined;
+let pendingCodexVerifier: string | undefined;
 
 function generateCodexPkce(): { verifier: string; challenge: string } {
   const verifier = randomBytes(32).toString('hex');
@@ -120,11 +136,15 @@ function stopCodexCallbackServer(): void {
     clearTimeout(pendingCodexCallbackServer.timeout);
     pendingCodexCallbackServer.server.close();
     pendingCodexCallbackServer = undefined;
-    // Note: pendingCodexResult is intentionally NOT cleared here.
+    // Note: pendingCodexResult, pendingCodexState, pendingCodexVerifier are intentionally preserved.
   }
 }
 
 async function startCodexCallbackServer(state: string, verifier: string): Promise<boolean> {
+  // Persist state/verifier before attempting to bind, so pasted redirect URLs
+  // remain valid even when the server fails to start (e.g. port in use / headless).
+  pendingCodexState = state;
+  pendingCodexVerifier = verifier;
   stopCodexCallbackServer();
 
   let resolveCode: ((value: { code: string; verifier: string }) => void) | undefined;
@@ -164,7 +184,7 @@ async function startCodexCallbackServer(state: string, verifier: string): Promis
     stopCodexCallbackServer();
   }, 3 * 60_000);
 
-  pendingCodexCallbackServer = { expectedState: state, server, waitForCode, timeout };
+  pendingCodexCallbackServer = { expectedState: state, verifier, server, waitForCode, timeout };
   pendingCodexResult = waitForCode;
 
   const started = await new Promise<boolean>((resolve) => {
@@ -198,7 +218,141 @@ export async function beginCodexAuth(): Promise<CodexAuthChallenge> {
   return { authUrl: url.toString(), callbackServerStarted: serverStarted };
 }
 
-export async function completeCodexAuth(): Promise<OpenAiAccountSession> {
+export async function beginCodexDeviceAuth(): Promise<CodexDeviceAuthChallenge> {
+  const body = new URLSearchParams();
+  body.set('client_id', CODEX_CLIENT_ID);
+  body.set('scope', CODEX_SCOPES);
+
+  const response = await fetch(CODEX_DEVICE_AUTHORIZATION_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  if (!response.ok) {
+    let errorCode: string | undefined;
+    try {
+      errorCode = (await response.json() as { error?: string }).error;
+    } catch {
+      // Ignore non-JSON error responses.
+    }
+    throw new Error(errorCode
+      ? `OpenAI device login failed: ${errorCode}`
+      : `OpenAI device login failed: HTTP ${response.status}`);
+  }
+
+  const device = await response.json() as {
+    device_code?: string;
+    user_code?: string;
+    verification_uri?: string;
+    verification_uri_complete?: string;
+    expires_in?: number;
+    interval?: number;
+  };
+
+  if (!device.device_code || !device.user_code || !device.verification_uri || !device.expires_in) {
+    throw new Error('OpenAI device login returned an incomplete challenge.');
+  }
+
+  return {
+    verificationUri: device.verification_uri,
+    verificationUriComplete: device.verification_uri_complete,
+    userCode: device.user_code,
+    deviceCode: device.device_code,
+    intervalMs: Math.max(1000, (device.interval ?? 5) * 1000),
+    expiresAt: Date.now() + device.expires_in * 1000,
+  };
+}
+
+function persistCodexSession(tokens: {
+  access_token: string;
+  refresh_token?: string;
+  id_token?: string;
+  expires_in?: number;
+}): OpenAiAccountSession {
+  const authPath = getCodexAuthPath();
+  fs.mkdirSync(path.dirname(authPath), { recursive: true });
+  fs.writeFileSync(authPath, JSON.stringify({
+    auth_mode: 'chatgpt',
+    tokens,
+    last_refresh: new Date().toISOString(),
+  }, null, 2), { mode: 0o600 });
+
+  return {
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+    source: 'codex',
+  };
+}
+
+function readManualCodexCallback(input: string): { code: string; verifier: string } | undefined {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const expectedState = pendingCodexState;
+  const verifier = pendingCodexVerifier;
+  if (!expectedState || !verifier) {
+    throw new Error('No pending OpenAI OAuth session. Restart the sign-in flow.');
+  }
+
+  let callbackUrl: URL;
+  try {
+    callbackUrl = new URL(trimmed, CODEX_REDIRECT_URI);
+  } catch {
+    throw new Error('Paste the full OpenAI callback URL after signing in.');
+  }
+
+  const returnedState = callbackUrl.searchParams.get('state');
+  const code = callbackUrl.searchParams.get('code');
+  const error = callbackUrl.searchParams.get('error');
+  if (error || returnedState !== expectedState || !code) {
+    throw new Error(error ?? 'OAuth callback: invalid state or missing code.');
+  }
+
+  stopCodexCallbackServer();
+  pendingCodexResult = undefined;
+  pendingCodexState = undefined;
+  pendingCodexVerifier = undefined;
+  return { code, verifier };
+}
+
+export async function completeCodexAuth(input = ''): Promise<OpenAiAccountSession> {
+  const manualResult = readManualCodexCallback(input);
+  if (manualResult) {
+    const { code, verifier } = manualResult;
+    const body = new URLSearchParams();
+    body.set('grant_type', 'authorization_code');
+    body.set('code', code);
+    body.set('redirect_uri', CODEX_REDIRECT_URI);
+    body.set('client_id', CODEX_CLIENT_ID);
+    body.set('code_verifier', verifier);
+
+    const tokenRes = await fetch(CODEX_TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+
+    if (!tokenRes.ok) {
+      throw new Error(`OpenAI token exchange failed: HTTP ${tokenRes.status}`);
+    }
+
+    const tokens = await tokenRes.json() as {
+      access_token: string;
+      refresh_token?: string;
+      id_token?: string;
+      expires_in?: number;
+    };
+
+    if (!tokens.access_token) {
+      throw new Error('OpenAI token exchange returned no access_token.');
+    }
+
+    return persistCodexSession(tokens);
+  }
+
   // The callback server may have already fired and cleared pendingCodexCallbackServer,
   // but the promise is preserved in pendingCodexResult.
   const resultPromise = pendingCodexCallbackServer?.waitForCode ?? pendingCodexResult;
@@ -219,7 +373,7 @@ export async function completeCodexAuth(): Promise<OpenAiAccountSession> {
   body.set('client_id', CODEX_CLIENT_ID);
   body.set('code_verifier', verifier);
 
-  const tokenRes = await fetch(`${CODEX_ISSUER}/oauth/token`, {
+  const tokenRes = await fetch(CODEX_TOKEN_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
@@ -240,20 +394,70 @@ export async function completeCodexAuth(): Promise<OpenAiAccountSession> {
     throw new Error('OpenAI token exchange returned no access_token.');
   }
 
-  // Write ~/.codex/auth.json so the session is shared with the Codex CLI.
-  const authPath = getCodexAuthPath();
-  fs.mkdirSync(path.dirname(authPath), { recursive: true });
-  fs.writeFileSync(authPath, JSON.stringify({
-    auth_mode: 'chatgpt',
-    tokens,
-    last_refresh: new Date().toISOString(),
-  }, null, 2), { mode: 0o600 });
+  return persistCodexSession(tokens);
+}
 
-  return {
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token,
-    source: 'codex',
-  };
+export async function completeCodexDeviceAuth(challenge: {
+  deviceCode: string;
+  intervalMs: number;
+  expiresAt: number;
+}): Promise<OpenAiAccountSession> {
+  let intervalMs = Math.max(1000, challenge.intervalMs);
+
+  while (Date.now() < challenge.expiresAt) {
+    const body = new URLSearchParams();
+    body.set('grant_type', 'urn:ietf:params:oauth:grant-type:device_code');
+    body.set('device_code', challenge.deviceCode);
+    body.set('client_id', CODEX_CLIENT_ID);
+
+    const response = await fetch(CODEX_TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+
+    if (response.ok) {
+      const tokens = await response.json() as {
+        access_token?: string;
+        refresh_token?: string;
+        id_token?: string;
+        expires_in?: number;
+      };
+      if (!tokens.access_token) {
+        throw new Error('OpenAI device login returned no access_token.');
+      }
+      return persistCodexSession(tokens as {
+        access_token: string;
+        refresh_token?: string;
+        id_token?: string;
+        expires_in?: number;
+      });
+    }
+
+    let payload: { error?: string; error_description?: string } | undefined;
+    try {
+      payload = await response.json() as { error?: string; error_description?: string };
+    } catch {
+      payload = undefined;
+    }
+
+    const errorCode = payload?.error;
+    if (errorCode === 'authorization_pending') {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      continue;
+    }
+    if (errorCode === 'slow_down') {
+      intervalMs += 5000;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      continue;
+    }
+    if (errorCode === 'expired_token') {
+      throw new Error('OpenAI device code expired. Retry setup.');
+    }
+    throw new Error(payload?.error_description || (errorCode ? `OpenAI device flow error: ${errorCode}` : `OpenAI device flow failed: HTTP ${response.status}`));
+  }
+
+  throw new Error('OpenAI device code expired. Retry setup.');
 }
 
 // ─── Interfaces ────────────────────────────────────────────────────────────────
@@ -337,7 +541,7 @@ async function refreshCodexToken(refreshToken: string): Promise<OpenAiAccountSes
   body.set('refresh_token', refreshToken);
   body.set('client_id', CODEX_CLIENT_ID);
 
-  const res = await fetch(`${CODEX_ISSUER}/oauth/token`, {
+  const res = await fetch(CODEX_TOKEN_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),

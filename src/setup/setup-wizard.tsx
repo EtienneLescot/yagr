@@ -91,7 +91,7 @@ export interface SetupCallbacks {
     error?: string;
   }>;
   hasAccountSession(provider: YagrModelProvider): Promise<boolean>;
-  startAccountAuth(provider: YagrModelProvider): Promise<{
+  startAccountAuth(provider: YagrModelProvider, authMethod?: 'browser' | 'headless'): Promise<{
     kind: 'none' | 'input';
     title?: string;
     instructions?: string[];
@@ -196,15 +196,17 @@ function getProviderAuthCopy(provider: YagrModelProvider): {
   title: string;
   body: string[];
   continueLabel: string;
+  headlessLabel?: string;
 } {
   if (provider === 'openai-oauth') {
     return {
       title: 'Connect OpenAI account',
       body: [
-        'Yagr will open your browser to sign you in with your ChatGPT account.',
+        'Choose the standard browser login or the headless device-code login.',
         'This uses your ChatGPT subscription — no API credits are consumed.',
       ],
       continueLabel: 'Sign in with ChatGPT',
+      headlessLabel: 'Headless device login',
     };
   }
 
@@ -1226,7 +1228,7 @@ function SetupWizard({ callbacks, options, onDone }: {
         }
       } else if (key.escape) cancel('Setup cancelled.');
     } else if (phase.kind === 'llm-account-auth') {
-      const maxCursor = 1;
+      const maxCursor = phase.provider === 'openai-oauth' ? 2 : 1;
       if (key.upArrow) setPhase({ ...phase, cursor: Math.max(0, phase.cursor - 1) });
       else if (key.downArrow) setPhase({ ...phase, cursor: Math.min(maxCursor, phase.cursor + 1) });
       else if (key.return) {
@@ -1245,10 +1247,13 @@ function SetupWizard({ callbacks, options, onDone }: {
             state: 'anthropic:setup-token',
           });
           setTextValue('');
-        } else if (phase.cursor === 0) {
+        } else if ((phase.provider === 'openai-oauth' && phase.cursor <= 1) || phase.cursor === 0) {
           void (async () => {
             try {
-              const authStep = await callbacks.startAccountAuth(phase.provider);
+              const authMethod = phase.provider === 'openai-oauth'
+                ? (phase.cursor === 1 ? 'headless' : 'browser')
+                : undefined;
+              const authStep = await callbacks.startAccountAuth(phase.provider, authMethod);
               const authUrl = (authStep.instructions ?? [])
                 .map((line) => line.match(/https?:\/\/\S+/)?.[0])
                 .find(Boolean);
@@ -1967,7 +1972,9 @@ function SetupWizard({ callbacks, options, onDone }: {
       case 'llm-account-auth':
         {
           const authCopy = getProviderAuthCopy(phase.provider);
-          const authOptions = [authCopy.continueLabel, 'Back to providers'] as const;
+          const authOptions = phase.provider === 'openai-oauth'
+            ? [authCopy.continueLabel, authCopy.headlessLabel ?? 'Headless login', 'Back to providers'] as const
+            : [authCopy.continueLabel, 'Back to providers'] as const;
         return (
           <Box flexDirection="column">
             <FieldLabel label={authCopy.title} />
@@ -1979,7 +1986,7 @@ function SetupWizard({ callbacks, options, onDone }: {
               cursor={phase.cursor}
               getLabel={(v) => v}
               getHint={(v) => {
-                return (v.startsWith('Continue') || v.startsWith('Paste')) ? 'recommended' : undefined;
+                return (v === authCopy.continueLabel || v.startsWith('Continue') || v.startsWith('Paste')) ? 'recommended' : undefined;
               }}
               maxVisibleRows={getListViewportHeight(terminalRows, 11)}
               maxLineWidth={listLineWidth}
