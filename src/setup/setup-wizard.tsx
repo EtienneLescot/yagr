@@ -938,10 +938,23 @@ function SetupWizard({ callbacks, options, onDone }: {
     }
     if (url) {
       llmBaseUrlDraftsRef.current[provider] = url;
+    } else {
+      delete llmBaseUrlDraftsRef.current[provider];
     }
     if (!model) {
-      setTextValue(llmApiKeyDraftsRef.current[provider] ?? '');
-      setPhase({ kind: 'llm-apikey', provider });
+      if (provider === 'openai-compatible') {
+        setTextValue(llmApiKeyDraftsRef.current[provider] ?? '');
+        setPhase({ kind: 'llm-apikey', provider });
+        return;
+      }
+      const defModel = llmDef.getDefaultModel(provider);
+      setTextValue('');
+      setPhase({
+        kind: 'llm-models-loading',
+        provider,
+        apiKey,
+        defModel,
+      });
       return;
     }
     callbacks.saveLlmConfig({ provider, apiKey, model, baseUrl: url || undefined, reasoningEffort });
@@ -1055,7 +1068,7 @@ function SetupWizard({ callbacks, options, onDone }: {
       const draftedBaseUrl = llmBaseUrlDraftsRef.current[provider];
       const defaultBaseUrl = draftedBaseUrl ?? llmDef.getBaseUrl(provider);
       const needsUrl = llmDef.needsBaseUrl(provider);
-      if (needsUrl && !draftedBaseUrl) {
+      if (provider === 'openai-compatible' && needsUrl && !draftedBaseUrl) {
         setTextValue('');
         setPhase({ kind: 'llm-baseurl', provider, apiKey: existing ?? '', model: '', def: defaultBaseUrl ?? '' });
         return;
