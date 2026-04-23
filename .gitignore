@@ -37,6 +37,7 @@ Thumbs.db
 
 # --- Build artifacts ---
 dist/
+packages/*/dist/
 *.tsbuildinfo
 
 
@@ -69,4 +70,4 @@ workflows/
 !.github/workflows/**
 
 .env
-.kilo/*
+.kilo/
