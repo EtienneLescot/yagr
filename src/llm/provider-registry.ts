@@ -45,7 +45,7 @@ const MODEL_LIST_MAPPER = (data: Record<string, unknown>) =>
 
 function getMiniMaxDiscoveryUrl(baseUrl?: string): string {
   if (!baseUrl) {
-    return 'https://api.minimaxi.com/v1/models';
+    return 'https://api.minimax.io/v1/models';
   }
 
   return baseUrl.replace(/\/anthropic\/?$/, '/v1/models');
@@ -158,7 +158,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     id: 'minimax',
     displayName: 'MiniMax',
     defaultModel: 'MiniMax-M2.7',
-    defaultBaseUrl: 'https://api.minimaxi.com/anthropic',
+    defaultBaseUrl: 'https://api.minimax.io/anthropic',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
     modelDiscovery: {
@@ -171,7 +171,7 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     id: 'minimax-token-plan',
     displayName: 'MiniMax Token Plan',
     defaultModel: 'MiniMax-M2.7',
-    defaultBaseUrl: 'https://api.minimaxi.com/anthropic',
+    defaultBaseUrl: 'https://api.minimax.io/anthropic',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
     modelDiscovery: {
