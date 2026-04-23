@@ -150,11 +150,11 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     id: 'minimax',
     displayName: 'MiniMax',
     defaultModel: 'MiniMax-M2.7',
-    defaultBaseUrl: 'https://api.minimax.io/anthropic',
+    defaultBaseUrl: 'https://api.minimaxi.com/anthropic',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
     modelDiscovery: {
-      buildUrl: () => 'https://api.minimax.io/v1/models',
+      buildUrl: () => 'https://api.minimaxi.com/v1/models',
       authMode: 'bearer-required',
       mapResponse: MODEL_LIST_MAPPER,
     },
@@ -163,11 +163,11 @@ export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDe
     id: 'minimax-token-plan',
     displayName: 'MiniMax Token Plan',
     defaultModel: 'MiniMax-M2.7',
-    defaultBaseUrl: 'https://api.minimax.io/anthropic',
+    defaultBaseUrl: 'https://api.minimaxi.com/anthropic',
     requiresApiKey: true,
     usesOpenAiCompatibleApi: false,
     modelDiscovery: {
-      buildUrl: () => 'https://api.minimax.io/v1/models',
+      buildUrl: () => 'https://api.minimaxi.com/v1/models',
       authMode: 'bearer-required',
       mapResponse: MODEL_LIST_MAPPER,
     },
@@ -193,8 +193,6 @@ export const YAGR_SUPPORTED_MODEL_PROVIDERS = Object.freeze(
 
 const YAGR_HIDDEN_SELECTABLE_MODEL_PROVIDERS = new Set<YagrModelProvider>([
   'anthropic-proxy',
-  'minimax',
-  'openai-compatible',
 ]);
 
 export const YAGR_SELECTABLE_MODEL_PROVIDERS = Object.freeze(
