@@ -329,7 +329,7 @@ class WebUiGateway implements Gateway {
       });
       this.sessionRegistry.setTitle(sessionId, derivedTitle);
       const result = await agent.invoke(
-        { messages: [{ role: 'user', content: message }] },
+        { messages: [{ role: 'user', content: message }] } as never,
         this.sessions.buildSessionConfig(sessionId),
       );
 
@@ -612,7 +612,7 @@ class WebUiGateway implements Gateway {
     }
 
     const session = resolveManagedN8nWorkflowOpen(workflowUrl);
-    if (!session.ok) {
+    if (session.ok === false) {
       this.sendJson(response, session.statusCode, { error: session.error });
       return;
     }
@@ -627,7 +627,7 @@ class WebUiGateway implements Gateway {
     }
 
     const session = resolveManagedN8nWorkflowOpen(workflowUrl);
-    if (!session.ok) {
+    if (session.ok === false) {
       this.sendText(response, session.statusCode, session.error, 'text/plain; charset=utf-8');
       return;
     }
@@ -798,7 +798,7 @@ class WebUiGateway implements Gateway {
       const accumulator = createRunAccumulator();
 
       const stream = agent.streamEvents(
-        { messages: [{ role: 'user', content: message }] },
+        { messages: [{ role: 'user', content: message }] } as never,
         { ...this.sessions.buildSessionConfig(sessionId), signal: abortController.signal },
       );
 

@@ -19,7 +19,7 @@ export async function runCliGateway(handle: YagrDeepAgentHandle, options: CliGat
     sessions.setCheckpointer(handle.checkpointer);
     const session = sessions.create({ title: 'CLI prompt' });
     const result = await handle.agent.invoke(
-      { messages: [{ role: 'user', content: options.prompt }] },
+      { messages: [{ role: 'user', content: options.prompt }] } as never,
       sessions.buildSessionConfig(session.id),
     ) as Record<string, unknown>;
     process.stdout.write(`${extractLastAiMessage(result)}\n`);

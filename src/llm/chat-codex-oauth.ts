@@ -514,7 +514,7 @@ function toLanguageModelTool(input: BindToolsInput): LanguageModelV1FunctionTool
 }
 
 function toJsonSchema(schema: unknown): JSONSchema7 {
-  if (schema instanceof z.ZodType) {
+  if (isZodSchema(schema)) {
     return normalizeJsonSchema(zodToJsonSchema(schema));
   }
 
@@ -534,8 +534,10 @@ function toJsonSchema(schema: unknown): JSONSchema7 {
 }
 
 function zodToJsonSchema(schema: z.ZodTypeAny): JSONSchema7 {
+  const def = ((schema as unknown) as { _def?: Record<string, unknown> })._def ?? {};
+
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable || schema instanceof z.ZodDefault) {
-    return zodToJsonSchema(schema._def.innerType);
+    return zodToJsonSchema(def.innerType as z.ZodTypeAny);
   }
 
   if (schema instanceof z.ZodString) {
@@ -551,28 +553,36 @@ function zodToJsonSchema(schema: z.ZodTypeAny): JSONSchema7 {
   }
 
   if (schema instanceof z.ZodEnum) {
-    return { type: 'string', enum: [...schema._def.values] };
+    const values = Array.isArray(def.values)
+      ? def.values
+      : Object.values(def.entries as Record<string, unknown> | undefined ?? {});
+    return { type: 'string', enum: [...values] as JSONSchema7['enum'] };
   }
 
   if (schema instanceof z.ZodLiteral) {
-    return { enum: [schema._def.value] };
+    const literalValue = Array.isArray(def.values) ? def.values[0] : def.value;
+    return { enum: [literalValue] as JSONSchema7['enum'] };
   }
 
   if (schema instanceof z.ZodArray) {
     return {
       type: 'array',
-      items: zodToJsonSchema(schema._def.type),
+      items: zodToJsonSchema(def.type as z.ZodTypeAny),
     };
   }
 
   if (schema instanceof z.ZodUnion) {
+    const options = Array.isArray(def.options) ? def.options as z.ZodTypeAny[] : [];
     return {
-      anyOf: schema._def.options.map((option: z.ZodTypeAny) => zodToJsonSchema(option)),
+      anyOf: options.map((option) => zodToJsonSchema(option)),
     };
   }
 
   if (schema instanceof z.ZodObject) {
-    const shape = schema._def.shape();
+    const shapeSource = def.shape;
+    const shape = typeof shapeSource === 'function'
+      ? shapeSource() as Record<string, z.ZodTypeAny>
+      : (shapeSource as Record<string, z.ZodTypeAny> | undefined) ?? {};
     const properties = Object.fromEntries(
       Object.entries(shape).map(([key, value]) => [key, zodToJsonSchema(value as z.ZodTypeAny)]),
     );
@@ -592,6 +602,15 @@ function zodToJsonSchema(schema: z.ZodTypeAny): JSONSchema7 {
 
 function isOptionalZodSchema(schema: z.ZodTypeAny): boolean {
   return schema instanceof z.ZodOptional || schema instanceof z.ZodDefault;
+}
+
+function isZodSchema(schema: unknown): schema is z.ZodTypeAny {
+  return Boolean(
+    schema
+      && typeof schema === 'object'
+      && '_def' in (schema as Record<string, unknown>)
+      && typeof (schema as { safeParse?: unknown }).safeParse === 'function',
+  );
 }
 
 function isSerializedZodSchema(schema: unknown): schema is { def: { type?: string; [key: string]: unknown } } {

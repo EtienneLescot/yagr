@@ -5,7 +5,14 @@ import path from 'node:path';
 import test from 'node:test';
 import { AIMessage, HumanMessage } from '@langchain/core/messages';
 
-import { createOpenAiAccountLanguageModel, getDefaultCodexReasoningEffort } from '../dist/llm/openai-account.js';
+import {
+  beginCodexAuth,
+  beginCodexDeviceAuth,
+  completeCodexAuth,
+  completeCodexDeviceAuth,
+  createOpenAiAccountLanguageModel,
+  getDefaultCodexReasoningEffort,
+} from '../dist/llm/openai-account.js';
 import { createLangChainModel } from '../dist/llm/create-langchain-model.js';
 import { ChatCodexOAuth } from '../dist/llm/chat-codex-oauth.js';
 
@@ -31,6 +38,104 @@ test('openai-oauth defaults gpt-5.4 reasoning effort to none', () => {
   assert.equal(getDefaultCodexReasoningEffort('gpt-5.4'), 'none');
   assert.equal(getDefaultCodexReasoningEffort('gpt-5.4-mini'), 'none');
   assert.equal(getDefaultCodexReasoningEffort('gpt-5.3-codex'), 'medium');
+});
+
+test('openai-oauth accepts a pasted localhost callback URL when the browser callback cannot reach the terminal', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-manual-callback-'));
+  const authPath = path.join(tempDir, 'auth.json');
+  const previousAuthPath = process.env.YAGR_CODEX_AUTH_PATH;
+  const previousFetch = globalThis.fetch;
+
+  process.env.YAGR_CODEX_AUTH_PATH = authPath;
+  globalThis.fetch = async (_url, init) => {
+    const body = new URLSearchParams(String(init?.body || ''));
+    assert.equal(body.get('grant_type'), 'authorization_code');
+    assert.equal(body.get('code'), 'manual-code');
+    return new Response(JSON.stringify({
+      access_token: makeJwtWithAccountId('acct_manual_callback'),
+      refresh_token: 'refresh-manual',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const challenge = await beginCodexAuth();
+    const authUrl = new URL(challenge.authUrl);
+    const state = authUrl.searchParams.get('state');
+    assert.ok(state);
+
+    const session = await completeCodexAuth(`http://localhost:1455/auth/callback?code=manual-code&state=${state}`);
+    assert.equal(session.refreshToken, 'refresh-manual');
+    assert.equal(fs.existsSync(authPath), true);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousAuthPath === undefined) {
+      delete process.env.YAGR_CODEX_AUTH_PATH;
+    } else {
+      process.env.YAGR_CODEX_AUTH_PATH = previousAuthPath;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('openai-oauth supports device-code headless login', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-device-auth-'));
+  const authPath = path.join(tempDir, 'auth.json');
+  const previousAuthPath = process.env.YAGR_CODEX_AUTH_PATH;
+  const previousFetch = globalThis.fetch;
+  const seenRequests = [];
+
+  process.env.YAGR_CODEX_AUTH_PATH = authPath;
+  globalThis.fetch = async (url, init) => {
+    seenRequests.push(String(url));
+    if (String(url).includes('/oauth/device/code')) {
+      return new Response(JSON.stringify({
+        device_code: 'device-code-123',
+        user_code: 'ABCD-EFGH',
+        verification_uri: 'https://auth.openai.com/activate',
+        verification_uri_complete: 'https://auth.openai.com/activate?user_code=ABCD-EFGH',
+        expires_in: 600,
+        interval: 1,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response(JSON.stringify({
+      access_token: makeJwtWithAccountId('acct_device_auth'),
+      refresh_token: 'refresh-device',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const challenge = await beginCodexDeviceAuth();
+    assert.equal(challenge.deviceCode, 'device-code-123');
+    assert.equal(challenge.userCode, 'ABCD-EFGH');
+
+    const session = await completeCodexDeviceAuth({
+      deviceCode: challenge.deviceCode,
+      intervalMs: challenge.intervalMs,
+      expiresAt: Date.now() + 5_000,
+    });
+
+    assert.equal(session.refreshToken, 'refresh-device');
+    assert.equal(seenRequests.some((url) => url.includes('/oauth/device/code')), true);
+    assert.equal(fs.existsSync(authPath), true);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousAuthPath === undefined) {
+      delete process.env.YAGR_CODEX_AUTH_PATH;
+    } else {
+      process.env.YAGR_CODEX_AUTH_PATH = previousAuthPath;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('openai-oauth sends function tools and returns tool calls from Codex responses', async () => {

@@ -181,8 +181,8 @@ function createSetupCallbacks(
       return setupService.hasAccountSession(provider);
     },
 
-    async startAccountAuth(provider) {
-      return setupService.startAccountAuth(provider);
+    async startAccountAuth(provider, authMethod) {
+      return setupService.startAccountAuth(provider, authMethod);
     },
 
     async completeAccountAuth(provider, input, state) {
