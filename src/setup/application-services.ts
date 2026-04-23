@@ -142,11 +142,11 @@ export class YagrSetupApplicationService {
     };
   }
 
-  async prepareProvider(provider: YagrModelProvider, apiKey?: string) {
+  async prepareProvider(provider: YagrModelProvider, apiKey?: string, baseUrl?: string) {
     const cfg = this.yagrConfigService.getLocalConfig();
     const prepared = await prepareProviderRuntime(provider, {
       apiKey,
-      baseUrl: cfg.provider === provider ? cfg.baseUrl : getDefaultBaseUrlForProvider(provider),
+      baseUrl: baseUrl ?? (cfg.provider === provider ? cfg.baseUrl : getDefaultBaseUrlForProvider(provider)),
     });
 
     return {
@@ -262,9 +262,9 @@ export class YagrSetupApplicationService {
     return { ok: true };
   }
 
-  async fetchModels(provider: YagrModelProvider, apiKey?: string): Promise<string[]> {
+  async fetchModels(provider: YagrModelProvider, apiKey?: string, baseUrlOverride?: string): Promise<string[]> {
     const cfg = this.yagrConfigService.getLocalConfig();
-    const baseUrl = cfg.provider === provider ? cfg.baseUrl : getDefaultBaseUrlForProvider(provider);
+    const baseUrl = baseUrlOverride ?? (cfg.provider === provider ? cfg.baseUrl : getDefaultBaseUrlForProvider(provider));
     return this.fetchAvailableModelsRunner(provider, apiKey, baseUrl);
   }
 

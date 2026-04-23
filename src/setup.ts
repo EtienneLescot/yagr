@@ -173,8 +173,8 @@ function createSetupCallbacks(
       return setupService.getLlmDefaults();
     },
 
-    async prepareProvider(provider, apiKey) {
-      return setupService.prepareProvider(provider, apiKey);
+    async prepareProvider(provider, apiKey, baseUrl) {
+      return setupService.prepareProvider(provider, apiKey, baseUrl);
     },
 
     async hasAccountSession(provider) {
@@ -189,8 +189,8 @@ function createSetupCallbacks(
       return setupService.completeAccountAuth(provider, input, state);
     },
 
-    async fetchModels(provider, apiKey) {
-      return setupService.fetchModels(provider, apiKey);
+    async fetchModels(provider, apiKey, baseUrl) {
+      return setupService.fetchModels(provider, apiKey, baseUrl);
     },
 
     saveLlmConfig({ provider, apiKey, model, baseUrl }) {
