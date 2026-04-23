@@ -1,34 +1,33 @@
 # Target Backlog
 
-Cette section est ephemere.
+This section is ephemeral.
 
-Elle doit contenir uniquement le travail restant pour converger vers une architecture propre et stable.
-Tout ce qui est deja implemente doit etre documente dans `../current/`, pas ici.
+It must contain only the remaining work to converge toward a clean and stable architecture. Everything already implemented must be documented in `../current/`, not here.
 
-## Restant a faire
+## Remaining work
 
-La direction cible de reference est documentee dans `yagr-engine-architecture.md`.
+The target direction reference is documented in `yagr-engine-architecture.md`.
 
 ### Yagr Engine convergence
 
-- Renommer et recadrer `holon` en `Yagr Engine`
-- Formaliser un IR canonique distinct des backends cibles
-- Integrer l'UI graphe AI-native de `Yagr Engine` dans les surfaces `Yagr`
-- Faire de `Hatchet` le runtime du chemin `Yagr Engine`
-- Formaliser le choix backend amont `n8n` vs `Yagr Engine + Hatchet`
-- Extraire progressivement le couplage `n8n` encore present dans le prompt, le tooling et les flux de run
-- Unifier les edits chat et UI autour du meme pipeline de patch/validation `Yagr Engine`
+- Rename and refocus `holon` as `Yagr Engine`
+- Formalize a canonical IR distinct from target backends
+- Integrate the AI-native graph UI of `Yagr Engine` into `Yagr` surfaces
+- Make `Hatchet` the runtime of the `Yagr Engine` path
+- Formalize the upstream backend choice `n8n` vs `Yagr Engine + Hatchet`
+- Progressively extract the `n8n` coupling still present in prompt, tooling, and run flows
+- Unify chat and UI edits around the same `Yagr Engine` patch/validation pipeline
 
-### Session management unifie des facades (implémenté)
+### Unified facade session management (implemented)
 
-- `src/conversation/` — SSOT slash commands avec registre canonique
-- `SessionService` enrichi: `getActiveForScope()`, `listCheckpointsSync()`
-- `/resume` → session de conversation; `/restore` → checkpoint
-- TUI, Telegram et WebUI dispatchent via `SlashCommandService`
-- `/help`, `/sessions`, `/new`, `/delete`, `/resume`, `/restore`, `/save`, `/checkpoints`, `/checkpoint_delete` disponibles sur les 3 surfaces
+- `src/conversation/` — SSOT slash commands with canonical registry
+- `SessionService` enriched: `getActiveForScope()`, `listCheckpointsSync()`
+- `/resume` → conversation session; `/restore` → checkpoint
+- TUI, Telegram, and WebUI dispatch via `SlashCommandService`
+- `/help`, `/sessions`, `/new`, `/delete`, `/resume`, `/restore`, `/save`, `/checkpoints`, `/checkpoint_delete` available on all 3 surfaces
 
-## Regle de vie
+## Lifetime rule
 
-- Quand un item est termine, il est retire de cette page.
-- Quand une nouvelle realite architecturale existe, elle est documentee dans `../current/`.
-- `target/` doit rester minimal; si tout est converge, ce fichier ne comporte plus de todo.
+- When an item is completed, it is removed from this page.
+- When a new architectural reality exists, it is documented in `../current/`.
+- `target/` must remain minimal; if everything has converged, this file contains no more todos.

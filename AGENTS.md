@@ -1,10 +1,10 @@
 # AGENT.md
 
-Ce fichier décrit les règles de travail et les bonnes pratiques a respecter dans ce repo.
+This file describes the work rules and best practices to follow in this repo.
 
-Il complete la documentation architecturale situee dans [architecture/README.md](./architecture/README.md).
+It complements the architectural documentation located in [architecture/README.md](./architecture/README.md).
 
-Avant tout changement structurel, lire en priorite:
+Before any structural change, read in priority:
 
 1. [architecture/current/system-overview.md](./architecture/current/system-overview.md)
 2. [architecture/current/deepagents-agent.md](./architecture/current/deepagents-agent.md)
@@ -12,154 +12,154 @@ Avant tout changement structurel, lire en priorite:
 4. [architecture/current/runtime-flows.md](./architecture/current/runtime-flows.md)
 5. [architecture/target/backlog.md](./architecture/target/backlog.md)
 
-## Principes directeurs
+## Guiding principles
 
-- Garder le code propre, maintenable dans la duree, simple et resilient.
-- Ne pas reinventer la roue sans raison solide.
-- Favoriser la clean architecture et des frontieres explicites entre couches.
-- Respecter le SSOT partout.
-- Eviter le code eparpille et la duplication de logique.
-- Faire des abstractions seulement lorsqu'elles clarifient vraiment les responsabilites.
+- Keep code clean, maintainable over time, simple, and resilient.
+- Do not reinvent the wheel without good reason.
+- Favor clean architecture and explicit boundaries between layers.
+- Respect SSOT everywhere.
+- Avoid scattered code and logic duplication.
+- Make abstractions only when they truly clarify responsibilities.
 
-## Regles d'architecture
+## Architecture rules
 
-### 1. Responsabilites nettes
+### 1. Clear responsibilities
 
-Chaque bloc doit avoir une responsabilite principale claire.
+Each block must have a clear primary responsibility.
 
-En particulier:
+In particular:
 
-- la boucle agentique ne doit pas absorber la logique de facade
-- les facades ne doivent pas devenir le cerveau du produit
-- le setup ne doit pas se disperser dans plusieurs surfaces
-- la couche provider ne doit pas absorber la logique de haut niveau du tooling
+- the agentic loop must not absorb facade logic
+- facades must not become the brain of the product
+- setup must not be scattered across multiple surfaces
+- the provider layer must not absorb high-level tooling logic
 
-### 2. SSOT obligatoire
+### 2. Mandatory SSOT
 
-Toute logique structurelle doit avoir une source d'autorite claire.
+Every structural logic must have a clear authority source.
 
-Exemples:
+Examples:
 
-- un calcul de chemin ne doit pas etre recopie dans plusieurs modules
-- une regle de config ne doit pas etre reimplementee dans le wizard, la WebUI et une gateway
-- une politique provider ne doit pas exister a moitie dans le runtime et a moitie dans le provider
+- a path calculation must not be copied across several modules
+- a config rule must not be reimplemented in the wizard, WebUI, and a gateway
+- a provider policy must not exist half in the runtime and half in the provider
 
-Si un comportement doit exister a plusieurs endroits, il faut l'extraire plutot que le recopier.
+If a behavior must exist in multiple places, extract it rather than copy it.
 
-### 3. Providers LLM fins et plugins
+### 3. Fine LLM providers and plugins
 
-La direction cible du repo est:
+The target direction of the repo is:
 
-- une couche standard de providers LLM
-- des providers ajoutes comme plugins
-- une couche logique provider la plus fine possible
+- a standard layer of LLM providers
+- providers added as plugins
+- the thinnest possible provider logic layer
 
-Chaque provider doit contenir uniquement:
+Each provider must contain only:
 
-- sa configuration propre
-- sa factory de modele
-- ses mecanismes d'auth/session
-- ses specificites strictement necessaires
+- its own configuration
+- its model factory
+- its auth/session mechanisms
+- its strictly necessary specifics
 
-La logique commune ne doit pas etre repoussee dans chaque provider.
+Common logic must not be pushed into each provider.
 
-### 4. Interface tooling/providers explicite
+### 4. Explicit tooling/providers interface
 
-L'interface entre tooling et providers doit etre forte, lisible et centralisee.
+The interface between tooling and providers must be strong, readable, and centralized.
 
-Le repo doit pouvoir gerer plusieurs niveaux de capacites providers en tooling:
+The repo must handle multiple levels of provider capabilities in tooling:
 
-- providers forts avec tool calling natif
-- providers partiellement compatibles
-- providers faibles ou a fallback
+- strong providers with native tool calling
+- partially compatible providers
+- weak or fallback providers
 
-Cette harmonisation doit se faire dans une couche rationnelle commune, pas par empilement d'exceptions dans chaque provider.
+This harmonization must be done in a common rational layer, not by stacking exceptions in each provider.
 
-### 5. Facades minces
+### 5. Thin facades
 
-TUI, WebUI, Telegram, CLI et futures surfaces doivent rester minces.
+TUI, WebUI, Telegram, CLI, and future surfaces must remain thin.
 
-Elles doivent principalement:
+They should mainly:
 
-- recevoir des inputs
-- appeler les services adequats
-- rendre les outputs et les evenements
+- receive inputs
+- call appropriate services
+- render outputs and events
 
-Elles ne doivent pas concentrer:
+They must not concentrate:
 
-- la logique de configuration
-- la logique de setup
-- la logique provider
-- la logique coeur metier
+- configuration logic
+- setup logic
+- provider logic
+- core business logic
 
-### 6. Setup coherent
+### 6. Coherent setup
 
-Le setup, le wizard et le bootstrap n8n doivent converger vers des services de setup uniques.
+Setup, the wizard, and n8n bootstrap must converge toward unique setup services.
 
-Il ne faut pas dupliquer la logique d'onboarding entre:
+Do not duplicate onboarding logic between:
 
-- le wizard
-- la WebUI
-- d'autres surfaces
+- the wizard
+- the WebUI
+- other surfaces
 
-### 7. Orchestrateur et backend automation
+### 7. Orchestrator and automation backend
 
-Yagr reste au-dessus de l'orchestrateur.
+Yagr stays above the orchestrator.
 
-- n8n est le backend principal aujourd'hui
-- le coeur agentique ne doit pas etre noye dans les details d'integration n8n
-- les contrats backend doivent rester propres et evolutifs
+- n8n is the main backend today
+- the agentic core must not be drowned in n8n integration details
+- backend contracts must remain clean and evolutive
 
-## Regles de maintenance documentaire
+## Documentation maintenance rules
 
-### Architecture actuelle
+### Current architecture
 
-Le dossier `architecture/current/` doit toujours decrire le repo tel qu'il existe vraiment.
+The `architecture/current/` folder must always describe the repo as it really exists.
 
-Il faut le mettre a jour des qu'un changement modifie:
+Update it whenever a change modifies:
 
-- les responsabilites d'un module
-- les flux transverses
-- les dependances structurelles entre blocs
-- la place d'un composant dans l'architecture
+- a module's responsibilities
+- cross-cutting flows
+- structural dependencies between blocks
+- a component's place in the architecture
 
-### Architecture cible
+### Target architecture
 
-Le dossier `architecture/target/` est ephemere.
+The `architecture/target/` folder is ephemeral.
 
-Il sert a:
+It serves to:
 
-- suivre uniquement le travail restant
+- track only remaining work
 
-Il doit etre nettoye au fur et a mesure:
+It must be cleaned up as it goes:
 
-- quand une cible devient reelle, elle est decrite dans `architecture/current/`
-- les items termines doivent disparaitre du backlog cible
-- la documentation cible obsolete doit etre supprimee
+- when a target becomes real, it is described in `architecture/current/`
+- completed items must disappear from the target backlog
+- obsolete target documentation must be deleted
 
-## Reflexes attendus avant de coder
+## Expected reflexes before coding
 
-- identifier le bloc logique concerne
-- verifier s'il existe deja un SSOT
-- verifier si une logique similaire existe deja ailleurs
-- verifier si le changement renforce ou detruit une frontiere architecturale
-- mettre a jour la documentation architecturale si la structure change
+- identify the logical block concerned
+- verify if a SSOT already exists
+- verify if similar logic already exists elsewhere
+- verify if the change reinforces or destroys an architectural boundary
+- update architectural documentation if the structure changes
 
-## Signaux d'alerte
+## Warning signals
 
-Un changement doit etre reconsidere si:
+A change should be reconsidered if:
 
-- il duplique une logique deja presente ailleurs
-- il ajoute une exception provider-specific dans une couche generique sans necessite forte
-- il deplace de la logique coeur dans une facade
-- il ajoute un couplage transverse non documente
-- il rend plus difficile la future evolution vers une architecture plugin propre
+- it duplicates logic already present elsewhere
+- it adds a provider-specific exception in a generic layer without strong need
+- it moves core logic into a facade
+- it adds undocumented transverse coupling
+- it makes future evolution toward a clean plugin architecture more difficult
 
-## Regle pratique
+## Practical rule
 
-Quand un doute existe entre:
+When doubt exists between:
 
-- ajouter vite une nouvelle couche ad hoc
-- ou clarifier la responsabilite et extraire un point d'autorite
+- quickly adding a new ad hoc layer
+- or clarifying responsibility and extracting an authority point
 
-il faut preferer la clarification et le point d'autorite.
+prefer clarification and the authority point.

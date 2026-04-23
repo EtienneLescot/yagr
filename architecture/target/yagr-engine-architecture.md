@@ -1,23 +1,23 @@
 # Target Architecture - Yagr Engine
 
-Cette page capture la direction cible issue de la vision produit, du `BLUEPRINT.md` du repo, de l'architecture actuelle documentee sous `architecture/current/`, et du blueprint `holon`.
+This page captures the target direction from the product vision, the repo's `BLUEPRINT.md`, the current architecture documented under `architecture/current/`, and the `holon` blueprint.
 
-Elle ne decrit pas encore le code reel du repo. Elle decrit la convergence voulue.
+It does not yet describe the actual repo code. It describes the desired convergence.
 
-## 1. Intention cible
+## 1. Target Intent
 
-Le produit cible n'est ni un clone de `n8n`, ni un simple agent chat qui genere des scripts ad hoc.
+The target product is neither a clone of `n8n`, nor a simple chat agent that generates ad hoc scripts.
 
-La direction cible est:
+The target direction is:
 
-- `Yagr` reste le point d'entree principal pour l'utilisateur
-- le point d'entree principal reste le prompting
-- `Yagr Engine` devient la brique de modelisation, validation, patching et compilation des automatisations
-- l'UI de `Yagr Engine` est integree dans le produit `Yagr` comme surface de controle fine
-- `Hatchet` devient le runtime d'execution fiable
-- le choix du backend se fait en amont: soit `n8n`, soit `Yagr Engine + Hatchet`
+- `Yagr` remains the main user entry point
+- the main entry point remains prompting
+- `Yagr Engine` becomes the modeling, validation, patching, and compilation brick for automations
+- the `Yagr Engine` UI is integrated into the `Yagr` product as a fine-grained control surface
+- `Hatchet` becomes the reliable execution runtime
+- the backend choice is made upstream: either `n8n`, or `Yagr Engine + Hatchet`
 
-En formule courte:
+In short:
 
 ```text
 prompt-first
@@ -25,7 +25,7 @@ prompt-first
 + durable-runtime-backed
 ```
 
-## 2. Positionnement des briques
+## 2. Positioning of Bricks
 
 ```mermaid
 flowchart TD
@@ -64,123 +64,123 @@ flowchart TD
     Compile --> Hatchet
 ```
 
-Lecture voulue:
+Intended reading:
 
-- `Yagr` porte l'experience utilisateur, l'autonomie agentique et la politique produit
-- `n8n` et `Yagr Engine + Hatchet` sont deux chemins backend distincts
-- `Yagr Engine` porte le modele d'automation et l'edition AI-native uniquement sur son propre chemin
-- `Hatchet` porte l'execution, pas le modele produit
-- `n8n` reste un backend alternatif supporte, pas une target de compilation de `Yagr Engine`
+- `Yagr` carries the user experience, agentic autonomy, and product policy
+- `n8n` and `Yagr Engine + Hatchet` are two distinct backend paths
+- `Yagr Engine` carries the automation model and AI-native editing only on its own path
+- `Hatchet` carries execution, not the product model
+- `n8n` remains a supported alternative backend, not a compilation target of `Yagr Engine`
 
-## 3. Decisions structurantes
+## 3. Structuring Decisions
 
 ### 3.1 Prompt-first, graph-assisted
 
-L'utilisateur entre d'abord par le prompt.
+The user enters first through the prompt.
 
-Le graphe n'est pas la porte d'entree primaire du produit. Il sert a:
+The graph is not the primary product entry point. It serves to:
 
-- inspecter ce que l'agent a produit
-- guider des edits fins
-- contextualiser un prompt sur un node, un edge, un trigger ou un workflow
-- accelerer les corrections et raffinements sans basculer dans une UX formulaire classique
+- inspect what the agent produced
+- guide fine-grained edits
+- contextualize a prompt on a node, edge, trigger, or workflow
+- accelerate corrections and refinements without switching to a classic form UX
 
-Le principe cible est:
+The target principle is:
 
-- le chat cree l'automatisation
-- le graphe la rend pilotable
+- the chat creates the automation
+- the graph makes it controllable
 
-### 3.2 `Yagr Engine` absorbe la vocation de `holon`
+### 3.2 `Yagr Engine` absorbs holon's purpose
 
-Le projet `holon` devient conceptuellement `Yagr Engine`.
+The `holon` project conceptually becomes `Yagr Engine`.
 
-On ne garde pas deux produits concurrents:
+We do not keep two competing products:
 
-- `Yagr` au-dessus
-- `Yagr Engine` en dessous
+- `Yagr` above
+- `Yagr Engine` below
 
-`Yagr Engine` reprend les principes forts de `holon`:
+`Yagr Engine` takes on holon's strong principles:
 
 - code is truth
 - visual is interface
 - AI is the worker
-- patching chirurgical
-- metadata UI separee de la topologie
-- edition contextualisee par node et par graphe
+- surgical patching
+- metadata UI separated from topology
+- contextual editing by node and by graph
 
-### 3.3 `Hatchet` est un runtime, pas le modele produit
+### 3.3 `Hatchet` is a runtime, not the product model
 
-`Hatchet` fournit:
+`Hatchet` provides:
 
 - retries
 - scheduling
-- execution durable
+- durable execution
 - concurrency and rate controls
 - run state and operational reliability
 
-`Hatchet` ne doit pas devenir:
+`Hatchet` must not become:
 
-- la source de verite de la topologie
-- le DSL auteur
-- le modele conceptuel du produit
+- the source of truth for topology
+- the DSL author
+- the conceptual product model
 
-La verite produit reste dans `Yagr Engine`.
+The product truth remains in `Yagr Engine`.
 
-### 3.4 Le backend d'automation devient swappable par compilation
+### 3.4 The automation backend becomes swappable via compilation
 
-La cible n'est pas un branchement direct de `Yagr` sur `Hatchet`, ni un pipeline unique qui compilerait aussi bien vers `n8n` que vers `Hatchet`.
+The target is not a direct branching of `Yagr` on `Hatchet`, nor a single pipeline that would compile equally to `n8n` and to `Hatchet`.
 
-La cible est une selection amont entre deux chemins:
+The target is an upstream selection between two paths:
 
 ```text
 Path A: Yagr -> N8nEngine -> n8n
 Path B: Yagr -> Yagr Engine -> Hatchet
 ```
 
-Les implications:
+The implications:
 
-- le produit `Yagr` garde une facade commune
-- le contrat `Engine` reste le point de selection
-- `Yagr Engine` ne doit pas porter `n8n` comme target de compilation normale
-- `n8n` et `Yagr Engine` sont des implementations concurrentes du backend d'automation
+- the `Yagr` product keeps a common facade
+- the `Engine` contract remains the selection point
+- `Yagr Engine` must not carry `n8n` as a normal compilation target
+- `n8n` and `Yagr Engine` are concurrent implementations of the automation backend
 
-## 4. Responsabilites cibles
+## 4. Target Responsibilities
 
 ### 4.1 `Yagr`
 
-`Yagr` garde les responsabilites suivantes:
+`Yagr` keeps the following responsibilities:
 
-- point d'entree utilisateur principal
-- autonomie agentique
-- gestion de session et d'historique
+- main user entry point
+- agentic autonomy
+- session and history management
 - required actions, approvals, interruptions
-- presentation produit des workflows et des runs
-- orchestration conversationnelle
-- politique produit autour du prompting et du niveau d'autonomie
-- coordination entre UI conversationnelle, UI graphe et backends
+- product presentation of workflows and runs
+- conversational orchestration
+- product policy around prompting and autonomy level
+- coordination between conversational UI, graph UI, and backends
 
-`Yagr` ne doit pas devenir:
+`Yagr` must not become:
 
-- le parser du DSL
-- le patcher structurel des workflows
-- le moteur de validation du graphe
-- le runtime d'execution des automatisations
+- the DSL parser
+- the structural workflow patcher
+- the graph validation engine
+- the execution runtime for automations
 
 ### 4.2 `Yagr Engine`
 
-`Yagr Engine` devient la brique d'autorite pour:
+`Yagr Engine` becomes the authority brick for:
 
-- le DSL de workflow
-- le parsing et le graph extraction
-- le modele canonique de node/edge/port
-- la validation structurelle et semantique
-- le patching lossless
-- les annotations de graphe
-- les operations d'edition ciblees par node/edge/workflow
-- la compilation vers le runtime `Hatchet`
-- l'inspection structurale necessaire aux prompts contextuels
+- the workflow DSL
+- parsing and graph extraction
+- the canonical node/edge/port model
+- structural and semantic validation
+- lossless patching
+- graph annotations
+- targeted edit operations by node/edge/workflow
+- compilation to the `Hatchet` runtime
+- structural inspection necessary for contextual prompts
 
-`Yagr Engine` doit exposer des primitives du genre:
+`Yagr Engine` must expose primitives like:
 
 - `parseWorkflowSource`
 - `validateGraph`
@@ -192,96 +192,96 @@ Les implications:
 
 ### 4.3 `Yagr Engine UI`
 
-L'UI issue de `holon` devient une surface integree dans `Yagr`, pas un produit separe.
+The UI from `holon` becomes a surface integrated into `Yagr`, not a separate product.
 
-Elle sert a:
+It serves to:
 
-- visualiser le workflow genere
-- selectionner un node, un edge ou un sous-graphe
-- lancer un prompt contextualise
-- afficher annotations, badges, summary, ports et dependances
-- previsualiser un patch propose
-- confirmer ou annuler un changement
-- afficher des erreurs de validation structurelles au niveau du graphe
+- visualize the generated workflow
+- select a node, edge, or sub-graph
+- launch a contextual prompt
+- display annotations, badges, summary, ports, and dependencies
+- preview a proposed patch
+- confirm or cancel a change
+- display structural validation errors at the graph level
 
-Cette UI n'est pas la source de verite. Elle est une projection interactive du modele `Yagr Engine`.
+This UI is not the source of truth. It is an interactive projection of the `Yagr Engine` model.
 
 ### 4.4 `Hatchet`
 
-`Hatchet` doit rester responsable de:
+`Hatchet` must remain responsible for:
 
-- l'execution fiable
-- la reprise
-- les retries
-- la planification
-- la gestion des runs
-- l'etat d'execution
-- l'operational runtime
+- reliable execution
+- recovery
+- retries
+- scheduling
+- run management
+- execution state
+- operational runtime
 
-`Hatchet` n'est pas responsable de:
+`Hatchet` is not responsible for:
 
-- l'edition des workflows
-- la topologie auteur
-- les prompts contextuels
-- la politique produit de creation d'automation
+- workflow editing
+- author topology
+- contextual prompts
+- the product policy for automation creation
 
-### 4.5 `n8n` comme backend alternatif
+### 4.5 `n8n` as alternative backend
 
-`n8n` reste un backend supporte sur son propre chemin:
+`n8n` remains a supported backend on its own path:
 
-- backend autonome pour les workspaces qui choisissent `n8n`
-- implementation separee du contrat backend/engine
-- support de l'existant et du mode V1
+- autonomous backend for workspaces that choose `n8n`
+- separate implementation of the backend/engine contract
+- support for existing and V1 mode
 
-La regle cible est:
+The target rule is:
 
-- si un workspace choisit `n8n`, il reste sur le chemin `n8n`
-- si un workspace choisit `Yagr Engine`, il passe sur le chemin `Yagr Engine + Hatchet`
-- on ne melange pas les deux au coeur du meme pipeline authoring/runtime
+- if a workspace chooses `n8n`, it stays on the `n8n` path
+- if a workspace chooses `Yagr Engine`, it moves to the `Yagr Engine + Hatchet` path
+- we do not mix the two at the core of the same authoring/runtime pipeline
 
-## 5. Source de verite et artefacts
+## 5. Source of Truth and Artifacts
 
-### 5.1 Regle centrale
+### 5.1 Central Rule
 
-La verite doit exister a un seul endroit par niveau:
+Truth must exist in only one place per level:
 
-- sur le chemin `Yagr Engine`, verite auteur: le fichier source en DSL `Yagr Engine`
-- sur le chemin `Yagr Engine`, verite structurelle: le graphe/IR derive par `Yagr Engine`
-- verite UI: metadata de presentation uniquement
-- verite runtime: runs et etat d'execution dans le backend cible
+- on the `Yagr Engine` path, author truth: the source file in `Yagr Engine` DSL
+- on the `Yagr Engine` path, structural truth: the graph/IR derived by `Yagr Engine`
+- UI truth: presentation metadata only
+- runtime truth: runs and execution state in the target backend
 
 ### 5.2 Invariants
 
-- le JSON de l'UI ne decrit jamais la topologie
-- un patch ne doit pas reecrire plus que la zone ciblee
-- les ids de nodes et specs doivent rester stables
-- les operations UI et les operations chat modifient la meme source d'autorite
-- un workflow `Yagr Engine` compile vers `Hatchet`
-- un workflow `n8n` reste un workflow `n8n`
-- le contrat produit commun ne doit pas forcer une fusion artificielle des modeles auteur
+- the UI JSON never describes topology
+- a patch must not rewrite more than the targeted area
+- node IDs and specs must remain stable
+- UI operations and chat operations modify the same authority source
+- a `Yagr Engine` workflow compiles to `Hatchet`
+- an `n8n` workflow remains an `n8n` workflow
+- the common product contract must not force an artificial fusion of author models
 
-### 5.3 Position sur le DSL host
+### 5.3 Position on DSL host
 
-Court terme:
+Short term:
 
-- le DSL Python existant peut rester un frontend valide, surtout s'il est deja aligne conceptuellement avec `n8n-as-code`
+- the existing Python DSL can remain a valid frontend, especially if it is already conceptually aligned with `n8n-as-code`
 
-Moyen terme:
+Medium term:
 
-- `Yagr Engine` doit disposer d'un IR canonique independant du langage host
+- `Yagr Engine` must have a language-independent canonical IR
 
-Long terme:
+Long term:
 
-- plusieurs frontends auteur peuvent converger vers le meme IR:
+- multiple authoring frontends can converge to the same IR:
   - Python DSL
   - TypeScript DSL
-  - edition AI contextualisee
+  - AI contextual editing
 
-La cible n'est pas de faire de Python le centre de gravite produit. La cible est d'avoir un modele canonique stable capable de survivre a plusieurs syntaxes hotes.
+The target is not to make Python the product center of gravity. The target is to have a stable canonical model capable of surviving multiple host syntaxes.
 
-## 6. Flux cibles principaux
+## 6. Main Target Flows
 
-### 6.1 Creation d'une automation
+### 6.1 Creating an Automation
 
 ```mermaid
 sequenceDiagram
@@ -290,22 +290,22 @@ sequenceDiagram
     participant E as Yagr Engine
     participant H as Hatchet
 
-    U->>Y: prompt d'automation
+    U->>Y: automation prompt
     Y->>E: create or update workflow intent
     E->>E: parse / patch / validate / compile
     E-->>Y: workflow + graph model + diagnostics
-    Y-->>U: reponse + presentation workflow
+    Y-->>U: response + workflow presentation
     Y->>H: deploy compiled automation
     H-->>Y: deployment result
 ```
 
 Invariants:
 
-- ce flux decrit uniquement le chemin `Yagr Engine + Hatchet`
-- le workflow est d'abord un artefact `Yagr Engine`
-- la presentation workflow est une sortie produit de premier plan
+- this flow describes only the `Yagr Engine + Hatchet` path
+- the workflow is first a `Yagr Engine` artifact
+- workflow presentation is a first-class product output
 
-### 6.2 Edition fine depuis le graphe
+### 6.2 Fine-grained Editing from the Graph
 
 ```mermaid
 sequenceDiagram
@@ -324,11 +324,11 @@ sequenceDiagram
 
 Invariants:
 
-- l'UI n'edite pas directement la topologie dans un store local autonome
-- tout edit repasse par `Yagr Engine`
-- le prompt contextuel porte le contexte exact du node/edge/workflow
+- the UI does not directly edit topology in an autonomous local store
+- every edit goes back through `Yagr Engine`
+- the contextual prompt carries the exact node/edge/workflow context
 
-### 6.3 Exploitation d'un workflow existant
+### 6.3 Working with an Existing Workflow
 
 ```mermaid
 sequenceDiagram
@@ -337,7 +337,7 @@ sequenceDiagram
     participant E as Yagr Engine
     participant H as Hatchet
 
-    U->>Y: "modifie le workflow que tu viens de creer"
+    U->>Y: "modify the workflow you just created"
     Y->>E: load workflow source and graph
     E-->>Y: canonical graph + UI metadata + diagnostics
     Y-->>U: workflow presentation
@@ -346,24 +346,24 @@ sequenceDiagram
     Y->>H: optional redeploy
 ```
 
-## 7. Impact sur l'architecture actuelle du repo
+## 7. Impact on Current Repo Architecture
 
-La base actuelle a conserver:
+The current base to preserve:
 
-- `YagrSessionAgent` et `YagrRunEngine` comme coeur du point d'entree agentique
-- les facades minces (`gateway/*`)
-- la logique provider/plugin et la strategie runtime LLM
-- le principe d'un `Engine` abstrait
+- `YagrSessionAgent` and `YagrRunEngine` as the core of the agentic entry point
+- thin facades (`gateway/*`)
+- provider/plugin logic and LLM runtime strategy
+- the principle of an abstract `Engine`
 
-Les deplacements conceptuels a faire:
+Conceptual moves to make:
 
-- sortir progressivement la logique trop `n8n`-specifique du system prompt et des tools coeur
-- faire de `Yagr Engine` le vrai backend authoring/modeling
-- garder `n8nac` dans le chemin `n8n`, sans en faire un target adapter du chemin `Yagr Engine`
-- faire de la presentation graphe/UI un composant produit central
-- rendre le choix `n8n` vs `Yagr Engine + Hatchet` explicite au niveau du workspace/backend selection
+- progressively remove `n8n`-specific logic from the system prompt and core tools
+- make `Yagr Engine` the true authoring/modeling backend
+- keep `n8nac` in the `n8n` path, without making it a target adapter of the `Yagr Engine` path
+- make graph/UI presentation a central product component
+- make the `n8n` vs `Yagr Engine + Hatchet` choice explicit at the workspace/backend selection level
 
-## 8. Frontieres cibles
+## 8. Target Boundaries
 
 ```mermaid
 flowchart LR
@@ -399,38 +399,38 @@ flowchart LR
     C --> H
 ```
 
-Regles cibles:
+Target rules:
 
-- les facades restent minces
-- le runtime agentique ne devient pas editeur de graphe
-- `Yagr Engine` garde la maitrise de la structure
-- `n8n` et `Yagr Engine + Hatchet` restent deux chemins backend explicites
-- les runtimes ne remontent pas pour imposer leur modele au produit
+- facades remain thin
+- the agentic runtime does not become a graph editor
+- `Yagr Engine` keeps control of structure
+- `n8n` and `Yagr Engine + Hatchet` remain two explicit backend paths
+- runtimes do not come back up to impose their model on the product
 
 ## 9. Non-goals
 
-Ce document ne cible pas:
+This document does not target:
 
-- un clone pixel-perfect de `n8n`
-- une UI canvas-first ou formulaire-first
-- un runtime maison complet a la place de `Hatchet` a court terme
-- une duplication concurrente entre `holon` et `Yagr Engine`
-- une topologie de workflow stockee dans du JSON UI
-- une target `n8n` compilee a partir de `Yagr Engine` dans le flux nominal
+- a pixel-perfect clone of `n8n`
+- a canvas-first or form-first UI
+- a complete custom runtime to replace `Hatchet` in the short term
+- concurrent duplication between `holon` and `Yagr Engine`
+- a workflow topology stored in UI JSON
+- an `n8n` target compiled from `Yagr Engine` in the nominal flow
 
-## 10. Convergence attendue
+## 10. Expected Convergence
 
-La convergence reussie ressemblera a ceci:
+Successful convergence will look like this:
 
-- l'utilisateur parle a `Yagr`
-- `Yagr` cree une automation dans `Yagr Engine`
-- le workflow est presente dans une UI graphe integree
-- l'utilisateur peut prompter un node ou un sous-graphe pour affiner
-- `Yagr Engine` applique un patch structurel cible
-- l'automation `Yagr Engine` est compilee vers `Hatchet`
-- `Hatchet` l'execute de facon fiable
+- the user talks to `Yagr`
+- `Yagr` creates an automation in `Yagr Engine`
+- the workflow is presented in an integrated graph UI
+- the user can prompt a node or sub-graph to refine
+- `Yagr Engine` applies a targeted structural patch
+- the `Yagr Engine` automation is compiled to `Hatchet`
+- `Hatchet` executes it reliably
 
-Autrement dit:
+In other words:
 
 ```text
 Yagr = entrypoint and autonomy

@@ -1,8 +1,8 @@
 # System Overview
 
-Cette page decrit les grands blocs logiques actuellement presents dans le repo.
+This page describes the major logical blocks currently present in the repo.
 
-## Vue d'ensemble
+## Overview
 
 ```mermaid
 flowchart TD
@@ -15,7 +15,7 @@ flowchart TD
     subgraph Application[Application]
       AF[agent-factory\ncreateYagrDeepAgent]
       DA[deepagentsjs\nLangGraph]
-      EVT[langgraph-events\nadaptateur events]
+      EVT[langgraph-events\nevents adapter]
       Setup[Setup Application Services]
     end
 
@@ -23,7 +23,7 @@ flowchart TD
       LLM[LangChain BaseChatModel\ncreate-langchain-model]
       Tools[LangChain Tools\ntools/ + manager-tooling/]
       Engine[Engine Ports\nn8n Engine]
-      Checkpointer[MemorySaver\ncheckpointer par thread]
+      Checkpointer[MemorySaver\ncheckpointer per thread]
       Config[Config Services]
       N8nLocal[Managed Local n8n]
     end
@@ -48,142 +48,142 @@ flowchart TD
     Setup --> Relay
 ```
 
-## Blocs principaux
+## Main Blocks
 
-### Boucle agentique (deepagentsjs)
+### Agentic Loop (deepagentsjs)
 
 - `src/agent-factory.ts`: `createYagrDeepAgent(engine, configService)` → `YagrDeepAgentHandle`
-- `deepagentsjs`: `createDeepAgent({ model, tools, systemPrompt, checkpointer })` — LangGraph sous le capot
-- `src/gateway/langgraph-events.ts`: adaptateur events LangGraph → `YagrUserVisibleUpdate`
-- `src/prompt/build-system-prompt.ts`: composition du system prompt (engine, tunnel, n8n host, workspace instructions, memoire cross-session)
+- `deepagentsjs`: `createDeepAgent({ model, tools, systemPrompt, checkpointer })` — LangGraph under the hood
+- `src/gateway/langgraph-events.ts`: events adapter LangGraph → `YagrUserVisibleUpdate`
+- `src/prompt/build-system-prompt.ts`: system prompt composition (engine, tunnel, n8n host, workspace instructions, cross-session memory)
 
 **Deleted:**
-- `src/agent.ts` (`YagrSessionAgent`) — supprimé
-- `src/runtime/` (7 fichiers) — supprimé
+- `src/agent.ts` (`YagrSessionAgent`) — deleted
+- `src/runtime/` (7 files) — deleted
 
 ### LLM / providers
 
-Deux couches distinctes :
+Two distinct layers:
 
-**Couche agent (LangChain)** — utilisée par deepagentsjs :
-- `src/llm/create-langchain-model.ts` : factory `BaseChatModel` + resolution config
-- `src/llm/*-account.ts` : auth OAuth (Copilot Device Flow, OpenAI Codex, Claude Pro/Max)
+**Agent layer (LangChain)** — used by deepagentsjs:
+- `src/llm/create-langchain-model.ts`: factory `BaseChatModel` + config resolution
+- `src/llm/*-account.ts`: OAuth auth (Copilot Device Flow, OpenAI Codex, Claude Pro/Max)
 
-**Couche relay (Vercel AI SDK)** — utilisée par le relay proxy n8n :
-- `src/llm/proxy-runtime.ts` + `llm-relay-server.ts` : relay OpenAI-compatible local
-- `src/llm/provider-plugin.ts` + `provider-registry.ts` : plugins provider avec factory Vercel AI SDK
-- `src/llm/capability-resolver.ts` + `model-capabilities.ts` : classification capacite (relay uniquement)
+**Relay layer (Vercel AI SDK)** — used by the n8n relay proxy:
+- `src/llm/proxy-runtime.ts` + `llm-relay-server.ts`: OpenAI-compatible local relay
+- `src/llm/provider-plugin.ts` + `provider-registry.ts`: provider plugins with Vercel AI SDK factory
+- `src/llm/capability-resolver.ts` + `model-capabilities.ts`: capability classification (relay only)
 
-**Deleted:** `src/llm/create-language-model.ts` — supprimé.
+**Deleted:** `src/llm/create-language-model.ts` — deleted.
 
 ### N8N Cloudflare Tunnel Exposure
 
-Pour le cycle de vie d'une instance n8n Yagr-managed, la frontiere applicative actuelle est la suivante:
+For the lifecycle of a Yagr-managed n8n instance, the current application boundary is as follows:
 
-- `src/n8n-local/managed-runtime.ts` orchestre le startup preflight produit: redemarrage/recreation du runtime gere a partir du `instanceProfile` persiste, puis reconciliation bootstrap si l'instance n'est pas deja `connected`
-- `src/n8n-local/bootstrap.ts` reste le SSOT du bootstrap silencieux owner/API key contre une instance n8n vivante
-- `src/setup/application-services.ts` reste le SSOT de persistance finale host/API key/projet/workspace
+- `src/n8n-local/managed-runtime.ts` orchestrates the product preflight startup: restart/recreation of the managed runtime from the persisted `instanceProfile`, then bootstrap reconciliation if the instance is not already `connected`
+- `src/n8n-local/bootstrap.ts` remains the SSOT of silent owner/API key bootstrap against a live n8n instance
+- `src/setup/application-services.ts` remains the SSOT of final persistence host/API key/project/workspace
 
-Yagr peut exposer des endpoints Yagr locaux via trois tunnels Cloudflare distincts, chacun avec une responsabilite explicite:
+Yagr can expose local Yagr endpoints via three distinct Cloudflare tunnels, each with explicit responsibility:
 
-- `n8n tunnel`: exposition publique de l'instance n8n locale Yagr-managed pour les webhooks
-- `n8n auth tunnel`: exposition publique du bridge d'auth local utilise pour l'ouverture distante de workflows
-- `llm tunnel`: exposition publique du relay LLM local quand une instance n8n cloud doit joindre Yagr
+- `n8n tunnel`: public exposure of the Yagr-managed local n8n instance for webhooks
+- `n8n auth tunnel`: public exposure of the local auth bridge used for remote workflow opening
+- `llm tunnel`: public exposure of the local LLM relay when a cloud n8n instance needs to reach Yagr
 
-**Composants implementes**
+**Implemented Components**
 
-| Fichier | Role |
+| File | Role |
 |---|---|
-| `src/n8n-local/n8n-tunnel.ts` | SSOT du lifecycle process des tunnels Cloudflare : start/stop/refresh/status, persistance des state files, auto-install de `cloudflared`, support `trycloudflare` ou domaine DNS dedie |
-| `src/n8n-local/public-exposure-service.ts` | SSOT de l'orchestration applicative des expositions publiques : compose lifecycle tunnel, bridge auth, relay LLM et effets de bord config/restart |
-| `src/n8n-local/tunnel-reachability.ts` | SSOT de wake-up des tunnels par consommateur (`telegram`, `webui`, `tui`, `cli`, `llm`). `force-all-facades` est le defaut depuis ce changement. |
-| `src/n8n-local/managed-runtime.ts` | SSOT du startup applicatif d'une instance n8n Yagr-managed : reanimation runtime a partir du profil persiste, puis reconciliation bootstrap/config si necessaire |
-| `src/gateway/local-open-bridge.ts` | Bridge HTTP tokenise interne a `workflow-links.ts`. Les facades ne l'appellent pas directement — `presentWorkflowResult` est la seule source d'autorite pour l'URL de workflow. |
-| `src/config/yagr-config-service.ts` | `N8nTunnelConfig` : `enabled`, `publicUrl`, `targetUrl` |
-| `src/gateway/workflow-links.ts` | Substitution de l'URL locale par l'URL tunnel publique quand active |
-| `src/prompt/build-system-prompt.ts` | Injection de l'URL tunnel publique dans le system prompt |
+| `src/n8n-local/n8n-tunnel.ts` | SSOT of Cloudflare tunnel lifecycle process: start/stop/refresh/status, state files persistence, auto-install of `cloudflared`, `trycloudflare` support or dedicated DNS domain |
+| `src/n8n-local/public-exposure-service.ts` | SSOT of application orchestration for public exposures: compose tunnel lifecycle, auth bridge, LLM relay and config/restart side effects |
+| `src/n8n-local/tunnel-reachability.ts` | SSOT of tunnel wake-up by consumer (`telegram`, `webui`, `tui`, `cli`, `llm`). `force-all-facades` is the default since this change. |
+| `src/n8n-local/managed-runtime.ts` | SSOT of application startup of a Yagr-managed n8n instance: runtime resuscitation from persisted profile, then bootstrap/config reconciliation if necessary |
+| `src/gateway/local-open-bridge.ts` | Internal tokenized HTTP bridge within `workflow-links.ts`. Facades do not call it directly — `presentWorkflowResult` is the only authority source for the workflow URL. |
+| `src/config/yagr-config-service.ts` | `N8nTunnelConfig`: `enabled`, `publicUrl`, `targetUrl` |
+| `src/gateway/workflow-links.ts` | Substitution of local URL by tunnel public URL when active |
+| `src/prompt/build-system-prompt.ts` | Injection of tunnel public URL into system prompt |
 
-**Flux operationnel**
+**Operational Flow**
 
 ```
 yagr n8n tunnel start
-  → resolveN8nTunnelTargetUrl()        → URL locale n8n (managed uniquement)
-  → installCloudflaredIfNeeded()       → telecharge cloudflared si absent
-  → ensureN8nTunnel(targetUrl)         → demarre/reuse un unique tunnel cloudflared
-  → detecte URL trycloudflare.com      → parse le log file
-  → persiste N8nTunnelState            → YAGR_HOME/n8n-tunnel-state.json
-  → restartManagedN8nForTunnel()       → redemarre n8n avec N8N_WEBHOOK_URL
+  → resolveN8nTunnelTargetUrl()        → local n8n URL (managed only)
+  → installCloudflaredIfNeeded()       → downloads cloudflared if missing
+  → ensureN8nTunnel(targetUrl)         → starts/reuses a single cloudflared tunnel
+  → detect trycloudflare.com URL       → parses log file
+  → persists N8nTunnelState            → YAGR_HOME/n8n-tunnel-state.json
+  → restartManagedN8nForTunnel()       → restarts n8n with N8N_WEBHOOK_URL
 ```
 
-**Regles de cycle de vie**
+**Lifecycle Rules**
 
-- Le lifecycle process des tunnels Cloudflare est centralise dans `src/n8n-local/n8n-tunnel.ts`.
-- L'orchestration metier des expositions publiques (`n8n`, `n8n auth`, `llm`) est centralisee dans `src/n8n-local/public-exposure-service.ts`.
-- Les decisions de wake-up par facade/consommateur sont centralisees dans `src/n8n-local/tunnel-reachability.ts`.
-- Les erreurs/timeouts de startup nettoient maintenant le processus `cloudflared` au lieu de le laisser detache.
-- Les tunnels `n8n` et `n8n auth` sont maintenant lazy: demarrage explicite au setup/CLI, puis wake-up uniquement par les consommateurs qui en ont besoin.
-- Le tunnel `llm` passe par le meme orchestrateur de reachability et se reveille uniquement si le proxy LLM est configure en mode `tunnel`.
-- Le mode `force-all-facades` est le defaut: toutes les facades reveillent les tunnels publics pour que les URLs soient homogenes et partageables. Mettre `YAGR_TUNNEL_REACHABILITY_MODE=on-demand` pour revenir au comportement lazy.
-- L'arret d'une facade ou du gateway ne tue pas les tunnels deja demarres (`n8n`, `n8n auth`, `llm`). Le bridge local d'auth tourne lui aussi hors des facades et survit au kill d'une surface.
-- Le support `TUNNEL_DOMAIN` est centralise dans `n8n-tunnel.ts`: il bascule du mode `trycloudflare` vers un tunnel DNS dedie et assure aussi le routage `cloudflared tunnel route dns`.
-- Variables d'environnement SSOT:
-  - `YAGR_TUNNEL_REACHABILITY_MODE` pilote la politique de wake-up des tunnels.
-  - `TUNNEL_DOMAIN` active le mode tunnel Cloudflare sur domaine DNS dedie au lieu du mode `trycloudflare`.
-  - Ces variables sont consommees depuis les modules SSOT (`tunnel-reachability.ts`, `n8n-tunnel.ts`) et sont heritees par les workers/processus detaches via `process.env`.
+- The Cloudflare tunnel lifecycle process is centralized in `src/n8n-local/n8n-tunnel.ts`.
+- The business orchestration of public exposures (`n8n`, `n8n auth`, `llm`) is centralized in `src/n8n-local/public-exposure-service.ts`.
+- Wake-up decisions by facade/consumer are centralized in `src/n8n-local/tunnel-reachability.ts`.
+- Startup errors/timeouts now clean up the `cloudflared` process instead of leaving it detached.
+- The `n8n` and `n8n auth` tunnels are now lazy: explicit start at setup/CLI, then wake-up only by consumers that need them.
+- The `llm` tunnel goes through the same reachability orchestrator and wakes only if the LLM proxy is configured in `tunnel` mode.
+- `force-all-facades` mode is the default: all facades wake public tunnels so URLs are homogeneous and shareable. Set `YAGR_TUNNEL_REACHABILITY_MODE=on-demand` to revert to lazy behavior.
+- Stopping a facade or the gateway does not kill already-started tunnels (`n8n`, `n8n auth`, `llm`). The local auth bridge also runs outside of facades and survives surface kill.
+- `TUNNEL_DOMAIN` support is centralized in `n8n-tunnel.ts`: it switches from `trycloudflare` mode to dedicated DNS tunnel mode and also handles `cloudflared tunnel route dns` routing.
+- Environment variable SSOTs:
+  - `YAGR_TUNNEL_REACHABILITY_MODE` drives tunnel wake-up policy.
+  - `TUNNEL_DOMAIN` activates Cloudflare tunnel mode on dedicated DNS domain instead of `trycloudflare` mode.
+  - These variables are consumed from SSOT modules (`tunnel-reachability.ts`, `n8n-tunnel.ts`) and inherited by detached workers/processes via `process.env`.
 
-**Portee et limitations**
+**Scope and Limitations**
 
-- Le `n8n tunnel` ne s'applique qu'aux instances **Yagr-managed locales** (direct ou docker). Les instances cloud/distantes sont deja publiques.
-- Trois tunnels distincts peuvent coexister: `n8n tunnel`, `n8n auth tunnel`, `llm tunnel`.
-- Quand l'exposition n8n est active, Yagr peut aussi demarrer un tunnel public dedie au bridge d'auth n8n pour les surfaces distantes (ex: Telegram mobile).
-- Les URL `trycloudflare.com` changent a chaque restart; en mode `TUNNEL_DOMAIN`, les hostnames sont stables mais restent dependants du compte Cloudflare configure localement.
-- `N8N_WEBHOOK_URL` est positionne au demarrage n8n ; un refresh tunnel propose un redemarrage explicite.
-- Le tunnel expose une surface **non authentifiee** par defaut pour les webhooks.
+- The `n8n tunnel` only applies to **Yagr-managed local** instances (direct or docker). Cloud/remote instances are already public.
+- Three distinct tunnels can coexist: `n8n tunnel`, `n8n auth tunnel`, `llm tunnel`.
+- When n8n exposure is active, Yagr can also start a dedicated public tunnel for the n8n auth bridge for remote surfaces (e.g., Telegram mobile).
+- `trycloudflare.com` URLs change on every restart; in `TUNNEL_DOMAIN` mode, hostnames are stable but remain dependent on the locally configured Cloudflare account.
+- `N8N_WEBHOOK_URL` is set at n8n startup; a tunnel refresh proposes an explicit restart.
+- The tunnel exposes an **unauthenticated** surface by default for webhooks.
 
-**Commandes CLI**
+**CLI Commands**
 
-| Commande | Description |
+| Command | Description |
 |---|---|
-| `yagr n8n tunnel setup` | Installe cloudflared automatiquement |
-| `yagr n8n tunnel start` | Demarre le tunnel |
-| `yagr n8n tunnel stop` | Arrete le tunnel |
-| `yagr n8n tunnel refresh` | Renouvelle l'URL |
-| `yagr n8n tunnel status` | Affiche l'etat courant |
-| `yagr n8n tunnel url` | Retourne l'URL publique seule |
+| `yagr n8n tunnel setup` | Automatically installs cloudflared |
+| `yagr n8n tunnel start` | Starts the tunnel |
+| `yagr n8n tunnel stop` | Stops the tunnel |
+| `yagr n8n tunnel refresh` | Renews the URL |
+| `yagr n8n tunnel status` | Displays current state |
+| `yagr n8n tunnel url` | Returns the public URL only |
 
 ### LLM Relay Proxy (Yagr → n8n)
 
-Yagr expose un serveur HTTP OpenAI-compatible local (`llm-relay-server.ts`) qui proxifie vers le provider actif de Yagr. Les noeuds Chat Model n8n (ex: `lmChatOpenAi`) peuvent pointer sur ce relay via une credential `openAiApi` avec `baseUrl` custom — sans necessiter de cle API separee.
+Yagr exposes a local OpenAI-compatible HTTP server (`llm-relay-server.ts`) that proxies to Yagr's active provider. n8n Chat Model nodes (e.g., `lmChatOpenAi`) can point to this relay via an `openAiApi` credential with custom `baseUrl` — without requiring a separate API key.
 
-**Composants implementes**
+**Implemented Components**
 
-| Fichier | Role |
+| File | Role |
 |---|---|
-| `src/llm/llm-relay-server.ts` | Cycle de vie du relay : demarrage, detection de port libre, health-check, arret |
-| `src/llm/llm-relay-entrypoint.ts` | Point d'entree du processus relay detache |
-| `src/llm/anthropic-relay.ts` | Adaptation de format Anthropic → OpenAI pour le relay |
-| `src/llm/proxy-runtime.ts` | Preparation du runtime provider pour le relay |
+| `src/llm/llm-relay-server.ts` | Relay lifecycle: startup, free port detection, health-check, shutdown |
+| `src/llm/llm-relay-entrypoint.ts` | Entry point of the detached relay process |
+| `src/llm/anthropic-relay.ts` | Anthropic → OpenAI format adaptation for the relay |
+| `src/llm/proxy-runtime.ts` | Provider runtime preparation for the relay |
 
-**Flux operationnel**
+**Operational Flow**
 
 ```
 n8nac action=yagr_proxy_relay_start
-  → ensureN8nRelayServer()            // demarre le relay si mort, idempotent
-  → cree/reuse la credential openAiApi dans n8n (nom fixe "Yagr LLM Proxy")
-  → retourne { port, baseUrl, credentialId }
-  → l'agent assigne credentialId au noeud lmChatOpenAi
+  → ensureN8nRelayServer()            // starts the relay if dead, idempotent
+  → creates/reuses the openAiApi credential in n8n (fixed name "Yagr LLM Proxy")
+  → returns { port, baseUrl, credentialId }
+  → the agent assigns credentialId to lmChatOpenAi node
 
-n8n execute le workflow
-  → lmChatOpenAi appelle http://host.docker.internal:PORT/v1/chat/completions
-  → relay proxifie vers le provider actif Yagr (Copilot, Anthropic, OpenAI, etc.)
-  → rotation de token transparente (le relay fait l'intermediaire en temps reel)
+n8n executes the workflow
+  → lmChatOpenAi calls http://host.docker.internal:PORT/v1/chat/completions
+  → relay proxies to Yagr's active provider (Copilot, Anthropic, OpenAI, etc.)
+  → transparent token rotation (the relay acts as intermediary in real time)
 ```
 
-**Points d'attention**
+**Points of Attention**
 
-- Le relay tourne como processus detache qui survit a la session agent ; il est redemarre automatiquement au prochain lancement de `ensureRelayAtLaunch()` si mort
-- Le noeud `lmChatOpenAi` v1.3 exige `responsesApiEnabled: false` quand une `baseURL` custom est configuree — sinon n8n envoie la requete a `api.openai.com/v1/responses` en ignorant la `baseURL`
-- Quand n8nac test retourne `asyncTrigger=true` (`{"message":"Workflow was started"}`), l'execution est asynchrone ; l'agent doit enchaîner avec `execution list/get` pour confirmer le statut reel
+- The relay runs as a detached process that survives the agent session; it is automatically restarted at the next `ensureRelayAtLaunch()` if dead
+- The `lmChatOpenAi` v1.3 node requires `responsesApiEnabled: false` when a custom `baseURL` is configured — otherwise n8n sends the request to `api.openai.com/v1/responses` ignoring the `baseURL`
+- When n8nac test returns `asyncTrigger=true` (`{"message":"Workflow was started"}`), execution is asynchronous; the agent must chain with `execution list/get` to confirm the real status
 
 ```mermaid
 flowchart LR
@@ -208,77 +208,77 @@ flowchart LR
 
 ### Tooling
 
-**Outils generalistes (`src/tools/`) :**
+**Generalist Tools (`src/tools/`):**
 
 - `src/tools/*.ts` (FS, shell, HTTP, status)
-- `src/manager-tooling/YAGENTS.md` — template source des instructions manager semees dans la home Yagr
+- `src/manager-tooling/YAGENTS.md` — source template of manager instructions seeded in the Yagr home
 
-Responsabilite actuelle:
-#### Doctrine d'outillage
+Current responsibility:
+#### Tooling Doctrine
 
-> Yagr est un agent generaliste de codage et d'orchestration, avec une fine surcouche d'outillage dediee a n8n.
+> Yagr is a generalist coding and orchestration agent, with a thin layer of tooling dedicated to n8n.
 
-La regle est simple : **qui peut le plus peut le moins**. Un agent capable de lire n'importe quel fichier peut lire un fichier de workflow. Un outil de recherche generique peut chercher dans un workspace n8nac. L'outillage n8n-specifique ne doit couvrir que ce qu'un outil generaliste ne peut pas faire par construction.
+The rule is simple: **who can do more can do less**. An agent capable of reading any file can read a workflow file. A generic search tool can search in an n8nac workspace. n8n-specific tooling should only cover what a generalist tool cannot do by design.
 
-Dans le modele cible et attendu, la racine operationnelle est la **home Yagr** (`YAGR_HOME`). Le dossier `n8n-workspace` est un sous-workspace de cette home, pas le root implicite du process.
+In the target and expected model, the operational root is the **Yagr home** (`YAGR_HOME`). The `n8n-workspace` folder is a sub-workspace of this home, not the implicit root of the process.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  readFile   grep   listDir                                      │
-│  ↳ lisent le FS visible depuis la home Yagr                    │
+│  ↳ read the FS visible from the Yagr home                       │
 │                                                                 │
 │  writeFile  replaceInFile  moveFile  deleteFile                 │
 │                                                                 │
-│  httpRequest   — appels HTTP arbitraires (API REST, relay…)    │
-│  runScript     — shell restraint (allowlist : build/test/git)  │
+│  httpRequest   — arbitrary HTTP calls (REST API, relay…)        │
+│  runScript     — restrained shell (allowlist: build/test/git)  │
 │  reportProgress   requestRequiredAction                        │
 └─────────────────────────────────────────────────────────────────┘
-┌─────────────────────────────────────────────────────────────────┐
+┌─────────────────────────────────────────────────────────────────┘
 └─────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────┐
-│  COUCHE 3 — Specificites Yagr (src/manager-tooling/)            │
-│  yagr yagrProxy — proxy LLM + credential n8n                    │
-│  YAGENTS.md — template manager pour la home Yagr               │
+│  LAYER 3 — Yagr Specificities (src/manager-tooling/)            │
+│  yagr yagrProxy — LLM proxy + n8n credential                    │
+│  YAGENTS.md — manager template for the Yagr home               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Outils FS et leur scope :
+FS Tools and their scope:
 
-| Outil | Scope par defaut | Scope etendu |
+| Tool | Default scope | Extended scope |
 |---|---|---|
-| `readFile` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
-| `grep` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
-| `listDir` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
-| `writeFile` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
-| `replaceInFile` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
-| `moveFile` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
-| `deleteFile` | home Yagr (`YAGR_HOME`) et sous-dossiers | selon l'outil/backend effectif |
+| `readFile` | Yagr home (`YAGR_HOME`) and subfolders | according to effective tool/backend |
+| `grep` | Yagr home (`YAGR_HOME`) and subfolders | according to effective tool/backend |
+| `listDir` | Yagr home (`YAGR_HOME`) and subfolders | according to effective tool/backend |
+| `writeFile` | Yagr home (`YAGR_HOME`) and subfolders | according to effective tool/backend |
+| `replaceInFile` | Yagr home (`YAGR_HOME`) and subfolders | according to effective tool/backend |
+| `moveFile` | Yagr home (`YAGR_HOME`) and subfolders | according to effective tool/backend |
+| `deleteFile` | Yagr home (`YAGR_HOME`) and subfolders | according to effective tool/backend |
 
-Le workspace `n8n-workspace` reste le sous-dossier metier principal pour les automatisations n8n, mais il ne doit pas etre confondu avec la racine de processus ou avec un faux root de filesystem.
+The `n8n-workspace` workspace remains the main business subfolder for n8n automations, but it must not be confused with the process root or with a fake filesystem root.
 
-**runScript (allowlist)** : commandes autorisees : `npm run`, `npm test`, `npx tsc`, `node --test`, `git status/diff/log`, `node -e`, `cat`, `ls`, `find`. Toujours disponible.
+**runScript (allowlist)**: authorized commands: `npm run`, `npm test`, `npx tsc`, `node --test`, `git status/diff/log`, `node -e`, `cat`, `ls`, `find`. Always available.
 
-**runShell (opt-in)** : shell bash libre. Desactive par defaut. Activation : `YAGR_ENABLE_SHELL=1`. Ne jamais activer par defaut — permet des operations irreversibles.
+**runShell (opt-in)**: free bash shell. Disabled by default. Activation: `YAGR_ENABLE_SHELL=1`. Never enable by default — allows irreversible operations.
 
-#### Regles d'evolution
+#### Evolution Rules
 
-1. Avant d'ajouter un outil n8n-specifique, verifier si un outil generaliste (httpRequest, runScript, FS) ne suffit pas.
-2. Ne pas introduire de faux root implicite sur `n8n-workspace` qui divergerait du shell ou du FS reel.
-3. `runShell` reste opt-in, avec warning explicite dans sa description.
-4. `n8nac` reste une dependance externe, jamais reimplementee dans le core.
-5. `yagr presentWorkflowResult` doit etre appele systematiquement quand l'agent manipule un workflow connu.
-6. Les comportements n8n-specific vivent dans `src/manager-tooling/`, pas dans `src/tools/`.
+1. Before adding an n8n-specific tool, verify if a generalist tool (httpRequest, runScript, FS) is sufficient.
+2. Do not introduce an implicit fake root on `n8n-workspace` that would diverge from the real shell or FS.
+3. `runShell` remains opt-in, with explicit warning in its description.
+4. `n8nac` remains an external dependency, never reimplemented in core.
+5. `yagr presentWorkflowResult` must be called systematically when the agent manipulates a known workflow.
+6. n8n-specific behaviors live in `src/manager-tooling/`, not in `src/tools/`.
 
-#### Observation actuelle
+#### Current Observation
 
-- la surface d'outils du deep-agent est maintenant simple et agnostique: fichiers, shell, HTTP, progression et required actions
-- le bridge `n8nac` privilegie le repertoire de sync actif lors des retries `push`
-- la commande `yagr presentWorkflowResult` est traitee comme une sortie produit de premier plan : le harness `advanced` verifie la presence d'une banniere workflow complete avec URL et diagramme
-- le diagramme workflow est valide via `src/gateway/workflow-diagram.ts` avant presentation
-- la resolution du runtime n8n est partagee entre le manager, le relay et le bridge `n8nac`
-- `N8N_HOST` / `N8N_API_KEY` ne sont pris en compte que lorsque le harness active explicitement `YAGR_ALLOW_N8N_ENV=1`
-- les required actions non bloquantes ne forcent plus l'arret d'un run qui a deja un resultat concret
-- les comportements n8n-specific (`presentWorkflowResult`, `yagrProxy`) vivent dans `src/manager-tooling/` et sont atteints via CLI interne pour que yagr-agent reste agnostique
+- the deep-agent tool surface is now simple and agnostic: files, shell, HTTP, progress, and required actions
+- the `n8nac` bridge privileges the active sync directory during `push` retries
+- the `yagr presentWorkflowResult` command is treated as a first-class product output: the `advanced` harness verifies the presence of a complete workflow banner with URL and diagram
+- the workflow diagram is validated via `src/gateway/workflow-diagram.ts` before presentation
+- n8n runtime resolution is shared between manager, relay, and the `n8nac` bridge
+- `N8N_HOST` / `N8N_API_KEY` are only taken into account when the harness explicitly activates `YAGR_ALLOW_N8N_ENV=1`
+- non-blocking required actions no longer force a run that already has a concrete result to stop
+- n8n-specific behaviors (`presentWorkflowResult`, `yagrProxy`) live in `src/manager-tooling/` and are reached via internal CLI so yagr-agent remains agnostic
 
 ### Gateway / facades
 
@@ -287,14 +287,14 @@ Le workspace `n8n-workspace` reste le sous-dossier metier principal pour les aut
 - `src/gateway/cli.ts`
 - `src/gateway/manager.ts`
 - `src/gateway/interactive-ui.tsx`
-- `src/conversation/` — SSOT des commandes slash
+- `src/conversation/` — SSOT of slash commands
 
-Responsabilite actuelle:
+Current responsibility:
 
-- exposer l'agent via Telegram, WebUI, CLI et TUI
-- les commandes slash (/help, /sessions, /resume, /restore, etc.) sont despatiales via `src/conversation/slash-command-service.ts`
-- les facades restent minces: parse I/O, rendu, et delegation au service commun
-- les sessions et checkpoints sont gérés via `SessionService` comme SSOT
+- expose the agent via Telegram, WebUI, CLI, and TUI
+- slash commands (/help, /sessions, /resume, /restore, etc.) are despatched via `src/conversation/slash-command-service.ts`
+- facades remain thin: parse I/O, render, and delegate to common service
+- sessions and checkpoints are managed via `SessionService` as SSOT
 
 ```mermaid
 flowchart LR
@@ -325,44 +325,44 @@ flowchart LR
 - `src/setup/setup-wizard.tsx`
 - `src/n8n-local/*`
 
-Responsabilite actuelle:
+Current responsibility:
 
-- services applicatifs partages pour setup n8n, LLM et surfaces
-- calcul partage du statut setup
-- onboarding n8n
-- onboarding provider LLM
-- onboarding Telegram
-- bootstrap local managed n8n
+- shared application services for n8n, LLM, and surfaces setup
+- shared setup status calculation
+- n8n onboarding
+- LLM provider onboarding
+- Telegram onboarding
+- local managed n8n bootstrap
 
-Observation actuelle:
+Current observation:
 
-- `src/setup/application-services.ts` centralise maintenant les mutations principales de setup/configuration pour n8n, LLM, surfaces et Telegram
-- `src/setup/status.ts` porte maintenant le calcul partage de `YagrSetupStatus`
-- la WebUI demande maintenant son snapshot de configuration au service applicatif au lieu de reconstituer localement toute la vue setup/config
-- la facade Telegram delegue maintenant au service applicatif le setup/reset et les mutations d'etat des chats lies
-- `src/setup.ts` reste un point d'orchestration/wizard, mais n'est plus le lieu principal des mutations setup/config
+- `src/setup/application-services.ts` now centralizes the main setup/configuration mutations for n8n, LLM, surfaces, and Telegram
+- `src/setup/status.ts` now carries the shared calculation of `YagrSetupStatus`
+- WebUI now requests its configuration snapshot from the application service instead of locally reconstructing the entire setup/config view
+- Telegram facade now delegates to the application service for setup/reset and related chat state mutations
+- `src/setup.ts` remains an orchestration/wizard point, but is no longer the main location for setup/config mutations
 
-### Configuration et SSOT local
+### Configuration and Local SSOT
 
 - `src/config/yagr-config-service.ts`
 - `src/config/n8n-config-service.ts`
 - `src/config/*`
 
-Responsabilite actuelle:
+Current responsibility:
 
-- configuration locale Yagr
-- credentials providers
-- credentials n8n
-- chemins Yagr home
-- etat local et daemon/gateway config
+- local Yagr configuration
+- provider credentials
+- n8n credentials
+- Yagr home paths
+- local state and daemon/gateway config
 
-Observation actuelle:
+Current observation:
 
-- la source de verite normale pour n8n reste la config locale Yagr/n8n persistee
-- le fallback environnement n8n est reserve aux tests automatises et doit etre active explicitement
-- le runtime agent local utilise `YAGR_HOME` comme cwd reel, pas comme faux root virtuel slash-prefixed; `n8n-workspace` est donc un chemin relatif normal sous cette home
+- the normal source of truth for n8n remains the persisted local Yagr/n8n config
+- the n8n environment fallback is reserved for automated tests and must be explicitly activated
+- the local agent runtime uses `YAGR_HOME` as the real cwd, not as a fake virtual root with slash-prefix; `n8n-workspace` is therefore a normal relative path under this home
 
-## Frontieres actuelles
+## Current Boundaries
 
 ```mermaid
 flowchart LR
@@ -400,8 +400,8 @@ flowchart LR
     AS --> N8NLOCAL
 ```
 
-## Points d'attention actuels
+## Current Points of Attention
 
-- Le contrat `Engine` agrege encore plusieurs responsabilites pour compatibilite, meme si le prompt, le runtime et les gateways consomment deja des ports plus fins (`EngineIdentityPort`, `EngineRuntimePort`, etc.).
-- `setup.ts` reste un point d'orchestration historique, meme si les mutations et snapshots principaux sont remontes dans `setup/application-services.ts` et `setup/status.ts`.
-- La capture de la reponse finale utilisateur et de la banniere workflow est maintenant bonne cote harness, mais la qualite redactionnelle varie encore selon les providers/modeles.
+- The `Engine` contract still aggregates several responsibilities for compatibility, even though the prompt, runtime, and gateways already consume finer ports (`EngineIdentityPort`, `EngineRuntimePort`, etc.).
+- `setup.ts` remains a historical orchestration point, even though the main mutations and snapshots have moved to `setup/application-services.ts` and `setup/status.ts`.
+- the capture of the final user response and workflow banner is now good on the harness side, but the writing quality still varies by provider/model.

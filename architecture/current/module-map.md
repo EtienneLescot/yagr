@@ -1,8 +1,8 @@
 # Module Map
 
-Cette page cartographie les modules principaux du repo et leurs responsabilites actuelles.
+This page maps the main modules of the repo and their current responsibilities.
 
-## Carte par dossiers
+## Map by Folders
 
 ```mermaid
 flowchart TD
@@ -25,203 +25,203 @@ flowchart TD
 
 Notes:
 
-- `src/runtime/` **supprimé** — remplacé par deepagentsjs (LangGraph)
-- `src/agent.ts` (`YagrSessionAgent`) **supprimé** — remplacé par `agent-factory.ts` (`createYagrDeepAgent`)
-- `llm/` porte les providers, la metadata, les comptes OAuth et le relay proxy n8n
-- `tools/` porte les outils LangChain generalistes (FS, shell, HTTP)
-- `manager-tooling/` porte les comportements manager internes exposes via CLI (`presentWorkflowResult`, `yagrProxy`)
-- `gateway/` porte les facades + l'adaptateur events LangGraph
-- `gateway/local-open-bridge.ts` porte le bridge HTTP d'auth n8n pour les ouvertures de workflow sur surfaces distantes
-- `session/` porte le registre UI des sessions WebUI (metadata + display messages)
-- `memory/` porte le `MemoryStore` cross-session (synthetique, injecte dans le system prompt)
-- `compaction/` porte le `CompactionService` SSOT pour les evenements de compaction de contexte (historique, context block, subscribers)
-- `setup/` porte la couche applicative de configuration
-- `n8n-local/public-exposure-service.ts` porte le SSOT de l'orchestration produit des expositions publiques (`n8n`, `n8n auth`, `llm`)
-- `n8n-local/tunnel-reachability.ts` porte le SSOT de wake-up des tunnels par consommateur/facade
-- `n8n-local/n8n-tunnel.ts` porte le SSOT du lifecycle `cloudflared` et de la politique `TUNNEL_DOMAIN`
+- `src/runtime/` **deleted** — replaced by deepagentsjs (LangGraph)
+- `src/agent.ts` (`YagrSessionAgent`) **deleted** — replaced by `agent-factory.ts` (`createYagrDeepAgent`)
+- `llm/` carries providers, metadata, OAuth accounts, and the n8n relay proxy
+- `tools/` carries generalist LangChain tools (FS, shell, HTTP)
+- `manager-tooling/` carries internal manager behaviors exposed via CLI (`presentWorkflowResult`, `yagrProxy`)
+- `gateway/` carries facades + the LangGraph events adapter
+- `gateway/local-open-bridge.ts` carries the n8n auth HTTP bridge for workflow opening on remote surfaces
+- `session/` carries the WebUI session registry (metadata + display messages)
+- `memory/` carries the cross-session `MemoryStore` (synthetic, injected into the system prompt)
+- `compaction/` carries the `CompactionService` SSOT for context compaction events (history, context block, subscribers)
+- `setup/` carries the application configuration layer
+- `n8n-local/public-exposure-service.ts` carries the SSOT of product orchestration for public exposures (`n8n`, `n8n auth`, `llm`)
+- `n8n-local/tunnel-reachability.ts` carries the SSOT of tunnel wake-up by consumer/facade
+- `n8n-local/n8n-tunnel.ts` carries the SSOT of `cloudflared` lifecycle and `TUNNEL_DOMAIN` policy
 
-## Details par bloc
+## Details by Block
 
 ### `src/engine/`
 
-Fichiers clefs:
+Key files:
 
 - `engine.ts`
 - `n8n-engine.ts`
 - `yagr-engine.ts`
 
-Responsabilites actuelles:
+Current responsibilities:
 
-- contrat abstrait de backend automation
-- ports specialises pour catalogue, compilation, validation et lifecycle workflow
-- implementation n8n (`N8nEngine`)
-- stub du futur moteur natif (`YagrNativeEngine` avec `name = 'yagr-engine'`)
+- abstract automation backend contract
+- specialized ports for catalog, compilation, validation, and workflow lifecycle
+- n8n implementation (`N8nEngine`)
+- stub of the future native engine (`YagrNativeEngine` with `name = 'yagr-engine'`)
 
-Note: orthogonal à deepagentsjs — les deux peuvent evoluer independamment.
+Note: orthogonal to deepagentsjs — the two can evolve independently.
 
 ### `src/agent-factory.ts`
 
-Cree le deep agent Yagr :
+Creates the Yagr deep agent:
 
 ```typescript
 createYagrDeepAgent(engine, configService, modelConfig?) → YagrDeepAgentHandle
 ```
 
-Responsabilites:
+Responsibilities:
 - instantiate `createLangChainModel()`
-- injecter uniquement les tools LangChain agnostiques (`src/tools/langchain/*`)
-- injecter le `systemPrompt` via `buildSystemPrompt()`
-- configurer `MemorySaver` (checkpointer par thread)
-- deleger à `createDeepAgent()` de deepagentsjs
+- inject only agnostic LangChain tools (`src/tools/langchain/*`)
+- inject the `systemPrompt` via `buildSystemPrompt()`
+- configure `MemorySaver` (checkpointer per thread)
+- delegate to `createDeepAgent()` from deepagentsjs
 
 Note:
 
-- les tools manager n8n ne sont plus importes directement par `yagr-agent`
-- les instructions de home apprennent a l'agent a passer par `execute` pour lancer `yagr presentWorkflowResult` et `yagr yagrProxy`
+- n8n manager tools are no longer imported directly by `yagr-agent`
+- home instructions teach the agent to use `execute` to launch `yagr presentWorkflowResult` and `yagr yagrProxy`
 
 ### `src/gateway/`
 
-Fichiers clefs:
+Key files:
 
-- `langgraph-events.ts` — adaptateur events LangGraph → `YagrUserVisibleUpdate`
-- `webui.ts` — gateway HTTP/SSE pour l'interface React
-- `webui-config.ts` — SSOT du host/port/url WebUI partage par les facades
-- `telegram.ts` — gateway Telegram  
-- `interactive-ui.tsx` — gateway TUI Ink
-- `cli.ts` — gateway CLI non-interactif
-- `manager.ts` — superviseur multi-gateway (`GatewaySupervisor`)
-- `local-open-bridge.ts` — bridge HTTP tokenise interne a la resolution d'URL dans `presentWorkflowResult`. Les facades ne l'appellent pas directement.
+- `langgraph-events.ts` — LangGraph events adapter → `YagrUserVisibleUpdate`
+- `webui.ts` — HTTP/SSE gateway for the React interface
+- `webui-config.ts` — SSOT of WebUI host/port/url shared by facades
+- `telegram.ts` — Telegram gateway
+- `interactive-ui.tsx` — TUI Ink gateway
+- `cli.ts` — non-interactive CLI gateway
+- `manager.ts` — multi-gateway supervisor (`GatewaySupervisor`)
+- `local-open-bridge.ts` — internal tokenized HTTP bridge for URL resolution in `presentWorkflowResult`. Facades do not call it directly.
 
-Toutes les gateways consomment `YagrDeepAgentHandle` (deepagentsjs).
-Aucune ne depend du runtime supprimé (`YagrRunEngine`).
+All gateways consume `YagrDeepAgentHandle` (deepagentsjs).
+None depend on the deleted runtime (`YagrRunEngine`).
 
 ### `src/llm/`
 
-Fichiers clefs:
+Key files:
 
-- `create-langchain-model.ts` — factory LangChain `BaseChatModel` + utilitaires de resolution
-- `provider-registry.ts` — catalogue des providers supportes
-- `provider-metadata.ts` / `provider-discovery.ts` — metadata et discovery
-- `proxy-runtime.ts` + `llm-relay-server.ts` — relay proxy OpenAI-compatible pour n8n
-- `copilot-account.ts` — auth GitHub Copilot (Device Flow)
-- `openai-account.ts` — auth OpenAI Codex (OAuth)
-- `anthropic-account.ts` — auth Claude Pro/Max (setup token)
-- `model-capabilities.ts` + `capability-resolver.ts` — classification capacite provider/modele (utilisee par le relay proxy)
+- `create-langchain-model.ts` — LangChain `BaseChatModel` factory + resolution utilities
+- `provider-registry.ts` — catalog of supported providers
+- `provider-metadata.ts` / `provider-discovery.ts` — metadata and discovery
+- `proxy-runtime.ts` + `llm-relay-server.ts` — OpenAI-compatible relay proxy for n8n
+- `copilot-account.ts` — GitHub Copilot auth (Device Flow)
+- `openai-account.ts` — OpenAI Codex auth (OAuth)
+- `anthropic-account.ts` — Claude Pro/Max auth (setup token)
+- `model-capabilities.ts` + `capability-resolver.ts` — provider/model capability classification (used by the relay proxy)
 
-Note: `create-language-model.ts` (factory Vercel AI SDK) **supprimé**. Les fonctions de resolution (`resolveLanguageModelConfig`, `resolveModelProvider`, `resolveModelName`) vivent maintenant dans `create-langchain-model.ts`.
+Note: `create-language-model.ts` (Vercel AI SDK factory) **deleted**. Resolution functions (`resolveLanguageModelConfig`, `resolveModelProvider`, `resolveModelName`) now live in `create-langchain-model.ts`.
 
 ### `src/session/`
 
-Fichiers clefs:
+Key files:
 
-- `session-service.ts` — **SSOT** `SessionService` : gestion unifiee des sessions pour toutes les facades
-- `deepagent-sessions.ts` — store bas niveau des sessions Deepagents (`thread_id`, scopes facade, rotation/reset)
-- `webui-sessions.ts` — `WebUiSessionRegistry` : registre fichier des sessions WebUI (metadata + display messages) — usage interne facade
-- `session-types.ts` — types partages minimaux (`SessionMessage`, `SerializedChatMessage`, `SessionSummary`)
+- `session-service.ts` — **SSOT** `SessionService`: unified session management for all facades
+- `deepagent-sessions.ts` — low-level Deepagents sessions store (`thread_id`, facade scopes, rotation/reset)
+- `webui-sessions.ts` — `WebUiSessionRegistry`: WebUI sessions file registry (metadata + display messages) — internal facade usage
+- `session-types.ts` — minimal shared types (`SessionMessage`, `SerializedChatMessage`, `SessionSummary`)
 - `index.ts` — barrel export
 
-`SessionService` est le point d'autorite unique pour le cycle de vie des sessions:
+`SessionService` is the single authority point for session lifecycle:
 
 - `list()`, `get()`, `create()`, `ensure()`, `resume()`, `delete()`
-- `getOrCreateForScope()`, `rotateForScope()`, `clearScope()`, `getActiveForScope()`, `listForScope()` — gestion par scope (webui, telegram, tui)
-- `listCheckpointsSync()` — liste synchronisee des checkpoints (lecture disque directe)
-- `setCheckpointer()` — injection du checkpointer pour nettoyage des threads
-- `buildSessionConfig()` — construction de la config LangGraph avec `thread_id`
+- `getOrCreateForScope()`, `rotateForScope()`, `clearScope()`, `getActiveForScope()`, `listForScope()` — management by scope (webui, telegram, tui)
+- `listCheckpointsSync()` — synchronized list of checkpoints (direct disk read)
+- `setCheckpointer()` — checkpointer injection for thread cleanup
+- `buildSessionConfig()` — LangGraph config construction with `thread_id`
 
 ### `src/conversation/`
 
-**SSOT** des commandes slash unifiees pour toutes les facades (TUI, WebUI, Telegram).
+**SSOT** of unified slash commands for all facades (TUI, WebUI, Telegram).
 
-Fichiers clefs:
+Key files:
 
-- `slash-command-types.ts` — types partages (`SlashCommandName`, `SlashCommandResult`, `SlashSurface`)
-- `slash-command-registry.ts` — registre canonique des commandes, parsing, resolution d'alias
-- `slash-command-service.ts` — `SlashCommandService` : parser + dispatcher + execute pour chaque commande
+- `slash-command-types.ts` — shared types (`SlashCommandName`, `SlashCommandResult`, `SlashSurface`)
+- `slash-command-registry.ts` — canonical registry of commands, parsing, alias resolution
+- `slash-command-service.ts` — `SlashCommandService`: parser + dispatcher + execute for each command
 
-Responsabilites:
+Responsibilities:
 
-- catalogue unique des commandes `/help`, `/sessions`, `/resume`, `/delete`, `/new`, `/reset`, `/checkpoints`, `/save`, `/restore`, `/checkpoint_delete`, `/pending`, `/approve`, `/compact`, `/open`, `/toggle_thinking`, `/toggle_cli`, `/stop`, `/exit`
-- semantique unique: `/resume` = reprise de session, `/restore` = restauration de checkpoint
--结果的 structure independant de la facade
-- disponibilite par surface dans le registre
+- unique catalog of commands `/help`, `/sessions`, `/resume`, `/delete`, `/new`, `/reset`, `/checkpoints`, `/save`, `/restore`, `/checkpoint_delete`, `/pending`, `/approve`, `/compact`, `/open`, `/toggle_thinking`, `/toggle_cli`, `/stop`, `/exit`
+- unique semantics: `/resume` = session resume, `/restore` = checkpoint restoration
+- facade-independent result structure
+- availability per surface in the registry
 
-Chaque facade instancie sa propre `SessionService` et delegue la gestion des sessions au service. Le checkpointer est injecte apres creation de l'agent.
+Each facade instantiates its own `SessionService` and delegates session management to the service. The checkpointer is injected after agent creation.
 
 ### `src/tools/`
 
-Familles actuelles:
+Current families:
 
-- outils LangChain (FS, shell, HTTP) : `readFile`, `grep`, `listDir`, `writeFile`, `replaceInFile`, `moveFile`, `deleteFile`, `httpRequest`, `runScript`, `runShell`
-- outils d'interaction : `reportProgress`, `requestRequiredAction`
+- LangChain tools (FS, shell, HTTP): `readFile`, `grep`, `listDir`, `writeFile`, `replaceInFile`, `moveFile`, `deleteFile`, `httpRequest`, `runScript`, `runShell`
+- interaction tools: `reportProgress`, `requestRequiredAction`
 
-Note: les tools sont maintenant des `DynamicStructuredTool` LangChain, injectes directement dans `createDeepAgent()`.
+Note: tools are now LangChain `DynamicStructuredTool`, injected directly into `createDeepAgent()`.
 
 ### `src/manager-tooling/`
 
-Fichiers clefs:
+Key files:
 
-- `present-workflow.ts` — logique manager et commande CLI interne `presentWorkflowResult`
-- `yagr-proxy.ts` — logique manager et commande CLI interne `yagrProxy`
-- `YAGENTS.md` — template source des instructions manager semees dans le `AGENTS.md` de la home Yagr
+- `present-workflow.ts` — manager logic and internal CLI command `presentWorkflowResult`
+- `yagr-proxy.ts` — manager logic and internal CLI command `yagrProxy`
+- `YAGENTS.md` — source template of manager instructions seeded into the `AGENTS.md` of the Yagr home
 
 Clarification:
 
-- l'agent lit automatiquement le `AGENTS.md` de la home Yagr comme premiere couche d'instructions
-- ce fichier de home est seme depuis `src/manager-tooling/YAGENTS.md` lorsqu'il est absent
-- les instructions shell `n8nac` de premier niveau appartiennent au fichier genere par `n8nac` dans `n8n-workspace`, que l'agent inspecte lorsqu'il entre dans ce sous-workspace
-- ce template `YAGENTS.md` ne porte que les comportements specifiques a yagr-manager (presentation workflow, proxy LLM, etc.) et apprend a l'agent a invoquer les commandes CLI internes via le shell
+- the agent automatically reads the `AGENTS.md` of the home as the first layer of instructions
+- this home file is seeded from `src/manager-tooling/YAGENTS.md` when absent
+- top-level `n8nac` shell instructions belong to the file generated by `n8nac` in `n8n-workspace`, which the agent inspects when entering this sub-workspace
+- this `YAGENTS.md` template only carries behaviors specific to yagr-manager (workflow presentation, LLM proxy, etc.) and teaches the agent to invoke internal CLI commands via shell
 
-### `src/setup.ts` et `src/setup/`
+### `src/setup.ts` and `src/setup/`
 
-Role actuel:
+Current role:
 
-- `src/setup/application-services.ts`: service applicatif partage pour operations n8n, LLM et surfaces
-- `src/setup/status.ts`: calcul partage du statut setup
-- point de coordination du wizard et de l'onboarding
-- `YagrSetupApplicationService.completeManagedN8nConnection(...)`: SSOT de la finalisation de connexion d'une instance n8n Yagr-managed deja joignable (selection projet + persistance config/workspace)
+- `src/setup/application-services.ts`: shared application service for n8n, LLM, and surfaces operations
+- `src/setup/status.ts`: shared calculation of setup status
+- wizard and onboarding coordination point
+- `YagrSetupApplicationService.completeManagedN8nConnection(...)`: SSOT of finalization of connection of an already-reachable Yagr-managed n8n instance (project selection + config/workspace persistence)
 
 ### `src/n8n-local/`
 
-Role actuel:
+Current role:
 
-- `managed-runtime.ts`: SSOT du preflight de demarrage des instances `yagr-managed-*`; relance ou recree le runtime gere depuis le `instanceProfile` persiste, puis declenche la reconciliation bootstrap/config si necessaire
-- `bootstrap.ts`: SSOT du bootstrap silencieux owner/API key contre une instance n8n joignable
-- `docker-manager.ts` et `direct-manager.ts`: SSOT du lifecycle runtime bas niveau pour les strategies Docker et direct
-- `state.ts`: persistance locale de l'etat runtime gere et resolution du bootstrap stage
+- `managed-runtime.ts`: SSOT of startup preflight for `yagr-managed-*` instances; restarts or recreates the managed runtime from the persisted `instanceProfile`, then triggers bootstrap/config reconciliation if necessary
+- `bootstrap.ts`: SSOT of silent owner/API key bootstrap against a reachable n8n instance
+- `docker-manager.ts` and `direct-manager.ts`: SSOT of low-level runtime lifecycle for Docker and direct strategies
+- `state.ts`: local persistence of managed runtime state and bootstrap stage resolution
 
 ### `src/config/`
 
-Role actuel:
+Current role:
 
-- SSOT local pour config Yagr et n8n
-- persistance credentials
-- resolution chemins et home dir
+- local SSOT for Yagr and n8n config
+- credentials persistence
+- path and home dir resolution
 
 ### `src/compaction/`
 
-Fichiers clefs:
+Key files:
 
-- `compaction-types.ts` — types partages (`CompactionState`, `CompactionConfig`, `buildCompactionContextBlock`)
-- `compaction-service.ts` — `CompactionService` SSOT (historique compaction, subscribers, context block builder)
+- `compaction-types.ts` — shared types (`CompactionState`, `CompactionConfig`, `buildCompactionContextBlock`)
+- `compaction-service.ts` — `CompactionService` SSOT (compaction history, subscribers, context block builder)
 
-Responsabilites actuelles:
+Current responsibilities:
 
-- centralise l'etat de compaction (dernier evenement, historique, compteur)
-- notifie les subscribers (facades) lors d'une compaction
-- construit un context block pour injection dans le system prompt
-- consommé par toutes les facades (WebUI, Telegram) via `langgraph-events.ts`
+- centralizes compaction state (last event, history, counter)
+- notifies subscribers (facades) during compaction
+- builds a context block for injection into the system prompt
+- consumed by all facades (WebUI, Telegram) via `langgraph-events.ts`
 
-Note: orthogonal a `memory/` qui porte le cross-session memory. `compaction/` gere la reduction de contexte in-session via deepagents.
+Note: orthogonal to `memory/` which carries cross-session memory. `compaction/` manages in-session context reduction via deepagents.
 
-## References utiles
+## Useful References
 
 - Agent: `src/agent-factory.ts`, `deepagentsjs`
 - Providers: `src/llm/*`
-- Tooling generaliste: `src/tools/langchain/*`
-- Tooling manager: `src/manager-tooling/*`
+- Generalist tooling: `src/tools/langchain/*`
+- Manager tooling: `src/manager-tooling/*`
 - Facades: `src/gateway/*`
 - Compaction: `src/compaction/*`, `src/deepagents/compaction-middleware.ts`
 - Setup: `src/setup.ts`, `src/setup/*`, `src/n8n-local/*`
-- Sessions Deepagents + UI: `src/session/deepagent-sessions.ts`, `src/session/webui-sessions.ts`
-- Commandes slash: `src/conversation/slash-command-service.ts`, `src/conversation/slash-command-registry.ts`
-- Memoire cross-session: `src/memory/*`
+- Deepagents sessions + UI: `src/session/deepagent-sessions.ts`, `src/session/webui-sessions.ts`
+- Slash commands: `src/conversation/slash-command-service.ts`, `src/conversation/slash-command-registry.ts`
+- Cross-session memory: `src/memory/*`
