@@ -5,119 +5,119 @@
 
 ---
 
-## Contexte
+## Context
 
-Yagr avait un probleme de tunnel Cloudflare spam: des processus `cloudflared` orphelins fuyaient lors des timeouts de demarrage et la logique generic de auto-restart redemarrant les tunnels indistinctement au redemarrage du gateway worker. Trois tunnels existaient (n8n, workflow-open/bridge, llm-proxy) avec une logique de spawn distribuee dans les facades, pas de politique centrale de wake-up, routage DNS `TUNNEL_DOMAIN` cassé, et des noms de fichiers de state legacy encore lus.
-
----
-
-## Problemes constates
-
-1. **Bug original:** `startN8nTunnel()` / `startNamedTunnel()` laissaient des processus `cloudflared` detaches vivants sur timeout/early-close (le process etait unref'd avant que l'URL soit capturee)
-2. **`ensureTunnelAtLaunch()`** dans `cli.ts` redemarrant les tunnels a chaque redemarrage generic du gateway worker, multipliant l'accumulation d'orphelins
-3. **`workflow-open tunnel`** demarre automatiquement avec le main n8n tunnel depuis les commandes CLI tunnel setup/stop/refresh
-4. **`TUNNEL_DOMAIN`** mode cassé: `cloudflared tunnel route dns` n'etait jamais appele, donc les hostnames ne pointaient pas vers le tunnel
+Yagr had a Cloudflare tunnel spam problem: orphaned `cloudflared` processes leaked during startup timeouts and the generic auto-restart logic that restarting tunnels indiscriminately at gateway worker restart. Three tunnels existed (n8n, workflow-open/bridge, llm-proxy) with spawn logic distributed in facades, no central wake-up policy, broken `TUNNEL_DOMAIN` DNS routing, and legacy state file names still being read.
 
 ---
 
-## Design decision
+## Problems Found
 
-### SSOT Tunnel Lifecycle (`src/n8n-local/n8n-tunnel.ts`)
+1. **Original Bug:** `startN8nTunnel()` / `startNamedTunnel()` left detached `cloudflared` processes alive on timeout/early-close (the process was unref'd before the URL was captured)
+2. **`ensureTunnelAtLaunch()`** in `cli.ts` restarting tunnels at every generic gateway worker restart, multiplying orphan accumulation
+3. **`workflow-open tunnel`** auto-started with the main n8n tunnel from tunnel setup/stop/refresh CLI commands
+4. **`TUNNEL_DOMAIN`** mode broken: `cloudflared tunnel route dns` was never called, so hostnames did not point to the tunnel
 
-Le lifecycle process des tunnels Cloudflare est centralise dans un seul module:
+---
 
-- `startN8nTunnel()` / `startNamedTunnel()` partagent un helper `startTunnel()` unique
-- Timeout/close error appelle `terminateProcess(pid)` pour nettoyer le child orphelin avant de reject
-- `getTunnelConfig(serviceName?)` centralise la resolution `TUNNEL_DOMAIN`
-- `ensureTunnelDnsRoute(bin, tunnelName, hostname)` appelle `cloudflared tunnel route dns <tunnel> <hostname>` avec tolerance "already exists"
-- Chemins des fichiers de state renommes: `llm-tunnel.json`, `n8n-auth-tunnel.json`
-- Tous les fallback de fichiers de state legacy ont ete supprimes
+## Design Decision
 
-**Nouvelles fonctions exportees:**
+### Tunnel Lifecycle SSOT (`src/n8n-local/n8n-tunnel.ts`)
+
+The Cloudflare tunnel lifecycle process is centralized in a single module:
+
+- `startN8nTunnel()` / `startNamedTunnel()` share a unique `startTunnel()` helper
+- Timeout/close error calls `terminateProcess(pid)` to clean up orphan child before rejecting
+- `getTunnelConfig(serviceName?)` centralizes `TUNNEL_DOMAIN` resolution
+- `ensureTunnelDnsRoute(bin, tunnelName, hostname)` calls `cloudflared tunnel route dns <tunnel> <hostname>` with "already exists" tolerance
+- State file paths renamed: `llm-tunnel.json`, `n8n-auth-tunnel.json`
+- All legacy state file fallbacks have been removed
+
+**New exported functions:**
 - `ensureN8nTunnel()`, `startLlmTunnel()`, `startN8nAuthTunnel()`, `ensureN8nAuthTunnel()`, `stopN8nAuthTunnel()`, `stopAllTunnels()`, `getActiveN8nAuthTunnelState()`
 
-**Renommages internes:**
+**Internal renames:**
 - `ProxyTunnelState` → `PublicAuxTunnelState`
-- Champ `tunnelUrl` → `publicUrl`
+- Field `tunnelUrl` → `publicUrl`
 
-### SSOT Reachability (`src/n8n-local/tunnel-reachability.ts`)
+### Reachability SSOT (`src/n8n-local/tunnel-reachability.ts`)
 
-Module de wake-up lazy des tunnels par consommateur:
+Lazy tunnel wake-up module by consumer:
 
-- `ensureConfiguredN8nTunnelReachability(consumer)` — wake-up lazy pour n8n tunnel
-- `ensureN8nAuthTunnelReachability(consumer)` — wake-up lazy pour n8n auth tunnel
-- `ensureFacadeTunnelReachability(consumer)` — orchestre les deux
-- `ensureConfiguredLlmTunnelReachability()` — wake-up lazy pour llm tunnel
-- `ensureLlmTunnelForRelayHostBaseUrl(hostBaseUrl, configService)` — demarrage direct tunnel llm
-- `getTunnelReachabilityDebugSnapshot()` — snapshot debug
+- `ensureConfiguredN8nTunnelReachability(consumer)` — lazy wake-up for n8n tunnel
+- `ensureN8nAuthTunnelReachability(consumer)` — lazy wake-up for n8n auth tunnel
+- `ensureFacadeTunnelReachability(consumer)` — orchestrates both
+- `ensureConfiguredLlmTunnelReachability()` — lazy wake-up for llm tunnel
+- `ensureLlmTunnelForRelayHostBaseUrl(hostBaseUrl, configService)` — direct llm tunnel startup
+- `getTunnelReachabilityDebugSnapshot()` — debug snapshot
 - `TunnelReachabilityConsumer = 'telegram' | 'webui' | 'tui' | 'cli' | 'setup' | 'llm'`
-- `YAGR_TUNNEL_REACHABILITY_MODE` env var override la config; mode `force-all-facades` wake tous les tunnels depuis tous les consumers pour test
-- `TUNNEL_DOMAIN` consommé depuis `n8n-tunnel.ts`, herité par tous les child processes via `process.env`
+- `YAGR_TUNNEL_REACHABILITY_MODE` env var overrides config; `force-all-facades` mode wakes all tunnels from all consumers for testing
+- `TUNNEL_DOMAIN` consumed from `n8n-tunnel.ts`, inherited by all child processes via `process.env`
 
-### Integration Facade
+### Facade Integration
 
-Les facades restent minces et deleguent au reachability SSOT:
+Facades remain thin and delegate to the reachability SSOT:
 
-- `src/gateway/telegram.ts`: appelle `ensureFacadeTunnelReachability('telegram', configService)`
-- `src/gateway/webui.ts`: appelle `ensureFacadeTunnelReachability('webui', configService)`
-- `src/cli.ts`: appelle `ensureFacadeTunnelReachability('tui')` et `ensureFacadeTunnelReachability('cli')`; `ensureTunnelAtLaunch()` supprime de `runGatewayWorker()`; `yagr stop` et `yagr restart` appellent `stopAllTunnels()`
+- `src/gateway/telegram.ts`: calls `ensureFacadeTunnelReachability('telegram', configService)`
+- `src/gateway/webui.ts`: calls `ensureFacadeTunnelReachability('webui', configService)`
+- `src/cli.ts`: calls `ensureFacadeTunnelReachability('tui')` and `ensureFacadeTunnelReachability('cli')`; `ensureTunnelAtLaunch()` removed from `runGatewayWorker()`; `yagr stop` and `yagr restart` call `stopAllTunnels()`
 
 ### Config Rename
 
-- `YagrLlmProxyConfig.tunnelUrl` supprime (pas de legacy)
-- Nouveau champ canonique: `llmTunnelUrl`
-- `YagrTunnelBehaviorConfig` avec `reachabilityMode?: 'on-demand' | 'force-all-facades'`
+- `YagrLlmProxyConfig.tunnelUrl` removed (no legacy)
+- New canonical field: `llmTunnelUrl`
+- `YagrTunnelBehaviorConfig` with `reachabilityMode?: 'on-demand' | 'force-all-facades'`
 
 ---
 
-## Politiques
+## Policies
 
 ### Lazy Start
 
-Les tunnels demarrent au setup uniquement. Les surfaces wake les tunnels on demand via `ensureFacadeTunnelReachability()`. Aucun demarrage automatique generique.
+Tunnels start at setup only. Surfaces wake tunnels on demand via `ensureFacadeTunnelReachability()`. No generic auto-start.
 
 ### Shutdown Ownership
 
-- L'arret d'une facade ou du process gateway ne detruit pas les tunnels autonomes (`n8n`, `n8n auth`, `llm`).
-- Les facades sont des consommateurs qui peuvent wake les tunnels, pas des proprietaires de leur teardown.
-- Le bridge d'auth local tourne dans un runtime detache partage, au meme titre que le relay LLM ou les processus `cloudflared` qu'il supporte.
-- Le teardown global des tunnels et du bridge reste reserve aux flows explicites de lifecycle (`yagr stop`, `yagr restart`, commandes explicites de stop tunnel, reset destructif).
+- Facade or gateway shutdown does not destroy autonomous tunnels (`n8n`, `n8n auth`, `llm`).
+- Facades are consumers that can wake tunnels, not owners of their teardown.
+- The local auth bridge runs in a shared detached runtime, alongside the LLM relay or `cloudflared` processes it supports.
+- Global tunnel and bridge teardown remains reserved for explicit lifecycle flows (`yagr stop`, `yagr restart`, explicit tunnel stop commands, destructive reset).
 
 ### TUNNEL_DOMAIN
 
-Quand `TUNNEL_DOMAIN` est positionne:
-1. `cloudflared tunnel route dns <tunnel> <hostname>` est appele
-2. Le hostname pointe vers le tunnel
-3. `YAGR_TUNNEL_REACHABILITY_MODE` et `TUNNEL_DOMAIN` sont herités par tous les child processes
+When `TUNNEL_DOMAIN` is set:
+1. `cloudflared tunnel route dns <tunnel> <hostname>` is called
+2. The hostname points to the tunnel
+3. `YAGR_TUNNEL_REACHABILITY_MODE` and `TUNNEL_DOMAIN` are inherited by all child processes
 
-### Trois Tunnels
+### Three Tunnels
 
-| Tunnel | Responsabilite | Fichier de state |
+| Tunnel | Responsibility | State file |
 |--------|-----------------|------------------|
-| `n8n tunnel` | Exposition publique n8n locale pour webhooks | `n8n-tunnel-state.json` |
-| `n8n auth tunnel` | Bridge d'auth pour ouverture distante workflows | `n8n-auth-tunnel.json` |
-| `llm tunnel` | Relay LLM pour n8n cloud → Yagr | `llm-tunnel.json` |
+| `n8n tunnel` | Public exposure of local n8n for webhooks | `n8n-tunnel-state.json` |
+| `n8n auth tunnel` | Auth bridge for remote workflow opening | `n8n-auth-tunnel.json` |
+| `llm tunnel` | LLM relay for cloud n8n → Yagr | `llm-tunnel.json` |
 
-### Pas de Legacy
+### No Legacy
 
 - `proxy-tunnel.json` → `llm-tunnel.json`
 - `workflow-open-tunnel.json` → `n8n-auth-tunnel.json`
-- Champ `tunnelUrl` → `publicUrl`
-- Aucun fallback legacy maintenu
+- Field `tunnelUrl` → `publicUrl`
+- No legacy fallback maintained
 
 ---
 
-## Regles d'architecture appliquees
+## Architecture Rules Applied
 
-1. **SSOT:** lifecycle tunnel dans `n8n-tunnel.ts`, politique wake-up dans `tunnel-reachability.ts`
-2. **Facades minces:** telegram, webui, cli appellent uniquement `ensureFacadeTunnelReachability()`
-3. **`TUNNEL_DOMAIN`** appelle correctement `cloudflared tunnel route dns` pour que les domaines personalises soient routés
-4. **Pas de fallback** de fichier de state ou champ de config legacy
-5. **`YAGR_TUNNEL_REACHABILITY_MODE`** et **`TUNNEL_DOMAIN`** herités par tous les child processes via `process.env`
+1. **SSOT:** tunnel lifecycle in `n8n-tunnel.ts`, wake-up policy in `tunnel-reachability.ts`
+2. **Thin facades:** telegram, webui, cli only call `ensureFacadeTunnelReachability()`
+3. **`TUNNEL_DOMAIN`** correctly calls `cloudflared tunnel route dns` so custom domains are routed
+4. **No fallback** of legacy state file or config field
+5. **`YAGR_TUNNEL_REACHABILITY_MODE`** and **`TUNNEL_DOMAIN`** inherited by all child processes via `process.env`
 
 ---
 
-## Files modifies
+## Files Changed
 
 ### New Files
 - `tests/tunnel-reachability.test.mjs`

@@ -1,8 +1,8 @@
 # Runtime Flows
 
-Cette page documente les flux transverses principaux du repo dans le modele deep-agent actuel.
+This page documents the main cross-cutting flows of the repo in the current deep-agent model.
 
-## 1. Message entrant vers execution agentique
+## 1. Incoming Message to Agentic Execution
 
 ```mermaid
 sequenceDiagram
@@ -30,12 +30,12 @@ sequenceDiagram
 
 Observation:
 
-- les facades conversationnelles consomment toutes un `YagrDeepAgentHandle`
-- le deep-agent porte directement sa surface native deepagents
-- la surcouche coding-oriented est appliquee via middleware, pas via un fichier de prompt runtime monolithique
-- les comportements manager et workspace passent ensuite par shell via `yagr ...` et `npx n8nac ...`
+- all conversational facades consume a `YagrDeepAgentHandle`
+- the deep-agent directly carries its deepagents native surface
+- the coding-oriented overlay is applied via middleware, not via a monolithic runtime prompt file
+- manager and workspace behaviors then go through shell via `yagr ...` and `npx n8nac ...`
 
-## 2. Flux instructions + middleware + CLI actuel
+## 2. Current Instructions + Middleware + CLI Flow
 
 ```mermaid
 flowchart LR
@@ -45,8 +45,8 @@ flowchart LR
     CODE[coding-orientation.ts]
     AGENT[deep-agent]
     SHELL[execute shell tool]
-    HCLI[Commandes yagr manager]
-    WCLI[Commandes n8nac workspace]
+    HCLI[yagr manager commands]
+    WCLI[n8nac workspace commands]
 
     HOME --> PR
     WORK --> PR
@@ -59,13 +59,13 @@ flowchart LR
 
 Observation:
 
-- la home Yagr cadre l'usage des commandes manager `yagr ...`
-- le workspace n8n cadre l'usage des commandes `npx n8nac ...`
-- le deep-agent ne recoit pas de tools manager ou `n8nac` injectes explicitement
-- la surcouche coding-oriented est separee physiquement du socle pristine
-- la home Yagr reste la racine operationnelle; `n8n-workspace` est un sous-workspace metier, pas le cwd implicite du process
+- the Yagr home frames the usage of manager commands `yagr ...`
+- the n8n workspace frames the usage of commands `npx n8nac ...`
+- the deep-agent does not receive explicit manager or `n8nac` tools injected
+- the coding-oriented overlay is physically separated from the pristine base
+- the Yagr home remains the operational root; `n8n-workspace` is a business sub-workspace, not the implicit cwd of the process
 
-## 3. Setup et onboarding
+## 3. Setup and Onboarding
 
 ```mermaid
 sequenceDiagram
@@ -75,7 +75,7 @@ sequenceDiagram
     participant NL as n8n-local
     participant PR as Provider runtime
 
-    UI->>AS: action de setup
+    UI->>AS: setup action
     AS->>CFG: save/read config
     AS->>NL: optional managed bootstrap
     AS->>PR: provider preparation
@@ -84,12 +84,12 @@ sequenceDiagram
 
 Observation:
 
-- les facades ne portent plus directement les mutations de config metier
-- `application-services.ts` et `status.ts` sont le point commun du setup
+- facades no longer directly carry business config mutations
+- `application-services.ts` and `status.ts` are the common setup point
 
-## 3b. Startup d'une instance n8n Yagr-managed
+## 3b. Startup of a Yagr-managed n8n Instance
 
-Au lancement standard (`yagr start`, `yagr gateway`, worker gateway), Yagr ne se contente plus de redemarrer le runtime local gere. Le startup reconcile aussi l'etat bootstrap/config quand l'instance est marquee `yagr-managed-*`.
+At standard launch (`yagr start`, `yagr gateway`, gateway worker), Yagr no longer just restarts the managed local runtime. Startup also reconciles the bootstrap/config state when the instance is marked `yagr-managed-*`.
 
 ```mermaid
 sequenceDiagram
@@ -115,14 +115,14 @@ sequenceDiagram
     MGR-->>CLI: { started, reconciled, state }
 ```
 
-Regles de startup managed:
+Managed startup rules:
 
-- `instanceProfile` persiste par le setup reste le signal produit canonique qu'une instance est `yagr-managed-docker` ou `yagr-managed-direct`
-- le state file runtime reste la source d'autorite des details runtime quand il est present et coherent
-- si ce state file est manquant ou stale, le startup peut recreer le runtime a partir du profil gere persiste au lieu de skipper silencieusement le demarrage
-- la persistance finale de la connexion n8n continue de passer par `setup/application-services.ts`, pas par la CLI
+- `instanceProfile` persisted by setup remains the canonical product signal that an instance is `yagr-managed-docker` or `yagr-managed-direct`
+- the runtime state file remains the authority source for runtime details when present and coherent
+- if this state file is missing or stale, startup can recreate the runtime from the persisted managed profile instead of silently skipping startup
+- final n8n connection persistence continues through `setup/application-services.ts`, not through CLI
 
-## 4. Flux provider actuel
+## 4. Current Provider Flow
 
 ```mermaid
 flowchart TD
@@ -133,7 +133,7 @@ flowchart TD
     ACC --> CLM
 ```
 
-## 4b. Wake-up des tunnels
+## 4b. Tunnel Wake-up
 
 ```mermaid
 flowchart LR
@@ -157,23 +157,23 @@ flowchart LR
 
 Observation:
 
-- les decisions de wake-up des tunnels n8n / n8n-auth / llm sont centralisees dans `tunnel-reachability.ts`
-- `public-exposure-service.ts` centralise l'orchestration metier des 3 expositions publiques sans fusionner les lifecycle des services cibles
-- `n8n-tunnel.ts` reste responsable du lifecycle process `cloudflared`, pas de la politique d'activation par facade
-- le mode `force-all-facades` permet de forcer les chemins publics pour test sans dupliquer la logique dans chaque facade
-- `TUNNEL_DOMAIN` est resolu dans `n8n-tunnel.ts`, ce qui evite de dupliquer la logique custom-domain dans les facades, le setup ou le relay
-- l'arret d'une facade/gateway ne detruit pas les tunnels autonomes (`n8n`, `n8n auth`, `llm`); le bridge d'auth tourne lui aussi dans un runtime detache partage
+- n8n / n8n-auth / llm tunnel wake-up decisions are centralized in `tunnel-reachability.ts`
+- `public-exposure-service.ts` centralizes the business orchestration of the 3 public exposures without merging the lifecycles of target services
+- `n8n-tunnel.ts` remains responsible for the `cloudflared` process lifecycle, not for facade activation policy
+- `force-all-facades` mode allows forcing public paths for testing without duplicating logic in each facade
+- `TUNNEL_DOMAIN` is resolved in `n8n-tunnel.ts`, which avoids duplicating custom-domain logic in facades, setup, or relay
+- facade/gateway shutdown is non-destructive for autonomous tunnels (`n8n`, `n8n auth`, `llm`); the auth bridge also runs in a shared detached runtime
 
-## 4c. Startup preflight des tunnels
+## 4c. Tunnel Startup Preflight
 
-Au demarrage (`yagr start`, gateway, worker), le preflight passe d'abord par `managed-runtime.ts` pour les instances `yagr-managed-local`.
+At startup (`yagr start`, gateway, worker), preflight first goes through `managed-runtime.ts` for `yagr-managed-local` instances.
 
-- le runtime n8n gere par Yagr est relance si necessaire
-- si le state runtime local a disparu mais que le `instanceProfile` persiste reste `yagr-managed-*`, `managed-runtime.ts` recree aussi le runtime a partir de ce signal d'autorite produit
-- si l'instance n'est pas deja `connected`, le preflight complete aussi la reconciliation bootstrap/config en reutilisant `bootstrap.ts` puis `setup/application-services.ts`
-- ce preflight reste en amont du refresh workspace et du preflight relay/tunnels, afin que les etapes aval consomment un host, une API key et un projet deja persistés
+- the n8n runtime managed by Yagr is restarted if necessary
+- if the local runtime state has disappeared but the `instanceProfile` persists as `yagr-managed-*`, `managed-runtime.ts` also recreates the runtime from this product authority signal
+- if the instance is not already `connected`, preflight also completes the bootstrap/config reconciliation by reusing `bootstrap.ts` then `setup/application-services.ts`
+- this preflight remains upstream of workspace refresh and relay/tunnels preflight, so that downstream steps consume an already-persisted host, API key, and project
 
-Avant la synchronisation de la credential LLM proxy au demarrage, Yagr execute un preflight tunnel en une seule passe. Cela permet de detecter et reactiver les tunnels Cloudflare devenue inaccessibles (URL `trycloudflare` perimée) avant deprovisionner la credential.
+Before LLM proxy credential synchronization at startup, Yagr executes a tunnel preflight in a single pass. This makes it possible to detect and reactivate Cloudflare tunnels that have become inaccessible (expired `trycloudflare` URL) before deprovisioning the credential.
 
 ```mermaid
 sequenceDiagram
@@ -202,28 +202,28 @@ sequenceDiagram
     CLI->>CRED: syncProxyCredentialIfEnabled()
 ```
 
-Regles du preflight:
+Preflight rules:
 
-- Sondes les URLs publiques stockees AVANT tout redemarrage cloudflared — aucun restart aveugle.
-- Ne redemarre que les tunnels vraiment inaccessibles (erreur reseau / timeout sur l'URL publique).
-- Ne declenche pas le tunnel n8n auth au demarrage — il reste consumer-driven.
-- Ne touche pas a la credential si le refresh echoue — la configuration existante est conservee.
-- Le resultat du preflight est expose pour debugging via `getTunnelReachabilityDebugSnapshot()`.
+- Probes stored public URLs BEFORE any blind cloudflared restart — no blind restarts.
+- Only restarts truly inaccessible tunnels (network error / timeout on public URL).
+- Does not trigger n8n auth tunnel at startup — it remains consumer-driven.
+- Does not touch the credential if refresh fails — existing configuration is preserved.
+- The preflight result is exposed for debugging via `getTunnelReachabilityDebugSnapshot()`.
 
-## 5. Regles de maintenance
+## 5. Maintenance Rules
 
-Quand un flux transverse change, il faut:
+When a cross-cutting flow changes, you must:
 
-- mettre a jour le graphe Mermaid concerne
-- verifier que les noms de modules correspondent encore au repo
-- signaler clairement tout nouveau couplage transverse
+- update the concerned Mermaid graph
+- verify that module names still match the repo
+- clearly signal any new cross-cutting coupling
 
-## 6. Invariant central
+## 6. Central Invariant
 
-La frontiere suivante doit rester visible:
+The following boundary must remain visible:
 
-- `src/deepagents/pristine.ts` = socle Deepagents
-- `src/deepagents/coding-orientation.ts` = surcouche coding-oriented
-- `src/manager-tooling/*` = comportements manager et templates d'instructions
+- `src/deepagents/pristine.ts` = Deepagents base
+- `src/deepagents/coding-orientation.ts` = coding-oriented overlay
+- `src/manager-tooling/*` = manager behaviors and instruction templates
 
-Si une nouvelle logique ne rentre pas clairement dans l'une de ces trois zones, elle doit etre isolee avant d'etre ajoutee.
+If new logic does not clearly fit into one of these three areas, it must be isolated before being added.

@@ -1,61 +1,61 @@
 # Unified Session Management And Slash Commands
 
-## Objectif
+## Objective
 
-Mettre en place un management unifie des sessions de conversation dans le TUI, la WebUI et Telegram, avec une taxonomie unique des commandes slash et un point d'autorite unique pour les operations de session et de checkpoint.
+Establish unified management of conversation sessions across TUI, WebUI, and Telegram, with a unique taxonomy for slash commands and a single authority point for session and checkpoint operations.
 
-Le resultat cible doit satisfaire les contraintes suivantes:
+The target result must satisfy the following constraints:
 
-- `SessionService` reste le SSOT du cycle de vie des sessions.
-- la logique slash ne vit plus dans chaque facade.
-- `/resume` reference les sessions de conversation, jamais les checkpoints.
-- `/restore` est reserve a la restauration de checkpoints.
-- `/help` liste les commandes disponibles avec leur description.
-- TUI, WebUI et Telegram partagent le meme catalogue de commandes et la meme semantique metier.
-- les facades restent minces et adaptent seulement l'I/O et le rendu.
+- `SessionService` remains the SSOT for session lifecycle.
+- slash logic no longer lives in each facade.
+- `/resume` references conversation sessions, never checkpoints.
+- `/restore` is reserved for checkpoint restoration.
+- `/help` lists available commands with their description.
+- TUI, WebUI, and Telegram share the same command catalog and same business semantics.
+- facades remain thin and only adapt I/O and rendering.
 
-## Probleme actuel
+## Current Problem
 
-Etat observe dans le repo:
+Observed state in the repo:
 
-- TUI: parsing inline dans `src/gateway/interactive-ui.tsx` avec des `if` locaux.
-- Telegram: commandes Telegraf inline dans `src/gateway/telegram.ts`.
-- WebUI: actions sessions/checkpoints via API et UI, sans couche slash commune.
-- `SessionService` gere deja les sessions et checkpoints, mais pas une UX browse/resume/delete exploitable uniformement par facade.
-- `WebUiSessionRegistry` stocke un etat de presentation WebUI qui n'est pas reutilisable tel quel par TUI et Telegram.
-- conflit semantique actuel: dans le TUI, `/resume` restaure un checkpoint, alors que l'attente produit est une reprise de session.
+- TUI: inline parsing in `src/gateway/interactive-ui.tsx` with local `if` statements.
+- Telegram: inline Telegraf commands in `src/gateway/telegram.ts`.
+- WebUI: session/checkpoint actions via API and UI, without a common slash layer.
+- `SessionService` already manages sessions and checkpoints, but not a usable browse/resume/delete UX uniformly across facades.
+- `WebUiSessionRegistry` stores WebUI presentation state that cannot be reused as-is by TUI and Telegram.
+- Current semantic conflict: in TUI, `/resume` restores a checkpoint, whereas the expected behavior is session resumption.
 
-## Decisions de design
+## Design Decisions
 
-### 1. SSOT des commandes slash
+### 1. SSOT for slash commands
 
-Introduire une couche commune dediee, par exemple dans `src/conversation/`:
+Introduce a dedicated common layer, for example in `src/conversation/`:
 
 - `slash-command-types.ts`
 - `slash-command-registry.ts`
 - `slash-command-service.ts`
-- `slash-command-render.ts` si necessaire pour formatter les sorties textuelles communes
+- `slash-command-render.ts` if necessary to format common textual outputs
 
-Responsabilites de cette couche:
+Responsibilities of this layer:
 
-- parser une entree slash brute
-- resoudre une commande canonique
-- valider les arguments
-- executer l'action metier via `SessionService` et services associes
-- retourner un resultat structure, independant de la facade
-- exposer le catalogue des commandes pour `/help`
+- parse raw slash input
+- resolve a canonical command
+- validate arguments
+- execute the business action via `SessionService` and associated services
+- return a structured result, independent of the facade
+- expose the command catalog for `/help`
 
-Les facades ne doivent plus reimplementer:
+Facades must no longer reimplement:
 
-- la liste des commandes
-- leur description
-- leurs alias
-- leur semantique
-- leur validation d'arguments
+- the command list
+- their descriptions
+- their aliases
+- their semantics
+- their argument validation
 
-### 2. Taxonomie canonique des commandes
+### 2. Canonical command taxonomy
 
-Ne pas garder une taxonomie implicite divergente entre surfaces. Introduire un vocabulaire canonique orienté domaines:
+Do not keep an implicit divergent taxonomy between surfaces. Introduce a domain-oriented canonical vocabulary:
 
 - `/help`
 - `/sessions`
@@ -76,452 +76,452 @@ Ne pas garder une taxonomie implicite divergente entre surfaces. Introduire un v
 - `/stop`
 - `/exit`
 
-Notes produit:
+Product notes:
 
-- `/resume` devient strictement "reprendre une session de conversation".
-- `/restore` devient strictement "restaurer un checkpoint".
-- `/help` doit decrire les commandes visibles dans la facade courante.
-- `/sessions` doit lister les sessions de conversation avec identifiant, titre, statut actif/ferme, dates et eventuellement un marqueur de session active.
+- `/resume` becomes strictly "resume a conversation session".
+- `/restore` becomes strictly "restore a checkpoint".
+- `/help` must describe commands visible in the current facade.
+- `/sessions` must list conversation sessions with identifier, title, active/closed status, dates, and optionally an active session marker.
 
-### 3. Capacites par facade
+### 3. Capabilities per facade
 
-Le catalogue est partage, mais toutes les commandes ne sont pas forcement actionnables dans chaque surface. Le SSOT doit distinguer:
+The catalog is shared, but not all commands are necessarily actionable in each surface. The SSOT must distinguish:
 
-- commande canonique
-- disponibilite par facade (`tui`, `webui`, `telegram`)
-- description utilisateur par facade si necessaire
-- forme de rendu attendue
+- canonical command
+- availability per facade (`tui`, `webui`, `telegram`)
+- user description per facade if necessary
+- expected rendering form
 
-Exemples:
+Examples:
 
-- `/exit` est utile au TUI, pas a Telegram.
-- `/toggle-cli` est utile au TUI, probablement inutile ailleurs.
-- `/open` n'a de sens que sur les surfaces locales capables d'ouvrir une URL.
+- `/exit` is useful to TUI, not to Telegram.
+- `/toggle-cli` is useful to TUI, probably useless elsewhere.
+- `/open` only makes sense on local surfaces capable of opening a URL.
 
-Le point important est que la decision de disponibilite doit vivre dans le registre commun, pas dans chaque facade.
+The important point is that the availability decision must live in the common registry, not in each facade.
 
-### 4. SSOT des sessions browseables
+### 4. SSOT for browsable sessions
 
-`SessionService` doit devenir l'API autoritaire pour:
+`SessionService` must become the authoritative API for:
 
-- lister les sessions d'un scope facade
-- identifier la session active d'un scope
-- creer une nouvelle session dans un scope
-- reprendre une session existante dans un scope
-- supprimer une session
-- fermer ou archiver une session
+- listing sessions of a facade scope
+- identifying the active session of a scope
+- creating a new session in a scope
+- resuming an existing session in a scope
+- deleting a session
+- closing or archiving a session
 
-API cible a ajouter ou clarifier dans `src/session/session-service.ts`:
+Target API to add or clarify in `src/session/session-service.ts`:
 
-- `listForScope(scope)` enrichi pour usage UI
+- `listForScope(scope)` enriched for UI use
 - `getActiveForScope(scope)`
 - `resumeForScope(scope, sessionId)`
 - `createForScope(scope, options?)`
-- `deleteForScope(scope, sessionId)` ou garde-fous equivalentes
+- `deleteForScope(scope, sessionId)` or equivalent safeguards
 
-Les operations ci-dessus doivent encapsuler la gestion de `activeByScopeKey` aujourd'hui cachee dans `DeepAgentSessionStore`.
+The above operations must encapsulate the `activeByScopeKey` management currently hidden in `DeepAgentSessionStore`.
 
-### 5. Separation stricte sessions vs checkpoints
+### 5. Strict separation sessions vs checkpoints
 
-Conserver une difference nette entre:
+Keep a clear difference between:
 
-- session: identite conversationnelle longue duree
-- checkpoint: snapshot restaureable d'une session
+- session: long-lived conversational identity
+- checkpoint: restorable snapshot of a session
 
-Effets attendus:
+Expected effects:
 
-- `/sessions` ne liste pas les checkpoints
-- `/resume` ne touche pas aux checkpoints
-- `/checkpoints` liste les checkpoints de la session active
-- `/restore` restaure un checkpoint sur la session active
-- `/save` cree un checkpoint de la session active
+- `/sessions` does not list checkpoints
+- `/resume` does not touch checkpoints
+- `/checkpoints` lists checkpoints of the active session
+- `/restore` restores a checkpoint on the active session
+- `/save` creates a checkpoint of the active session
 
-### 6. Reprise de session et realite runtime
+### 6. Session resume and runtime reality
 
-Le repo persiste aujourd'hui les metadonnees de session mais pas necessairement tout l'etat runtime vivant au-dela du process, selon le checkpointer reel.
+The repo currently persists session metadata but not necessarily all runtime state beyond the process, depending on the actual checkpointer.
 
-Travail a cadrer explicitement dans l'implementation:
+Work to explicitly frame in implementation:
 
-- verifier si le checkpointer actif permet un resume cross-restart fiable
-- si non, documenter clairement la limite et eviter une UX trompeuse
-- si oui requis produit, remplacer le checkpointer volatile par une implementation durable ou aligner la persistance existante
+- verify if the active checkpointer allows reliable cross-restart resume
+- if not, clearly document the limitation and avoid misleading UX
+- if required by product, replace the volatile checkpointer with a durable implementation or align existing persistence
 
-Le codage ne doit pas laisser une commande `/resume` qui promet plus que le runtime ne garantit reellement.
+Coding must not leave a `/resume` command that promises more than the runtime actually guarantees.
 
-## Architecture cible
+## Target Architecture
 
 ### `src/session/`
 
-Reste le SSOT du cycle de vie des sessions:
+Remains the SSOT for session lifecycle:
 
-- metadata de session
-- mapping scope -> session active
-- creation / rotation / reprise / suppression
+- session metadata
+- scope -> active session mapping
+- creation / rotation / resume / deletion
 - checkpoints
-- eventuelle recuperation de transcript partage si ce besoin est retenu
+- optional shared transcript recovery if that need is retained
 
 ### `src/conversation/`
 
-Nouvelle couche SSOT des commandes conversationnelles:
+New SSOT layer for conversational commands:
 
 - parse
-- registre de commandes
+- command registry
 - dispatch
-- resultats structures
-- aide `/help`
+- structured results
+- `/help` help
 
 ### `src/gateway/`
 
-Reste un adaptateur mince par surface:
+Remains a thin adapter per surface:
 
-- convertit une entree utilisateur en commande ou prompt normal
-- appelle la couche `conversation/`
-- rend les resultats dans le format de la surface
-- gere les specifics de rendu et de navigation locale
+- converts user input into command or normalized prompt
+- calls the `conversation/` layer
+- renders results in the surface's format
+- manages rendering specifics and local navigation
 
 ### `src/webui/`
 
-La WebUI doit se brancher sur le meme SSOT, meme si elle conserve des interactions par boutons. Les actions UI doivent appeler les memes primitives metier que les commandes slash.
+WebUI must hook into the same SSOT, even if it retains button interactions. UI actions must call the same business primitives as slash commands.
 
-## Plan de mise en oeuvre
+## Implementation Plan
 
-### Lot 0. Cadrage et invariants
+### Lot 0. Framing and invariants
 
-Objectif:
+Objective:
 
-- figer le contrat des commandes et la semantique session/checkpoint avant toute implementation.
+- freeze the command contract and session/checkpoint semantics before any implementation.
 
-Travail:
+Work:
 
-- definir la liste canonique des commandes et alias toleres
-- definir les surfaces supportees par commande
-- definir les sorties structurees minimales
-- definir les erreurs standardisees (`unknown_command`, `invalid_arguments`, `unsupported_in_surface`, `session_not_found`, `checkpoint_not_found`, etc.)
+- define the canonical list of commands and tolerated aliases
+- define supported surfaces per command
+- define minimum structured outputs
+- define standardized errors (`unknown_command`, `invalid_arguments`, `unsupported_in_surface`, `session_not_found`, `checkpoint_not_found`, etc.)
 
-Livrables:
+Deliverables:
 
-- types communs de commandes et resultats
-- table de compatibilite TUI/WebUI/Telegram
+- common command and result types
+- TUI/WebUI/Telegram compatibility table
 
-Critere d'acceptation:
+Acceptance criteria:
 
-- une seule source enumere toutes les commandes supportees et leur semantique
+- a single source enumerates all supported commands and their semantics
 
-### Lot 1. Renforcement du SSOT session
+### Lot 1. Session SSOT reinforcement
 
-Objectif:
+Objective:
 
-- rendre `SessionService` suffisant pour naviguer entre sessions par scope sans logique cachee dans les facades.
+- make `SessionService` sufficient to navigate between sessions by scope without hidden logic in facades.
 
-Travail:
+Work:
 
-- ajouter une primitive pour recuperer la session active d'un scope
-- ajouter une primitive pour activer/reprendre une session existante dans un scope
-- clarifier les comportements de creation et rotation
-- ajouter les garde-fous pour la suppression de session active si necessaire
-- enrichir les resumes listes avec `closedAt`, `scope`, `isActiveForScope` si utile
+- add a primitive to retrieve the active session of a scope
+- add a primitive to activate/resume an existing session in a scope
+- clarify creation and rotation behaviors
+- add safeguards for active session deletion if necessary
+- enrich listed resumes with `closedAt`, `scope`, `isActiveForScope` if useful
 
-Fichiers probables:
+Likely files:
 
 - `src/session/session-service.ts`
 - `src/session/deepagent-sessions.ts`
 - `src/session/session-types.ts`
 
-Critere d'acceptation:
+Acceptance criteria:
 
-- TUI et Telegram peuvent lister et reassigner la session active sans reimplementer la logique de scope
+- TUI and Telegram can list and reassign the active session without reimplementing scope logic
 
-### Lot 2. Service commun de slash commands
+### Lot 2. Common slash command service
 
-Objectif:
+Objective:
 
-- supprimer la logique de commande inline des facades.
+- remove inline command logic from facades.
 
-Travail:
+Work:
 
-- creer un parser unique des commandes slash
-- creer un registre de commandes avec metadonnees (`name`, `description`, `usage`, `surfaces`, `aliases`)
-- implementer un dispatcher qui appelle `SessionService`, `CompactionService` et les adapters necessaires
-- retourner des resultats structures, pas du texte brut uniquement
-- implementer `/help` a partir du registre
+- create a unique slash command parser
+- create a command registry with metadata (`name`, `description`, `usage`, `surfaces`, `aliases`)
+- implement a dispatcher that calls `SessionService`, `CompactionService`, and necessary adapters
+- return structured results, not just plain text
+- implement `/help` from the registry
 
-Fichiers probables:
+Likely files:
 
 - `src/conversation/slash-command-types.ts`
 - `src/conversation/slash-command-registry.ts`
 - `src/conversation/slash-command-service.ts`
 - `src/conversation/index.ts`
 
-Critere d'acceptation:
+Acceptance criteria:
 
-- la liste de commandes n'est definie qu'une seule fois dans le repo
+- the command list is defined only once in the repo
 
-### Lot 3. Migration TUI
+### Lot 3. TUI Migration
 
-Objectif:
+Objective:
 
-- faire du TUI un client de la couche slash commune avec un vrai browser de sessions textuel.
+- make TUI a client of the common slash layer with a real textual session browser.
 
-Travail:
+Work:
 
-- remplacer les `if (prompt === '/...')` par un dispatch via le service commun
-- faire afficher `/help` dans le feed ou la zone de statut
-- faire afficher `/sessions` dans le feed avec informations compactes et identifiants exploitables
-- implementer `/resume <session_id>` en reassociant le scope `tui:default` a la session choisie
-- renommer le comportement actuel checkpoint restore vers `/restore <checkpoint_id>`
-- conserver les commandes purement locales TUI si necessaire via le registre commun et un handler specifique de surface
+- replace `if (prompt === '/...')` with dispatch via the common service
+- make `/help` display in the feed or status area
+- make `/sessions` display in the feed with compact information and usable identifiers
+- implement `/resume <session_id>` by reassigning `tui:default` scope to the chosen session
+- rename current checkpoint restore behavior to `/restore <checkpoint_id>`
+- keep purely local TUI commands if necessary via the common registry and a surface-specific handler
 
-Fichiers probables:
+Likely files:
 
 - `src/gateway/interactive-ui.tsx`
-- nouveaux modules `src/conversation/*`
+- new modules `src/conversation/*`
 - `src/session/*`
 
-Critere d'acceptation:
+Acceptance criteria:
 
-- dans le TUI, `/help`, `/sessions`, `/resume`, `/restore` fonctionnent avec la semantique cible
+- in TUI, `/help`, `/sessions`, `/resume`, `/restore` work with target semantics
 
-### Lot 4. Migration Telegram
+### Lot 4. Telegram Migration
 
-Objectif:
+Objective:
 
-- aligner Telegram sur la meme taxonomie sans perdre les affordances natives de Telegram.
+- align Telegram on the same taxonomy without losing native Telegram affordances.
 
-Travail:
+Work:
 
-- remplacer les commandes Telegraf dupliquees par un mapping vers la couche slash commune
-- exposer `/help`, `/sessions`, `/resume`, `/restore`
-- renommer les commandes checkpoint actuelles vers la taxonomie retenue ou garder des alias compatibles si necessaire
-- verifier que le chat Telegram pointe bien vers la session active du scope `telegram:<chatId>`
-- clarifier le comportement de suppression de session dans un chat lie
+- replace duplicated Telegraf commands with a mapping to the common slash layer
+- expose `/help`, `/sessions`, `/resume`, `/restore`
+- rename current checkpoint commands to the retained taxonomy or keep compatible aliases if necessary
+- verify that the Telegram chat points to the active session of scope `telegram:<chatId>`
+- clarify session deletion behavior in a linked chat
 
-Fichiers probables:
+Likely files:
 
 - `src/gateway/telegram.ts`
 - `src/conversation/*`
 - `src/session/*`
 
-Critere d'acceptation:
+Acceptance criteria:
 
-- Telegram partage le meme comportement metier que le TUI pour les operations session/checkpoint
+- Telegram shares the same business behavior as TUI for session/checkpoint operations
 
-### Lot 5. Alignement WebUI
+### Lot 5. WebUI Alignment
 
-Objectif:
+Objective:
 
-- faire de la WebUI un consommateur du meme SSOT, meme si elle garde boutons et panneaux.
+- make WebUI a consumer of the same SSOT, even if it keeps buttons and panels.
 
-Travail:
+Work:
 
-- faire passer les actions de session/checkpoint de la WebUI par les memes primitives metier communes
-- accepter les slash commands saisies dans le composeur WebUI (obligatoire pour l'uniformisation `/XXX`)
-- verifier si `WebUiSessionRegistry` doit etre absorbe, renomme ou conserve comme store de presentation uniquement
-- eviter que la WebUI reste une voie parallele avec sa propre semantique
+- make WebUI session/checkpoint actions go through the same common business primitives
+- accept slash commands typed in the WebUI composer (mandatory for `/XXX` unification)
+- verify if `WebUiSessionRegistry` should be absorbed, renamed, or kept as presentation-only store
+- avoid WebUI remaining a parallel path with its own semantics
 
-Fichiers probables:
+Likely files:
 
 - `src/gateway/webui.ts`
 - `src/webui/app.tsx`
 - `src/session/webui-sessions.ts`
 - `src/conversation/*`
 
-Critere d'acceptation:
+Acceptance criteria:
 
-- les operations metier session/checkpoint de la WebUI s'appuient sur le meme contrat que les autres surfaces
-- le composeur WebUI reconnait et execute les commandes slash du registre commun
+- WebUI session/checkpoint business operations rely on the same contract as other surfaces
+- WebUI composer recognizes and executes slash commands from the common registry
 
-### Lot 6. Documentation et architecture
+### Lot 6. Documentation and Architecture
 
-Objectif:
+Objective:
 
-- maintenir la doc en phase avec le nouveau SSOT.
+- keep docs in sync with the new SSOT.
 
-Travail:
+Work:
 
-- mettre a jour `architecture/current/module-map.md`
-- mettre a jour `architecture/current/system-overview.md`
-- mettre a jour `docs/yagr-docs/usage/tui.md`
-- mettre a jour `docs/yagr-docs/usage/telegram.md`
-- documenter la semantique de `/resume` vs `/restore`
+- update `architecture/current/module-map.md`
+- update `architecture/current/system-overview.md`
+- update `docs/yagr-docs/usage/tui.md`
+- update `docs/yagr-docs/usage/telegram.md`
+- document the semantics of `/resume` vs `/restore`
 
-Critere d'acceptation:
+Acceptance criteria:
 
-- aucune doc n'annonce encore l'ancien comportement `/resume = checkpoint`
+- no doc still announces the old `/resume = checkpoint` behavior
 
 ### Lot 7. Tests
 
-Objectif:
+Objective:
 
-- couvrir la nouvelle semantique et empecher le drift futur entre facades.
+- cover the new semantics and prevent future drift between facades.
 
-Travail:
+Work:
 
-- tests unitaires du parser slash
-- tests unitaires du registre `/help`
-- tests unitaires `SessionService` pour active scope / resume / delete
-- tests d'integration TUI pour `/sessions`, `/resume`, `/restore`, `/help`
-- tests d'integration Telegram pour les memes commandes
-- tests WebUI ou gateway pour verifier l'alignement des routes/actions
+- unit tests for slash parser
+- unit tests for `/help` registry
+- unit tests for `SessionService` for active scope / resume / delete
+- TUI integration tests for `/sessions`, `/resume`, `/restore`, `/help`
+- Telegram integration tests for the same commands
+- WebUI or gateway tests to verify routes/actions alignment
 
-Fichiers probables:
+Likely files:
 
 - `tests/*session*`
-- nouveaux tests `tests/slash-command*.test.*`
-- nouveaux tests gateway TUI / Telegram / WebUI selon l'infra existante
+- new tests `tests/slash-command*.test.*`
+- new TUI / Telegram / WebUI gateway tests based on existing infra
 
-Critere d'acceptation:
+Acceptance criteria:
 
-- une regression de semantique slash ou de mapping session/checkpoint fait echouer les tests
+- a regression in slash semantics or session/checkpoint mapping causes test failures
 
-## Details d'implementation par commande
+## Implementation Details Per Command
 
 ### `/help`
 
-Doit:
+Must:
 
-- lister les commandes disponibles dans la surface courante
-- afficher pour chaque commande: usage court + description courte
-- etre derive du registre central
+- list available commands in the current surface
+- display for each command: short usage + short description
+- be derived from the central registry
 
-Ne doit pas:
+Must not:
 
-- avoir une liste hardcodee dans chaque facade
+- have a hardcoded list in each facade
 
 ### `/sessions`
 
-Doit:
+Must:
 
-- lister les sessions du scope courant, triees par `updatedAt` decroissant
-- afficher `id`, `title`, `updatedAt`
-- marquer la session active
-- afficher si la session est fermee si cette information est disponible
+- list sessions of the current scope, sorted by `updatedAt` descending
+- display `id`, `title`, `updatedAt`
+- mark the active session
+- display if the session is closed if that information is available
 
-Question d'implementation a trancher:
+Implementation question to resolve:
 
-- lister uniquement le scope courant ou toutes les sessions de meme facade. Recommandation: scope courant uniquement pour Telegram, facade `tui:default` pour TUI, collection WebUI globale pour l'onglet courant.
+- list only current scope or all sessions of the same facade. Recommendation: current scope only for Telegram, facade `tui:default` for TUI, global WebUI collection for the current tab.
 
 ### `/resume <session_id>`
 
-Doit:
+Must:
 
-- valider que la session existe et est accessible dans la facade
-- reassocier la session active du scope courant a `session_id`
-- recharger l'etat de presentation de la facade si possible
-- reinitialiser l'etat transitoire local devenu invalide (pending approvals, buffers de stream, overlays, etc.)
+- validate that the session exists and is accessible in the facade
+- reassign the current scope's active session to `session_id`
+- reload the facade's presentation state if possible
+- reset invalid local transient state (pending approvals, stream buffers, overlays, etc.)
 
-Ne doit pas:
+Must not:
 
-- restaurer un checkpoint
+- restore a checkpoint
 
 ### `/restore <checkpoint_id>`
 
-Doit:
+Must:
 
-- operer sur la session active
-- restaurer le checkpoint et l'etat de compaction associe
-- expliquer clairement que cela restaure l'etat backend, pas necessairement l'affichage historique deja envoye dans Telegram
+- operate on the active session
+- restore the checkpoint and associated compaction state
+- clearly explain that this restores the backend state, not necessarily the historical display already sent in Telegram
 
 ### `/new`
 
-Doit:
+Must:
 
-- creer une nouvelle session active pour le scope courant
-- laisser l'ancienne session accessible dans `/sessions`
+- create a new active session for the current scope
+- leave the old session accessible in `/sessions`
 
 ### `/reset`
 
-Decision a expliciter pendant le codage:
+Decision to clarify during coding:
 
-- soit garder `/reset` comme alias de `/new`
-- soit garder `/reset` comme operation locale de purge de feed sans nouvelle session
+- either keep `/reset` as alias of `/new`
+- or keep `/reset` as local feed purge operation without new session
 
-Recommandation:
+Recommendation:
 
-- aligner `/reset` sur `/new` si possible pour eviter deux concepts quasi identiques
+- align `/reset` on `/new` if possible to avoid two almost identical concepts
 
 ### `/save`
 
-Doit:
+Must:
 
-- creer un checkpoint de la session active
-- retourner l'identifiant du checkpoint cree
+- create a checkpoint of the active session
+- return the created checkpoint identifier
 
 ### `/checkpoints`
 
-Doit:
+Must:
 
-- lister les checkpoints de la session active
-- afficher `id`, `createdAt`, `messageCount`
+- list checkpoints of the active session
+- display `id`, `createdAt`, `messageCount`
 
 ### `/delete <session_id>`
 
-Doit:
+Must:
 
-- supprimer une session non active ou definir explicitement le comportement si la session active est supprimee
-- supprimer metadata, memoires et checkpoints associes via `SessionService`
+- delete an inactive session or explicitly define behavior if the active session is deleted
+- delete associated metadata, memories, and checkpoints via `SessionService`
 
-Question d'implementation a trancher:
+Implementation question to resolve:
 
-- si on supprime la session active, faut-il creer automatiquement une nouvelle session vide pour le scope courant. Recommandation: oui.
+- if the active session is deleted, should a new empty session be automatically created for the current scope. Recommendation: yes.
 
-## Points d'attention
+## Points of Attention
 
-### 1. WebUI et etat de presentation riche
+### 1. WebUI and rich presentation state
 
-La WebUI persiste aujourd'hui des `displayMessages` et un `displayThread` via `WebUiSessionRegistry`.
+WebUI currently persists `displayMessages` and a `displayThread` via `WebUiSessionRegistry`.
 
-Le codage doit choisir explicitement entre:
+Coding must explicitly choose between:
 
-- conserver ce store comme couche de presentation WebUI seulement
-- ou extraire une notion plus generique de transcript de session partage
+- keep this store as WebUI-only presentation layer
+- or extract a more generic shared session transcript notion
 
-Ne pas laisser `WebUiSessionRegistry` devenir un faux SSOT des sessions.
+Do not let `WebUiSessionRegistry` become a false sessions SSOT.
 
-### 2. Nettoyage d'etat local lors d'un `/resume`
+### 2. Local state cleanup on `/resume`
 
-Chaque facade a des etats transitoires propres:
+Each facade has its own transient states:
 
-- TUI: feed, buffers de stream, pending approvals, workflow embeds, scroll
-- Telegram: pending approvals, indication de run en cours
+- TUI: feed, stream buffers, pending approvals, workflow embeds, scroll
+- Telegram: pending approvals, indication of running
 - WebUI: thread, browse overlay, streaming state, selected session
 
-Le service commun ne doit pas connaitre ces details, mais le resultat structure de commande doit indiquer a la facade quel type de reset local effectuer.
+The common service must not know these details, but the structured command result must indicate to the facade what type of local reset to perform.
 
-### 3. Compatibilite et aliases
+### 3. Compatibility and aliases
 
-Si la migration doit rester douce, prevoir des alias temporaires:
+If migration must be smooth, plan for temporary aliases:
 
-- TUI: `/resume` ancien sens -> deprecie puis remappe vers message d'aide
-- Telegram: `/checkpoint_restore`, `/checkpoint_save` -> alias vers la nouvelle taxonomie (`/checkpoint_delete` est deja canonique)
+- TUI: `/resume` old sense -> deprecated then remapped to help message
+- Telegram: `/checkpoint_restore`, `/checkpoint_save` -> alias to new taxonomy (`/checkpoint_delete` is already canonical)
 
-La deprecation doit etre centralisee dans le registre commun, pas recopiee.
+Deprecation must be centralized in the common registry, not copied.
 
-### 4. Concurrence et surfaces multiples
+### 4. Concurrency and multiple surfaces
 
-Une meme session peut etre modifiee par plusieurs surfaces ou runs. Le codage doit verifier:
+The same session can be modified by multiple surfaces or runs. Coding must verify:
 
-- ce qui est garanti si TUI et WebUI pointent vers la meme session
-- comment les sessions actives par scope coexistent
-- si des verrous ou messages explicatifs sont necessaires pendant un run en cours
+- what is guaranteed if TUI and WebUI point to the same session
+- how active sessions by scope coexist
+- if locks or explanatory messages are necessary during an ongoing run
 
-## Ordre recommande pour un agent de codage
+## Recommended Order for a Coding Agent
 
-1. Extraire types + registre slash canonique.
-2. Renforcer `SessionService` pour la reprise explicite de session par scope.
-3. Migrer TUI sur la couche commune et renommer checkpoint restore vers `/restore`.
-4. Migrer Telegram sur la meme couche avec aliases eventuels.
-5. Aligner WebUI sur les memes primitives metier.
-6. Ajouter tests unitaires et d'integration.
-7. Mettre a jour la doc d'architecture et d'usage.
+1. Extract types + canonical slash registry.
+2. Reinforce `SessionService` for explicit session resume by scope.
+3. Migrate TUI to the common layer and rename checkpoint restore to `/restore`.
+4. Migrate Telegram to the same layer with possible aliases.
+5. Align WebUI on the same business primitives.
+6. Add unit and integration tests.
+7. Update architecture and usage docs.
 
-## Definition of done
+## Definition of Done
 
-Le chantier est considere termine si:
+The work is considered complete if:
 
-- TUI, WebUI et Telegram partagent le meme SSOT de commandes slash
-- `/help` liste correctement les commandes et descriptions de la surface courante
-- `/resume` reprend une session de conversation dans TUI et Telegram
-- `/restore` restaure un checkpoint de la session active
-- la WebUI appelle les memes primitives metier pour sessions et checkpoints
-- les tests couvrent la separation session/checkpoint et la taxonomie slash
-- la documentation courante de l'architecture reflète la nouvelle repartition des responsabilites
+- TUI, WebUI, and Telegram share the same slash commands SSOT
+- `/help` correctly lists commands and descriptions for the current surface
+- `/resume` resumes a conversation session in TUI and Telegram
+- `/restore` restores a checkpoint of the active session
+- WebUI calls the same business primitives for sessions and checkpoints
+- tests cover session/checkpoint separation and slash taxonomy
+- current architecture documentation reflects the new distribution of responsibilities

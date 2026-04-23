@@ -1,37 +1,37 @@
 # n8n Local
 
-Cette page decrit l'architecture actuelle du bootstrap n8n local, ainsi que la strategie de test retenue autour de ce bloc.
+This page describes the current architecture of the local n8n bootstrap, as well as the test strategy around this block.
 
-## Position produit actuelle
+## Current Product Position
 
-Le repo supporte deux grands chemins n8n:
+The repo supports two major n8n paths:
 
-1. connexion a une instance existante
-2. instance n8n locale geree par Yagr
+1. connection to an existing instance
+2. local n8n instance managed by Yagr
 
-Le principe durable conserve des anciens plans est le suivant:
+The durable principle kept from old plans is as follows:
 
-- Yagr doit privilegier un runtime n8n isole quand il le gere lui-meme
-- Yagr ne doit pas faire d'install machine intrusive en silence
-- la decision Docker vs runtime direct doit rester explicite, testable, et basee sur la detection d'environnement
+- Yagr must favor an isolated n8n runtime when it manages it itself
+- Yagr must not do silent intrusive machine installation
+- the Docker vs direct runtime decision must remain explicit, testable, and based on environment detection
 
-## Matrice d'instances
+## Instance Matrix
 
-Le wizard est la source canonique du type d'instance n8n. Il persiste un `instanceProfile` explicite au lieu de laisser cette decision a des heuristiques reseau.
+The wizard is the canonical source of the n8n instance type. It persists an explicit `instanceProfile` instead of leaving this decision to network heuristics.
 
-| Choix wizard | Profil persiste | Tags | Redemarrage/sante geres par Yagr | Tunnel n8n | URL LLM proxy attendue |
+| Wizard choice | Persisted profile | Tags | Restart/health managed by Yagr | n8n tunnel | Expected LLM proxy URL |
 |---|---|---|---|---|---|
-| Instance Yagr-managed avec Docker | `yagr-managed-docker` | `YAGR_MANAGED`, `DOCKER` | oui | oui | `docker` |
-| Instance Yagr-managed sans Docker | `yagr-managed-direct` | `YAGR_MANAGED` | oui | oui | `local` |
-| Instance existante cloud | `custom-cloud` | `CLOUD` | non | non | `tunnel` |
-| Instance existante locale dans Docker | `custom-local-docker` | `DOCKER` | non | non | `docker` |
-| Instance existante locale hors Docker | `custom-local-direct` | aucun | non | non | `local` |
+| Yagr-managed instance with Docker | `yagr-managed-docker` | `YAGR_MANAGED`, `DOCKER` | yes | yes | `docker` |
+| Yagr-managed instance without Docker | `yagr-managed-direct` | `YAGR_MANAGED` | yes | yes | `local` |
+| Existing cloud instance | `custom-cloud` | `CLOUD` | no | no | `tunnel` |
+| Existing local instance in Docker | `custom-local-docker` | `DOCKER` | no | no | `docker` |
+| Existing local instance outside Docker | `custom-local-direct` | none | no | no | `local` |
 
-## Matrice LLM proxy
+## LLM Proxy Matrix
 
-Le LLM proxy doit choisir son URL en fonction de la reachability de n8n vers l'hote Yagr, pas en fonction de la simple presence de Docker sur la machine.
+The LLM proxy must choose its URL based on n8n's reachability to the Yagr host, not based on the simple presence of Docker on the machine.
 
-| Profil n8n | Type d'URL LLM proxy | Exemple |
+| n8n profile | LLM proxy URL type | Example |
 |---|---|---|
 | `yagr-managed-direct` | `local` | `http://127.0.0.1:11437/v1` |
 | `yagr-managed-docker` | `docker` | `http://host.docker.internal:11437/v1` |
@@ -39,19 +39,19 @@ Le LLM proxy doit choisir son URL en fonction de la reachability de n8n vers l'h
 | `custom-local-docker` | `docker` | `http://host.docker.internal:11437/v1` |
 | `custom-cloud` | `tunnel` | `https://xxxxx.trycloudflare.com/v1` |
 
-## Wizard didactique
+## Didactic Wizard
 
-Le flux n8n cible est volontairement pedagogique:
+The target n8n flow is intentionally pedagogical:
 
-1. `Disposez-vous deja d'une instance n8n ?`
-2. si non: `Souhaitez-vous installer une instance avec Docker ?`
-3. si oui: `URL` puis `cle API`
-4. puis: `S'agit-il d'une instance cloud ?`
-5. si non: `Cette instance locale tourne-t-elle dans Docker ?`
+1. `Do you already have an n8n instance?`
+2. if no: `Do you want to install an instance with Docker?`
+3. if yes: `URL` then `API key`
+4. then: `Is this a cloud instance?`
+5. if no: `Does this local instance run in Docker?`
 
-Ce flux doit rester la seule source canonique pour distinguer `custom-local-docker` et `custom-local-direct`.
+This flow must remain the only canonical source to distinguish `custom-local-docker` and `custom-local-direct`.
 
-## Blocs actuels
+## Current Blocks
 
 - [bootstrap.ts](/home/etienne/repos/yagr/src/n8n-local/bootstrap.ts)
 - [detect.ts](/home/etienne/repos/yagr/src/n8n-local/detect.ts)
@@ -64,7 +64,7 @@ Ce flux doit rester la seule source canonique pour distinguer `custom-local-dock
 - [state.ts](/home/etienne/repos/yagr/src/n8n-local/state.ts)
 - [n8n-tunnel.ts](/home/etienne/repos/yagr/src/n8n-local/n8n-tunnel.ts) — Cloudflare Tunnel exposure
 
-## Vue d'ensemble
+## Overview
 
 ```mermaid
 flowchart TD
@@ -83,28 +83,28 @@ flowchart TD
     DIRECT --> TUNNEL
 ```
 
-## Regles de conception
+## Design Rules
 
-- la detection d'environnement doit rester separee de l'execution
-- la planification doit rester pure autant que possible
-- les choix d'installation ne doivent pas etre disperses dans les facades
-- l'etat d'instance geree doit rester sous `YAGR_HOME`
-- un runtime gere par Yagr doit rester distinct d'une instance n8n utilisateur preexistante
+- environment detection must remain separate from execution
+- planning must remain as pure as possible
+- installation choices must not be scattered in facades
+- managed instance state must remain under `YAGR_HOME`
+- a runtime managed by Yagr must remain distinct from a user's pre-existing n8n instance
 
-## Strategie actuelle
+## Current Strategy
 
-Le signal encore valide des anciens plans est:
+The still-valid signal from old plans is:
 
-- Docker reste la voie privilegiee quand il est disponible
-- le runtime direct existe comme fallback
-- les preconditions machine sont detectees avant d'essayer un bootstrap
-- l'ownership et les credentials sont traites comme un sous-probleme explicite, pas comme un detail implicite
-- au demarrage, `managed-runtime.ts` est le SSOT de preparation d'une instance Yagr-managed: il remet le runtime en route, ou le recree si le state runtime a disparu mais que le `instanceProfile` persiste reste Yagr-managed, puis reconcilie si besoin le bootstrap silencieux et la persistance finale via `setup/application-services.ts`
-- une instance Yagr-managed redemarree apres suppression du container/runtime doit revenir automatiquement vers un etat `connected`, pas seulement `ready`
+- Docker remains the preferred path when available
+- the direct runtime exists as a fallback
+- machine preconditions are detected before attempting bootstrap
+- ownership and credentials are treated as an explicit sub-problem, not an implicit detail
+- at startup, `managed-runtime.ts` is the SSOT of preparation of a Yagr-managed instance: it restarts the runtime, or recreates it if the runtime state has disappeared but the `instanceProfile` persists as Yagr-managed, then reconciles if needed the silent bootstrap and final persistence via `setup/application-services.ts`
+- a Yagr-managed instance restarted after container/runtime deletion must automatically return to a `connected` state, not just `ready`
 
-Ce qui est important ici n'est pas de garder les anciennes phases de planification, mais de conserver ces invariants.
+What is important here is not to keep the old planning phases, but to preserve these invariants.
 
-## Strategie de test actuelle
+## Current Test Strategy
 
 ```mermaid
 flowchart TD
@@ -118,7 +118,7 @@ flowchart TD
     CI --> MANUAL
 ```
 
-Tests et points d'entree actuels:
+Current tests and entry points:
 
 - [n8n-local-detect.test.mjs](/home/etienne/repos/yagr/tests/n8n-local-detect.test.mjs)
 - [n8n-local-plan.test.mjs](/home/etienne/repos/yagr/tests/n8n-local-plan.test.mjs)
@@ -127,59 +127,59 @@ Tests et points d'entree actuels:
 - [n8n-local-install.test.mjs](/home/etienne/repos/yagr/tests/integration/n8n-local-install.test.mjs)
 - [n8n-local-silent-bootstrap.test.mjs](/home/etienne/repos/yagr/tests/integration/n8n-local-silent-bootstrap.test.mjs)
 
-Regle durable:
+Durable rule:
 
-- la confiance principale doit venir des tests de planification et detection purs
-- les tests d'integration doivent valider un environnement propre et reproductible
-- les validations lourdes manuelles ne doivent pas devenir la source canonique de confiance
+- the main confidence must come from pure planning and detection tests
+- integration tests must validate a clean and reproducible environment
+- heavy manual validations must not become the canonical source of confidence
 
 ## Cloudflare Tunnel
 
-Les modules `n8n-tunnel.ts` et `tunnel-reachability.ts` gerent trois usages Cloudflare distincts:
+The `n8n-tunnel.ts` and `tunnel-reachability.ts` modules manage three distinct Cloudflare use cases:
 
-- `n8n tunnel` pour exposer l'instance n8n locale Yagr-managed
-- `n8n auth tunnel` pour exposer le bridge d'auth utilise par l'ouverture distante de workflows
-- `llm tunnel` pour exposer le relay LLM local aux instances n8n cloud
+- `n8n tunnel` to expose the Yagr-managed local n8n instance
+- `n8n auth tunnel` to expose the auth bridge used for remote workflow opening
+- `llm tunnel` to expose the local LLM relay to cloud n8n instances
 
-### Composants
+### Components
 
 | Element | Role |
 |---|---|
-| `startN8nTunnel(targetUrl)` | Spawne `cloudflared tunnel --url <targetUrl>` en detaché, detecte l'URL publique dans le log |
-| `stopN8nTunnel()` | Tue le process cloudflared et nettoie le state |
-| `refreshN8nTunnel(targetUrl)` | Stop + start pour renouveler l'URL |
-| `getActiveTunnelState()` | Retourne le state si le process est vivant, null sinon |
-| `installCloudflaredIfNeeded()` | Telecharge cloudflared dans `YAGR_HOME/bin` si absent du PATH |
-| `resolveN8nTunnelTargetUrl()` | Resout l'URL locale n8n cible (managed uniquement) |
-| `startLlmTunnel(targetUrl)` | Tunnel dedie pour le relay LLM (deduplication par targetUrl) |
-| `startN8nAuthTunnel(targetUrl)` | Tunnel dedie pour le bridge d'auth n8n |
-| `ensureFacadeTunnelReachability(consumer)` | Politique de wake-up par facade/consommateur |
+| `startN8nTunnel(targetUrl)` | Spawns `cloudflared tunnel --url <targetUrl>` detached, detects public URL in log |
+| `stopN8nTunnel()` | Kills the cloudflared process and cleans up state |
+| `refreshN8nTunnel(targetUrl)` | Stop + start to renew the URL |
+| `getActiveTunnelState()` | Returns state if process is alive, null otherwise |
+| `installCloudflaredIfNeeded()` | Downloads cloudflared into `YAGR_HOME/bin` if absent from PATH |
+| `resolveN8nTunnelTargetUrl()` | Resolves target local n8n URL (managed only) |
+| `startLlmTunnel(targetUrl)` | Dedicated tunnel for LLM relay (deduplication by targetUrl) |
+| `startN8nAuthTunnel(targetUrl)` | Dedicated tunnel for n8n auth bridge |
+| `ensureFacadeTunnelReachability(consumer)` | Wake-up policy by facade/consumer |
 
-### Persistance
+### Persistence
 
-L'etat des tunnels est persiste sous `YAGR_HOME`:
+Tunnel state is persisted under `YAGR_HOME`:
 
 - `n8n-tunnel-state.json`
 - `proxy-runtime/n8n-auth-tunnel.json`
 - `proxy-runtime/llm-tunnel.json`
 
-Le state d'un tunnel suit la meme structure canonique:
+A tunnel's state follows the same canonical structure:
 
 ```typescript
 interface TunnelState {
-  publicUrl: string;   // URL trycloudflare.com
-  targetUrl: string;   // URL locale cible
-  pid: number;         // PID du process cloudflared
+  publicUrl: string;   // trycloudflare.com URL
+  targetUrl: string;   // target local URL
+  pid: number;         // cloudflared process PID
   startedAt: string;   // ISO timestamp
 }
 ```
 
-### Regles de conception
+### Design Rules
 
-- Le tunnel n8n ne s'applique qu'aux instances **Yagr-managed**.
-- Trois tunnels peuvent coexister : `n8n`, `n8n auth`, `llm`.
-- Le tunnel `llm` ne s'applique qu'aux profils `custom-cloud`.
-- Les URL `trycloudflare.com` changent a chaque restart ; `TUNNEL_DOMAIN` bascule sur des hostnames DNS dedies geres par `cloudflared`.
-- `N8N_WEBHOOK_URL` est positionne au demarrage n8n ; un refresh tunnel propose un redemarrage explicite.
-- Le tunnel expose une surface **non authentifiee** par defaut pour les webhooks.
-- Le wake-up des tunnels est pilote par `tunnel-reachability.ts`, pas par les facades directement.
+- the n8n tunnel only applies to **Yagr-managed** instances.
+- three tunnels can coexist: `n8n`, `n8n auth`, `llm`.
+- the `llm` tunnel only applies to `custom-cloud` profiles.
+- `trycloudflare.com` URLs change on every restart; `TUNNEL_DOMAIN` switches to dedicated DNS-managed hostnames via `cloudflared`.
+- `N8N_WEBHOOK_URL` is set at n8n startup; a tunnel refresh proposes an explicit restart.
+- The tunnel exposes an **unauthenticated** surface by default for webhooks.
+- Tunnel wake-up is driven by `tunnel-reachability.ts`, not directly by facades.

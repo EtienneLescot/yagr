@@ -1,34 +1,34 @@
 # PR Agent — Architecture
 
 > **Status**: Implemented
-> **Migration**: Remplace `openhands-pr-review-architecture.md`
-> **Note importante**: PR Agent tourne de manière **autonome** dans GitHub Actions, **sans intégration avec Yagr**. Yagr est simplement le repository qui sera review.
+> **Migration**: Replaces `openhands-pr-review-architecture.md`
+> **Important note**: PR Agent runs **autonomously** in GitHub Actions, **without integration with Yagr**. Yagr is simply the repository that will be reviewed.
 
-## Contexte
+## Context
 
-PR Agent est un agent IA **indépendant** qui s'exécute dans GitHub Actions. Il n'est pas intégré à Yagr — Yagr est juste le repo à reviewer.
+PR Agent is an **independent** AI agent that runs in GitHub Actions. It is not integrated into Yagr — Yagr is just the repo to be reviewed.
 
 ---
 
-## 1. PR Agent — Vue d'ensemble
+## 1. PR Agent — Overview
 
-### 1.1 Qu'est-ce que PR Agent ?
+### 1.1 What is PR Agent?
 
-[PR Agent](https://github.com/qodo-ai/pr-agent) est un agent IA open-source conçu pour automatiser les reviews de Pull Requests avec plusieurs outils :
+[PR Agent](https://github.com/qodo-ai/pr-agent) is an open-source AI agent designed to automate Pull Request reviews with multiple tools:
 
-- **`/describe`** : Génère une description automatique de la PR
-- **`/review`** : Analyse et commente les PRs via GitHub Actions
-- **`/improve`** : Suggère des améliorations de code
-- **`/ask`** : Pose des questions sur le code
+- **`/describe`**: Generates an automatic PR description
+- **`/review`**: Analyzes and comments on PRs via GitHub Actions
+- **`/improve`**: Suggests code improvements
+- **`/ask`**: Asks questions about the code
 
-### 1.2 Mode GitHub Actions
+### 1.2 GitHub Actions Mode
 
-PR Agent s'exécute **autonomement** dans GitHub Actions via un container Docker :
+PR Agent runs **autonomously** in GitHub Actions via a Docker container:
 
-1. Déclenchement sur événements PR (`pull_request`)
-2. Exécution de l'agent via la GitHub Action officielle
-3. Posting de commentaires via l'API GitHub
-4. Labels automatiques optionnels
+1. Trigger on PR events (`pull_request`)
+2. Execution of the agent via the official GitHub Action
+3. Posting comments via the GitHub API
+4. Optional automatic labels
 
 ---
 
@@ -45,91 +45,91 @@ PR Agent s'exécute **autonomement** dans GitHub Actions via un container Docker
 │                          ▼                                   │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │   Codium-ai/pr-agent Docker Container                  │  │
-│  │   • /describe, /review, /improve                       │  │
+│  │   • /describe, /review, /improve                      │  │
 │  │   • Posting via GitHub API                            │  │
 │  │   • Labels, comments, suggestions                     │  │
 │  └───────────────────────┬───────────────────────────────┘  │
 │                          │                                   │
 │                          ▼                                   │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │   GitHub PR                                            │  │
-│  │   • Description générée                                │  │
-│  │   • Review détaillé                                    │  │
-│  │   • Suggestions de code                               │  │
+│  │   GitHub PR                                           │  │
+│  │   • Generated description                             │  │
+│  │   • Detailed review                                    │  │
+│  │   • Code suggestions                                  │  │
 │  └───────────────────────────────────────────────────────┘  │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 
-Yagr n'est PAS impliqué dans ce flux. Yagr = le repository sous review.
+Yagr is NOT involved in this flow. Yagr = the repository under review.
 ```
 
-### 2.1 Flux détaillé
+### 2.1 Detailed Flow
 
 ```mermaid
 sequenceDiagram
-    participant Dev as Développeur
+    participant Dev as Developer
     participant GH as GitHub PR
     participant GHA as GitHub Actions
     participant PRA as PR Agent
     participant API as GitHub API
 
-    Dev->>GH: Ouvre une Pull Request
+    Dev->>GH: Opens a Pull Request
     GH->>GHA: Trigger: pull_request (opened, synchronize)
-    GHA->>PRA: Démarre PR Agent (Docker)
-    
-    par En parallèle
-        PRA->>API: Récupère le diff de la PR
-        PRA->>PRA: Génère description via /describe
-        PRA->>PRA: Analyse le code via /review
+    GHA->>PRA: Starts PR Agent (Docker)
+
+    par In parallel
+        PRA->>API: Gets the PR diff
+        PRA->>PRA: Generates description via /describe
+        PRA->>PRA: Analyzes code via /review
     end
-    
-    PRA->>API: Poste la description
-    PRA->>API: Poste le review + labels
-    
-    alt Suggestions activées
-        PRA->>API: Poste les suggestions /improve
+
+    PRA->>API: Posts the description
+    PRA->>API: Posts the review + labels
+
+    alt Suggestions enabled
+        PRA->>API: Posts /improve suggestions
     end
-    
-    Dev->>GH: Voit le review + description en commentaire
+
+    Dev->>GH: Sees the review + description in comment
 ```
 
 ---
 
-## 3. Configuration Requise
+## 3. Required Configuration
 
-### 3.1 Secrets GitHub à configurer
+### 3.1 GitHub Secrets to configure
 
 | Secret | Description | Required |
 |--------|-------------|----------|
-| `LLM_API_KEY` | Clé API MiniMax (ou autre provider) | Oui |
-| `PAT_TOKEN` | GitHub Personal Access Token | Oui |
+| `LLM_API_KEY` | MiniMax API key (or other provider) | Yes |
+| `PAT_TOKEN` | GitHub Personal Access Token | Yes |
 
-### 3.2 Variables GitHub (non-secrets)
+### 3.2 GitHub Variables (non-secrets)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENHANDS_LLM_BASE_URL` | URL base de l'API LLM | `https://api.minimax.io/v1` |
-| `OPENHANDS_LLM_MODEL` | Modèle LLM | `minimax/MiniMax-M2.7` |
-| `OPENHANDS_REVIEW_STYLE` | Style de review | `roasted` |
+| `OPENHANDS_LLM_BASE_URL` | LLM API base URL | `https://api.minimax.io/v1` |
+| `OPENHANDS_LLM_MODEL` | LLM model | `minimax/MiniMax-M2.7` |
+| `OPENHANDS_REVIEW_STYLE` | Review style | `roasted` |
 
-### 3.3 Emplacement des clés
+### 3.3 Key Storage Location
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    STOCKAGE DES CLÉS D'API                    │
+│                    API KEY STORAGE                              │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  GitHub Actions Secrets (Settings → Secrets → Actions)       │
+│  GitHub Actions Secrets (Settings → Secrets → Actions)        │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  LLM_API_KEY      → Clé API MiniMax/other provider   │    │
-│  │  PAT_TOKEN        → GitHub Personal Access Token     │    │
+│  │  LLM_API_KEY      → MiniMax/other provider API key    │    │
+│  │  PAT_TOKEN        → GitHub Personal Access Token      │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                              │
-│  GitHub Actions Variables (Settings → Variables → Actions)   │
+│  GitHub Actions Variables (Settings → Variables → Actions)    │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  OPENHANDS_LLM_BASE_URL  → https://api.minimax.io/v1│   │
-│  │  OPENHANDS_LLM_MODEL     → minimax/MiniMax-M2.7     │    │
-│  │  OPENHANDS_REVIEW_STYLE  → roasted                  │    │
+│  │  OPENHANDS_LLM_MODEL     → minimax/MiniMax-M2.7      │    │
+│  │  OPENHANDS_REVIEW_STYLE  → roasted                   │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
@@ -137,11 +137,11 @@ sequenceDiagram
 
 ---
 
-## 4. Fichiers de Configuration
+## 4. Configuration Files
 
-### 4.1 Workflow GitHub Actions
+### 4.1 GitHub Actions Workflow
 
-**Fichier**: [`.github/workflows/pr-agent.yml`](.github/workflows/pr-agent.yml)
+**File**: [`.github/workflows/pr-agent.yml`](.github/workflows/pr-agent.yml)
 
 ```yaml
 name: PR Agent
@@ -161,7 +161,7 @@ jobs:
   pr_agent_job:
     runs-on: ubuntu-latest
     if: github.event.pull_request.draft == false
-    
+
     steps:
       - name: PR Agent action step
         uses: Codium-ai/pr-agent@main
@@ -173,9 +173,9 @@ jobs:
           OPENAI_API_BASE: https://api.minimax.io/anthropic/v1/messages
 ```
 
-### 4.2 Configuration PR Agent
+### 4.2 PR Agent Configuration
 
-**Fichier**: [`.pr_agent.toml`](.pr_agent.toml)
+**File**: [`.pr_agent.toml`](.pr_agent.toml)
 
 ```toml
 [config]
@@ -207,68 +207,68 @@ push_commands = [
 
 ---
 
-## 5. Outils PR Agent
+## 5. PR Agent Tools
 
-| Outil | Description | Déclencheur |
+| Tool | Description | Trigger |
 |-------|-------------|-------------|
-| `/describe` | Génère une description de la PR | Automatique à l'ouverture |
-| `/review` | Analyse complète du code | Automatique à l'ouverture |
-| `/improve` | Suggère des améliorations | Automatique après review |
-| `/ask` | Questions sur le code | Commentaire sur PR |
+| `/describe` | Generates a PR description | Automatic on open |
+| `/review` | Complete code analysis | Automatic on open |
+| `/improve` | Suggests improvements | Automatic after review |
+| `/ask` | Questions about the code | Comment on PR |
 
 ---
 
-## 6. Considérations de Sécurité
+## 6. Security Considerations
 
-### 6.1 Principes
+### 6.1 Principles
 
-1. **Clés API dans GitHub Secrets** — Jamais dans le code
-2. **Sandbox Docker** — PR Agent s'exécute dans un container isolé
-3. **Validation humaine** — Les suggestions sont proposées, jamais auto-merged
-4. **Permissions minimales** — `contents: read`, `pull-requests: write`
+1. **API keys in GitHub Secrets** — Never in code
+2. **Docker sandbox** — PR Agent runs in an isolated container
+3. **Human validation** — Suggestions are proposed, never auto-merged
+4. **Minimal permissions** — `contents: read`, `pull-requests: write`
 
-### 6.2 Permissions GitHub
+### 6.2 GitHub Permissions
 
 ```yaml
 permissions:
-  contents: read      # Lecture du code pour review
-  pull-requests: write # Posting des reviews et labels
-  id-token: write     # Pour OIDC (optionnel)
+  contents: read      # Code reading for review
+  pull-requests: write # Posting reviews and labels
+  id-token: write     # For OIDC (optional)
 ```
 
 ---
 
-## 7. Coûts et Limitations
+## 7. Costs and Limitations
 
-### 7.1 Coûts estimés
+### 7.1 Estimated Costs
 
-| Composant | Coût |
+| Component | Cost |
 |-----------|------|
 | PR Agent execution (GPT-5) | ~$0.10-0.50 / PR |
 | GitHub Actions (1-2 min) | ~$0.01-0.02 / PR |
 
 ### 7.2 Limitations
 
-- **Token context** — Les très grandes PRs utilisent le mécanisme de compression
-- **Temps d'exécution** — ~30-90 secondes par PR
+- **Token context** — Very large PRs use the compression mechanism
+- **Execution time** — ~30-90 seconds per PR
 - **Rate limiting** — GitHub API limit (5000 req/h)
 
 ---
 
-## 8. Comparaison OpenHands vs PR Agent
+## 8. OpenHands vs PR Agent Comparison
 
-| Critère | OpenHands | PR Agent |
+| Criteria | OpenHands | PR Agent |
 |---------|-----------|------------|
-| Type | Agent généraliste | Spécialisé PR review |
-| Complexité | Setup plus complexe | Setup simple via GitHub Action |
-| Personnalisation | Très flexible | JSON-based prompts |
-| Auto-fix | Possible avec validation | Suggestions uniquement |
+| Type | Generalist agent | Specialized PR review |
+| Complexity | More complex setup | Simple setup via GitHub Action |
+| Customization | Very flexible | JSON-based prompts |
+| Auto-fix | Possible with validation | Suggestions only |
 | Performance | ~2-5 min / PR | ~30-90 sec / PR |
-| Coût | Plus élevé | Plus économique |
+| Cost | Higher | More economical |
 
 ---
 
-## 9. Liens Utiles
+## 9. Useful Links
 
 - [PR Agent GitHub](https://github.com/qodo-ai/pr-agent)
 - [Documentation](https://qodo-merge-docs.qodo.ai/)
