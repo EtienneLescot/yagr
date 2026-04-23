@@ -7,11 +7,10 @@ import {
   getDisplayProjectName,
   type IProject,
 } from 'n8nac';
-import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
-import { WebUiSessionRegistry } from '../session/webui-sessions.js';
-import type { SessionSummary } from '../session/session-types.js';
-import { SessionService, deriveSessionTitle } from '../session/index.js';
-import { SlashCommandService } from '../conversation/index.js';
+import { getYagrDeepAgentSessionsDir, getYagrSessionsDir } from '../config/yagr-home.js';
+import type { SessionSummary } from '@yagr/session-service';
+import { SessionService, deriveSessionTitle } from '@yagr/session-service';
+import { SlashCommandService } from '@yagr/conversation-service';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
@@ -36,6 +35,7 @@ import {
   processStreamEvent,
   extractLastAiMessage,
 } from './langgraph-events.js';
+import type { CompactionState } from '../compaction/compaction-types.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -113,10 +113,9 @@ class WebUiGateway implements Gateway {
   private server?: Server;
   private agentHandlePromise?: Promise<YagrDeepAgentHandle>;
   private readonly setupService: YagrSetupApplicationService;
-  private readonly sessionRegistry = new WebUiSessionRegistry(getYagrSessionsDir());
   private readonly sessions = new SessionService({
     sessionsDir: getYagrDeepAgentSessionsDir(),
-    memoriesDir: getYagrMemoriesDir(),
+    webUiSessionsDir: getYagrSessionsDir(),
   });
 
   constructor(
@@ -327,7 +326,7 @@ class WebUiGateway implements Gateway {
         scope: { kind: 'webui', key: sessionId },
         title: derivedTitle,
       });
-      this.sessionRegistry.setTitle(sessionId, derivedTitle);
+      this.sessions.setTitle(sessionId, derivedTitle);
       const result = await agent.invoke(
         { messages: [{ role: 'user', content: message }] },
         this.sessions.buildSessionConfig(sessionId),
@@ -360,7 +359,6 @@ class WebUiGateway implements Gateway {
       const body = await this.readJson(request);
       const sessionId = String(body.sessionId ?? '');
       if (sessionId && isValidSessionId(sessionId)) {
-        this.sessionRegistry.delete(sessionId);
         await this.resolveAgentHandle();
         await this.sessions.delete(sessionId);
         this.clearCompactionState(sessionId);
@@ -394,7 +392,7 @@ class WebUiGateway implements Gateway {
     // -------------------------------------------------------------------------
 
     if (method === 'GET' && url.pathname === '/api/sessions') {
-      const sessions: SessionSummary[] = this.sessionRegistry.list();
+      const sessions: SessionSummary[] = this.sessions.list();
       this.sendJson(response, 200, { sessions });
       return;
     }
@@ -411,9 +409,6 @@ class WebUiGateway implements Gateway {
         return;
       }
       const newId = providedId ?? randomUUID();
-      if (!this.sessionRegistry.get(newId)) {
-        this.sessionRegistry.createEmpty(newId);
-      }
       this.sessions.ensure(newId, {
         scope: { kind: 'webui', key: newId },
         title: 'New conversation',
@@ -429,7 +424,7 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'Invalid session id.' });
         return;
       }
-      const session = this.sessionRegistry.get(sessionId);
+      const session = this.sessions.readDisplaySession(sessionId);
       if (!session) {
         this.sendJson(response, 404, { error: 'Session not found.' });
         return;
@@ -445,7 +440,6 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'Invalid session id.' });
         return;
       }
-      this.sessionRegistry.delete(sessionId);
       await this.resolveAgentHandle();
       await this.sessions.delete(sessionId);
       this.clearCompactionState(sessionId);
@@ -477,7 +471,7 @@ class WebUiGateway implements Gateway {
       }
       const handle = await this.resolveAgentHandle();
       const compactionState = handle.compactionService.getState(sessionId);
-      const checkpoint = await this.sessions.saveCheckpoint(sessionId, { compactionState });
+      const checkpoint = await this.sessions.saveCheckpoint(sessionId, { payloadState: compactionState });
       this.sendJson(response, 201, { checkpoint });
       return;
     }
@@ -497,14 +491,14 @@ class WebUiGateway implements Gateway {
       }
       await this.resolveAgentHandle();
       const result = await this.sessions.restoreCheckpoint(sessionId, checkpointId);
-      this.sessionRegistry.clearDisplayThread(sessionId);
+      this.sessions.clearDisplayThread(sessionId);
       const handle = await this.resolveAgentHandle();
-      if (result.compactionState) {
-        handle.compactionService.setState(sessionId, result.compactionState);
+      if (isCompactionState(result.payloadState)) {
+        handle.compactionService.setState(sessionId, result.payloadState);
       } else {
         handle.compactionService.reset(sessionId);
       }
-      this.sendJson(response, 200, { ok: true, compactionRestored: !!result.compactionState });
+      this.sendJson(response, 200, { ok: true, compactionRestored: !!result.payloadState });
       return;
     }
 
@@ -548,15 +542,15 @@ class WebUiGateway implements Gateway {
       }
 
       const slashCtx = { surface: 'webui' as const, sessionId, threadId: sessionId };
-      const webuiHandler = {
-        getActiveSessionId: () => this.sessions.getActiveForScope({ kind: 'webui', key: sessionId })?.id,
-        resumeSession: (_scope: { kind: string; key: string }, resumeSessionId: string) => {
-          this.sessions.ensure(resumeSessionId, { scope: { kind: 'webui', key: resumeSessionId } });
-        },
-        resetLocalState: () => {
-          this.sessionRegistry.clearDisplayThread(sessionId);
-        },
-      };
+        const webuiHandler = {
+          getActiveSessionId: () => this.sessions.getActiveForScope({ kind: 'webui', key: sessionId })?.id,
+          resumeSession: (_scope: { kind: string; key: string }, resumeSessionId: string) => {
+            this.sessions.ensure(resumeSessionId, { scope: { kind: 'webui', key: resumeSessionId } });
+          },
+          resetLocalState: () => {
+          this.sessions.clearDisplayThread(sessionId);
+          },
+        };
 
       const result = await service.execute(parsed, slashCtx, webuiHandler);
       this.sendJson(response, 200, { kind: result.kind, message: result.message, data: result.data });
@@ -576,7 +570,7 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'displayThread must be an array.' });
         return;
       }
-      this.sessionRegistry.setDisplayThread(sessionId, displayThread);
+      this.sessions.syncDisplayThread(sessionId, displayThread);
       this.sendJson(response, 200, { ok: true });
       return;
     }
@@ -684,7 +678,7 @@ class WebUiGateway implements Gateway {
   }
 
   private persistSessionMetadata(sessionId: string): void {
-    const session = this.sessionRegistry.get(sessionId);
+    const session = this.sessions.readDisplaySession(sessionId);
     this.sessions.persistMemory(
       sessionId,
       session?.title ?? 'New conversation',
@@ -794,7 +788,7 @@ class WebUiGateway implements Gateway {
         scope: { kind: 'webui', key: sessionId },
         title: derivedTitle,
       });
-      this.sessionRegistry.setTitle(sessionId, derivedTitle);
+      this.sessions.setTitle(sessionId, derivedTitle);
       const accumulator = createRunAccumulator();
 
       const stream = agent.streamEvents(
@@ -904,7 +898,7 @@ class WebUiGateway implements Gateway {
       if (accumulator.fileModificationDetected) {
         try {
           const compactionState = compactionService.getState(sessionId);
-          await this.sessions.saveCheckpoint(sessionId, { compactionState });
+          await this.sessions.saveCheckpoint(sessionId, { payloadState: compactionState });
         } catch (err) {
           console.error('[auto-checkpoint] Failed to save checkpoint:', err);
         }
@@ -948,4 +942,13 @@ class WebUiGateway implements Gateway {
       response.end();
     }
   }
+}
+
+function isCompactionState(value: unknown): value is CompactionState {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && Array.isArray((value as { compactionHistory?: unknown[] }).compactionHistory)
+    && typeof (value as { totalCompactions?: unknown }).totalCompactions === 'number',
+  );
 }

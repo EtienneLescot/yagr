@@ -2,12 +2,26 @@ import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
+import {
+  buildContextGauge,
+  entryToLines,
+  formatRequiredAction,
+  formatTimestamp,
+  normalizeCommandChunk,
+  splitStreamingText,
+  stateColor,
+  type FeedLane,
+  type TuiFeedEntry as FeedEntry,
+  type TuiRenderLine as RenderLine,
+  TuiEmptyState,
+  TuiRequiredActionList,
+} from '@yagr/tui-surface';
+import { SlashCommandService } from '@yagr/conversation-service';
+import { SessionService } from '@yagr/session-service';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
-import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-home.js';
+import { getYagrDeepAgentSessionsDir } from '../config/yagr-home.js';
 import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
-import { SessionService } from '../session/index.js';
-import { SlashCommandService } from '../conversation/index.js';
 import {
   formatWorkflowLinkTerminal,
   type WorkflowEmbed,
@@ -22,26 +36,6 @@ import type {
   YagrRunOptions,
 } from '../types.js';
 
-type FeedLane = 'user' | 'assistant' | 'thinking' | 'action' | 'result' | 'interrupt';
-
-type FeedEntry = {
-  id: number;
-  lane: FeedLane;
-  title: string;
-  text: string;
-  timestamp: string;
-  emphasis?: 'normal' | 'strong';
-  expanded?: boolean;
-  isShellBlock?: boolean;
-};
-
-type RenderLine = {
-  key: string;
-  text: string;
-  color?: string;
-  dimColor?: boolean;
-};
-
 type InteractiveAppProps = {
   agent: YagrDeepAgentHandle['agent'];
   compactionService: YagrDeepAgentHandle['compactionService'];
@@ -50,122 +44,6 @@ type InteractiveAppProps = {
   sessions: SessionService;
 };
 
-function stateColor(state: YagrAgentState): string {
-  switch (state) {
-    case 'idle': return 'cyan';
-    case 'running':
-    case 'streaming':
-    case 'compacting': return 'yellow';
-    case 'completed': return 'green';
-    case 'waiting_for_permission':
-    case 'waiting_for_input':
-    case 'resumable': return 'magenta';
-    case 'failed_terminal': return 'red';
-    default: return 'white';
-  }
-}
-
-function buildContextGauge(percent: number, width = 10): string {
-  const filled = Math.round((percent / 100) * width);
-  return '█'.repeat(filled) + '░'.repeat(width - filled);
-}
-
-function laneColor(lane: FeedLane): string {
-  switch (lane) {
-    case 'user': return 'cyan';
-    case 'assistant': return 'green';
-    case 'thinking': return 'magenta';
-    case 'action': return 'yellow';
-    case 'result': return 'green';
-    case 'interrupt': return 'red';
-  }
-}
-
-function laneLabel(lane: FeedLane): string {
-  switch (lane) {
-    case 'user': return 'You';
-    case 'assistant': return 'Assistant';
-    case 'thinking': return 'Thinking';
-    case 'action': return 'Action';
-    case 'result': return 'Result';
-    case 'interrupt': return 'Blocked';
-  }
-}
-
-function entryHeader(entry: FeedEntry): RenderLine {
-  return {
-    key: `header-${entry.id}`,
-    text: `[${entry.timestamp}] ${laneLabel(entry.lane)}${entry.title ? ` · ${entry.title}` : ''}`,
-    color: laneColor(entry.lane),
-    dimColor: true,
-  };
-}
-
-function assistantLines(entry: FeedEntry): RenderLine[] {
-  const body = entry.text ? entry.text.split('\n') : [];
-  return [
-    { key: `a-top-${entry.id}`, text: '  ┌─ response', color: 'green' },
-    ...body.map((line, i) => ({
-      key: `a-${entry.id}-${i}`,
-      text: `  │ ${line}`,
-      color: 'green',
-    })),
-    { key: `a-bottom-${entry.id}`, text: '  └─', color: 'green' },
-  ];
-}
-
-function collapsedShellLines(entry: FeedEntry): RenderLine[] {
-  const count = entry.text ? entry.text.split('\n').length : 0;
-  return [
-    {
-      key: `shell-collapsed-${entry.id}`,
-      text: `  (${count} lines · use /expand to show all)`,
-      dimColor: true,
-    },
-  ];
-}
-
-function expandedShellLines(entry: FeedEntry): RenderLine[] {
-  return entry.text.split('\n').map((line, i) => ({
-    key: `shell-${entry.id}-${i}`,
-    text: `  ${line}`,
-    color: entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined,
-    dimColor: entry.emphasis !== 'strong',
-  }));
-}
-
-function entryToLines(entry: FeedEntry): RenderLine[] {
-  const lines: RenderLine[] = [entryHeader(entry)];
-
-  if (!entry.text) {
-    return lines;
-  }
-
-  if (entry.lane === 'assistant') {
-    return [...lines, ...assistantLines(entry)];
-  }
-
-  if (entry.isShellBlock) {
-    return [
-      ...lines,
-      ...(entry.expanded ? expandedShellLines(entry) : collapsedShellLines(entry)),
-    ];
-  }
-
-  return [
-    ...lines,
-    ...entry.text.split('\n').map((line, i) => ({
-      key: `entry-${entry.id}-${i}`,
-      text: `  ${line}`,
-      color: entry.emphasis === 'strong' ? laneColor(entry.lane) : undefined,
-      dimColor:
-        entry.lane !== 'assistant' &&
-        entry.lane !== 'thinking' &&
-        entry.emphasis !== 'strong',
-    })),
-  ];
-}
-
 function normalizeDisplayOptions(display?: YagrDisplayOptions): Required<YagrDisplayOptions> {
   return {
     showThinking: display?.showThinking ?? true,
@@ -173,49 +51,6 @@ function normalizeDisplayOptions(display?: YagrDisplayOptions): Required<YagrDis
     showResponses: display?.showResponses ?? true,
     showUserPrompts: display?.showUserPrompts ?? true,
   };
-}
-
-function normalizeCommandChunk(chunk: string): string {
-  return chunk.replace(/\r+/g, '\n');
-}
-
-function splitStreamingText(text: string, flushAll = false): { emitted: string; remainder: string } {
-  const normalized = normalizeCommandChunk(text);
-  if (flushAll) {
-    return { emitted: normalized, remainder: '' };
-  }
-
-  const lines = normalized.split('\n');
-  if (lines.length <= 1) {
-    return { emitted: '', remainder: normalized };
-  }
-
-  return {
-    emitted: lines.slice(0, -1).join('\n'),
-    remainder: lines.at(-1) ?? '',
-  };
-}
-
-function formatRequiredAction(action: YagrRequiredAction): string {
-  const detail = action.detail ? ` ${action.detail}` : '';
-  const blockingLabel = action.blocking === false ? ' follow-up' : '';
-  return `${action.title} [${action.kind}]${action.resumable ? ' resumable' : ''}${blockingLabel}: ${action.message}.${detail}`;
-}
-
-function formatTimestamp(date = new Date()): string {
-  return new Intl.DateTimeFormat('fr-FR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(date);
-}
-
-function truncateText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) {
-    return text;
-  }
-
-  return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
 const YAGR_LOGO = `
@@ -233,33 +68,16 @@ const YAGR_LOGO = `
 
 function EmptyState(): JSX.Element {
   return (
-    <Box flexDirection="column">
-      <Text color="cyan" bold>{YAGR_LOGO}</Text>
-      <Box marginTop={1} />
-      <Text color="cyan" bold>Yagr turns an intent into executable automation.</Text>
-      <Text dimColor>Type your request below.</Text>
-    </Box>
+    <TuiEmptyState
+      logo={YAGR_LOGO}
+      title="Yagr turns an intent into executable automation."
+      subtitle="Type your request below."
+    />
   );
 }
 
 function RequiredActionList({ actions }: { actions: YagrRequiredAction[] }): JSX.Element {
-  const hasBlocking = actions.some((a) => a.blocking !== false);
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      {hasBlocking
-        ? <Text color="red" bold>Run blocked</Text>
-        : <Text color="yellow" bold>Follow-up actions</Text>}
-      <Text dimColor>{hasBlocking ? 'Yagr is waiting for a user action before it can continue cleanly.' : 'These actions are optional but recommended.'}</Text>
-      <Box flexDirection="column" marginTop={1}>
-        {actions.map((action) => (
-          <Box key={action.id} flexDirection="column" marginBottom={1}>
-            <Text color={action.kind === 'permission' ? 'yellow' : action.blocking === false ? 'cyan' : 'red'} bold>{action.title}</Text>
-            <Text>{formatRequiredAction(action)}</Text>
-          </Box>
-        ))}
-      </Box>
-    </Box>
-  );
+  return <TuiRequiredActionList actions={actions} />;
 }
 
 function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, sessions }: InteractiveAppProps) {
@@ -895,9 +713,9 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
       <Text dimColor>{"─".repeat(Math.min(terminalWidth - 2, 80))}</Text>
 
       <Box justifyContent="space-between">
-        <Text color={isRunning ? 'yellow' : stateColor(currentState)}>
-          {isRunning ? `${loadingDots} ${statusText}` : `${idleIcon} ${statusText}`}
-        </Text>
+          <Text color={isRunning ? 'yellow' : stateColor(normalizeTuiState(currentState))}>
+            {isRunning ? `${loadingDots} ${statusText}` : `${idleIcon} ${statusText}`}
+          </Text>
         {contextFillPercent != null ? (
           <Text dimColor={contextFillPercent < 60} color={contextFillPercent >= 80 ? 'red' : contextFillPercent >= 60 ? 'yellow' : undefined}>
             [{buildContextGauge(contextFillPercent)}] {Math.round(contextFillPercent)}%
@@ -933,10 +751,22 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
   );
 }
 
+function normalizeTuiState(state: YagrAgentState): 'idle' | 'running' | 'streaming' | 'compacting' | 'completed' | 'waiting' | 'failed' {
+  switch (state) {
+    case 'waiting_for_permission':
+    case 'waiting_for_input':
+    case 'resumable':
+      return 'waiting';
+    case 'failed_terminal':
+      return 'failed';
+    default:
+      return state as 'idle' | 'running' | 'streaming' | 'compacting' | 'completed';
+  }
+}
+
 export async function runInteractiveGateway(handle: YagrDeepAgentHandle, options: YagrRunOptions): Promise<void> {
   const sessions = new SessionService({
     sessionsDir: getYagrDeepAgentSessionsDir(),
-    memoriesDir: getYagrMemoriesDir(),
   });
   sessions.setCheckpointer(handle.checkpointer);
   const session = sessions.getOrCreateForScope({ kind: 'tui', key: 'default' }, { title: 'Interactive session' });
