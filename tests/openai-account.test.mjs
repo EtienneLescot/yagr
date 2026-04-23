@@ -89,15 +89,27 @@ test('openai-oauth supports device-code headless login', async () => {
 
   process.env.YAGR_CODEX_AUTH_PATH = authPath;
   globalThis.fetch = async (url, init) => {
-    seenRequests.push(String(url));
-    if (String(url).includes('/oauth/device/code')) {
+    const requestUrl = String(url);
+    seenRequests.push(requestUrl);
+
+    if (requestUrl.includes('/api/accounts/deviceauth/token')) {
       return new Response(JSON.stringify({
-        device_code: 'device-code-123',
-        user_code: 'ABCD-EFGH',
-        verification_uri: 'https://auth.openai.com/activate',
-        verification_uri_complete: 'https://auth.openai.com/activate?user_code=ABCD-EFGH',
-        expires_in: 600,
-        interval: 1,
+        authorization_code: 'auth-code-123',
+        code_verifier: 'verifier-123',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (requestUrl.includes('/oauth/token')) {
+      const body = new URLSearchParams(String(init?.body || ''));
+      assert.equal(body.get('grant_type'), 'authorization_code');
+      assert.equal(body.get('code'), 'auth-code-123');
+      assert.equal(body.get('code_verifier'), 'verifier-123');
+      return new Response(JSON.stringify({
+        access_token: makeJwtWithAccountId('acct_device_auth'),
+        refresh_token: 'refresh-device',
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -105,8 +117,10 @@ test('openai-oauth supports device-code headless login', async () => {
     }
 
     return new Response(JSON.stringify({
-      access_token: makeJwtWithAccountId('acct_device_auth'),
-      refresh_token: 'refresh-device',
+      device_auth_id: 'device-auth-123',
+      user_code: 'ABCD-EFGH',
+      interval: '1',
+      expires_in: 600,
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -115,17 +129,20 @@ test('openai-oauth supports device-code headless login', async () => {
 
   try {
     const challenge = await beginCodexDeviceAuth();
-    assert.equal(challenge.deviceCode, 'device-code-123');
+    assert.equal(challenge.deviceAuthId, 'device-auth-123');
     assert.equal(challenge.userCode, 'ABCD-EFGH');
+    assert.equal(challenge.verificationUri, 'https://auth.openai.com/codex/device');
 
     const session = await completeCodexDeviceAuth({
-      deviceCode: challenge.deviceCode,
+      deviceAuthId: challenge.deviceAuthId,
+      userCode: challenge.userCode,
       intervalMs: challenge.intervalMs,
       expiresAt: Date.now() + 5_000,
     });
 
     assert.equal(session.refreshToken, 'refresh-device');
-    assert.equal(seenRequests.some((url) => url.includes('/oauth/device/code')), true);
+    assert.equal(seenRequests.some((url) => url.includes('/api/accounts/deviceauth/usercode')), true);
+    assert.equal(seenRequests.some((url) => url.includes('/api/accounts/deviceauth/token')), true);
     assert.equal(fs.existsSync(authPath), true);
   } finally {
     globalThis.fetch = previousFetch;

@@ -87,8 +87,11 @@ const JWT_ACCOUNT_CLAIM = 'https://api.openai.com/auth';
 // ─── OAuth / PKCE constants ────────────────────────────────────────────────────
 
 const CODEX_ISSUER = 'https://auth.openai.com';
-const CODEX_TOKEN_ENDPOINT = 'https://auth0.openai.com/oauth/token';
-const CODEX_DEVICE_AUTHORIZATION_ENDPOINT = 'https://auth0.openai.com/oauth/device/code';
+const CODEX_TOKEN_ENDPOINT = 'https://auth.openai.com/oauth/token';
+const CODEX_DEVICE_AUTHORIZATION_ENDPOINT = 'https://auth.openai.com/api/accounts/deviceauth/usercode';
+const CODEX_DEVICE_TOKEN_ENDPOINT = 'https://auth.openai.com/api/accounts/deviceauth/token';
+const CODEX_DEVICE_REDIRECT_URI = 'https://auth.openai.com/deviceauth/callback';
+const CODEX_DEVICE_POLLING_SAFETY_MARGIN_MS = 3000;
 const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const CODEX_CALLBACK_PORT = 1455;
 const CODEX_CALLBACK_PATH = '/auth/callback';
@@ -104,7 +107,7 @@ export interface CodexDeviceAuthChallenge {
   verificationUri: string;
   verificationUriComplete?: string;
   userCode: string;
-  deviceCode: string;
+  deviceAuthId: string;
   intervalMs: number;
   expiresAt: number;
 }
@@ -213,54 +216,59 @@ export async function beginCodexAuth(): Promise<CodexAuthChallenge> {
   url.searchParams.set('code_challenge', challenge);
   url.searchParams.set('code_challenge_method', 'S256');
   url.searchParams.set('id_token_add_organizations', 'true');
+  url.searchParams.set('codex_cli_simplified_flow', 'true');
+  url.searchParams.set('originator', 'yagr');
   url.searchParams.set('state', state);
 
   return { authUrl: url.toString(), callbackServerStarted: serverStarted };
 }
 
 export async function beginCodexDeviceAuth(): Promise<CodexDeviceAuthChallenge> {
-  const body = new URLSearchParams();
-  body.set('client_id', CODEX_CLIENT_ID);
-  body.set('scope', CODEX_SCOPES);
-
   const response = await fetch(CODEX_DEVICE_AUTHORIZATION_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: CODEX_CLIENT_ID }),
   });
 
   if (!response.ok) {
     let errorCode: string | undefined;
+    let errorDescription: string | undefined;
     try {
-      errorCode = (await response.json() as { error?: string }).error;
+      const errorPayload = await response.json() as { error?: string; error_description?: string; message?: string };
+      errorCode = errorPayload.error;
+      errorDescription = errorPayload.error_description ?? errorPayload.message;
     } catch {
       // Ignore non-JSON error responses.
     }
-    throw new Error(errorCode
-      ? `OpenAI device login failed: ${errorCode}`
-      : `OpenAI device login failed: HTTP ${response.status}`);
+
+    throw new Error(errorDescription
+      ? `OpenAI device login failed: ${errorDescription}`
+      : errorCode
+        ? `OpenAI device login failed: ${errorCode}`
+        : `OpenAI device login failed: HTTP ${response.status}`);
   }
 
   const device = await response.json() as {
-    device_code?: string;
+    device_auth_id?: string;
     user_code?: string;
-    verification_uri?: string;
-    verification_uri_complete?: string;
+    interval?: string;
     expires_in?: number;
-    interval?: number;
   };
 
-  if (!device.device_code || !device.user_code || !device.verification_uri || !device.expires_in) {
+  if (!device.device_auth_id || !device.user_code) {
     throw new Error('OpenAI device login returned an incomplete challenge.');
   }
 
+  const intervalSeconds = Number.parseInt(device.interval ?? '5', 10);
+  const intervalMs = Math.max(Number.isFinite(intervalSeconds) ? intervalSeconds : 5, 1) * 1000;
+
   return {
-    verificationUri: device.verification_uri,
-    verificationUriComplete: device.verification_uri_complete,
+    verificationUri: `${CODEX_ISSUER}/codex/device`,
+    verificationUriComplete: undefined,
     userCode: device.user_code,
-    deviceCode: device.device_code,
-    intervalMs: Math.max(1000, (device.interval ?? 5) * 1000),
-    expiresAt: Date.now() + device.expires_in * 1000,
+    deviceAuthId: device.device_auth_id,
+    intervalMs,
+    expiresAt: Date.now() + ((device.expires_in ?? 600) * 1000),
   };
 }
 
@@ -398,26 +406,50 @@ export async function completeCodexAuth(input = ''): Promise<OpenAiAccountSessio
 }
 
 export async function completeCodexDeviceAuth(challenge: {
-  deviceCode: string;
+  deviceAuthId: string;
+  userCode: string;
   intervalMs: number;
   expiresAt: number;
 }): Promise<OpenAiAccountSession> {
-  let intervalMs = Math.max(1000, challenge.intervalMs);
+  const intervalMs = Math.max(1000, challenge.intervalMs);
 
   while (Date.now() < challenge.expiresAt) {
-    const body = new URLSearchParams();
-    body.set('grant_type', 'urn:ietf:params:oauth:grant-type:device_code');
-    body.set('device_code', challenge.deviceCode);
-    body.set('client_id', CODEX_CLIENT_ID);
-
-    const response = await fetch(CODEX_TOKEN_ENDPOINT, {
+    const response = await fetch(CODEX_DEVICE_TOKEN_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        device_auth_id: challenge.deviceAuthId,
+        user_code: challenge.userCode,
+      }),
     });
 
     if (response.ok) {
-      const tokens = await response.json() as {
+      const deviceToken = await response.json() as {
+        authorization_code?: string;
+        code_verifier?: string;
+      };
+      if (!deviceToken.authorization_code || !deviceToken.code_verifier) {
+        throw new Error('OpenAI device login returned an incomplete authorization result.');
+      }
+
+      const body = new URLSearchParams();
+      body.set('grant_type', 'authorization_code');
+      body.set('code', deviceToken.authorization_code);
+      body.set('redirect_uri', CODEX_DEVICE_REDIRECT_URI);
+      body.set('client_id', CODEX_CLIENT_ID);
+      body.set('code_verifier', deviceToken.code_verifier);
+
+      const tokenResponse = await fetch(CODEX_TOKEN_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+
+      if (!tokenResponse.ok) {
+        throw new Error(`OpenAI token exchange failed: HTTP ${tokenResponse.status}`);
+      }
+
+      const tokens = await tokenResponse.json() as {
         access_token?: string;
         refresh_token?: string;
         id_token?: string;
@@ -434,27 +466,17 @@ export async function completeCodexDeviceAuth(challenge: {
       });
     }
 
-    let payload: { error?: string; error_description?: string } | undefined;
-    try {
-      payload = await response.json() as { error?: string; error_description?: string };
-    } catch {
-      payload = undefined;
+    if (response.status !== 403 && response.status !== 404) {
+      let payload: { error?: string; error_description?: string; message?: string } | undefined;
+      try {
+        payload = await response.json() as { error?: string; error_description?: string; message?: string };
+      } catch {
+        payload = undefined;
+      }
+      throw new Error(payload?.error_description || payload?.message || payload?.error || `OpenAI device flow failed: HTTP ${response.status}`);
     }
 
-    const errorCode = payload?.error;
-    if (errorCode === 'authorization_pending') {
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
-      continue;
-    }
-    if (errorCode === 'slow_down') {
-      intervalMs += 5000;
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
-      continue;
-    }
-    if (errorCode === 'expired_token') {
-      throw new Error('OpenAI device code expired. Retry setup.');
-    }
-    throw new Error(payload?.error_description || (errorCode ? `OpenAI device flow error: ${errorCode}` : `OpenAI device flow failed: HTTP ${response.status}`));
+    await new Promise((resolve) => setTimeout(resolve, intervalMs + CODEX_DEVICE_POLLING_SAFETY_MARGIN_MS));
   }
 
   throw new Error('OpenAI device code expired. Retry setup.');

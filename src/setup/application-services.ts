@@ -251,12 +251,17 @@ export class YagrSetupApplicationService {
 
   async completeAccountAuth(provider: YagrModelProvider, input: string, state?: string) {
     if (provider === 'openai-oauth') {
-      const parsed = state ? JSON.parse(state) as { method?: 'browser' | 'device'; deviceCode?: string; intervalMs?: number; expiresAt?: number } : undefined;
+      const parsed = state ? JSON.parse(state) as { method?: 'browser' | 'device'; deviceAuthId?: string; userCode?: string; intervalMs?: number; expiresAt?: number } : undefined;
       if (parsed?.method === 'device') {
-        if (!parsed.deviceCode || !parsed.intervalMs || !parsed.expiresAt) {
+        if (!parsed.deviceAuthId || !parsed.userCode || !parsed.intervalMs || !parsed.expiresAt) {
           return { ok: false, error: 'OpenAI device flow state is missing.' };
         }
-        await completeCodexDeviceAuth({ deviceCode: parsed.deviceCode, intervalMs: parsed.intervalMs, expiresAt: parsed.expiresAt });
+        await completeCodexDeviceAuth({
+          deviceAuthId: parsed.deviceAuthId,
+          userCode: parsed.userCode,
+          intervalMs: parsed.intervalMs,
+          expiresAt: parsed.expiresAt,
+        });
       } else {
         await completeCodexAuth(input);
       }
