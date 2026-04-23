@@ -19,7 +19,7 @@ import {
 import { SlashCommandService } from '@yagr/conversation-service';
 import { SessionService } from '@yagr/session-service';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
-import { getYagrDeepAgentSessionsDir } from '../config/yagr-home.js';
+import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-home.js';
 import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import {
@@ -767,6 +767,7 @@ function normalizeTuiState(state: YagrAgentState): 'idle' | 'running' | 'streami
 export async function runInteractiveGateway(handle: YagrDeepAgentHandle, options: YagrRunOptions): Promise<void> {
   const sessions = new SessionService({
     sessionsDir: getYagrDeepAgentSessionsDir(),
+    memoriesDir: getYagrMemoriesDir(),
   });
   sessions.setCheckpointer(handle.checkpointer);
   const session = sessions.getOrCreateForScope({ kind: 'tui', key: 'default' }, { title: 'Interactive session' });

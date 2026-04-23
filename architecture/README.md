@@ -1,67 +1,44 @@
 # Architecture Dossier
 
-Ce dossier est le point d'entree de la documentation architecturale du repo.
+This folder documents the current Yagr platform architecture.
 
-Il est volontairement scinde en deux zones:
+The repository is no longer best described as a single agent app with helper modules.
 
-- `current/`: documentation durable de l'architecture actuelle du codebase
-- `target/`: documentation ephemere reduite au backlog restant
+The active architectural model is now:
 
-## Regles de maintenance
+- **core runtime packages**
+- **plugin packages**
+- **surface packages**
+- **app compositions**
 
-### `current/`
+## Folders
 
-Cette partie est durable.
+- `current/`: factual documentation of what exists in the repo now
+- `target/`: remaining forward-looking direction where the work is still incomplete
 
-Elle doit:
-
-- decrire ce qui existe vraiment dans le repo
-- etre mise a jour a chaque changement structurel important
-- rester factuelle
-- contenir des graphes et des cartes de circulation utiles
-
-Elle ne doit pas:
-
-- decrire un ideal futur comme s'il existait deja
-- cacher les zones floues ou les couplages actuels
-
-### `target/`
-
-Cette partie est ephemere.
-
-Elle doit:
-
-- contenir uniquement le backlog restant
-- rester minimale et rapidement supprimable
-
-Elle doit etre reduite puis supprimee au fur et a mesure:
-
-- quand une cible devient realite, elle est migree dans `current/`
-- quand un chantier n'est plus pertinent, il est retire
-- quand toute la convergence est terminee, `target/` peut disparaitre
-
-## Structure
-
-```text
-architecture/
-├── README.md
-├── current/
-│   ├── README.md
-│   ├── system-overview.md   ← vue d'ensemble + doctrine d'outillage
-│   ├── module-map.md
-│   ├── runtime-flows.md
-│   ├── n8n-local.md         ← bootstrap n8n + Cloudflare Tunnel
-│   └── tui-ux.md
-└── target/
-    ├── backlog.md           ← travail restant
-    └── yagr-engine-architecture.md  ← direction cible Yagr Engine
-```
-
-## Usage attendu
-
-Ordre de lecture recommande:
+## Recommended reading
 
 1. `current/system-overview.md`
 2. `current/module-map.md`
-3. `current/runtime-flows.md`
-4. `target/backlog.md`
+3. `target/yagr-engine-architecture.md`
+
+## Current doctrine
+
+Yagr core should own:
+
+- deepagent bootstrap
+- providers
+- sessions/checkpoints
+- runtime events
+- stream adaptation
+- conversation behavior
+- reusable WebUI/TUI surfaces
+
+Plugins should own:
+
+- manager-specific integrations
+- domain-specific setup or operational behavior
+
+Apps should own:
+
+- final composition and user-facing packaging

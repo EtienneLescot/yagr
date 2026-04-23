@@ -59,6 +59,15 @@ const PROVIDER_DEFAULTS: Record<RuntimeProvider, { model: string; baseUrl?: stri
   },
 };
 
+const PROVIDER_LABELS: Record<RuntimeProvider, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  google: 'Google Gemini',
+  mistral: 'Mistral',
+  openrouter: 'OpenRouter',
+  'openai-compatible': 'OpenAI Compatible',
+};
+
 export function normalizeProviderId(provider?: string): RuntimeProvider | undefined {
   if (!provider) {
     return undefined;
@@ -83,6 +92,26 @@ export function resolveProviderRuntimeConfig(config: ProviderRuntimeConfig = {})
     baseUrl: config.baseUrl?.trim() || defaults.baseUrl,
     temperature: config.temperature ?? 0,
   };
+}
+
+export function listRuntimeProviders(): RuntimeProvider[] {
+  return Object.keys(PROVIDER_DEFAULTS) as RuntimeProvider[];
+}
+
+export function getRuntimeProviderLabel(provider: RuntimeProvider): string {
+  return PROVIDER_LABELS[provider];
+}
+
+export function getDefaultModelForProvider(provider: RuntimeProvider): string {
+  return PROVIDER_DEFAULTS[provider].model;
+}
+
+export function getDefaultBaseUrlForProvider(provider: RuntimeProvider): string | undefined {
+  return PROVIDER_DEFAULTS[provider].baseUrl;
+}
+
+export function providerRequiresApiKey(provider: RuntimeProvider): boolean {
+  return PROVIDER_DEFAULTS[provider].envKeys.length > 0;
 }
 
 export function createLangChainChatModel(config: ProviderRuntimeConfig = {}): BaseChatModel {

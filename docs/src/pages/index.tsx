@@ -9,47 +9,47 @@ import Heading from '@theme/Heading';
 import styles from './index.module.css';
 
 const productPillars = [
-  'Intent to workflow',
-  'Workflows as memory',
-  'n8n-native execution',
+  'Core runtime',
+  'Shared surfaces',
+  'Plugins and apps',
 ];
 
 const proofPoints = [
   {
     icon: '🧭',
     value: 'Intent first',
-    label: 'Natural language becomes automation',
-    detail: 'Yagr is meant to turn user intent into real workflows, not just provide a nicer shell around existing commands.',
+    label: 'Runtime before product-specific glue',
+    detail: 'Yagr is becoming a reusable runtime platform instead of remaining only a single assembled app.',
   },
   {
     icon: '🧩',
-    value: 'Yagrs compose',
-    label: 'Use the node ecosystem as a tool palette',
-    detail: 'Yagr composes existing nodes into larger wholes instead of rebuilding integrations from generic HTTP glue every time.',
+    value: 'Facades matter',
+    label: 'Consumers should depend on facades, not internals',
+    detail: 'Products such as Axcut should prefer @yagr/runtime and @yagr/surfaces instead of many tiny internal packages.',
   },
   {
     icon: '🧠',
-    value: 'Workflows remember',
-    label: 'Generated automations are durable memory',
-    detail: 'A workflow is persisted intent that Yagr can later inspect, explain, modify, and extend instead of starting from zero.',
+    value: 'Plugins isolate domains',
+    label: 'Manager logic should not define the core',
+    detail: 'The platform is moving manager-specific behavior behind plugins such as @yagr/plugin-n8n-manager.',
   },
   {
     icon: '🏠',
-    value: 'Stable home',
-    label: 'State lives outside arbitrary repos',
-    detail: 'Yagr uses a dedicated home directory so setup, linked surfaces, and runtime state do not leak into random working folders.',
+    value: 'Sessions stay durable',
+    label: 'Session/checkpoint/runtime state remain first-class',
+    detail: 'The platform split keeps sessions, checkpoints, stream state, and events reusable across products and surfaces.',
   },
   {
     icon: '💬',
-    value: 'Gateways stay thin',
-    label: 'Telegram and TUI are surfaces, not the brain',
-    detail: 'The agent logic lives above the gateways so Yagr can be reached through Telegram, local UI, and CLI without moving the brain into the surface.',
+    value: 'Surfaces stay thin',
+    label: 'WebUI and TUI are reusable rendering layers',
+    detail: 'The rendering logic is being extracted into shared surface packages so apps can compose them instead of duplicating them.',
   },
   {
     icon: '⚙️',
-    value: 'n8n grounded',
-    label: 'Built on real workflow execution',
-    detail: 'Yagr uses the n8n-as-code sync and schema foundation so generated automations stay grounded in real n8n capabilities.',
+    value: 'Apps compose',
+    label: 'The current agent app is now one consumer of the platform',
+    detail: 'The repository is shifting from one app with helpers to a platform with apps, facades, and plugins layered above it.',
   },
 ];
 
