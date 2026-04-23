@@ -152,44 +152,7 @@ export function collectManagedRuntimes(homes, deps = {}) {
 
 export function stopManagedRuntimes(runtimes, deps = {}) {
   for (const runtime of runtimes) {
-    if (runtime.strategy === 'direct') {
-      stopManagedDirectRuntime(runtime, deps);
-      continue;
-    }
-
     stopManagedDockerRuntime(runtime, deps);
-  }
-}
-
-export function stopManagedDirectRuntime(runtime, deps = {}) {
-  const killed = new Set();
-  const runtimePid = Number.isInteger(runtime.pid) && runtime.pid > 0 ? runtime.pid : undefined;
-  if (runtimePid) {
-    killProcessTree(runtimePid, 'SIGTERM', deps);
-    killed.add(runtimePid);
-  }
-
-  if (killed.size > 0) {
-    sleep(500, deps);
-  }
-
-  const remainingPids = new Set();
-  if (runtimePid && isPidAlive(runtimePid, deps)) {
-    remainingPids.add(runtimePid);
-  }
-  if (Number.isInteger(runtime.port) && runtime.port > 0) {
-    for (const pid of getListeningPids(runtime.port, deps)) {
-      remainingPids.add(pid);
-    }
-  }
-
-  for (const pid of remainingPids) {
-    killProcessTree(pid, 'SIGKILL', deps);
-    killed.add(pid);
-  }
-
-  if (killed.size > 0) {
-    process.stdout.write(`stopped managed direct n8n: ${[...killed].join(', ')}\n`);
   }
 }
 
@@ -259,7 +222,7 @@ export function getComposeProjectName(rootDir) {
 }
 
 function resolveRuntimeStrategy(state, hasComposeFile, dockerContainerIds) {
-  if (state?.strategy === 'direct' || state?.strategy === 'docker') {
+  if (state?.strategy === 'docker') {
     return state.strategy;
   }
 
@@ -267,7 +230,7 @@ function resolveRuntimeStrategy(state, hasComposeFile, dockerContainerIds) {
     return 'docker';
   }
 
-  return 'direct';
+  return 'docker';
 }
 
 function resolveYagrHomeDir({ repoRoot, env, platform, homeDir }) {

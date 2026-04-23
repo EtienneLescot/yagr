@@ -12,7 +12,7 @@ import { getDefaultBaseUrlForProvider } from '../../dist/llm/provider-registry.j
  *   host?: string,
  *   apiKey?: string,
  *   projectId?: string,
- *   instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud',
+ *   instanceProfile?: 'yagr-managed-docker' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud',
  *   instanceIdentifier?: string,
  * }} TestN8nRuntime */
 

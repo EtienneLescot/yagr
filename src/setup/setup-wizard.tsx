@@ -1566,7 +1566,7 @@ function SetupWizard({ callbacks, options, onDone }: {
               options={['Open n8n in the browser', 'I will open it myself'] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
-              getHint={(v) => v.startsWith('Open') ? 'recommended' : phase.url}
+              getHint={(v) => v.startsWith('Open') ? undefined : phase.url}
               maxVisibleRows={getListViewportHeight(terminalRows, 12)}
               maxLineWidth={listLineWidth}
             />
@@ -1764,9 +1764,7 @@ function SetupWizard({ callbacks, options, onDone }: {
               options={authOptions}
               cursor={phase.cursor}
               getLabel={(v) => v}
-              getHint={(v) => {
-                return (v.startsWith('Continue') || v.startsWith('Paste')) ? 'recommended' : undefined;
-              }}
+              getHint={() => undefined}
               maxVisibleRows={getListViewportHeight(terminalRows, 11)}
               maxLineWidth={listLineWidth}
             />
@@ -1784,7 +1782,7 @@ function SetupWizard({ callbacks, options, onDone }: {
               options={['Use existing authentication', 'Renew authentication'] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
-              getHint={(v) => v.startsWith('Use') ? 'recommended' : undefined}
+              getHint={(v) => v.startsWith('Use') ? undefined : undefined}
               maxVisibleRows={getListViewportHeight(terminalRows, 11)}
               maxLineWidth={listLineWidth}
             />

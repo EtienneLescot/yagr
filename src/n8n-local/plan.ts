@@ -40,7 +40,7 @@ export function createN8nBootstrapPlan(input: {
 
   const { assessment } = input;
 
-  if (assessment.recommendedStrategy === 'docker' || assessment.recommendedStrategy === 'direct') {
+  if (assessment.recommendedStrategy === 'docker') {
     return {
       target: input.target,
       runtimeStrategy: assessment.recommendedStrategy,
