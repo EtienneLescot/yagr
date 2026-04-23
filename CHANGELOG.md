@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.30](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.29...yagr@v0.2.30) (2026-04-23)
+
+
+### Features
+
+* **openai-oauth:** add headless device-code login and fix build errors ([108596e](https://github.com/EtienneLescot/yagr/commit/108596ea87233f663b2acb7bfabfae7debdbe046))
+* **openai-oauth:** implement updated device-code authentication flow ([2ae5b6e](https://github.com/EtienneLescot/yagr/commit/2ae5b6eecfd9c26391fe7b9b4ac3224d925bb9b4))
+* **setup:** implement draft persistence for LLM base URL during wizard flow ([ddbc107](https://github.com/EtienneLescot/yagr/commit/ddbc10774e999c664026b25180516ef2063e8a1d))
+
+
+### Bug Fixes
+
+* **llm:** update minimax default base url ([6a583b2](https://github.com/EtienneLescot/yagr/commit/6a583b232c9d5cb55c1f607b47599387191a2e97))
+* **minimax:** probe live models during discovery ([b7c1609](https://github.com/EtienneLescot/yagr/commit/b7c1609884b5e33c60083c812b996c92fc75726c))
+* **minimax:** respect selected endpoint for model discovery ([9e32f8a](https://github.com/EtienneLescot/yagr/commit/9e32f8abee565bcb49fcbe267348e7175b287537))
+* **setup-wizard:** support MiniMax provider selection flow ([c2747d2](https://github.com/EtienneLescot/yagr/commit/c2747d2ee169358510905ab3b54628dcf01e5068))
+
 ## [0.2.29](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.28...yagr@v0.2.29) (2026-04-21)
 
 
