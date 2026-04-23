@@ -38,6 +38,10 @@ Thumbs.db
 # --- Build artifacts ---
 dist/
 packages/*/dist/
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+src/**/*.d.ts.map
 *.tsbuildinfo
 
 
