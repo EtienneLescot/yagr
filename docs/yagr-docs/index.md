@@ -1,53 +1,89 @@
 ---
 title: Yagr Overview
-description: "Yagr is your autonomous agent, grounded in reliable infrastructure instead of ephemeral scripts and blind API calls."
+description: "Yagr is evolving into a reusable agent runtime platform with core packages, facades, plugins, and apps."
 slug: /
 ---
 
 # Yagr
 
-Yagr is the automation agent layer of this repository.
+Yagr is no longer only a single automation agent product.
 
-The product ambition is not just to wrap setup and runtime concerns more nicely. The ambition is to turn natural language into live automations on top of infrastructure that remains inspectable and reliable.
+It is becoming a broader platform with three layers:
 
-Yagr is designed to sit above the execution layer while staying centered on n8n. The user story stays the same: describe the automation you want, then let Yagr build, inspect, evolve, and operate it.
+- **core runtime packages**
+- **plugins**
+- **apps and surfaces**
 
-## Vision
+The repository still ships the `@yagr/agent` app, but the architecture is now deliberately split so other products can reuse Yagr without importing the whole app as a monolith.
 
-> (Y)our (A)gent (G)rounded in (R)eality
+## Core idea
 
-## Why another autonomous agent?
+Yagr should provide reusable primitives for:
 
-Most AI agents today execute tasks by writing ephemeral scripts or firing blind API calls. It works once, but it creates a black box that is difficult to audit, difficult to secure, and fragile over time.
+- deep agent bootstrap
+- provider/model runtime
+- sessions and checkpoints
+- runtime events and stream adaptation
+- conversation behavior
+- shared WebUI/TUI surface primitives
 
-Yagr takes the opposite path. It is a general-purpose autonomous agent whose execution layer is grounded in deterministic workflows.
+Then product- or domain-specific behavior belongs in plugins.
 
-That is why, when Yagr acts, it should architect, validate, and deploy a real workflow underneath the conversation rather than disappearing into a temporary script.
+## Current architecture direction
 
-That implies four design choices:
+The platform now has two consumption levels:
 
-- Yagr is the agent brain. It should not itself be implemented as a monolithic n8n workflow.
-- n8n is the current orchestrator, not the product identity.
-- gateways such as Telegram, TUI, CLI, or Web are just surfaces into the same agent.
-- workflows are durable memory and muscle: persisted intent that Yagr can later revisit, explain, modify, extend, and execute reliably.
+### Internal granular packages
 
-## What Yagr does today
+These are useful inside Yagr itself for modularity and testing.
 
-- Configures the current orchestrator connection once through `yagr onboard`
-- Stores Yagr state in its own home instead of arbitrary repo roots
-- Persists model and gateway credentials through setup instead of shell drift
-- Starts the local runtime through the Web UI or the TUI with `yagr start`
-- Builds on the n8n-as-code ontology and workflow tooling instead of re-inventing that layer
+Examples:
 
-## Product map
+- `@yagr/deepagent-bootstrap`
+- `@yagr/provider-runtime`
+- `@yagr/session-service`
+- `@yagr/runtime-events`
+- `@yagr/stream-adapter`
 
-This repository contains the Yagr agent product. The n8n-as-code workflow engineering tools it builds on are a separate standalone project.
+### Product-facing facades
 
-- **Yagr**: the automation agent product. Its docs live under `/docs`.
-- **n8n-as-code**: the workflow GitOps and agent skill product available at [n8nascode.dev](https://n8nascode.dev).
+These are the preferred entrypoints for downstream products.
+
+- `@yagr/runtime`
+- `@yagr/surfaces`
+
+The facades exist so downstream products do not need to depend on many tiny internal packages directly.
+
+## Plugins
+
+Plugins are where Yagr-specific integrations should increasingly live.
+
+Examples:
+
+- `@yagr/plugin-runtime`
+- `@yagr/plugin-n8n-manager`
+
+That means manager-specific logic should progressively move behind plugins instead of staying in the core runtime.
+
+## What Yagr still does today
+
+The `@yagr/agent` app still offers:
+
+- onboarding and runtime setup
+- TUI and WebUI surfaces
+- provider setup
+- sessioned deepagent execution
+- automation-oriented integrations
+
+But the architectural goal is now clear:
+
+- **Yagr core** should be reusable
+- **plugins** should carry domain-specific concerns
+- **apps** should compose core + plugins into final products
 
 ## Start here
 
-- Go to [Getting Started](/docs/getting-started)
-- See the [command reference](/docs/reference/commands)
-- Jump to [n8n-as-code](https://n8nascode.dev) if what you want is direct workflow GitOps and engineering tooling rather than the Yagr agent product
+- [Getting Started](/docs/getting-started)
+- [Usage](/docs/usage)
+- [Commands](/docs/reference/commands)
+- [Architecture](https://github.com/EtienneLescot/yagr/tree/main/architecture)

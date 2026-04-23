@@ -1,5 +1,11 @@
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
 import {
+  extractSessionMemory,
+  FileSessionMemoryAdapter,
+  type SessionMemoryAdapter,
+  type SessionMessage,
+} from '@yagr/session-memory';
+import {
   buildDeepAgentSessionConfig,
   CheckpointManager,
   DeepAgentSessionStore,
@@ -14,6 +20,8 @@ import { WebUiSessionRegistry, type SessionSummary, type WebUiSession } from '@y
 export interface SessionServiceOptions {
   sessionsDir: string;
   webUiSessionsDir?: string;
+  memoryAdapter?: SessionMemoryAdapter;
+  memoriesDir?: string;
 }
 
 export interface RestoreResult {
@@ -30,6 +38,7 @@ export interface SaveCheckpointOptions {
 export class SessionService {
   private readonly store: DeepAgentSessionStore;
   private readonly webUiRegistry?: WebUiSessionRegistry;
+  private readonly memoryAdapter?: SessionMemoryAdapter;
   private checkpointer?: BaseCheckpointSaver;
   private checkpointManager?: CheckpointManager;
   private pendingCheckpointInitializer?: () => Promise<BaseCheckpointSaver>;
@@ -37,6 +46,7 @@ export class SessionService {
   constructor(options: SessionServiceOptions) {
     this.store = new DeepAgentSessionStore(options.sessionsDir);
     this.webUiRegistry = options.webUiSessionsDir ? new WebUiSessionRegistry(options.webUiSessionsDir) : undefined;
+    this.memoryAdapter = options.memoryAdapter ?? (options.memoriesDir ? new FileSessionMemoryAdapter(options.memoriesDir) : undefined);
   }
 
   setCheckpointer(checkpointer: BaseCheckpointSaver): void {
@@ -136,6 +146,7 @@ export class SessionService {
     }
     this.store.delete(id);
     this.webUiRegistry?.delete(id);
+    this.memoryAdapter?.delete(id);
     if (this.checkpointer) {
       await this.store.deleteThread(this.checkpointer, id);
     }
@@ -196,8 +207,15 @@ export class SessionService {
     return this.webUiRegistry?.get(sessionId);
   }
 
-  persistMemory(_sessionId: string, _title: string, _createdAt: string): void {
-    // Optional higher-level memory persistence can be layered on later.
+  persistMemory(sessionId: string, title: string, createdAt: string, messages: readonly SessionMessage[] = []): void {
+    if (!this.memoryAdapter) {
+      return;
+    }
+    try {
+      this.memoryAdapter.persist(extractSessionMemory(sessionId, title, createdAt, messages));
+    } catch {
+      // Best-effort only.
+    }
   }
 
   private sessionsDir(): string {
@@ -211,6 +229,8 @@ export {
   type CheckpointMetadata,
   type DeepAgentSessionRecord,
   type DeepAgentSessionScope,
+  type SessionMessage,
+  type SessionMemoryAdapter,
   type SessionSummary,
   type WebUiSession,
 };

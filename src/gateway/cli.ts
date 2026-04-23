@@ -3,7 +3,7 @@ import { extractLastAiMessage } from './langgraph-events.js';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
 import type { YagrRunOptions } from '../types.js';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-home.js';
-import { SessionService } from '../session/index.js';
+import { SessionService } from '@yagr/session-service';
 
 export interface CliGatewayOptions extends YagrRunOptions {
   prompt?: string;

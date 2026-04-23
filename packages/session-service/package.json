@@ -11,10 +11,12 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "node --input-type=module --eval \"(await import('node:fs')).rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@langchain/langgraph-checkpoint": "^1.0.0",
+    "@yagr/session-memory": "file:../session-memory",
     "@yagr/session-checkpoint": "file:../session-checkpoint",
     "@yagr/webui-session-registry": "file:../webui-session-registry"
   }

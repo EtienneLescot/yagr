@@ -9,8 +9,8 @@ import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import type { YagrUserVisibleUpdate } from '../runtime/user-visible-updates.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
-import { SessionService, deriveSessionTitle } from '../session/index.js';
-import { SlashCommandService } from '../conversation/index.js';
+import { SessionService, deriveSessionTitle } from '@yagr/session-service';
+import { SlashCommandService } from '@yagr/conversation-service';
 import {
   type WorkflowEmbed,
   buildWorkflowBannerHtml,
