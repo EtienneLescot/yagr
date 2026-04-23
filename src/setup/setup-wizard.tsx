@@ -1479,7 +1479,7 @@ function SetupWizard({ callbacks, options, onDone }: {
         return (
           <Box flexDirection="column">
             <FieldLabel label="n8n API key" />
-            <Text dimColor>  Dans n8n: Settings → n8n API → Create API key.</Text>
+            <Text dimColor>  In n8n: Settings → n8n API → Create API key.</Text>
             <Box marginLeft={2}>
               <WizardTextInput
                 value={textValue}
@@ -1497,10 +1497,10 @@ function SetupWizard({ callbacks, options, onDone }: {
       case 'n8n-instance-location':
         return (
           <Box flexDirection="column">
-            <FieldLabel label="S'agit-il d'une instance cloud ?" />
-            <Text dimColor>  Choisissez cloud si votre n8n est heberge a distance et accessible publiquement.</Text>
+            <FieldLabel label="Is this a cloud instance?" />
+            <Text dimColor>  Select cloud if your n8n is hosted remotely and publicly accessible.</Text>
             <SelectList
-              options={['Oui, instance cloud', 'Non, instance locale'] as const}
+              options={['Yes, cloud instance', 'No, local instance'] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
               maxVisibleRows={getListViewportHeight(terminalRows, 12)}
@@ -1513,15 +1513,15 @@ function SetupWizard({ callbacks, options, onDone }: {
       case 'n8n-local-runtime':
         return (
           <Box flexDirection="column">
-            <FieldLabel label="Savez-vous si cette instance locale n8n tourne dans Docker ?" />
+            <FieldLabel label="Do you know if this local n8n instance runs in Docker?" />
             <SelectList
-              options={['Oui', 'Non', 'Je ne sais pas'] as const}
+              options={['Yes', 'No', 'I don\'t know'] as const}
               cursor={phase.cursor}
               getLabel={(v) => v}
               getHint={(v) => {
-                if (v === 'Oui') return 'Choisissez cette option si votre n8n a ete lance via Docker';
-                if (v === 'Non') return 'Choisissez cette option si votre n8n tourne directement sur votre machine';
-                return 'Par defaut, Yagr traitera ce cas comme Non';
+                if (v === 'Yes') return 'Select this option if your n8n was started via Docker';
+                if (v === 'No') return 'Select this option if your n8n runs directly on your machine';
+                return 'By default, Yagr will treat this as No';
               }}
               maxVisibleRows={getListViewportHeight(terminalRows, 12)}
               maxLineWidth={listLineWidth}
