@@ -2,6 +2,9 @@
   "name": "@yagr/agent",
   "version": "0.2.30",
   "description": "Autonomous automation agent grounded in deterministic workflow infrastructure",
+  "workspaces": [
+    "packages/*"
+  ],
   "type": "module",
   "bin": {
     "yagr": "dist/cli.js"
