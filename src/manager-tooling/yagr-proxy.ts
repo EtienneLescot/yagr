@@ -5,7 +5,6 @@
  * It is registered dynamically when the n8n engine is active.
  */
 
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DynamicStructuredTool } from '@langchain/core/tools';
@@ -13,7 +12,8 @@ import { z } from 'zod';
 import { getYagrN8nWorkspaceDir, getYagrPaths } from '../config/yagr-home.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
-import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
+import { resolvePackageManagerCommand } from '../system/package-manager.js';
+import { spawnCommand } from '../system/process.js';
 import { emitToolEvent, type ToolExecutionObserver } from '../tools/observer.js';
 import {
   buildRelayInfo,
@@ -47,18 +47,17 @@ function resolveN8nacPackage(): string {
 async function runN8nacCommand(args: string[], cwd: string): Promise<RunResult> {
   return new Promise((resolve) => {
     const n8nacPackage = resolveN8nacPackage();
-    const child = spawn(resolvePackageManagerCommand('npx'), ['--yes', n8nacPackage, ...args], {
+    const child = spawnCommand(resolvePackageManagerCommand('npx'), ['--yes', n8nacPackage, ...args], {
       cwd,
       env: { ...process.env },
       stdio: 'pipe',
-      ...resolvePackageManagerSpawnOptions(),
     });
 
     let stdout = '';
     let stderr = '';
 
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
     child.on('error', (err) => resolve({ stdout, stderr: err.message, exitCode: 1 }));
     child.on('close', (code) => resolve({ stdout, stderr, exitCode: code ?? 1 }));
   });

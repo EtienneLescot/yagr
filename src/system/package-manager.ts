@@ -1,5 +1,7 @@
+import { resolveExecutableCommand } from './process.js';
+
 export function resolvePackageManagerCommand(command: 'npm' | 'npx', platform: NodeJS.Platform = process.platform): string {
-  return platform === 'win32' ? `${command}.cmd` : command;
+  return resolveExecutableCommand(command, platform);
 }
 
 export function resolvePackageManagerSpawnOptions(platform: NodeJS.Platform = process.platform): {

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
-import { resolvePackageManagerCommand, resolvePackageManagerSpawnOptions } from '../system/package-manager.js';
+import { resolvePackageManagerCommand } from '../system/package-manager.js';
+import { isPidAlive, killProcessTree, spawnDetached } from '../system/process.js';
 import {
   ensureGitHubCopilotSession,
   fetchGitHubCopilotModels,
@@ -415,10 +415,8 @@ function startManagedProxy(provider: YagrModelProvider, baseUrl: string): ProxyR
   const logPath = path.join(logDir, `${provider}.log`);
   const logFd = fs.openSync(logPath, 'a');
   const args = ['--yes', '--package', managed.packageName, managed.executable, ...(managed.args ?? [])];
-  const child = spawn(resolvePackageManagerCommand('npx'), args, {
-    detached: true,
+  const child = spawnDetached(resolvePackageManagerCommand('npx'), args, {
     stdio: ['ignore', logFd, logFd],
-    ...resolvePackageManagerSpawnOptions(),
     env: process.env,
   });
 
@@ -476,7 +474,7 @@ export function stopProviderProxy(provider: YagrModelProvider): ProxyRuntimeStat
   const currentState = getRuntimeState();
   const entry = currentState.providers?.[provider];
   if (entry?.pid && isProcessRunning(entry.pid)) {
-    process.kill(entry.pid, 'SIGTERM');
+    void killProcessTree(entry.pid);
   }
 
   updateRuntimeState((state) => ({
@@ -548,12 +546,7 @@ function updateRuntimeState(updater: (current: ProxyRuntimeState) => ProxyRuntim
 }
 
 function isProcessRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+  return isPidAlive(pid);
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

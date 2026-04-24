@@ -11,7 +11,6 @@ import { ensureYagrHomeDir, getYagrN8nWorkspaceDir, getYagrPaths } from './yagr-
 
 export type YagrN8nInstanceProfile =
   | 'yagr-managed-docker'
-  | 'yagr-managed-direct'
   | 'custom-local-docker'
   | 'custom-local-direct'
   | 'custom-cloud';

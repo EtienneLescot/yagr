@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { emitToolEvent, type ToolExecutionObserver } from './observer.js';
 import { getYagrHomeDir } from '../config/yagr-home.js';
 import type { YagrShellCommandsConfig } from '../config/yagr-config-service.js';
+import { killProcessTree, spawnShellCommand } from '../system/process.js';
 
 const MAX_OUTPUT_SIZE = 20_000; // characters
 
@@ -77,7 +77,7 @@ export function createRunScriptTool(observer?: ToolExecutionObserver, shellComma
       });
 
       return new Promise((resolve) => {
-        const child = spawn('sh', ['-c', command], {
+        const child = spawnShellCommand(command, {
           cwd: workingDir,
           stdio: 'pipe',
           env: { ...process.env },
@@ -107,13 +107,13 @@ export function createRunScriptTool(observer?: ToolExecutionObserver, shellComma
           });
         };
 
-        child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-        child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+        child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+        child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
 
         const timer = setTimeout(() => {
           timedOut = true;
-          child.kill('SIGTERM');
-          setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* already gone */ } }, 2_000);
+          void killProcessTree(child.pid);
+          setTimeout(() => { void killProcessTree(child.pid, { force: true }); }, 2_000);
           finish(null);
         }, timeoutMs);
 

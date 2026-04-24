@@ -1,9 +1,8 @@
-import { execFile } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { promisify } from 'node:util';
 import { DEFAULT_N8N_PORT, inspectLocalN8nBootstrap } from './detect.js';
 import { getActiveTunnelState } from './n8n-tunnel.js';
+import { execCommand } from '../system/process.js';
 import {
   buildManagedN8nState,
   ensureManagedN8nDirs,
@@ -13,7 +12,6 @@ import {
   type ManagedN8nInstanceState,
 } from './state.js';
 
-const execFileAsync = promisify(execFile);
 const DEFAULT_N8N_IMAGE = 'docker.n8n.io/n8nio/n8n:stable';
 const CONTAINER_N8N_PORT = 5678;
 const DEFAULT_DOCKER_COMPOSE_TIMEOUT_MS = parseInt(process.env.YAGR_N8N_DOCKER_COMPOSE_TIMEOUT_MS ?? '600000', 10);
@@ -36,10 +34,10 @@ export interface ManagedDockerN8nStatus {
 export async function installManagedDockerN8n(options: InstallManagedDockerN8nOptions = {}): Promise<ManagedN8nInstanceState> {
   const assessment = await inspectLocalN8nBootstrap();
   if (!assessment.docker.available) {
-    throw new Error('Docker is not running. Choose the local managed n8n option without Docker, or install/run Docker.');
+    throw new Error('Docker is not running. Yagr-managed local n8n requires Docker Desktop or a Docker daemon.');
   }
   if (assessment.docker.reachable === false) {
-    throw new Error('Docker is not running. Choose the local managed n8n option without Docker, or install/run Docker.');
+    throw new Error('Docker is not running. Start Docker Desktop or the Docker daemon, then retry.');
   }
 
   const paths = ensureManagedN8nDirs();
@@ -177,7 +175,7 @@ function buildEnvFile(input: { image: string; port: number; webhookUrl?: string 
 
 async function dockerComposeV2Available(): Promise<boolean> {
   try {
-    await execFileAsync('docker', ['compose', 'version'], { timeout: 5000 });
+    await execCommand('docker', ['compose', 'version'], { timeout: 5000 });
     return true;
   } catch {
     return false;
@@ -191,7 +189,9 @@ function buildComposeFile(): string {
     '    image: ${N8N_IMAGE}',
     '    restart: unless-stopped',
     '    ports:',
-    `      - "127.0.0.1:\${YAGR_N8N_HOST_PORT}:${CONTAINER_N8N_PORT}"`,
+    process.platform === 'win32'
+      ? `      - "\${YAGR_N8N_HOST_PORT}:${CONTAINER_N8N_PORT}"`
+      : `      - "127.0.0.1:\${YAGR_N8N_HOST_PORT}:${CONTAINER_N8N_PORT}"`,
     '    env_file:',
     '      - .env',
     '    volumes:',
@@ -208,7 +208,7 @@ async function runDockerCompose(args: string[]): Promise<{ stdout: string; stder
     ? ['-f', composeFile, ...args]
     : ['compose', '-f', composeFile, ...args];
   try {
-    return await execFileAsync(cmd, cmdArgs, {
+    return await execCommand(cmd, cmdArgs, {
       cwd: rootDir,
       timeout: DEFAULT_DOCKER_COMPOSE_TIMEOUT_MS,
       env: {
