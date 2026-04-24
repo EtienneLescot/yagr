@@ -13,7 +13,7 @@ The durable principle kept from old plans is as follows:
 
 - Yagr must favor an isolated n8n runtime when it manages it itself
 - Yagr must not do silent intrusive machine installation
-- the Docker vs direct runtime decision must remain explicit, testable, and based on environment detection
+- Docker is the only supported Yagr-managed runtime and detection must validate Docker availability explicitly
 
 ## Instance Matrix
 
@@ -22,7 +22,6 @@ The wizard is the canonical source of the n8n instance type. It persists an expl
 | Wizard choice | Persisted profile | Tags | Restart/health managed by Yagr | n8n tunnel | Expected LLM proxy URL |
 |---|---|---|---|---|---|
 | Yagr-managed instance with Docker | `yagr-managed-docker` | `YAGR_MANAGED`, `DOCKER` | yes | yes | `docker` |
-| Yagr-managed instance without Docker | `yagr-managed-direct` | `YAGR_MANAGED` | yes | yes | `local` |
 | Existing cloud instance | `custom-cloud` | `CLOUD` | no | no | `tunnel` |
 | Existing local instance in Docker | `custom-local-docker` | `DOCKER` | no | no | `docker` |
 | Existing local instance outside Docker | `custom-local-direct` | none | no | no | `local` |
@@ -33,7 +32,6 @@ The LLM proxy must choose its URL based on n8n's reachability to the Yagr host, 
 
 | n8n profile | LLM proxy URL type | Example |
 |---|---|---|
-| `yagr-managed-direct` | `local` | `http://127.0.0.1:11437/v1` |
 | `yagr-managed-docker` | `docker` | `http://host.docker.internal:11437/v1` |
 | `custom-local-direct` | `local` | `http://127.0.0.1:11437/v1` |
 | `custom-local-docker` | `docker` | `http://host.docker.internal:11437/v1` |
@@ -58,7 +56,6 @@ This flow must remain the only canonical source to distinguish `custom-local-doc
 - [plan.ts](/home/etienne/repos/yagr/src/n8n-local/plan.ts)
 - [managed-runtime.ts](/home/etienne/repos/yagr/src/n8n-local/managed-runtime.ts)
 - [docker-manager.ts](/home/etienne/repos/yagr/src/n8n-local/docker-manager.ts)
-- [direct-manager.ts](/home/etienne/repos/yagr/src/n8n-local/direct-manager.ts)
 - [owner-credentials.ts](/home/etienne/repos/yagr/src/n8n-local/owner-credentials.ts)
 - [browser-auth.ts](/home/etienne/repos/yagr/src/n8n-local/browser-auth.ts)
 - [state.ts](/home/etienne/repos/yagr/src/n8n-local/state.ts)
@@ -74,13 +71,11 @@ flowchart TD
     BOOT --> DET[n8n-local/detect.ts]
     BOOT --> MGR[managed-runtime.ts]
     MGR --> DOCKER[docker-manager.ts]
-    MGR --> DIRECT[direct-manager.ts]
     MGR --> STATE[state.ts]
     MGR --> CREDS[owner-credentials.ts]
     CREDS --> AUTH[browser-auth.ts]
     MGR --> TUNNEL[n8n-tunnel.ts]
     DOCKER --> TUNNEL
-    DIRECT --> TUNNEL
 ```
 
 ## Design Rules
@@ -95,8 +90,7 @@ flowchart TD
 
 The still-valid signal from old plans is:
 
-- Docker remains the preferred path when available
-- the direct runtime exists as a fallback
+- Docker is the only supported Yagr-managed path
 - machine preconditions are detected before attempting bootstrap
 - ownership and credentials are treated as an explicit sub-problem, not an implicit detail
 - at startup, `managed-runtime.ts` is the SSOT of preparation of a Yagr-managed instance: it restarts the runtime, or recreates it if the runtime state has disappeared but the `instanceProfile` persists as Yagr-managed, then reconciles if needed the silent bootstrap and final persistence via `setup/application-services.ts`

@@ -186,7 +186,7 @@ Current role:
 
 - `managed-runtime.ts`: SSOT of startup preflight for `yagr-managed-*` instances; restarts or recreates the managed runtime from the persisted `instanceProfile`, then triggers bootstrap/config reconciliation if necessary
 - `bootstrap.ts`: SSOT of silent owner/API key bootstrap against a reachable n8n instance
-- `docker-manager.ts` and `direct-manager.ts`: SSOT of low-level runtime lifecycle for Docker and direct strategies
+- `docker-manager.ts`: SSOT of low-level runtime lifecycle for the only supported Yagr-managed Docker strategy
 - `state.ts`: local persistence of managed runtime state and bootstrap stage resolution
 
 ### `src/config/`
