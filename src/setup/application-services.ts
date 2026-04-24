@@ -56,14 +56,14 @@ interface YagrN8nConfigStoreLike {
     projectName?: string;
     instanceIdentifier?: string;
     customNodesPath?: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
+    instanceProfile?: 'yagr-managed-docker' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   };
   getApiKey(host: string): string | undefined;
   saveApiKey(host: string, apiKey: string): void;
   saveBootstrapState(
     host: string,
     syncFolder?: string,
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud',
+    instanceProfile?: 'yagr-managed-docker' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud',
   ): void;
   getOrCreateInstanceIdentifier(host: string): Promise<string>;
   /** Optional: mirrors API key into n8nac CLI instanceProfiles so subprocesses authenticate. */
@@ -75,7 +75,7 @@ interface YagrN8nConfigStoreLike {
     projectName?: string;
     instanceIdentifier?: string;
     customNodesPath?: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
+    instanceProfile?: 'yagr-managed-docker' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   }): void;
 }
 
@@ -481,7 +481,7 @@ export class YagrSetupApplicationService {
     this.yagrConfigService.setEnabledGatewaySurfaces(input.surfaces);
   }
 
-  async setupLlmProxy(n8nUrl: string, instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud'): Promise<{
+  async setupLlmProxy(n8nUrl: string, instanceProfile?: 'yagr-managed-docker' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud'): Promise<{
     mode: YagrLlmProxyConfig['mode'];
     credentialBaseUrl: string;
     dockerHostAddress?: string;
@@ -659,7 +659,7 @@ export class YagrSetupApplicationService {
     host: string;
     apiKey: string;
     syncFolder?: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
+    instanceProfile?: 'yagr-managed-docker' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   }): Promise<{ project: IProject; warning?: string }> {
     const host = input.host.trim();
     const apiKey = input.apiKey.trim();
@@ -688,7 +688,7 @@ export class YagrSetupApplicationService {
     apiKey?: string;
     projectId: string;
     syncFolder: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
+    instanceProfile?: 'yagr-managed-docker' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   }): Promise<string | undefined> {
     const host = input.host.trim();
     const projectId = input.projectId.trim();
@@ -740,7 +740,7 @@ export class YagrSetupApplicationService {
     apiKey: string;
     project: IProject;
     syncFolder: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
+    instanceProfile?: 'yagr-managed-docker' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   }): Promise<string | undefined> {
     const host = input.host.trim();
     const syncFolder = input.syncFolder.trim() || 'workflows';

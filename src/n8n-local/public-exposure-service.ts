@@ -16,7 +16,6 @@ import {
 } from './n8n-tunnel.js';
 import { getConfiguredManagedN8nState } from './managed-runtime.js';
 import { readManagedN8nState } from './state.js';
-import { startManagedDirectN8n, stopManagedDirectN8n } from './direct-manager.js';
 import { startManagedDockerN8n, stopManagedDockerN8n } from './docker-manager.js';
 
 export type N8nPublicExposureAction = 'ensure' | 'start' | 'refresh';
@@ -52,13 +51,8 @@ export async function restartManagedN8nForTunnel(
   hooks.onStart?.(publicUrl);
 
   try {
-    if (managedState.strategy === 'docker') {
-      await stopManagedDockerN8n();
-      await startManagedDockerN8n();
-    } else {
-      await stopManagedDirectN8n();
-      await startManagedDirectN8n();
-    }
+    await stopManagedDockerN8n();
+    await startManagedDockerN8n();
     hooks.onSuccess?.();
     return true;
   } catch (error) {

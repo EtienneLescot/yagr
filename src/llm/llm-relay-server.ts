@@ -16,7 +16,6 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import { prepareProviderRuntime } from './proxy-runtime.js';
@@ -26,6 +25,7 @@ import { handleAnthropicRelay } from './anthropic-relay.js';
 import { handleOpenAiAccountRelay } from './openai-account-relay.js';
 import { resolveLanguageModelConfig } from './create-langchain-model.js';
 import { translateChatCompletionToResponsesApi, pipeChatCompletionsSseAsResponsesApi } from './responses-api-relay.js';
+import { isPidAlive, spawnCommand, spawnDetached } from '../system/process.js';
 
 /**
  * Providers that natively support the OpenAI Responses API (/v1/responses).
@@ -90,12 +90,7 @@ function isRelayAlive(state: N8nRelayServerState): boolean {
   if (state.pid === process.pid) {
     return activeServer?.listening ?? false;
   }
-  try {
-    process.kill(state.pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+  return isPidAlive(state.pid);
 }
 
 // ─── Docker host address detection ───────────────────────────────────────────
@@ -151,7 +146,7 @@ export async function resolveDockerHostAddress(): Promise<string> {
 
 function getDockerBridgeGateway(): Promise<string | undefined> {
   return new Promise((resolve) => {
-    const child = spawn('docker', ['network', 'inspect', 'bridge', '--format', '{{range .IPAM.Config}}{{.Gateway}}{{end}}'], {
+    const child = spawnCommand('docker', ['network', 'inspect', 'bridge', '--format', '{{range .IPAM.Config}}{{.Gateway}}{{end}}'], {
       stdio: 'pipe',
     });
     let out = '';
@@ -208,8 +203,7 @@ function spawnRelayProcess(): void {
     'llm-relay-entrypoint.js',
   );
 
-  const child = spawn(process.execPath, [entrypoint], {
-    detached: true,
+  const child = spawnDetached(process.execPath, [entrypoint], {
     stdio: ['ignore', logFd, logFd],
     env: process.env,
   });

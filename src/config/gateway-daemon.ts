@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getYagrHomeDir } from './yagr-home.js';
+import { isPidAlive } from '../system/process.js';
 
 export function getGatewayPidPath(): string {
   return path.join(getYagrHomeDir(), 'gateway.pid');
@@ -35,6 +36,10 @@ export function clearGatewayPid(): void {
 }
 
 export function isYagrGatewayProcess(pid: number): boolean {
+  if (process.platform === 'win32') {
+    return true;
+  }
+
   try {
     const stat = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8');
     return stat.includes('yagr') && stat.includes('gateway');
@@ -65,15 +70,10 @@ export function isGatewayRunning(): { running: boolean; pid?: number } {
   const pid = readGatewayPid();
   if (pid === undefined) return { running: false };
 
-  try {
-    process.kill(pid, 0);
-    if (!isYagrGatewayProcess(pid)) {
-      clearGatewayPid();
-      return { running: false };
-    }
-    return { running: true, pid };
-  } catch {
+  if (!isPidAlive(pid) || !isYagrGatewayProcess(pid)) {
     clearGatewayPid();
     return { running: false };
   }
+
+  return { running: true, pid };
 }

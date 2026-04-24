@@ -6,9 +6,8 @@ const execFileAsync = promisify(execFile);
 
 export const DEFAULT_N8N_PORT = 5678;
 export const MAX_PORT_SCAN_ATTEMPTS = 10;
-export const MINIMUM_DIRECT_RUNTIME_NODE_VERSION = '22.16.0';
 
-export type LocalN8nBootstrapStrategy = 'docker' | 'direct' | 'manual';
+export type LocalN8nBootstrapStrategy = 'docker' | 'manual';
 
 export interface CommandAvailability {
   available: boolean;
@@ -21,7 +20,6 @@ export interface LocalN8nBootstrapAssessment {
   platform: NodeJS.Platform;
   docker: CommandAvailability;
   node: CommandAvailability & {
-    supportedForDirectRuntime: boolean;
     majorVersion?: number;
   };
   preferredPort: number;
@@ -68,41 +66,11 @@ export function parseNodeVersion(version: string | undefined): { major: number; 
   };
 }
 
-export function isSupportedDirectRuntimeNodeVersion(version: string | undefined): boolean {
-  const parsed = parseNodeVersion(version);
-  if (!parsed) {
-    return false;
-  }
-
-  if (parsed.major > 22) {
-    return true;
-  }
-
-  if (parsed.major < 22) {
-    return false;
-  }
-
-  if (parsed.minor > 16) {
-    return true;
-  }
-
-  if (parsed.minor < 16) {
-    return false;
-  }
-
-  return parsed.patch >= 0;
-}
-
 export function chooseLocalN8nBootstrapStrategy(input: {
   dockerAvailable: boolean;
-  nodeVersion?: string;
 }): LocalN8nBootstrapStrategy {
   if (input.dockerAvailable) {
     return 'docker';
-  }
-
-  if (isSupportedDirectRuntimeNodeVersion(input.nodeVersion)) {
-    return 'direct';
   }
 
   return 'manual';
@@ -115,35 +83,29 @@ export function buildLocalN8nBootstrapAssessment(input: {
   preferredPort: number;
 }): LocalN8nBootstrapAssessment {
   const nodeMajorVersion = parseNodeMajorVersion(input.node.version);
-  const supportedForDirectRuntime = isSupportedDirectRuntimeNodeVersion(input.node.version);
   const recommendedStrategy = chooseLocalN8nBootstrapStrategy({
     dockerAvailable: input.docker.available && input.docker.reachable !== false,
-    nodeVersion: input.node.version,
   });
 
   const blockers: string[] = [];
   const notes: string[] = [];
 
   if (!input.docker.available) {
-    notes.push('Docker is not available. Yagr will need a direct runtime or a manual prerequisite step.');
+    notes.push('Docker is not available. Yagr-managed local n8n requires Docker Desktop or a Docker daemon.');
   } else if (input.docker.reachable === false) {
-    notes.push(input.docker.statusMessage ?? 'Docker is installed, but the Docker engine is not running.');
+    const message = input.docker.statusMessage ?? 'Docker is installed, but the Docker engine is not running.';
+    notes.push(message);
+    blockers.push(message);
   }
 
   if (!input.node.available) {
     notes.push('Node.js is not available.');
-  } else if (!supportedForDirectRuntime) {
-    blockers.push(
-      `Detected Node.js ${input.node.version ?? 'unknown'}, but direct local n8n bootstrap requires Node.js ${MINIMUM_DIRECT_RUNTIME_NODE_VERSION} or newer.`,
-    );
   }
 
   if (recommendedStrategy === 'manual') {
-    blockers.push('No supported automatic local bootstrap strategy is currently available on this machine.');
+    blockers.push('No supported Yagr-managed local n8n runtime is currently available. Install and start Docker Desktop, or configure a custom n8n instance.');
   } else if (recommendedStrategy === 'docker') {
-    notes.push('Docker is available. This is the preferred local n8n strategy.');
-  } else if (recommendedStrategy === 'direct') {
-    notes.push('A compatible local Node.js runtime is available. Yagr can fall back to a direct local n8n runtime.');
+    notes.push('Docker is available. This is the supported Yagr-managed local n8n strategy.');
   }
 
   return {
@@ -151,7 +113,6 @@ export function buildLocalN8nBootstrapAssessment(input: {
     docker: input.docker,
     node: {
       ...input.node,
-      supportedForDirectRuntime,
       majorVersion: nodeMajorVersion,
     },
     preferredPort: input.preferredPort,
@@ -165,8 +126,7 @@ export function buildLocalN8nBootstrapAssessment(input: {
 export function formatLocalN8nBootstrapAssessment(assessment: LocalN8nBootstrapAssessment): string {
   const availableManagedRuntimes = [
     assessment.docker.available && assessment.docker.reachable !== false ? 'docker' : null,
-    assessment.node.supportedForDirectRuntime ? 'direct' : null,
-  ].filter((value): value is 'docker' | 'direct' => Boolean(value));
+  ].filter((value): value is 'docker' => Boolean(value));
 
   const lines = [
     'Local n8n bootstrap assessment',

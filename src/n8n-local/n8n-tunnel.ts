@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import https from 'node:https';
@@ -7,6 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import { classifyConfiguredN8nInstance, isLocalN8nUrl } from './instance-classification.js';
+import { isPidAlive, killProcessTree, spawnDetached } from '../system/process.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -307,16 +307,6 @@ function getTunnelStatePath(): string {
   return path.join(getYagrPaths().homeDir, STATE_FILENAME);
 }
 
-function isPidAlive(pid: number): boolean {
-  try {
-    // Signal 0 checks for process existence without sending a real signal.
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function readStoredTunnelState(statePath: string): StoredTunnelState | null {
   try {
     if (!fs.existsSync(statePath)) {
@@ -375,11 +365,7 @@ async function stopTunnelByPath(statePath: string): Promise<void> {
 }
 
 async function terminateProcess(pid: number): Promise<void> {
-  try {
-    process.kill(pid, 'SIGTERM');
-  } catch {
-    return;
-  }
+  await killProcessTree(pid);
 
   const start = Date.now();
   while (isPidAlive(pid) && Date.now() - start < 5000) {
@@ -387,11 +373,7 @@ async function terminateProcess(pid: number): Promise<void> {
   }
 
   if (isPidAlive(pid)) {
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch {
-      // already gone
-    }
+    await killProcessTree(pid, { force: true });
   }
 }
 
@@ -502,8 +484,7 @@ async function startTunnel(
   const bin = await resolveCloudflaredBinary(cloudflaredBin, descriptor.missingBinaryMessage);
   const prepared = await prepareTunnelLaunch(bin, descriptor.serviceName, targetUrl, descriptor.statePath);
 
-  const child = spawn(bin, prepared.args, {
-    detached: true,
+  const child = spawnDetached(bin, prepared.args, {
     stdio: 'ignore',
   });
 
@@ -698,8 +679,7 @@ export function resolveN8nTunnelTargetUrl(): string {
   const classification = classifyConfiguredN8nInstance();
 
   // Check if instanceProfile indicates Yagr-managed (authoritative source after wizard setup)
-  const isYagrManaged = classification.instanceProfile === 'yagr-managed-docker'
-    || classification.instanceProfile === 'yagr-managed-direct';
+  const isYagrManaged = classification.instanceProfile === 'yagr-managed-docker';
 
   if (isYagrManaged) {
     if (classification.managedState && classification.managedState.status !== 'stopped') {

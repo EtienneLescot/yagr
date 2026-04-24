@@ -71,7 +71,7 @@ export interface SetupCallbacks {
   getN8nDefaults(urlOverride?: string): { url: string; apiKey?: string; projectId?: string; syncFolder?: string; instanceProfile?: YagrN8nInstanceProfile };
   testN8nConnection(url: string, apiKey: string): Promise<IProject[]>;
   saveN8nConfig(p: { url: string; apiKey: string; project: IProject; syncFolder: string; instanceProfile?: YagrN8nInstanceProfile }): Promise<void>;
-  installManagedLocalN8n(strategy: 'docker' | 'direct' | 'auto'): Promise<ManagedN8nInstanceState>;
+  installManagedLocalN8n(strategy: 'docker' | 'auto'): Promise<ManagedN8nInstanceState>;
   bootstrapManagedLocalN8n(url: string): Promise<{ mode: 'silent' | 'assisted'; apiKey?: string; reason?: string }>;
   openUrl(url: string): Promise<void>;
   getLlmDefaults(): {
@@ -789,7 +789,7 @@ function SetupWizard({ callbacks, options, onDone }: {
           return;
         }
         // After n8n config is saved, offer tunnel setup if this is a Yagr-managed local instance
-        const isYagrManaged = phase.instanceProfile === 'yagr-managed-docker' || phase.instanceProfile === 'yagr-managed-direct';
+        const isYagrManaged = phase.instanceProfile === 'yagr-managed-docker';
         const tunnelCfg = new YagrConfigService().getN8nTunnelConfig();
         if (isYagrManaged && !tunnelCfg?.enabled) {
           setPhase({ kind: 'n8n-tunnel-offer', url: phase.url, instanceProfile: phase.instanceProfile, cursor: 0, status: 'offer' });

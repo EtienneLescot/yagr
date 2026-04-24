@@ -302,9 +302,7 @@ function killKnownPorts(ports, deps = {}) {
   for (const port of ports) {
     const pids = getListeningPids(port, deps);
     for (const pid of pids) {
-      try {
-        getKill(deps)(pid, 'SIGTERM');
-      } catch {}
+      killProcessTree(pid, 'SIGTERM', deps);
     }
 
     if (pids.length > 0) {
@@ -313,9 +311,7 @@ function killKnownPorts(ports, deps = {}) {
 
     const remaining = getListeningPids(port, deps);
     for (const pid of remaining) {
-      try {
-        getKill(deps)(pid, 'SIGKILL');
-      } catch {}
+      killProcessTree(pid, 'SIGKILL', deps);
     }
 
     const killed = Array.from(new Set(pids.concat(remaining)));
@@ -326,7 +322,7 @@ function killKnownPorts(ports, deps = {}) {
 }
 
 function killMatchingProcesses(patterns, deps = {}) {
-  if (!isCommandAvailable('pgrep', deps)) {
+  if (getPlatform(deps) !== 'win32' && !isCommandAvailable('pgrep', deps)) {
     return;
   }
 
@@ -371,6 +367,19 @@ function killProcessTree(pid, signal, deps = {}) {
   }
 
   const kill = getKill(deps);
+  if (getPlatform(deps) === 'win32') {
+    const args = ['/PID', String(pid), '/T'];
+    if (signal === 'SIGKILL') {
+      args.push('/F');
+    }
+    try {
+      getSpawnSync(deps)('taskkill.exe', args, {
+        stdio: 'ignore',
+      });
+    } catch {}
+    return;
+  }
+
   if (getPlatform(deps) !== 'win32') {
     try {
       kill(-pid, signal);
@@ -430,6 +439,22 @@ function isGlobalPackageInstalled(packageName, deps = {}) {
 }
 
 function getListeningPids(port, deps = {}) {
+  if (getPlatform(deps) === 'win32') {
+    const result = getSpawnSync(deps)('netstat.exe', ['-ano', '-p', 'tcp'], { encoding: 'utf8' });
+    if (result.status !== 0 && !result.stdout) {
+      return [];
+    }
+
+    const pids = new Set();
+    for (const line of String(result.stdout ?? '').split(/\r?\n/)) {
+      const match = line.trim().match(/^TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)$/i);
+      if (match && Number(match[1]) === port) {
+        pids.add(Number(match[2]));
+      }
+    }
+    return [...pids];
+  }
+
   if (!isCommandAvailable('lsof', deps)) {
     return [];
   }
@@ -443,6 +468,19 @@ function getListeningPids(port, deps = {}) {
 }
 
 function getMatchingPids(pattern, deps = {}) {
+  if (getPlatform(deps) === 'win32') {
+    const result = getSpawnSync(deps)('wmic.exe', ['process', 'get', 'ProcessId,CommandLine', '/FORMAT:CSV'], { encoding: 'utf8' });
+    if (result.status !== 0 && !result.stdout) {
+      return [];
+    }
+
+    return String(result.stdout ?? '')
+      .split(/\r?\n/)
+      .filter((line) => line.includes(pattern))
+      .map((line) => Number(line.trim().split(',').at(-1)))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+  }
+
   const result = getSpawnSync(deps)('pgrep', ['-f', pattern], { encoding: 'utf8' });
   if (result.status !== 0 && !result.stdout) {
     return [];
@@ -499,7 +537,9 @@ function readJsonFile(filePath, deps = {}) {
 }
 
 function isCommandAvailable(command, deps = {}) {
-  const probe = getSpawnSync(deps)('bash', ['-lc', `command -v ${shellQuote(command)} >/dev/null 2>&1`], {
+  const probe = getPlatform(deps) === 'win32'
+    ? getSpawnSync(deps)('where.exe', [command], { stdio: 'ignore' })
+    : getSpawnSync(deps)('sh', ['-c', `command -v ${shellQuote(command)} >/dev/null 2>&1`], {
     stdio: 'ignore',
   });
   return probe.status === 0;

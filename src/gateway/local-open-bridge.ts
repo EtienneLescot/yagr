@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import path from 'node:path';
@@ -7,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 import { getActiveN8nAuthTunnelState } from '../n8n-local/n8n-tunnel.js';
 import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
+import { isPidAlive, killProcessTree, spawnDetached } from '../system/process.js';
 
 const DEFAULT_LOCAL_BRIDGE_HOST = '127.0.0.1';
 const DEFAULT_LOCAL_BRIDGE_PORT = 3791;
@@ -57,15 +57,6 @@ function clearLocalOpenBridgeState(): void {
     fs.unlinkSync(getLocalOpenBridgeStatePath());
   } catch {
     // already gone
-  }
-}
-
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -182,8 +173,7 @@ function spawnLocalOpenBridgeProcess(): void {
     'local-open-bridge-entrypoint.js',
   );
 
-  const child = spawn(process.execPath, [entrypoint], {
-    detached: true,
+  const child = spawnDetached(process.execPath, [entrypoint], {
     stdio: ['ignore', logFd, logFd],
     env: process.env,
   });
@@ -275,12 +265,7 @@ export async function stopLocalN8nAuthBridge(): Promise<void> {
     return;
   }
 
-  try {
-    process.kill(state.pid, 'SIGTERM');
-  } catch {
-    clearLocalOpenBridgeState();
-    return;
-  }
+  await killProcessTree(state.pid);
 
   const start = Date.now();
   while (isPidAlive(state.pid) && Date.now() - start < 5000) {
@@ -288,11 +273,7 @@ export async function stopLocalN8nAuthBridge(): Promise<void> {
   }
 
   if (isPidAlive(state.pid)) {
-    try {
-      process.kill(state.pid, 'SIGKILL');
-    } catch {
-      // already gone
-    }
+    await killProcessTree(state.pid, { force: true });
   }
   clearLocalOpenBridgeState();
 }

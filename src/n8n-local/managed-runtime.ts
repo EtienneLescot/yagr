@@ -3,11 +3,6 @@ import { YagrConfigService } from '../config/yagr-config-service.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import { bootstrapManagedLocalN8n, type SilentManagedN8nBootstrapResult } from './bootstrap.js';
 import {
-  getManagedDirectN8nStatus,
-  installManagedDirectN8n,
-  startManagedDirectN8n,
-} from './direct-manager.js';
-import {
   getManagedDockerN8nStatus,
   installManagedDockerN8n,
   startManagedDockerN8n,
@@ -38,9 +33,6 @@ interface ManagedLaunchDependencies {
 }
 
 interface ManagedRuntimeDependencies {
-  getDirectStatus?: typeof getManagedDirectN8nStatus;
-  startDirect?: typeof startManagedDirectN8n;
-  installDirect?: typeof installManagedDirectN8n;
   getDockerStatus?: typeof getManagedDockerN8nStatus;
   startDocker?: typeof startManagedDockerN8n;
   installDocker?: typeof installManagedDockerN8n;
@@ -112,9 +104,6 @@ export async function ensureConfiguredManagedN8nRunning(
   configService = new YagrN8nConfigService(),
   dependencies: ManagedRuntimeDependencies = {},
 ): Promise<{ state?: ManagedN8nInstanceState; started: boolean }> {
-  const getDirectStatus = dependencies.getDirectStatus ?? getManagedDirectN8nStatus;
-  const startDirect = dependencies.startDirect ?? startManagedDirectN8n;
-  const installDirect = dependencies.installDirect ?? installManagedDirectN8n;
   const getDockerStatus = dependencies.getDockerStatus ?? getManagedDockerN8nStatus;
   const startDocker = dependencies.startDocker ?? startManagedDockerN8n;
   const installDocker = dependencies.installDocker ?? installManagedDockerN8n;
@@ -127,15 +116,6 @@ export async function ensureConfiguredManagedN8nRunning(
     ? managedState
     : undefined;
 
-  if (compatibleManagedState?.strategy === 'direct') {
-    const status = await getDirectStatus();
-    if (status.running && status.healthy && status.state) {
-      return { state: status.state, started: false };
-    }
-
-    return { state: await startDirect(), started: true };
-  }
-
   if (compatibleManagedState?.strategy === 'docker') {
     const status = await getDockerStatus();
     if (status.running && status.healthy && status.state) {
@@ -147,10 +127,6 @@ export async function ensureConfiguredManagedN8nRunning(
 
   if (!recovery) {
     return { started: false };
-  }
-
-  if (recovery.strategy === 'direct') {
-    return { state: await installDirect({ port: recovery.port }), started: true };
   }
 
   return { state: await installDocker({ port: recovery.port }), started: true };
@@ -232,8 +208,8 @@ function resolveManagedRuntimeRecovery(
   localConfig: ReturnType<YagrN8nConfigService['getLocalConfig']>,
   instanceProfile: ReturnType<YagrN8nConfigService['getLocalConfig']>['instanceProfile'],
   tunnelConfig: ReturnType<YagrConfigService['getN8nTunnelConfig']>,
-): { strategy: 'docker' | 'direct'; port?: number } | undefined {
-  if (instanceProfile !== 'yagr-managed-docker' && instanceProfile !== 'yagr-managed-direct') {
+): { strategy: 'docker'; port?: number } | undefined {
+  if (instanceProfile !== 'yagr-managed-docker') {
     return undefined;
   }
 
@@ -244,7 +220,7 @@ function resolveManagedRuntimeRecovery(
     : localConfig.host;
 
   return {
-    strategy: instanceProfile === 'yagr-managed-docker' ? 'docker' : 'direct',
+    strategy: 'docker',
     port: resolvePortFromN8nUrl(hostForPort),
   };
 }
@@ -260,10 +236,6 @@ function isManagedStateCompatibleWithConfig(
   }
 
   if (instanceProfile === 'yagr-managed-docker' && managedState.strategy !== 'docker') {
-    return false;
-  }
-
-  if (instanceProfile === 'yagr-managed-direct' && managedState.strategy !== 'direct') {
     return false;
   }
 

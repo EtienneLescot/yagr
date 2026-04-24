@@ -47,3 +47,4 @@ The workflows it creates already are memory:
 - [Telegram](/docs/usage/telegram)
 - [TUI](/docs/usage/tui)
 - [Execution orchestrators](/docs/usage/n8n-backend)
+- [Windows support](/docs/usage/windows)

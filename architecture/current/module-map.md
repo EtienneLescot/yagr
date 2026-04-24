@@ -39,6 +39,7 @@ Notes:
 - `n8n-local/public-exposure-service.ts` carries the SSOT of product orchestration for public exposures (`n8n`, `n8n auth`, `llm`)
 - `n8n-local/tunnel-reachability.ts` carries the SSOT of tunnel wake-up by consumer/facade
 - `n8n-local/n8n-tunnel.ts` carries the SSOT of `cloudflared` lifecycle and `TUNNEL_DOMAIN` policy
+- `system/process.ts` carries the SSOT for platform process behavior: executable resolution, native shell policy, detached spawning, PID checks, and process-tree termination
 
 ## Details by Block
 
@@ -184,10 +185,19 @@ Current role:
 
 Current role:
 
-- `managed-runtime.ts`: SSOT of startup preflight for `yagr-managed-*` instances; restarts or recreates the managed runtime from the persisted `instanceProfile`, then triggers bootstrap/config reconciliation if necessary
+- `managed-runtime.ts`: SSOT of startup preflight for `yagr-managed-docker` instances; restarts or recreates the managed runtime from the persisted `instanceProfile`, then triggers bootstrap/config reconciliation if necessary
 - `bootstrap.ts`: SSOT of silent owner/API key bootstrap against a reachable n8n instance
 - `docker-manager.ts`: SSOT of low-level runtime lifecycle for the only supported Yagr-managed Docker strategy
 - `state.ts`: local persistence of managed runtime state and bootstrap stage resolution
+
+### `src/system/`
+
+Current role:
+
+- `process.ts`: SSOT for cross-platform process concerns:
+  executable names (`npm`/`npx` shims on Windows), native shell selection (PowerShell on Windows, POSIX shell elsewhere), detached process spawning, PID liveness, command availability, and process-tree termination
+- `package-manager.ts`: compatibility wrapper over the executable resolver for package-manager command names
+- `open-external.ts`: platform-specific browser opening through the shared detached process helper
 
 ### `src/config/`
 
