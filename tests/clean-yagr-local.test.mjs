@@ -108,7 +108,7 @@ test('stopManagedDockerRuntime uses the same COMPOSE_PROJECT_NAME as the managed
         execCalls.push({ command, args, options });
       },
       spawnSync: createCommandStub({
-        bash: () => ({ status: 0, stdout: '', stderr: '' }),
+        sh: () => ({ status: 0, stdout: '', stderr: '' }),
         docker: (args) => {
           if (args[0] === 'ps') {
             return { status: 0, stdout: '', stderr: '' };
@@ -141,7 +141,7 @@ test('stopManagedDockerRuntime removes labeled docker containers even when the c
         execCalls.push({ command, args, options });
       },
       spawnSync: createCommandStub({
-        bash: () => ({ status: 0, stdout: '', stderr: '' }),
+        sh: () => ({ status: 0, stdout: '', stderr: '' }),
         docker: (args) => {
           if (
             args[0] === 'ps'

@@ -1,10 +1,9 @@
-import { spawn } from 'node:child_process';
+import { spawnDetached } from './process.js';
 
 export async function openExternalUrl(url: string, platform: NodeJS.Platform = process.platform): Promise<void> {
   const command = resolveOpenCommand(platform, url);
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(command.file, command.args, {
-      detached: true,
+    const child = spawnDetached(command.file, command.args, {
       stdio: 'ignore',
     });
 

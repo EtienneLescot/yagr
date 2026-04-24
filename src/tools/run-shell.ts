@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { emitToolEvent, type ToolExecutionObserver } from './observer.js';
+import { killProcessTree, spawnShellCommand } from '../system/process.js';
 
 const MAX_OUTPUT_SIZE = 20_000;
 
@@ -27,7 +27,7 @@ export function createRunShellTool(observer?: ToolExecutionObserver) {
   return new DynamicStructuredTool({
     name: 'runShell',
     description:
-      '⚠️  UNRESTRICTED SHELL — runs any command in a bash subprocess. ' +
+      '⚠️  UNRESTRICTED SHELL — runs any command in the native platform shell. ' +
       'This tool is DISABLED by default and requires the YAGR_ENABLE_SHELL=1 environment variable to be set by the user. ' +
       'When enabled, it can execute arbitrary commands including destructive ones (rm, git push, etc.). ' +
       'Use runScript for safe, allowlist-controlled operations. ' +
@@ -56,7 +56,7 @@ export function createRunShellTool(observer?: ToolExecutionObserver) {
       });
 
       return new Promise((resolve) => {
-        const child = spawn('bash', ['-c', command], {
+        const child = spawnShellCommand(command, {
           cwd: cwd ?? process.cwd(),
           stdio: 'pipe',
           env: { ...process.env },
@@ -85,13 +85,13 @@ export function createRunShellTool(observer?: ToolExecutionObserver) {
           });
         };
 
-        child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-        child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+        child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+        child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
 
         const timer = setTimeout(() => {
           timedOut = true;
-          child.kill('SIGTERM');
-          setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* already gone */ } }, 2_000);
+          void killProcessTree(child.pid);
+          setTimeout(() => { void killProcessTree(child.pid, { force: true }); }, 2_000);
           finish(null);
         }, timeoutMs);
 

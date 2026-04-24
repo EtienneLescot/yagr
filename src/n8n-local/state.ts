@@ -6,7 +6,7 @@ import { ensureYagrHomeDir, getYagrPaths } from '../config/yagr-home.js';
 import { classifyConfiguredN8nInstance, normalizeN8nUrlOrigin } from './instance-classification.js';
 
 export interface ManagedN8nInstanceState {
-  strategy: 'docker' | 'direct';
+  strategy: 'docker';
   image?: string;
   port: number;
   url: string;
@@ -88,8 +88,8 @@ export function buildManagedN8nState(input: {
     image: input.image || undefined,
     port: input.port,
     url: `http://127.0.0.1:${input.port}`,
-    composeFile: input.strategy === 'direct' ? undefined : paths.composeFile,
-    envFile: input.strategy === 'direct' ? undefined : paths.envFile,
+    composeFile: paths.composeFile,
+    envFile: paths.envFile,
     dataDir: paths.dataDir,
     logFile: input.logFile ?? paths.logFile,
     pid: input.pid,

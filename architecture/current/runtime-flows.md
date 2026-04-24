@@ -89,13 +89,13 @@ Observation:
 
 ## 3b. Startup of a Yagr-managed n8n Instance
 
-At standard launch (`yagr start`, `yagr gateway`, gateway worker), Yagr no longer just restarts the managed local runtime. Startup also reconciles the bootstrap/config state when the instance is marked `yagr-managed-*`.
+At standard launch (`yagr start`, `yagr gateway`, gateway worker), Yagr no longer just restarts the managed local runtime. Startup also reconciles the bootstrap/config state when the instance is marked `yagr-managed-docker`.
 
 ```mermaid
 sequenceDiagram
     participant CLI as CLI startup
     participant MGR as managed-runtime.ts
-    participant RT as direct/docker manager
+    participant RT as docker-manager.ts
     participant BOOT as bootstrap.ts
     participant APP as setup/application-services.ts
     participant CFG as n8n config
@@ -169,7 +169,7 @@ Observation:
 At startup (`yagr start`, gateway, worker), preflight first goes through `managed-runtime.ts` for `yagr-managed-local` instances.
 
 - the n8n runtime managed by Yagr is restarted if necessary
-- if the local runtime state has disappeared but the `instanceProfile` persists as `yagr-managed-*`, `managed-runtime.ts` also recreates the runtime from this product authority signal
+- if the local runtime state has disappeared but the `instanceProfile` persists as `yagr-managed-docker`, `managed-runtime.ts` also recreates the runtime from this product authority signal
 - if the instance is not already `connected`, preflight also completes the bootstrap/config reconciliation by reusing `bootstrap.ts` then `setup/application-services.ts`
 - this preflight remains upstream of workspace refresh and relay/tunnels preflight, so that downstream steps consume an already-persisted host, API key, and project
 

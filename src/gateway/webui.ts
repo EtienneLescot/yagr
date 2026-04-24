@@ -229,7 +229,6 @@ class WebUiGateway implements Gateway {
     if (method === 'POST' && url.pathname === '/api/config/n8n') {
       const body = await this.readJson(request);
       const instanceProfile = body.instanceProfile === 'yagr-managed-docker'
-        || body.instanceProfile === 'yagr-managed-direct'
         || body.instanceProfile === 'custom-local-docker'
         || body.instanceProfile === 'custom-local-direct'
         || body.instanceProfile === 'custom-cloud'
@@ -658,7 +657,7 @@ class WebUiGateway implements Gateway {
     apiKey?: string;
     projectId: string;
     syncFolder: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
+    instanceProfile?: 'yagr-managed-docker' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   }): Promise<string | undefined> {
     const warning = await this.setupService.saveN8nConfig(input);
     // Invalidate the cached agent handle so the next request picks up

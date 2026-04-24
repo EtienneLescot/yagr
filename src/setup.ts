@@ -6,7 +6,6 @@ import { YagrN8nConfigService } from './config/n8n-config-service.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
 import type { GatewaySurface } from './gateway/types.js';
 import { bootstrapManagedLocalN8n } from './n8n-local/bootstrap.js';
-import { installManagedDirectN8n } from './n8n-local/direct-manager.js';
 import { installManagedDockerN8n } from './n8n-local/docker-manager.js';
 import { inspectLocalN8nBootstrap } from './n8n-local/detect.js';
 import { markManagedN8nBootstrapStage } from './n8n-local/state.js';
@@ -130,30 +129,17 @@ function createSetupCallbacks(
 
     async installManagedLocalN8n(strategy) {
       const assessment = await inspectLocalN8nBootstrap();
-      if (strategy === 'docker') {
+      if (!strategy || strategy === 'docker') {
         if (!assessment.docker.available) {
-          throw new Error('Docker is not running. Choose the local managed n8n option without Docker, or install/run Docker.');
+          throw new Error('Docker is not running. Yagr-managed local n8n requires Docker Desktop or a Docker daemon.');
         }
         if (assessment.docker.reachable === false) {
-          throw new Error('Docker is not running. Choose the local managed n8n option without Docker, or install/run Docker.');
+          throw new Error('Docker is not running. Start Docker Desktop or the Docker daemon, then retry.');
         }
         return installManagedDockerN8n();
       }
 
-      if (strategy === 'direct') {
-        if (!assessment.node.supportedForDirectRuntime) {
-          throw new Error('A compatible local Node.js runtime is required for the non-Docker local n8n install. Run `yagr n8n doctor` for details.');
-        }
-        return installManagedDirectN8n();
-      }
-
-      if (assessment.recommendedStrategy === 'docker') {
-        return installManagedDockerN8n();
-      }
-      if (assessment.recommendedStrategy === 'direct') {
-        return installManagedDirectN8n();
-      }
-      throw new Error('No supported automatic local n8n runtime is available. Run `yagr n8n doctor` for details.');
+      throw new Error('Docker is the only Yagr-managed local n8n runtime. Use Docker-managed local n8n or configure a custom n8n instance.');
     },
 
     async bootstrapManagedLocalN8n(url) {

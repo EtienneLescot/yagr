@@ -17,7 +17,6 @@ This is the main enabler for workflows that receive external triggers:
 
 | Configuration | Tunnel applicable |
 |---|---|
-| Yagr-managed n8n (direct, no Docker) | ✅ |
 | Yagr-managed n8n (Docker) | ✅ |
 | Non-managed n8n, local host (`localhost`, RFC-1918) | ✅ |
 | Non-managed n8n, cloud/remote URL | ❌ Already publicly reachable |
@@ -98,14 +97,11 @@ n8n uses the `N8N_WEBHOOK_URL` environment variable to construct the URLs it dis
 
 ### Managed instances
 
-For Yagr-managed n8n (direct or Docker), start the tunnel first, then restart n8n with the tunnel URL:
+For Yagr-managed n8n, start the tunnel first, then restart n8n with the tunnel URL:
 
 ```bash
 yagr n8n tunnel start
 TUNNEL_URL=$(yagr n8n tunnel url)
-
-# Direct runtime — pass N8N_WEBHOOK_URL at startup
-N8N_WEBHOOK_URL=$TUNNEL_URL yagr n8n local start
 
 # Docker runtime — edit YAGR_HOME/n8n/.env and restart
 echo "N8N_WEBHOOK_URL=$TUNNEL_URL" >> ~/.yagr/n8n/.env

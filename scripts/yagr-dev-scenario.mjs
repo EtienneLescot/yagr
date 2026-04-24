@@ -155,9 +155,7 @@ async function killPorts(ports) {
   for (const port of ports) {
     const pids = getListeningPids(port);
     for (const pid of pids) {
-      try {
-        process.kill(pid, 'SIGTERM');
-      } catch {}
+      killProcess(pid, false);
     }
 
     if (pids.length > 0) {
@@ -166,11 +164,23 @@ async function killPorts(ports) {
 
     const remainingPids = getListeningPids(port);
     for (const pid of remainingPids) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {}
+      killProcess(pid, true);
     }
   }
+}
+
+function killProcess(pid, force) {
+  try {
+    if (process.platform === 'win32') {
+      const args = ['/PID', String(pid), '/T'];
+      if (force) {
+        args.push('/F');
+      }
+      execFileSync('taskkill.exe', args, { stdio: 'ignore' });
+      return;
+    }
+    process.kill(pid, force ? 'SIGKILL' : 'SIGTERM');
+  } catch {}
 }
 
 function getListeningPids(port) {

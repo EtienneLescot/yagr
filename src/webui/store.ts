@@ -30,7 +30,7 @@ export interface ConfigSnapshot {
     syncFolder?: string;
     projectId?: string;
     projectName?: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
+    instanceProfile?: 'yagr-managed-docker' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
     apiKeyStored: boolean;
     projects: Array<{ id: string; name: string }>;
   };

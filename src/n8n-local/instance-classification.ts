@@ -109,9 +109,7 @@ export function resolveN8nInstanceProfile(input: {
   });
 
   if (managedStateMatchesHost) {
-    const managedProfile = input.managedState?.strategy === 'docker'
-      ? 'yagr-managed-docker'
-      : 'yagr-managed-direct';
+    const managedProfile = 'yagr-managed-docker';
 
     if (
       !input.instanceProfile
@@ -206,7 +204,7 @@ export function classifyN8nInstanceCandidate(input: {
   const host = input.host?.trim() || undefined;
   const managedState = input.managedState;
   const instanceProfile = resolveN8nInstanceProfile(input);
-  const isManagedFromProfile = instanceProfile === 'yagr-managed-docker' || instanceProfile === 'yagr-managed-direct';
+  const isManagedFromProfile = instanceProfile === 'yagr-managed-docker';
   const isManaged = isManagedFromProfile;
 
   let kind: N8nInstanceKind;

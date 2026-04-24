@@ -25,13 +25,6 @@ import {
   startManagedDockerN8n,
   stopManagedDockerN8n,
 } from './n8n-local/docker-manager.js';
-import {
-  getManagedDirectN8nStatus,
-  getManagedDirectN8nLogs,
-  installManagedDirectN8n,
-  startManagedDirectN8n,
-  stopManagedDirectN8n,
-} from './n8n-local/direct-manager.js';
 import { formatLocalN8nBootstrapAssessment, inspectLocalN8nBootstrap } from './n8n-local/detect.js';
 import {
   prepareConfiguredN8nForLaunch,
@@ -44,6 +37,7 @@ import { readManagedN8nState } from './n8n-local/state.js';
 import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, registerN8nContextSources, runYagrLlmSetup, runYagrLlmProxySetup, runYagrN8nSetup, runYagrSetup } from './setup.js';
 import { YagrSetupApplicationService } from './setup/application-services.js';
 import { openExternalUrl } from './system/open-external.js';
+import { isPidAlive, killProcessTree, spawnCommand, spawnDetached } from './system/process.js';
 import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
 import {
@@ -68,7 +62,7 @@ const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '�
 interface ParsedArgs {
   command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'restart' | 'tui' | 'webui' | 'gateway' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-setup' | 'n8n-context-setup' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url' | 'presentWorkflowResult' | 'yagrProxy';
   startTarget?: 'webui' | 'tui';
-  n8nLocalRuntime?: 'docker' | 'direct';
+  n8nLocalRuntime?: 'docker';
   prompt?: string;
   interactive: boolean;
   provider?: YagrModelProvider;
@@ -415,13 +409,13 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === '--runtime') {
       const value = argv[index + 1];
-      if (value === 'docker' || value === 'direct') {
+      if (value === 'docker') {
         parsed.n8nLocalRuntime = value;
         index += 1;
         continue;
       }
 
-      throw new Error('Invalid value for --runtime. Use one of: docker, direct.');
+      throw new Error('Invalid value for --runtime. Docker is the only Yagr-managed local runtime.');
     }
 
     if (arg === '--workflow-id') {
@@ -482,11 +476,6 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
-    if (arg === '--direct' || arg === '--non-docker') {
-      parsed.n8nLocalRuntime = 'direct';
-      continue;
-    }
-
     if (!parsed.prompt) {
       parsed.prompt = arg;
       continue;
@@ -541,7 +530,6 @@ async function runWithSpinner<T>(message: string, task: () => Promise<T>, detail
 }
 
 async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
-  const { spawn } = await import('node:child_process');
   const { getGatewayLogPath, writeGatewayPid, tryAcquireLock, releaseLock } = await import('./config/gateway-daemon.js');
 
   if (!tryAcquireLock()) {
@@ -556,11 +544,10 @@ async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
   const logFd = fs.openSync(logPath, 'a');
   let child;
   try {
-    child = spawn(
+    child = spawnDetached(
       process.execPath,
       [process.argv[1], 'gateway', 'start', ...extraArgs],
       {
-        detached: true,
         stdio: ['ignore', logFd, logFd],
         env: { ...process.env },
       },
@@ -609,7 +596,6 @@ async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigServi
 }
 
 async function runGatewaySupervisorProcess(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  const { spawn } = await import('node:child_process');
   const supervisorStatus = getGatewaySupervisorStatus(configService);
 
   if (supervisorStatus.startableSurfaces.length === 0) {
@@ -624,11 +610,7 @@ async function runGatewaySupervisorProcess(args: ParsedArgs, configService: Yagr
   const forwardStop = () => {
     stopRequested = true;
     if (activeChild?.pid) {
-      try {
-        activeChild.kill('SIGTERM');
-      } catch {
-        // Child already exited.
-      }
+      void killProcessTree(activeChild.pid);
     }
   };
 
@@ -641,7 +623,7 @@ async function runGatewaySupervisorProcess(args: ParsedArgs, configService: Yagr
     if (args.model) childArgs.push('--model', args.model);
     if (args.maxSteps) childArgs.push('--max-steps', String(args.maxSteps));
 
-    const child = spawn(process.execPath, childArgs, {
+    const child = spawnCommand(process.execPath, childArgs, {
       stdio: 'inherit',
       env: {
         ...process.env,
@@ -712,9 +694,7 @@ async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigS
   // Give the daemon time to connect and fail fast if broken
   await new Promise<void>((resolve) => setTimeout(resolve, 2000));
 
-  try {
-    process.kill(pid, 0);
-  } catch {
+  if (!isPidAlive(pid)) {
     const { clearGatewayPid } = await import('./config/gateway-daemon.js');
     clearGatewayPid();
     throw new Error(`Gateway daemon failed to start. Check logs: ${getGatewayLogPath()}`);
@@ -788,9 +768,8 @@ async function ensureManagedN8nAtLaunch(): Promise<void> {
       return;
     }
 
-    const modeLabel = preparation.state.strategy === 'direct' ? 'non-Docker' : 'Docker';
     if (preparation.started) {
-      process.stdout.write(`Restarted Yagr-managed n8n (${modeLabel}) at ${preparation.state.url}\n`);
+      process.stdout.write(`Restarted Yagr-managed n8n (Docker) at ${preparation.state.url}\n`);
     }
     if (preparation.reconciled) {
       process.stdout.write(`Completed managed n8n startup reconciliation at ${preparation.state.url}\n`);
@@ -901,9 +880,8 @@ Agent options (for \`yagr [prompt]\` and most commands):
   --hide-thinking              Hide agent thinking output
   --hide-execution             Hide tool execution output
   --debug                      Enable debug logs for setup/model discovery
-  --runtime <docker|direct>    Runtime for \`n8n local install\`
+  --runtime <docker>           Runtime for \`n8n local install\`
   --docker                     Shortcut for \`n8n local install --runtime docker\`
-  --direct, --non-docker       Shortcut for \`n8n local install --runtime direct\`
   --yes                        Auto-confirm destructive operations
   --dry-run                    Preview without making changes
 
@@ -1130,66 +1108,43 @@ async function main(): Promise<void> {
     if (args.command === 'n8n-local-install') {
       const assessment = await inspectLocalN8nBootstrap();
       const runtime = args.n8nLocalRuntime ?? assessment.recommendedStrategy;
-      const state = runtime === 'direct'
-        ? await runWithSpinner(
-          'Installing and starting a Yagr-managed local n8n instance…',
-          () => installManagedDirectN8n(),
-          'Direct runtime mode. This can take 1 to 3 minutes on first run.',
-        )
-        : runtime === 'docker'
-          ? await runWithSpinner(
-            'Installing and starting a Yagr-managed local n8n instance…',
-            () => installManagedDockerN8n(),
-            'Docker mode. Waiting for the n8n API and editor to become ready.',
-          )
-          : (() => {
-            throw new Error('No supported automatic local n8n runtime is available. Re-run with --runtime docker or --runtime direct after installing the required prerequisite.');
-          })();
+      if (runtime !== 'docker') {
+        throw new Error('No supported Yagr-managed local n8n runtime is available. Install and start Docker Desktop, then retry.');
+      }
+      const state = await runWithSpinner(
+        'Installing and starting a Yagr-managed local n8n instance…',
+        () => installManagedDockerN8n(),
+        'Docker mode. Waiting for the n8n API and editor to become ready.',
+      );
       process.stdout.write(`Managed local n8n installed and started at ${state.url}\n`);
       process.stdout.write('Next: run `yagr onboard` to continue with silent bootstrap and assisted fallback.\n');
       return;
     }
 
     if (args.command === 'n8n-local-start') {
-      const current = readManagedN8nState();
-      const state = current?.strategy === 'direct'
-        ? await runWithSpinner(
-          'Starting the Yagr-managed local n8n instance…',
-          () => startManagedDirectN8n(),
-          'Direct runtime mode.',
-        )
-        : await runWithSpinner(
-          'Starting the Yagr-managed local n8n instance…',
-          () => startManagedDockerN8n(),
-          'Docker mode.',
-        );
+      const state = await runWithSpinner(
+        'Starting the Yagr-managed local n8n instance…',
+        () => startManagedDockerN8n(),
+        'Docker mode.',
+      );
       process.stdout.write(`Managed local n8n is running at ${state.url}\n`);
       return;
     }
 
     if (args.command === 'n8n-local-status') {
-      const current = readManagedN8nState();
-      const status = current?.strategy === 'direct'
-        ? await getManagedDirectN8nStatus()
-        : await getManagedDockerN8nStatus();
+      const status = await getManagedDockerN8nStatus();
       process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
       return;
     }
 
     if (args.command === 'n8n-local-stop') {
-      const current = readManagedN8nState();
-      const state = current?.strategy === 'direct'
-        ? await stopManagedDirectN8n()
-        : await stopManagedDockerN8n();
+      const state = await stopManagedDockerN8n();
       process.stdout.write(`Managed local n8n stopped for ${state.url}\n`);
       return;
     }
 
     if (args.command === 'n8n-local-logs') {
-      const current = readManagedN8nState();
-      const logs = current?.strategy === 'direct'
-        ? await getManagedDirectN8nLogs()
-        : await getManagedDockerN8nLogs();
+      const logs = await getManagedDockerN8nLogs();
       process.stdout.write(`${logs}\n`);
       return;
     }
@@ -1362,7 +1317,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    process.kill(running.pid, 'SIGTERM');
+    await killProcessTree(running.pid);
     await new Promise<void>((resolve) => setTimeout(resolve, 500));
     clearGatewayPid();
     releaseLock();
@@ -1378,7 +1333,7 @@ async function main(): Promise<void> {
     const running = isGatewayRunning();
     if (running.running && running.pid) {
       process.stdout.write(`Stopping gateway (PID ${running.pid})...\n`);
-      process.kill(running.pid, 'SIGTERM');
+      await killProcessTree(running.pid);
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
       clearGatewayPid();
     }

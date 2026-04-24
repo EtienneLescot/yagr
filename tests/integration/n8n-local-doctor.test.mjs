@@ -18,7 +18,7 @@ async function isDockerHostAvailable() {
   }
 }
 
-test('yagr n8n doctor reports a clean Node-only Linux environment inside a container', async (t) => {
+test('yagr n8n doctor reports Docker as required in a Node-only Linux container', async (t) => {
   if (!(await isDockerHostAvailable())) {
     t.skip('Docker host is not available for integration tests.');
     return;
@@ -41,7 +41,7 @@ test('yagr n8n doctor reports a clean Node-only Linux environment inside a conta
   const stdout = Array.isArray(output) ? output.join('\n') : String(output);
 
   assert.match(stdout, /Local n8n bootstrap assessment/);
-  assert.match(stdout, /Suggested runtime: direct/);
+  assert.match(stdout, /Suggested runtime: manual/);
   assert.match(stdout, /Preferred URL: http:\/\/127\.0\.0\.1:5678/);
-  assert.match(stdout, /Bootstrap automation target: silent/);
+  assert.match(stdout, /Yagr-managed local n8n requires Docker/i);
 }, 30_000);
