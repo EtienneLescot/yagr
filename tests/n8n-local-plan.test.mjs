@@ -20,7 +20,6 @@ test('local managed instances prefer silent bootstrap when docker is available',
       node: {
         available: true,
         version: 'v22.11.0',
-        supportedForDirectRuntime: true,
         majorVersion: 22,
       },
       preferredPort: 5678,
@@ -45,13 +44,12 @@ test('local managed instances fall back to assisted when prerequisites are missi
       node: {
         available: true,
         version: 'v18.20.0',
-        supportedForDirectRuntime: false,
         majorVersion: 18,
       },
       preferredPort: 5678,
       preferredUrl: 'http://127.0.0.1:5678',
       recommendedStrategy: 'manual',
-      blockers: ['No supported automatic local bootstrap strategy is currently available on this machine.'],
+      blockers: ['Docker Desktop is required for the only supported Yagr-managed local n8n runtime.'],
       notes: [],
     },
   });

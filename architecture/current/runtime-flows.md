@@ -117,7 +117,7 @@ sequenceDiagram
 
 Managed startup rules:
 
-- `instanceProfile` persisted by setup remains the canonical product signal that an instance is `yagr-managed-docker` or `yagr-managed-direct`
+- `instanceProfile` persisted by setup remains the canonical product signal that an instance is `yagr-managed-docker`
 - the runtime state file remains the authority source for runtime details when present and coherent
 - if this state file is missing or stale, startup can recreate the runtime from the persisted managed profile instead of silently skipping startup
 - final n8n connection persistence continues through `setup/application-services.ts`, not through CLI

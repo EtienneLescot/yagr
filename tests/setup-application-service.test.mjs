@@ -169,11 +169,11 @@ test('saveN8nConfig reapplies instanceProfile after n8nac refresh rewrites the w
     apiKey: 'n8n-key',
     projectId: 'proj_1',
     syncFolder: 'workflows',
-    instanceProfile: 'yagr-managed-direct',
+    instanceProfile: 'yagr-managed-docker',
   });
 
   const saved = n8nConfigStore.getLocalConfig();
-  assert.equal(saved.instanceProfile, 'yagr-managed-direct');
+  assert.equal(saved.instanceProfile, 'yagr-managed-docker');
   assert.equal(saved.version, 2);
   assert.equal(saved.activeInstanceId, 'instance_test');
 });
@@ -185,7 +185,7 @@ test('completeManagedN8nConnection reuses the persisted project when it still ex
     syncFolder: 'workflows',
     projectId: 'proj_2',
     projectName: 'Existing Project',
-    instanceProfile: 'yagr-managed-direct',
+    instanceProfile: 'yagr-managed-docker',
   });
 
   const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
@@ -205,7 +205,7 @@ test('completeManagedN8nConnection reuses the persisted project when it still ex
     host: 'http://localhost:5678',
     apiKey: 'n8n-key',
     syncFolder: 'workflows',
-    instanceProfile: 'yagr-managed-direct',
+    instanceProfile: 'yagr-managed-docker',
   });
 
   assert.equal(result.project.id, 'proj_2');
@@ -220,7 +220,7 @@ test('completeManagedN8nConnection falls back to the first available project whe
     syncFolder: 'workflows',
     projectId: 'missing',
     projectName: 'Missing Project',
-    instanceProfile: 'yagr-managed-direct',
+    instanceProfile: 'yagr-managed-docker',
   });
 
   const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
@@ -240,7 +240,7 @@ test('completeManagedN8nConnection falls back to the first available project whe
     host: 'http://localhost:5678',
     apiKey: 'n8n-key',
     syncFolder: 'workflows',
-    instanceProfile: 'yagr-managed-direct',
+    instanceProfile: 'yagr-managed-docker',
   });
 
   assert.equal(result.project.id, 'proj_1');
