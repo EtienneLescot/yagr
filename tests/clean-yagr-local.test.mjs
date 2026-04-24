@@ -55,7 +55,7 @@ test('discoverYagrHomes picks dynamic homes and ignores unrelated dot directorie
   });
 });
 
-test('buildCleanupSummary includes ports from managed direct runtimes discovered outside the static home list', async () => {
+test('buildCleanupSummary includes ports from managed docker runtimes discovered outside the static home list', async () => {
   await withTempRoot(async (tempRoot) => {
     const homeDir = path.join(tempRoot, 'home');
     const repoRoot = path.join(tempRoot, 'repo');
@@ -64,7 +64,7 @@ test('buildCleanupSummary includes ports from managed direct runtimes discovered
 
     fs.mkdirSync(path.dirname(instanceFile), { recursive: true });
     fs.writeFileSync(instanceFile, JSON.stringify({
-      strategy: 'direct',
+      strategy: 'docker',
       port: 5690,
       pid: 4242,
       url: 'http://127.0.0.1:5690',
@@ -83,7 +83,7 @@ test('buildCleanupSummary includes ports from managed direct runtimes discovered
 
     assert.equal(summary.managedRuntimes.length, 1);
     assert.equal(summary.managedRuntimes[0].homePath, dynamicHome);
-    assert.equal(summary.managedRuntimes[0].strategy, 'direct');
+    assert.equal(summary.managedRuntimes[0].strategy, 'docker');
     assert.equal(summary.managedRuntimes[0].port, 5690);
     assert.equal(summary.ports.includes(5690), true);
   });

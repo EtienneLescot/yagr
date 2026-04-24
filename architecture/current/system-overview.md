@@ -133,7 +133,7 @@ yagr n8n tunnel start
 
 **Scope and Limitations**
 
-- The `n8n tunnel` only applies to **Yagr-managed local** instances (direct or docker). Cloud/remote instances are already public.
+- The `n8n tunnel` only applies to **Yagr-managed local** instances (Docker-managed). Cloud/remote instances are already public.
 - Three distinct tunnels can coexist: `n8n tunnel`, `n8n auth tunnel`, `llm tunnel`.
 - When n8n exposure is active, Yagr can also start a dedicated public tunnel for the n8n auth bridge for remote surfaces (e.g., Telegram mobile).
 - `trycloudflare.com` URLs change on every restart; in `TUNNEL_DOMAIN` mode, hostnames are stable but remain dependent on the locally configured Cloudflare account.

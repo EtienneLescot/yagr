@@ -27,7 +27,7 @@ test('getConfiguredManagedN8nState returns managed state when configured host ma
   const { getConfiguredManagedN8nState } = await import(modulePath);
 
   writeManagedN8nState(buildManagedN8nState({
-    strategy: 'direct',
+    strategy: 'docker',
     image: '',
     port: 5678,
     status: 'ready',
@@ -40,12 +40,12 @@ test('getConfiguredManagedN8nState returns managed state when configured host ma
     syncFolder: 'workflows',
     projectId: 'p1',
     projectName: 'Demo',
-    instanceProfile: 'yagr-managed-direct',
+    instanceProfile: 'yagr-managed-docker',
   });
 
   const state = getConfiguredManagedN8nState(configService);
   assert.ok(state);
-  assert.equal(state?.strategy, 'direct');
+  assert.equal(state?.strategy, 'docker');
   assert.equal(state?.url, 'http://127.0.0.1:5678');
 });
 
@@ -68,7 +68,7 @@ test('getConfiguredManagedN8nState upgrades configs without explicit managed cla
   const { getConfiguredManagedN8nState } = await import(modulePath);
 
   writeManagedN8nState(buildManagedN8nState({
-    strategy: 'direct',
+    strategy: 'docker',
     image: '',
     port: 5678,
     status: 'ready',
@@ -85,7 +85,7 @@ test('getConfiguredManagedN8nState upgrades configs without explicit managed cla
 
   const state = getConfiguredManagedN8nState(configService);
   assert.ok(state);
-  assert.equal(state?.strategy, 'direct');
+  assert.equal(state?.strategy, 'docker');
   assert.equal(state?.url, 'http://127.0.0.1:5678');
 });
 
@@ -167,7 +167,7 @@ test('prepareConfiguredN8nForLaunch reconciles managed startup when the instance
   const { prepareConfiguredN8nForLaunch } = await import(modulePath);
 
   const managedState = buildManagedN8nState({
-    strategy: 'direct',
+    strategy: 'docker',
     image: '',
     port: 16578,
     status: 'ready',
@@ -179,7 +179,7 @@ test('prepareConfiguredN8nForLaunch reconciles managed startup when the instance
   configService.saveLocalConfig({
     host: managedState.url,
     syncFolder: 'workflows',
-    instanceProfile: 'yagr-managed-direct',
+    instanceProfile: 'yagr-managed-docker',
   });
 
   let bootstrapCalls = 0;
@@ -340,7 +340,7 @@ test('ensureConfiguredManagedN8nRunning recreates stale managed state from persi
   const { ensureConfiguredManagedN8nRunning } = await import(modulePath);
 
   writeManagedN8nState(buildManagedN8nState({
-    strategy: 'direct',
+    strategy: 'docker',
     image: '',
     port: 9999,
     status: 'ready',
