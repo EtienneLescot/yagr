@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildRelayInfo } from '../dist/llm/llm-relay-server.js';
-import { getYagrProxyStatus } from '../dist/manager-tooling/yagr-proxy.js';
+import {
+  buildYagrProxyCredentialCreateArgs,
+  buildYagrProxyCredentialData,
+  getYagrProxyStatus,
+} from '../dist/manager-tooling/yagr-proxy.js';
 import { YagrConfigService } from '../dist/config/yagr-config-service.js';
 
 // ─── buildRelayInfo — SSOT for credential base URL ───────────────────────────
@@ -110,3 +114,29 @@ test('getYagrProxyStatus reports configured:false when llmProxy is not set', asy
   }
 });
 
+test('Yagr proxy credential creation uses a JSON file instead of inline --data', () => {
+  const args = buildYagrProxyCredentialCreateArgs('/tmp/openAiApi.json');
+
+  assert.deepEqual(args, [
+    'credential',
+    'create',
+    '--type',
+    'openAiApi',
+    '--name',
+    'Yagr LLM Proxy',
+    '--file',
+    '/tmp/openAiApi.json',
+    '--json',
+  ]);
+  assert.equal(args.includes('--data'), false);
+});
+
+test('Yagr proxy credential data contains the relay API key and base URL', () => {
+  assert.deepEqual(
+    buildYagrProxyCredentialData('http://host.docker.internal:11437/v1'),
+    {
+      apiKey: 'yagr-relay-key',
+      url: 'http://host.docker.internal:11437/v1',
+    },
+  );
+});
