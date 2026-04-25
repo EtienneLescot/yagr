@@ -182,16 +182,14 @@ async function dockerComposeV2Available(): Promise<boolean> {
   }
 }
 
-function buildComposeFile(): string {
+export function buildComposeFile(): string {
   return [
     'services:',
     '  n8n:',
     '    image: ${N8N_IMAGE}',
     '    restart: unless-stopped',
     '    ports:',
-    process.platform === 'win32'
-      ? `      - "\${YAGR_N8N_HOST_PORT}:${CONTAINER_N8N_PORT}"`
-      : `      - "127.0.0.1:\${YAGR_N8N_HOST_PORT}:${CONTAINER_N8N_PORT}"`,
+    `      - "127.0.0.1:\${YAGR_N8N_HOST_PORT}:${CONTAINER_N8N_PORT}"`,
     '    env_file:',
     '      - .env',
     '    volumes:',

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getYagrHomeDir } from './yagr-home.js';
-import { isPidAlive } from '../system/process.js';
+import { getProcessCommandLine, isPidAlive } from '../system/process.js';
 
 export function getGatewayPidPath(): string {
   return path.join(getYagrHomeDir(), 'gateway.pid');
@@ -35,17 +35,23 @@ export function clearGatewayPid(): void {
   } catch { /* already gone */ }
 }
 
-export function isYagrGatewayProcess(pid: number): boolean {
-  if (process.platform === 'win32') {
-    return true;
-  }
+function hasCommandToken(commandLine: string, token: string): boolean {
+  const escapedToken = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[\\s"'\\0])${escapedToken}($|[\\s"'\\0])`, 'i').test(commandLine);
+}
 
-  try {
-    const stat = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8');
-    return stat.includes('yagr') && stat.includes('gateway');
-  } catch {
+export function isYagrGatewayCommandLine(commandLine: string | undefined): boolean {
+  if (!commandLine) {
     return false;
   }
+
+  const normalized = commandLine.replace(/\0/g, ' ').trim();
+  return /(^|[\\/@\s"'-])@?yagr([\\/.\s"'_-]|$)/i.test(normalized)
+    && hasCommandToken(normalized, 'gateway');
+}
+
+export function isYagrGatewayProcess(pid: number): boolean {
+  return isYagrGatewayCommandLine(getProcessCommandLine(pid));
 }
 
 export function tryAcquireLock(): boolean {
