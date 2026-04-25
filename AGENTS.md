@@ -163,3 +163,6 @@ When doubt exists between:
 - or clarifying responsibility and extracting an authority point
 
 prefer clarification and the authority point.
+
+## Legacy, backward compatibility
+We are in beta, the general rule is to never maintain legacy nor backward compatibility.
