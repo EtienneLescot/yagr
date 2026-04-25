@@ -303,7 +303,23 @@ async function attemptListen(server: http.Server, port: number): Promise<number>
 async function startRelayInProcess(): Promise<number> {
   for (const preferredPort of [N8N_RELAY_DEFAULT_PORT, 0]) {
     const server = http.createServer((req, res) => {
-      void handleRequest(req, res);
+      void handleRequest(req, res).catch((error) => {
+        logRelay('error', 'Unhandled relay request failure', {
+          method: req.method ?? 'GET',
+          url: req.url ?? '/',
+          error: formatErrorMessage(error),
+        });
+        if (!res.headersSent) {
+          sendJson(res, 503, {
+            error: {
+              message: formatErrorMessage(error),
+              type: 'server_error',
+            },
+          });
+          return;
+        }
+        res.end();
+      });
     });
 
     let port: number;
@@ -363,6 +379,15 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(payload);
 }
 
+function logRelay(level: 'info' | 'warn' | 'error', message: string, details?: Record<string, unknown>): void {
+  const suffix = details ? ` ${JSON.stringify(details)}` : '';
+  process.stdout.write(`[${new Date().toISOString()}] [llm-relay] [${level}] ${message}${suffix}\n`);
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function readBody(req: http.IncomingMessage): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -374,6 +399,11 @@ async function readBody(req: http.IncomingMessage): Promise<Buffer> {
 
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const url = req.url ?? '/';
+
+  if (req.method === 'GET' && url === '/v1/health') {
+    await handleHealth(res);
+    return;
+  }
 
   if (req.method === 'GET' && url === '/v1/models') {
     await handleModels(res);
@@ -388,15 +418,59 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   sendJson(res, 404, { error: { message: 'Not found', type: 'invalid_request_error' } });
 }
 
+async function handleHealth(res: http.ServerResponse): Promise<void> {
+  try {
+    const result = await resolveProviderRuntime();
+    if (!result.ready || !result.runtime) {
+      sendJson(res, 503, {
+        ok: false,
+        providerReady: false,
+        provider: result.runtime?.provider ?? null,
+        resolvedModel: result.resolvedModel,
+        reason: result.reason ?? 'Yagr provider not ready.',
+        notes: result.notes,
+      });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      providerReady: true,
+      provider: result.runtime.provider,
+      resolvedModel: result.resolvedModel,
+      upstreamBaseUrl: result.runtime.baseUrl,
+      modelsDiscovered: result.runtime.models.length,
+      notes: result.notes,
+    });
+  } catch (error) {
+    logRelay('error', 'Health probe failed', { error: formatErrorMessage(error) });
+    sendJson(res, 503, {
+      ok: false,
+      providerReady: false,
+      reason: formatErrorMessage(error),
+    });
+  }
+}
+
 async function handleModels(res: http.ServerResponse): Promise<void> {
   try {
     const result = await resolveProviderRuntime();
+    if (!result.ready || !result.runtime) {
+      sendJson(res, 503, {
+        error: {
+          message: result.reason ?? 'Yagr provider not ready. Make sure Yagr is configured and authenticated.',
+          type: 'server_error',
+        },
+      });
+      return;
+    }
     const models = result.runtime?.models ?? [];
     sendJson(res, 200, {
       object: 'list',
       data: models.map((id) => ({ id, object: 'model', created: 0, owned_by: 'yagr' })),
     });
   } catch (err) {
+    logRelay('error', 'Models request failed', { error: formatErrorMessage(err) });
     sendJson(res, 503, { error: { message: String(err), type: 'server_error' } });
   }
 }
@@ -537,6 +611,11 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   const result = await resolveProviderRuntime();
 
   if (!result.ready || !result.runtime) {
+    logRelay('warn', 'Provider runtime not ready for relay request', {
+      method: req.method ?? 'POST',
+      url: req.url ?? '/v1/chat/completions',
+      reason: result.reason ?? 'provider not ready',
+    });
     sendJson(res, 503, {
       error: {
         message: result.reason ?? 'Yagr provider not ready. Make sure Yagr is configured and authenticated.',
@@ -567,6 +646,11 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   }
 
   if (!baseUrl) {
+    logRelay('warn', 'Provider does not expose an OpenAI-compatible base URL', {
+      provider,
+      method: req.method ?? 'POST',
+      url: req.url ?? '/v1/chat/completions',
+    });
     sendJson(res, 503, {
       error: {
         message: 'Active provider does not expose an OpenAI-compatible base URL. Use a dedicated n8n credential for this provider instead.',
@@ -598,14 +682,36 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   if (fromResponsesApi && !PROVIDERS_WITH_NATIVE_RESPONSES_API.has(provider)) {
     const chatBody = translateResponsesRequestToChatCompletionsBody(bodyWithModel);
     const chatUrl = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
-    const upstreamChat = await fetch(chatUrl, {
-      method: 'POST',
-      headers: forwardHeaders,
-      body: chatBody.buffer.slice(chatBody.byteOffset, chatBody.byteOffset + chatBody.byteLength) as ArrayBuffer,
-    });
+    let upstreamChat: Response;
+    try {
+      upstreamChat = await fetch(chatUrl, {
+        method: 'POST',
+        headers: forwardHeaders,
+        body: chatBody.buffer.slice(chatBody.byteOffset, chatBody.byteOffset + chatBody.byteLength) as ArrayBuffer,
+      });
+    } catch (error) {
+      logRelay('error', 'Upstream chat/completions request failed', {
+        provider,
+        targetUrl: chatUrl,
+        error: formatErrorMessage(error),
+      });
+      sendJson(res, 503, {
+        error: {
+          message: `Upstream request failed: ${formatErrorMessage(error)}`,
+          type: 'server_error',
+        },
+      });
+      return;
+    }
 
     if (!upstreamChat.ok || !upstreamChat.body) {
       const errText = await upstreamChat.text().catch(() => '');
+      logRelay('warn', 'Upstream chat/completions returned an error', {
+        provider,
+        targetUrl: chatUrl,
+        status: upstreamChat.status,
+        body: errText.slice(0, 300),
+      });
       res.writeHead(upstreamChat.status, { 'Content-Type': 'application/json' });
       res.end(errText || JSON.stringify({ error: { message: `Upstream error: HTTP ${upstreamChat.status}`, type: 'server_error' } }));
       return;
@@ -627,12 +733,42 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
   const targetUrl = fromResponsesApi
     ? `${baseUrl.replace(/\/+$/, '')}/responses`
     : `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  let upstream: Response;
+  try {
+    upstream = await fetch(targetUrl, {
+      method: 'POST',
+      headers: forwardHeaders,
+      body: bodyWithModel.buffer.slice(bodyWithModel.byteOffset, bodyWithModel.byteOffset + bodyWithModel.byteLength) as ArrayBuffer,
+    });
+  } catch (error) {
+    logRelay('error', 'Upstream relay request failed', {
+      provider,
+      targetUrl,
+      error: formatErrorMessage(error),
+    });
+    sendJson(res, 503, {
+      error: {
+        message: `Upstream request failed: ${formatErrorMessage(error)}`,
+        type: 'server_error',
+      },
+    });
+    return;
+  }
 
-  const upstream = await fetch(targetUrl, {
-    method: 'POST',
-    headers: forwardHeaders,
-    body: bodyWithModel.buffer.slice(bodyWithModel.byteOffset, bodyWithModel.byteOffset + bodyWithModel.byteLength) as ArrayBuffer,
-  });
+  if (!upstream.ok) {
+    const errText = await upstream.text().catch(() => '');
+    logRelay('warn', 'Upstream relay request returned an error', {
+      provider,
+      targetUrl,
+      status: upstream.status,
+      body: errText.slice(0, 300),
+    });
+    res.writeHead(upstream.status, {
+      'Content-Type': upstream.headers.get('content-type') ?? 'application/json',
+    });
+    res.end(errText || JSON.stringify({ error: { message: `Upstream error: HTTP ${upstream.status}`, type: 'server_error' } }));
+    return;
+  }
 
   res.writeHead(upstream.status, {
     'Content-Type': upstream.headers.get('content-type') ?? 'application/json',
