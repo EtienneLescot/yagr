@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.31](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.30...yagr@v0.2.31) (2026-04-25)
+
+
+### Features
+
+* **llm:** add health check endpoint and relay monitoring ([f3a52e6](https://github.com/EtienneLescot/yagr/commit/f3a52e6e97578dc668049341efaab5888a10846d))
+* **llm:** improve Docker host resolution for Windows and macOS ([db54727](https://github.com/EtienneLescot/yagr/commit/db54727255f3719c11e332dfccb1f34e15ccb7cf))
+* **system:** implement cross-platform process command line retrieval ([b2ef13f](https://github.com/EtienneLescot/yagr/commit/b2ef13fa232465d2edabefaef239f00f262ddd52))
+* **windows:** add native platform process support ([735df29](https://github.com/EtienneLescot/yagr/commit/735df29033c1474c036512810e0e9e99bf8e2613))
+* **yagr-proxy:** use file-based credential creation ([def30d2](https://github.com/EtienneLescot/yagr/commit/def30d2540f15f4e507d5136254f994d0d3c3b70))
+
+
+### Bug Fixes
+
+* **process:** restore posix shell stability and safer pid termination ([741aa29](https://github.com/EtienneLescot/yagr/commit/741aa297e16dbc92db139457aa68372aaefdba7d))
+* **system:** stabilize unix shell and cleanup kills ([6c8fc66](https://github.com/EtienneLescot/yagr/commit/6c8fc669686654e498cad6da20c0cba56e444de0))
+
 ## [0.2.30](https://github.com/EtienneLescot/yagr/compare/yagr@v0.2.29...yagr@v0.2.30) (2026-04-23)
 
 
