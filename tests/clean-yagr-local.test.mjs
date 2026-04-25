@@ -8,6 +8,7 @@ import {
   buildCleanupSummary,
   discoverYagrHomes,
   getComposeProjectName,
+  runCleanup,
   stopManagedDockerRuntime,
 } from '../scripts/clean-yagr-local.mjs';
 
@@ -158,5 +159,47 @@ test('stopManagedDockerRuntime removes labeled docker containers even when the c
     assert.equal(execCalls.length, 1);
     assert.equal(execCalls[0].command, 'docker');
     assert.deepEqual(execCalls[0].args, ['rm', '-f', '-v', 'container-123']);
+  });
+});
+
+test('runCleanup kills known listening ports by exact PID on POSIX', async () => {
+  await withTempRoot(async (tempRoot) => {
+    const killCalls = [];
+    let lsofCallsForN8nPort = 0;
+
+    runCleanup({
+      dryRun: false,
+      homeDir: path.join(tempRoot, 'home'),
+      repoRoot: path.join(tempRoot, 'repo'),
+      env: {},
+      platform: 'linux',
+    }, {
+      existsSync: () => false,
+      readdirSync: () => [],
+      rmSync: () => {},
+      sleep: () => {},
+      kill: (pid, signal) => {
+        killCalls.push({ pid, signal });
+      },
+      spawnSync: (command, args) => {
+        if (command === 'sh') {
+          return String(args[1]).includes('lsof')
+            ? { status: 0, stdout: '', stderr: '' }
+            : { status: 1, stdout: '', stderr: '' };
+        }
+
+        if (command === 'lsof' && args[1] === 'tcp:5678') {
+          lsofCallsForN8nPort += 1;
+          return lsofCallsForN8nPort === 1
+            ? { status: 0, stdout: '1234\n', stderr: '' }
+            : { status: 1, stdout: '', stderr: '' };
+        }
+
+        return { status: 1, stdout: '', stderr: '' };
+      },
+    });
+
+    assert.deepEqual(killCalls, [{ pid: 1234, signal: 'SIGTERM' }]);
+    assert.equal(killCalls.some((call) => call.pid < 0), false);
   });
 });

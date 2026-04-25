@@ -24,17 +24,8 @@ export function resolveNativeShell(platform: NodeJS.Platform = process.platform)
     };
   }
 
-  const configuredShell = process.env.SHELL;
-  if (configuredShell) {
-    const normalizedShell = configuredShell.split('/').pop()?.toLowerCase();
-    if (normalizedShell && ['sh', 'bash', 'dash', 'ksh', 'zsh', 'ash'].includes(normalizedShell)) {
-      return {
-        file: configuredShell,
-        args: ['-c'],
-      };
-    }
-  }
-
+  // Keep script execution deterministic on Unix instead of inheriting an
+  // interactive shell such as zsh/fish/tcsh with different command semantics.
   return {
     file: 'sh',
     args: ['-c'],
