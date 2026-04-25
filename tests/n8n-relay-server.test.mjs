@@ -128,6 +128,25 @@ test('buildRelayInfo uses dockerHostAddress when mode is docker', () => {
   });
 });
 
+test('buildRelayInfo rewrites stale docker bridge host to host.docker.internal on native Windows', () => {
+  withTempHome(() => {
+    const configService = new YagrConfigService();
+    configService.updateLocalConfig((cfg) => ({
+      ...cfg,
+      llmProxy: {
+        enabled: true,
+        mode: 'docker',
+        credentialBaseUrl: 'http://172.17.0.1:11437/v1',
+        dockerHostAddress: '172.17.0.1',
+      },
+    }));
+    const relayPort = 11437;
+    const result = buildRelayInfo(relayPort, 'win32');
+    assert.equal(result.baseUrl, `http://host.docker.internal:${relayPort}/v1`);
+    assert.equal(result.hostBaseUrl, `http://127.0.0.1:${relayPort}/v1`);
+  });
+});
+
 test('buildRelayInfo returns hostBaseUrl when mode is local', () => {
   withTempHome(() => {
     const configService = new YagrConfigService();

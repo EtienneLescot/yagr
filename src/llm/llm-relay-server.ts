@@ -67,6 +67,20 @@ interface ResponsesApiRequest {
 
 let activeServer: http.Server | undefined;
 
+function normalizeDockerRelayHost(host: string | undefined, platform: NodeJS.Platform = process.platform): string | undefined {
+  if (!host) {
+    return host;
+  }
+
+  const prefersDockerDesktopHost = platform === 'win32' || platform === 'darwin';
+  const isBridgeIp = /^\d+\.\d+\.\d+\.\d+$/.test(host) && host !== '127.0.0.1';
+  if (prefersDockerDesktopHost && isBridgeIp) {
+    return 'host.docker.internal';
+  }
+
+  return host;
+}
+
 // ─── State persistence ────────────────────────────────────────────────────────
 
 export function getN8nRelayState(): N8nRelayServerState | undefined {
@@ -180,7 +194,7 @@ export async function ensureN8nRelayServer(): Promise<N8nRelayInfo> {
   return buildRelayInfo(state.port);
 }
 
-export function buildRelayInfo(port: number): N8nRelayInfo {
+export function buildRelayInfo(port: number, platform: NodeJS.Platform = process.platform): N8nRelayInfo {
   const configService = new YagrConfigService();
   const proxyConfig = configService.getLocalConfig().llmProxy;
   const hostBaseUrl = `http://127.0.0.1:${port}/v1`;
@@ -191,7 +205,8 @@ export function buildRelayInfo(port: number): N8nRelayInfo {
   }
 
   if (proxyConfig?.mode === 'docker' && proxyConfig.dockerHostAddress) {
-    return { port, baseUrl: `http://${proxyConfig.dockerHostAddress}:${port}/v1`, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
+    const dockerHostAddress = normalizeDockerRelayHost(proxyConfig.dockerHostAddress, platform);
+    return { port, baseUrl: `http://${dockerHostAddress}:${port}/v1`, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
   }
 
   return { port, baseUrl: hostBaseUrl, hostBaseUrl, apiKey: N8N_RELAY_FAKE_API_KEY };
