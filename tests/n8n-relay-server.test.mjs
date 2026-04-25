@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -24,6 +25,34 @@ function withTempHome(run) {
     else process.env.YAGR_HOME = previousHome;
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
+}
+
+async function withTempHomeAsync(run) {
+  const previousHome = process.env.YAGR_HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-relay-info-'));
+  process.env.YAGR_HOME = tempHome;
+  try {
+    return await run(tempHome);
+  } finally {
+    if (previousHome === undefined) delete process.env.YAGR_HOME;
+    else process.env.YAGR_HOME = previousHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+}
+
+async function occupyLoopbackPort(port) {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', (error) => {
+      if (error?.code === 'EADDRINUSE') {
+        resolve(undefined);
+        return;
+      }
+      reject(error);
+    });
+    server.once('listening', () => resolve(server));
+    server.listen({ host: '127.0.0.1', port, exclusive: true });
+  });
 }
 
 test('translateResponsesRequestToChatCompletionsBody converts responses input to chat messages', () => {
@@ -186,6 +215,20 @@ test('buildRelayInfo ignores tunnelUrl field (no legacy fallback)', () => {
   });
 });
 
+test('relay skips default port when Windows loopback is already occupied', async () => {
+  const loopbackBlocker = await occupyLoopbackPort(11437);
+  try {
+    await withTempHomeAsync(async () => {
+      const relay = await ensureN8nRelayServerInProcess();
+      assert.notEqual(relay.port, 11437);
+      assert.equal(relay.hostBaseUrl, `http://127.0.0.1:${relay.port}/v1`);
+    });
+  } finally {
+    closeN8nRelayServerInProcessForTests();
+    await new Promise((resolve) => loopbackBlocker?.close(resolve) ?? resolve());
+  }
+});
+
 test('resolveDockerHostAddress prefers host.docker.internal on native Windows', async () => {
   const previous = process.env.YAGR_LLM_RELAY_HOST;
   delete process.env.YAGR_LLM_RELAY_HOST;
@@ -199,70 +242,74 @@ test('resolveDockerHostAddress prefers host.docker.internal on native Windows', 
 });
 
 test('relay health endpoint reports provider-not-ready when no usable LLM runtime is configured', async () => {
-  const originalGetLocalConfig = YagrConfigService.prototype.getLocalConfig;
-  const originalGetApiKey = YagrConfigService.prototype.getApiKey;
-  const previousOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
-  delete process.env.OPENROUTER_API_KEY;
-  YagrConfigService.prototype.getLocalConfig = () => ({
-    provider: 'openrouter',
-    model: 'openai/gpt-4o-mini',
-    baseUrl: 'https://openrouter.ai/api/v1',
-  });
-  YagrConfigService.prototype.getApiKey = () => undefined;
+  await withTempHomeAsync(async () => {
+    const originalGetLocalConfig = YagrConfigService.prototype.getLocalConfig;
+    const originalGetApiKey = YagrConfigService.prototype.getApiKey;
+    const previousOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    YagrConfigService.prototype.getLocalConfig = () => ({
+      provider: 'openrouter',
+      model: 'openai/gpt-4o-mini',
+      baseUrl: 'https://openrouter.ai/api/v1',
+    });
+    YagrConfigService.prototype.getApiKey = () => undefined;
 
-  try {
-    const relay = await ensureN8nRelayServerInProcess();
-    const response = await fetch(`${relay.hostBaseUrl}/health`);
-    assert.equal(response.status, 503);
-    const payload = await response.json();
-    assert.equal(payload.ok, false);
-    assert.equal(payload.providerReady, false);
-  } finally {
-    if (previousOpenRouterApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = previousOpenRouterApiKey;
-    YagrConfigService.prototype.getLocalConfig = originalGetLocalConfig;
-    YagrConfigService.prototype.getApiKey = originalGetApiKey;
-    closeN8nRelayServerInProcessForTests();
-  }
+    try {
+      const relay = await ensureN8nRelayServerInProcess();
+      const response = await fetch(`${relay.hostBaseUrl}/health`);
+      assert.equal(response.status, 503);
+      const payload = await response.json();
+      assert.equal(payload.ok, false);
+      assert.equal(payload.providerReady, false);
+    } finally {
+      if (previousOpenRouterApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previousOpenRouterApiKey;
+      YagrConfigService.prototype.getLocalConfig = originalGetLocalConfig;
+      YagrConfigService.prototype.getApiKey = originalGetApiKey;
+      closeN8nRelayServerInProcessForTests();
+    }
+  });
 });
 
 test('relay health endpoint reports ready state when the configured provider runtime is reachable', async () => {
-  const originalGetLocalConfig = YagrConfigService.prototype.getLocalConfig;
-  const originalGetApiKey = YagrConfigService.prototype.getApiKey;
-  YagrConfigService.prototype.getLocalConfig = () => ({
-    provider: 'openrouter',
-    model: 'openai/gpt-4o-mini',
-    baseUrl: 'https://openrouter.ai/api/v1',
-  });
-  YagrConfigService.prototype.getApiKey = () => 'test-key';
-
-  const previousFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const target = String(url);
-    if (target.startsWith('http://127.0.0.1:')) {
-      return previousFetch(url, init);
-    }
-    assert.equal(target, 'https://openrouter.ai/api/v1/models');
-    return new Response(JSON.stringify({
-      data: [{ id: 'openai/gpt-4o-mini' }],
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+  await withTempHomeAsync(async () => {
+    const originalGetLocalConfig = YagrConfigService.prototype.getLocalConfig;
+    const originalGetApiKey = YagrConfigService.prototype.getApiKey;
+    YagrConfigService.prototype.getLocalConfig = () => ({
+      provider: 'openrouter',
+      model: 'openai/gpt-4o-mini',
+      baseUrl: 'https://openrouter.ai/api/v1',
     });
-  };
+    YagrConfigService.prototype.getApiKey = () => 'test-key';
 
-  try {
-    const relay = await ensureN8nRelayServerInProcess();
-    const response = await fetch(`${relay.hostBaseUrl}/health`);
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.equal(payload.ok, true);
-    assert.equal(payload.providerReady, true);
-    assert.equal(payload.provider, 'openrouter');
-  } finally {
-    globalThis.fetch = previousFetch;
-    YagrConfigService.prototype.getLocalConfig = originalGetLocalConfig;
-    YagrConfigService.prototype.getApiKey = originalGetApiKey;
-    closeN8nRelayServerInProcessForTests();
-  }
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      const target = String(url);
+      if (target.startsWith('http://127.0.0.1:')) {
+        return previousFetch(url, init);
+      }
+      assert.equal(target, 'https://openrouter.ai/api/v1/models');
+      return new Response(JSON.stringify({
+        data: [{ id: 'openai/gpt-4o-mini' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    try {
+      const relay = await ensureN8nRelayServerInProcess();
+      const response = await fetch(`${relay.hostBaseUrl}/health`);
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.ok, true);
+      assert.equal(payload.providerReady, true);
+      assert.equal(payload.provider, 'openrouter');
+    } finally {
+      globalThis.fetch = previousFetch;
+      YagrConfigService.prototype.getLocalConfig = originalGetLocalConfig;
+      YagrConfigService.prototype.getApiKey = originalGetApiKey;
+      closeN8nRelayServerInProcessForTests();
+    }
+  });
 });
