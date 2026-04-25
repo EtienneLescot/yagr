@@ -199,6 +199,10 @@ yagr stop      # stop services
 * **Node.js** `v22.16.0` or higher
 * **Docker** (optional, required for Yagr-managed instances)
 
+On native Windows, use **Docker Desktop** for Yagr-managed n8n. Yagr configures the
+Docker-facing LLM relay URL with `host.docker.internal` so the n8n container reaches the
+host relay reliably.
+
 ---
 
 ## Yagr and n8n-as-code

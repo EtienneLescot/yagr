@@ -4,7 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { translateResponsesRequestToChatCompletionsBody, buildRelayInfo } from '../dist/llm/llm-relay-server.js';
+import {
+  translateResponsesRequestToChatCompletionsBody,
+  buildRelayInfo,
+  resolveDockerHostAddress,
+} from '../dist/llm/llm-relay-server.js';
 import { YagrConfigService } from '../dist/config/yagr-config-service.js';
 
 function withTempHome(run) {
@@ -159,4 +163,16 @@ test('buildRelayInfo ignores tunnelUrl field (no legacy fallback)', () => {
     // tunnelUrl should be ignored; since llmTunnelUrl is absent, falls back to local
     assert.equal(result.baseUrl, `http://127.0.0.1:${relayPort}/v1`);
   });
+});
+
+test('resolveDockerHostAddress prefers host.docker.internal on native Windows', async () => {
+  const previous = process.env.YAGR_LLM_RELAY_HOST;
+  delete process.env.YAGR_LLM_RELAY_HOST;
+  try {
+    const host = await resolveDockerHostAddress('win32');
+    assert.equal(host, 'host.docker.internal');
+  } finally {
+    if (previous === undefined) delete process.env.YAGR_LLM_RELAY_HOST;
+    else process.env.YAGR_LLM_RELAY_HOST = previous;
+  }
 });
