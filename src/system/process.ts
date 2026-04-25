@@ -24,7 +24,7 @@ export function resolveNativeShell(platform: NodeJS.Platform = process.platform)
   }
 
   return {
-    file: process.env.SHELL || 'sh',
+    file: '/bin/sh',
     args: ['-c'],
   };
 }
@@ -107,17 +107,21 @@ export async function killProcessTree(pid: number | undefined, options: { force?
     }
   }
 
+  const signal = options.force ? 'SIGKILL' : 'SIGTERM';
+
   try {
-    process.kill(-pid, options.force ? 'SIGKILL' : 'SIGTERM');
-    return true;
+    process.kill(pid, signal);
   } catch {
-    try {
-      process.kill(pid, options.force ? 'SIGKILL' : 'SIGTERM');
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
+
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // Ignore failures: the target PID may not own a process group.
+  }
+
+  return true;
 }
 
 export async function isCommandAvailable(command: string): Promise<boolean> {
