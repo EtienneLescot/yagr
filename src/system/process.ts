@@ -23,8 +23,19 @@ export function resolveNativeShell(platform: NodeJS.Platform = process.platform)
     };
   }
 
+  const configuredShell = process.env.SHELL;
+  if (configuredShell) {
+    const normalizedShell = configuredShell.split('/').pop()?.toLowerCase();
+    if (normalizedShell && ['sh', 'bash', 'dash', 'ksh', 'zsh', 'ash'].includes(normalizedShell)) {
+      return {
+        file: configuredShell,
+        args: ['-c'],
+      };
+    }
+  }
+
   return {
-    file: process.env.SHELL || 'sh',
+    file: 'sh',
     args: ['-c'],
   };
 }
@@ -108,15 +119,10 @@ export async function killProcessTree(pid: number | undefined, options: { force?
   }
 
   try {
-    process.kill(-pid, options.force ? 'SIGKILL' : 'SIGTERM');
+    process.kill(pid, options.force ? 'SIGKILL' : 'SIGTERM');
     return true;
   } catch {
-    try {
-      process.kill(pid, options.force ? 'SIGKILL' : 'SIGTERM');
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 
