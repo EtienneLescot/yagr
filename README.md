@@ -171,8 +171,7 @@ Open the visual editor to inspect or refine it.
 * Docker is required for **Yagr-managed instances**
 * **Linux**
 * **macOS**
-* **Windows via WSL**
-* **Native Windows support is coming**
+* **Windows**
 
 ### Workflow support
 
