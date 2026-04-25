@@ -72,6 +72,30 @@ async function listYagrProxyCredentials(cwd: string): Promise<Array<{ id?: strin
     : [];
 }
 
+async function probeRelayHealth(url: string): Promise<{
+  ok: boolean;
+  status?: number;
+  body?: unknown;
+  error?: string;
+}> {
+  try {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    const text = await response.text();
+    return {
+      ok: response.ok,
+      status: response.status,
+      body: parseJsonPayload(text) ?? text.slice(0, 500),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export function buildYagrProxyCredentialData(baseUrl: string): Record<string, string> {
   return { apiKey: N8N_RELAY_FAKE_API_KEY, url: baseUrl };
 }
@@ -223,13 +247,20 @@ export async function getYagrProxyStatus() {
     : expectedBaseUrl && confirmedBaseUrl && expectedBaseUrl !== confirmedBaseUrl
       ? 'stale'
       : 'ready';
+  const relayInfo = relayState?.port ? buildRelayInfo(relayState.port) : undefined;
+  const relayHealthUrl = relayInfo ? `${relayInfo.hostBaseUrl}/health` : undefined;
+  const relayProbe = relayHealthUrl ? await probeRelayHealth(relayHealthUrl) : null;
 
   return {
     operation: 'yagrProxy',
     success: true,
     relayRunning: Boolean(relayState),
     relayPort: relayState?.port ?? null,
+    relayHealthUrl: relayHealthUrl ?? null,
+    relayProbe,
+    relayLogPath: path.join(getYagrPaths().proxyRuntimeDir, 'logs', 'llm-relay.log'),
     configured: Boolean(proxyConfig?.enabled),
+    proxyMode: proxyConfig?.mode ?? null,
     expectedBaseUrl: expectedBaseUrl ?? null,
     confirmedBaseUrl: confirmedBaseUrl ?? null,
     credentialFound: Boolean(existing?.id),
