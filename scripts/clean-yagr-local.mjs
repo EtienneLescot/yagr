@@ -302,7 +302,7 @@ function killKnownPorts(ports, deps = {}) {
   for (const port of ports) {
     const pids = getListeningPids(port, deps);
     for (const pid of pids) {
-      killProcessTree(pid, 'SIGTERM', deps);
+      killExactProcess(pid, 'SIGTERM', deps);
     }
 
     if (pids.length > 0) {
@@ -311,7 +311,7 @@ function killKnownPorts(ports, deps = {}) {
 
     const remaining = getListeningPids(port, deps);
     for (const pid of remaining) {
-      killProcessTree(pid, 'SIGKILL', deps);
+      killExactProcess(pid, 'SIGKILL', deps);
     }
 
     const killed = Array.from(new Set(pids.concat(remaining)));
@@ -319,6 +319,16 @@ function killKnownPorts(ports, deps = {}) {
       process.stdout.write(`killed port ${port}: ${killed.join(', ')}\n`);
     }
   }
+}
+
+function killExactProcess(pid, signal, deps = {}) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return;
+  }
+
+  try {
+    getKill(deps)(pid, signal);
+  } catch {}
 }
 
 function killMatchingProcesses(patterns, deps = {}) {
@@ -359,36 +369,6 @@ function killMatchingProcesses(patterns, deps = {}) {
   if (killed.size > 0) {
     process.stdout.write(`killed matching processes: ${[...killed].join(', ')}\n`);
   }
-}
-
-function killProcessTree(pid, signal, deps = {}) {
-  if (!Number.isInteger(pid) || pid <= 0) {
-    return;
-  }
-
-  const kill = getKill(deps);
-  if (getPlatform(deps) === 'win32') {
-    const args = ['/PID', String(pid), '/T'];
-    if (signal === 'SIGKILL') {
-      args.push('/F');
-    }
-    try {
-      getSpawnSync(deps)('taskkill.exe', args, {
-        stdio: 'ignore',
-      });
-    } catch {}
-    return;
-  }
-
-  if (getPlatform(deps) !== 'win32') {
-    try {
-      kill(-pid, signal);
-    } catch {}
-  }
-
-  try {
-    kill(pid, signal);
-  } catch {}
 }
 
 function removeKnownHomes(homes, deps = {}) {
