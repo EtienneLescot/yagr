@@ -99,18 +99,25 @@ function isRelayAlive(state: N8nRelayServerState): boolean {
  * Resolve the address that Docker containers should use to reach this host.
  * Priority:
  *   1. YAGR_N8N_RELAY_HOST env override
- *   2. host.docker.internal (Docker Desktop / WSL2 mirrored)
- *   3. docker0 bridge IP from network interfaces
- *   4. docker network inspect bridge gateway
- *   5. Fallback: 127.0.0.1
+ *   2. host.docker.internal on Docker Desktop platforms
+ *   3. host.docker.internal when resolvable from the current runtime
+ *   4. docker0 bridge IP from network interfaces
+ *   5. docker network inspect bridge gateway
+ *   6. Fallback: 127.0.0.1
  */
-export async function resolveDockerHostAddress(): Promise<string> {
+export async function resolveDockerHostAddress(platform: NodeJS.Platform = process.platform): Promise<string> {
   const override = process.env[YAGR_LLM_RELAY_HOST_ENV]?.trim() ?? process.env['YAGR_N8N_RELAY_HOST']?.trim();
   if (override) {
     return override;
   }
 
-  // Try host.docker.internal
+  // Docker Desktop guarantees this hostname inside containers even if the host
+  // runtime itself does not resolve it via DNS.
+  if (platform === 'win32' || platform === 'darwin') {
+    return 'host.docker.internal';
+  }
+
+  // Try host.docker.internal when the current runtime can resolve it.
   try {
     const { Resolver } = await import('node:dns/promises');
     const resolver = new Resolver();
