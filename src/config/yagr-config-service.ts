@@ -54,6 +54,50 @@ export interface YagrLlmProxyConfig {
   llmTunnelUrl?: string;
 }
 
+function prefersDockerDesktopHost(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'win32' || platform === 'darwin';
+}
+
+function looksLikeDockerBridgeHost(host: string | undefined): boolean {
+  if (!host) {
+    return false;
+  }
+
+  return /^\d+\.\d+\.\d+\.\d+$/.test(host) && host !== '127.0.0.1';
+}
+
+function normalizeLlmProxyConfig(
+  config: YagrLlmProxyConfig | undefined,
+  platform: NodeJS.Platform = process.platform,
+): YagrLlmProxyConfig | undefined {
+  if (!config) {
+    return undefined;
+  }
+
+  if (config.mode !== 'docker' || !prefersDockerDesktopHost(platform)) {
+    return config;
+  }
+
+  if (!looksLikeDockerBridgeHost(config.dockerHostAddress)) {
+    return config;
+  }
+
+  const normalizedHost = 'host.docker.internal';
+  const rewriteUrl = (value: string | undefined): string | undefined => {
+    if (!value) {
+      return value;
+    }
+    return value.replace(/^(http:\/\/)([^/:]+)(:\d+\/v1)$/, `$1${normalizedHost}$3`);
+  };
+
+  return {
+    ...config,
+    dockerHostAddress: normalizedHost,
+    credentialBaseUrl: rewriteUrl(config.credentialBaseUrl) ?? config.credentialBaseUrl,
+    confirmedCredentialBaseUrl: rewriteUrl(config.confirmedCredentialBaseUrl),
+  };
+}
+
 export interface N8nTunnelConfig {
   /** Whether the user has enabled the n8n exposure tunnel. */
   enabled: boolean;
@@ -271,5 +315,6 @@ function normalizeLocalConfig(config: YagrLocalConfig): YagrLocalConfig {
   return {
     ...config,
     ...(provider ? { provider } : {}),
+    llmProxy: normalizeLlmProxyConfig(config.llmProxy),
   };
 }
