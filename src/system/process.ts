@@ -1,4 +1,5 @@
-import { spawn, execFile, type ChildProcess, type SpawnOptions, type ExecFileOptions } from 'node:child_process';
+import { spawn, execFile, spawnSync, type ChildProcess, type SpawnOptions, type ExecFileOptions } from 'node:child_process';
+import fs from 'node:fs';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -93,9 +94,53 @@ export function isPidAlive(pid: number | undefined): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') {
+      return true;
+    }
     return false;
   }
+}
+
+export function getProcessCommandLine(
+  pid: number | undefined,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  if (!pid || !Number.isInteger(pid) || pid <= 0) {
+    return undefined;
+  }
+
+  if (platform === 'win32') {
+    const script = [
+      `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" -ErrorAction SilentlyContinue`,
+      'if ($p) { [Console]::Out.Write($p.CommandLine) }',
+    ].join('; ');
+    const result = spawnSync('powershell.exe', ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      encoding: 'utf8',
+      timeout: 5000,
+      windowsHide: true,
+    });
+    const commandLine = String(result.stdout ?? '').trim();
+    return result.status === 0 && commandLine ? commandLine : undefined;
+  }
+
+  if (platform === 'linux') {
+    try {
+      const commandLine = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim();
+      if (commandLine) {
+        return commandLine;
+      }
+    } catch {
+      // Fall back to ps below for non-procfs environments.
+    }
+  }
+
+  const result = spawnSync('ps', ['-p', String(pid), '-o', 'command='], {
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  const commandLine = String(result.stdout ?? '').trim();
+  return result.status === 0 && commandLine ? commandLine : undefined;
 }
 
 export async function killProcessTree(pid: number | undefined, options: { force?: boolean } = {}): Promise<boolean> {
