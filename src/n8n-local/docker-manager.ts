@@ -42,7 +42,11 @@ export async function installManagedDockerN8n(options: InstallManagedDockerN8nOp
 
   const paths = ensureManagedN8nDirs();
   const existingState = readManagedN8nState();
-  const port = options.port ?? existingState?.port ?? assessment.preferredPort ?? DEFAULT_N8N_PORT;
+  const port = resolveManagedDockerInstallPort({
+    explicitPort: options.port,
+    existingPort: existingState?.port,
+    preferredPort: assessment.preferredPort,
+  });
   const image = options.image ?? existingState?.image ?? DEFAULT_N8N_IMAGE;
   const bootstrapStage = resolveManagedN8nBootstrapStage(`http://127.0.0.1:${port}`);
 
@@ -70,6 +74,36 @@ export async function installManagedDockerN8n(options: InstallManagedDockerN8nOp
     fs.writeFileSync(paths.envFile, buildEnvFile({ ...input, webhookUrl: tunnelState?.publicUrl }));
     fs.writeFileSync(paths.composeFile, buildComposeFile());
   }
+}
+
+export function resolveManagedDockerInstallPort(input: {
+  explicitPort?: number;
+  existingPort?: number;
+  preferredPort?: number;
+}): number {
+  const explicitPort = typeof input.explicitPort === 'number' && Number.isInteger(input.explicitPort) && input.explicitPort > 0
+    ? input.explicitPort
+    : undefined;
+  const existingPort = typeof input.existingPort === 'number' && Number.isInteger(input.existingPort) && input.existingPort > 0
+    ? input.existingPort
+    : undefined;
+  const preferredPort = typeof input.preferredPort === 'number' && Number.isInteger(input.preferredPort) && input.preferredPort > 0
+    ? input.preferredPort
+    : undefined;
+
+  if (explicitPort) {
+    return explicitPort;
+  }
+
+  if (existingPort && existingPort === preferredPort) {
+    return existingPort;
+  }
+
+  if (preferredPort) {
+    return preferredPort;
+  }
+
+  return DEFAULT_N8N_PORT;
 }
 
 export async function startManagedDockerN8n(): Promise<ManagedN8nInstanceState> {
