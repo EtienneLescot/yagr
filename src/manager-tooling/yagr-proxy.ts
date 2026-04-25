@@ -219,8 +219,12 @@ export async function ensureYagrProxyCredential() {
   }
 
   (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
+  const credentialId = created?.id as string | undefined;
+  if (credentialId) {
+    await patchN8nCredentialUrl(credentialId, effectiveRelayBaseUrl, cwd);
+  }
   return {
-    credentialId: (created?.id as string | undefined) ?? null,
+    credentialId: credentialId ?? null,
     created: true,
     reused: false,
     baseUrl: effectiveRelayBaseUrl,

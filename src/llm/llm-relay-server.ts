@@ -13,6 +13,7 @@
  */
 
 import http from 'node:http';
+import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -25,7 +26,7 @@ import { handleAnthropicRelay } from './anthropic-relay.js';
 import { handleOpenAiAccountRelay } from './openai-account-relay.js';
 import { resolveLanguageModelConfig } from './create-langchain-model.js';
 import { translateChatCompletionToResponsesApi, pipeChatCompletionsSseAsResponsesApi } from './responses-api-relay.js';
-import { isPidAlive, spawnCommand, spawnDetached } from '../system/process.js';
+import { isPidAlive, killProcessTree, spawnCommand, spawnDetached } from '../system/process.js';
 
 /**
  * Providers that natively support the OpenAI Responses API (/v1/responses).
@@ -186,7 +187,10 @@ function getDockerBridgeGateway(): Promise<string | undefined> {
 export async function ensureN8nRelayServer(): Promise<N8nRelayInfo> {
   const existing = getN8nRelayState();
   if (existing && isRelayAlive(existing)) {
-    return buildRelayInfo(existing.port);
+    if (await isRelayHealthEndpointCompatible(existing.port)) {
+      return buildRelayInfo(existing.port);
+    }
+    await stopStaleRelay(existing);
   }
 
   spawnRelayProcess();
@@ -249,13 +253,52 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function clearN8nRelayState(): void {
+  try {
+    const statePath = getYagrPaths().n8nRelayStatePath;
+    if (fs.existsSync(statePath)) {
+      fs.unlinkSync(statePath);
+    }
+  } catch {
+    // best effort
+  }
+}
+
+async function stopStaleRelay(state: N8nRelayServerState): Promise<void> {
+  if (state.pid === process.pid) {
+    closeN8nRelayServerInProcessForTests();
+    return;
+  }
+  await killProcessTree(state.pid).catch(() => false);
+  clearN8nRelayState();
+}
+
+async function isRelayHealthEndpointCompatible(port: number): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/health`, {
+      signal: AbortSignal.timeout(2_000),
+    });
+    const body = await response.json().catch(() => undefined) as { ok?: unknown; providerReady?: unknown } | undefined;
+    return Boolean(
+      body
+      && typeof body === 'object'
+      && (typeof body.ok === 'boolean' || typeof body.providerReady === 'boolean'),
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Called inside the detached child process (llm-relay-entrypoint.ts).
  */
 export async function ensureN8nRelayServerInProcess(): Promise<N8nRelayInfo> {
   const existing = getN8nRelayState();
   if (existing && isRelayAlive(existing)) {
-    return buildRelayInfo(existing.port);
+    if (await isRelayHealthEndpointCompatible(existing.port)) {
+      return buildRelayInfo(existing.port);
+    }
+    await stopStaleRelay(existing);
   }
 
   const port = await startRelayInProcess();
@@ -279,10 +322,7 @@ export function closeN8nRelayServerInProcessForTests(): void {
   try {
     const state = getN8nRelayState();
     if (state?.pid === process.pid) {
-      const statePath = getYagrPaths().n8nRelayStatePath;
-      if (fs.existsSync(statePath)) {
-        fs.unlinkSync(statePath);
-      }
+      clearN8nRelayState();
     }
   } catch {
     // best effort
@@ -300,8 +340,26 @@ async function attemptListen(server: http.Server, port: number): Promise<number>
   });
 }
 
+async function canBindLoopbackPort(port: number): Promise<boolean> {
+  if (port === 0) {
+    return true;
+  }
+  return new Promise<boolean>((resolve) => {
+    const probe = net.createServer();
+    probe.once('error', () => resolve(false));
+    probe.once('listening', () => {
+      probe.close(() => resolve(true));
+    });
+    probe.listen({ host: '127.0.0.1', port, exclusive: true });
+  });
+}
+
 async function startRelayInProcess(): Promise<number> {
   for (const preferredPort of [N8N_RELAY_DEFAULT_PORT, 0]) {
+    if (!(await canBindLoopbackPort(preferredPort))) {
+      continue;
+    }
+
     const server = http.createServer((req, res) => {
       void handleRequest(req, res).catch((error) => {
         logRelay('error', 'Unhandled relay request failure', {
