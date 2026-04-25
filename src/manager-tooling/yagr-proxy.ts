@@ -6,6 +6,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
@@ -69,6 +70,24 @@ async function listYagrProxyCredentials(cwd: string): Promise<Array<{ id?: strin
   return Array.isArray(existingList)
     ? existingList as Array<{ id?: string; name?: string; type?: string }>
     : [];
+}
+
+export function buildYagrProxyCredentialData(baseUrl: string): Record<string, string> {
+  return { apiKey: N8N_RELAY_FAKE_API_KEY, url: baseUrl };
+}
+
+export function buildYagrProxyCredentialCreateArgs(dataFilePath: string): string[] {
+  return [
+    'credential',
+    'create',
+    '--type',
+    'openAiApi',
+    '--name',
+    N8N_RELAY_CREDENTIAL_NAME,
+    '--file',
+    dataFilePath,
+    '--json',
+  ];
 }
 
 /**
@@ -160,11 +179,15 @@ export async function ensureYagrProxyCredential() {
     };
   }
 
-  const credData = JSON.stringify({ apiKey: N8N_RELAY_FAKE_API_KEY, url: effectiveRelayBaseUrl });
-  const createResult = await runN8nacCommand(
-    ['credential', 'create', '--type', 'openAiApi', '--name', N8N_RELAY_CREDENTIAL_NAME, '--data', credData, '--json'],
-    cwd,
-  );
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-proxy-credential-'));
+  const credDataPath = path.join(tempDir, 'openAiApi.json');
+  fs.writeFileSync(credDataPath, JSON.stringify(buildYagrProxyCredentialData(effectiveRelayBaseUrl), null, 2), 'utf-8');
+  let createResult: RunResult;
+  try {
+    createResult = await runN8nacCommand(buildYagrProxyCredentialCreateArgs(credDataPath), cwd);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
   const created = parseJsonPayload(createResult.stdout) as Record<string, unknown> | undefined;
 
   if (createResult.exitCode !== 0) {
