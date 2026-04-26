@@ -8,13 +8,13 @@ La séparation n’est plus seulement documentaire :
 
 - `/home/etienne/repos/n8n-manager` existe comme repo indépendant ;
 - `@n8n-as-code/n8n-manager-core` porte les contrats de lifecycle runtime ;
-- `@n8n-as-code/n8n-credentials-manager` porte les recettes, starter kits, inventaire, client REST n8n et tests credentials ;
+- `@n8n-as-code/n8n-credentials-manager` porte les recettes, starter kits, inventaire, client REST n8n et CRUD/test credentials ;
 - `/home/etienne/repos/n8n-as-code/packages/workflow-core` existe comme point d’ancrage du moteur workflow et des contrats de modes façade ;
 - `/home/etienne/repos/n8n-as-code/packages/manager-adapter` existe comme pont optionnel des façades vers `n8n-manager` ;
-- `n8nac` expose les modes communs via `setup` / `setup-modes` et la readiness credentials via `credentials ...` ;
+- `n8nac` expose les modes communs via `setup` / `setup-modes` et la readiness/CRUD credentials via `credentials ...` ;
 - l’extension VS Code/Cursor et le plugin OpenClaw consomment les mêmes contrats de modes façade.
 
-Le reste à faire est l’extraction progressive du vieux core encore présent dans `packages/cli/src/core` vers `workflow-core`, et le branchement complet du lifecycle Docker/diagnostics historique de YAGR vers `n8n-manager`.
+Le reste à faire est l’extraction progressive du vieux core encore présent dans `packages/cli/src/core` vers `workflow-core`, et le branchement complet du lifecycle Docker/diagnostics historique de YAGR vers `n8n-manager`. Les opérations destructives doivent rester explicites et gardées (`--force`, confirmations UI, distinction suppression config vs suppression volumes/données).
 
 Cette version intègre les derniers arbitrages :
 
