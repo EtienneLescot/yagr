@@ -2,6 +2,20 @@
 
 ## Écosystème `n8n-as-code`, `n8n-manager`, `n8n-credentials-manager`, YAGR et intégrations agents
 
+## État d’implémentation au 2026-04-26
+
+La séparation n’est plus seulement documentaire :
+
+- `/home/etienne/repos/n8n-manager` existe comme repo indépendant ;
+- `@n8n-as-code/n8n-manager-core` porte les contrats de lifecycle runtime ;
+- `@n8n-as-code/n8n-credentials-manager` porte les recettes, starter kits, inventaire, client REST n8n et tests credentials ;
+- `/home/etienne/repos/n8n-as-code/packages/workflow-core` existe comme point d’ancrage du moteur workflow et des contrats de modes façade ;
+- `/home/etienne/repos/n8n-as-code/packages/manager-adapter` existe comme pont optionnel des façades vers `n8n-manager` ;
+- `n8nac` expose les modes communs via `setup` / `setup-modes` et la readiness credentials via `credentials ...` ;
+- l’extension VS Code/Cursor et le plugin OpenClaw consomment les mêmes contrats de modes façade.
+
+Le reste à faire est l’extraction progressive du vieux core encore présent dans `packages/cli/src/core` vers `workflow-core`, et le branchement complet du lifecycle Docker/diagnostics historique de YAGR vers `n8n-manager`.
+
 Cette version intègre les derniers arbitrages :
 
 - l’écosystème n8n doit vivre sous une ombrelle GitHub `n8n-as-code` ;
