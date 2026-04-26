@@ -36,6 +36,11 @@ flowchart TD
       N8nManager[@yagr/plugin-n8n-manager]
     end
 
+    subgraph ExternalN8n[External n8n-as-code Ecosystem]
+      ExternalManager[n8n-as-code/n8n-manager]
+      Credentials[n8n-credentials-manager]
+    end
+
     User --> AgentApp
     AgentApp --> RuntimeFacade
     AgentApp --> SurfacesFacade
@@ -49,6 +54,8 @@ flowchart TD
     SurfacesFacade --> TuiSurface
     AgentApp --> PluginRuntime
     PluginRuntime --> N8nManager
+    N8nManager -. optional LLM source adapter .-> ExternalManager
+    ExternalManager --> Credentials
 ```
 
 ## Key points
@@ -59,6 +66,7 @@ flowchart TD
   - `@yagr/runtime`
   - `@yagr/surfaces`
 - Manager-specific behavior is starting to move behind `@yagr/plugin-n8n-manager`.
+- The n8n infrastructure manager is now a separate external repo at `n8n-as-code/n8n-manager`; Yagr only keeps optional adapters such as `YAGR configured LLM` as a generic `LlmSource`.
 
 ## What Yagr core owns now
 
@@ -71,6 +79,8 @@ Yagr core owns:
 - stream adaptation
 - conversation/slash behavior
 - reusable surface primitives
+
+Yagr core does not own the generic n8n credentials manager. The external `n8n-manager` repo owns credential recipes, starter kits, inventory status, and the generic LLM proxy credential contract.
 
 ## What is no longer the right mental model
 
