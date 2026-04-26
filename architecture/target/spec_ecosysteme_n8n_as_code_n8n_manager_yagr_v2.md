@@ -11,17 +11,23 @@ Cette version intègre les derniers arbitrages :
 - la feature “réutiliser le LLM configuré dans YAGR pour créer un credential n8n” doit être généralisée ;
 - cette généralisation doit devenir une couche `n8n-credentials-manager` dans `n8n-manager` ;
 - l’objectif n’est plus seulement de démarrer n8n, mais de fournir une instance n8n prête à exécuter de vrais workflows.
+- `n8n-as-code` doit être distingué entre marque/façades utilisateur et moteur workflow indépendant ;
+- les façades brandées `n8n-as-code` / `n8nac` importent les deux moteurs indépendants : `workflow-core` et `n8n-manager`.
 
 ---
 
 # 1. Vision générale
 
-L’écosystème doit être séparé en plusieurs couches indépendantes mais composables :
+L’écosystème doit être séparé en moteurs indépendants et façades composables :
 
 ```txt
 n8n-as-code/n8n-as-code
+→ marque produit et monorepo des façades n8n-as-code / n8nac
+→ contient le moteur workflow indépendant et les façades utilisateur
+
+n8n-as-code workflow-core
 → intelligence workflow n8n
-→ monorepo principal : core, CLI, extension, MCP, docs, exemples, intégrations agents
+→ représentation, génération, validation, schemas, templates, docs
 
 n8n-as-code/n8n-manager
 → gestion d’infrastructure n8n
@@ -43,6 +49,33 @@ n8n-credentials-manager
 ```
 
 YAGR reste un agent autonome, agnostique, capable de consommer ces briques, mais pas défini par elles.
+
+Le point d’architecture central est :
+
+```txt
+workflow-core et n8n-manager sont deux moteurs indépendants.
+Les façades n8n-as-code / n8nac orchestrent les deux.
+```
+
+Les façades incluent :
+
+```txt
+CLI n8nac
+extension VS Code / Cursor
+MCP server
+plugins Claude Code / OpenClaw
+intégration YAGR
+apps futures
+```
+
+Elles portent l’expérience complète :
+
+```txt
+choisir entre connecter un n8n existant ou laisser n8n-manager créer/gérer l’instance
+configurer ou importer les credentials
+générer / valider le workflow
+déployer / exécuter / inspecter le résultat
+```
 
 ---
 
@@ -67,6 +100,8 @@ yagr/yagr
 
 n8n-as-code/n8n-as-code
 = monorepo produit n8n-as-code
+= façades brandées n8n-as-code / n8nac
+= workflow-core indépendant
 
 n8n-as-code/n8n-manager
 = manager infrastructurel n8n autonome
@@ -143,7 +178,14 @@ approuvé ou sponsorisé par n8n.
 
 ## 3.1 `n8n-as-code`
 
-`n8n-as-code` est la couche d’intelligence métier et technique autour de n8n.
+`n8n-as-code` désigne deux choses qu’il faut distinguer :
+
+```txt
+n8n-as-code comme marque / expérience utilisateur
+n8n-as-code workflow-core comme moteur workflow indépendant
+```
+
+Le moteur `workflow-core` est la couche d’intelligence métier et technique autour de n8n.
 
 Son rôle :
 
@@ -158,6 +200,24 @@ Comment construire correctement un workflow n8n ?
 ```
 
 Il ne doit pas être responsable de l’installation ou de la maintenance d’une instance n8n.
+
+Il ne doit pas importer `n8n-manager`.
+
+Les façades `n8n-as-code` peuvent importer `workflow-core` et `n8n-manager`.
+
+Exemples :
+
+```txt
+n8nac generate / validate / search
+→ workflow-core
+
+n8nac setup / credentials / deploy / run
+→ n8n-manager
+
+extension VS Code / Cursor
+→ workflow-core pour l’édition et la validation
+→ n8n-manager pour setup, credentials, deploy, run, inspect
+```
 
 ## 3.2 `n8n-manager`
 
@@ -230,7 +290,60 @@ HTTP generic credentials
 Webhook auth
 ```
 
-## 3.4 YAGR
+## 3.4 Façades n8n-as-code / n8nac
+
+Les façades sont les orchestrateurs applicatifs.
+
+Elles peuvent rester dans le monorepo `n8n-as-code/n8n-as-code` et conserver leur branding public :
+
+```txt
+n8nac
+n8n-as-code extension
+n8n-as-code MCP
+n8n-as-code plugin Claude Code
+n8n-as-code plugin OpenClaw
+```
+
+Mais leur statut architectural doit être explicite :
+
+```txt
+façade = couche UX / orchestration applicative
+moteur workflow = workflow-core
+moteur runtime = n8n-manager
+```
+
+Les façades doivent proposer une UX convergente :
+
+```txt
+How do you want to use n8n?
+
+[Recommended] Create and manage a local n8n automatically
+[Connect an existing n8n]
+[Use generation-only mode]
+```
+
+Ensuite :
+
+```txt
+Configure starter credentials
+Import existing credentials
+Skip for now
+```
+
+Ce qui était historiquement porté surtout par YAGR doit devenir commun à toutes les façades :
+
+```txt
+setup instance
+credentials readiness
+LLM proxy credential
+starter kits
+deploy
+run
+inspect execution
+iterate on failure
+```
+
+## 3.5 YAGR
 
 YAGR doit être repositionné comme agent autonome agnostique.
 
@@ -324,19 +437,21 @@ Tant que le monorepo est propre, c’est un avantage.
 ```txt
 n8n-as-code/
   packages/
-    core/
-    cli/
-    mcp-server/
-    agent-context/
+    workflow-core/
     validator/
-    templates/
     schemas/
+    templates/
+    transformer/
+    agent-context/
+    manager-adapter/
 
   apps/
+    cli/
     cursor-extension/
     vscode-extension/
 
   integrations/
+    mcp-server/
     claude-code/
     openclaw/
     yagr/
@@ -376,6 +491,32 @@ elle crée de la confusion dans le monorepo
 `n8n-manager` coche ces cases.
 
 La CLI, l’extension, le MCP, les exemples et la doc ne les cochent pas encore.
+
+## 4.4 Règle d’import interne
+
+La règle d’import cible est :
+
+```txt
+@n8n-as-code/workflow-core
+  ✕ n’importe pas n8n-manager
+
+@n8n-as-code/n8n-manager
+  ✕ n’importe pas workflow-core
+
+n8nac CLI
+  ✓ importe workflow-core
+  ✓ importe n8n-manager ou manager-adapter
+
+VS Code / Cursor extension
+  ✓ importe workflow-core
+  ✓ importe n8n-manager ou manager-adapter
+
+Claude/OpenClaw/YAGR/MCP
+  ✓ importent workflow-core
+  ✓ importent n8n-manager si runtime nécessaire
+```
+
+Le branding utilisateur peut rester unifié sous `n8n-as-code`, mais les responsabilités techniques doivent rester séparées.
 
 ---
 
@@ -1016,9 +1157,10 @@ au lieu de générer un workflow théorique avec des credentials inexistants.
 La boucle cible devient :
 
 ```txt
-n8n-manager prépare l’instance
+façade n8n-as-code / n8nac choisit le mode d’usage
+n8n-manager prépare l’instance si nécessaire
 n8n-credentials-manager prépare les credentials
-n8n-as-code génère en fonction des credentials disponibles
+workflow-core génère en fonction des credentials disponibles
 n8n-manager déploie et exécute
 ```
 
@@ -1417,7 +1559,7 @@ Flow cible :
 3. YAGR appelle n8n-manager.setup() si n8n n’est pas prêt.
 4. YAGR fournit sa configuration LLM via YagrLlmSource.
 5. n8n-manager / credentials-manager crée un credential LLM proxy.
-6. n8n-as-code génère le workflow avec ce credential.
+6. workflow-core génère le workflow avec ce credential.
 7. n8n-manager déploie le workflow.
 8. n8n-manager exécute et inspecte le résultat.
 9. YAGR itère si erreur.
