@@ -13,6 +13,7 @@ La séparation n’est plus seulement documentaire :
 - `/home/etienne/repos/n8n-as-code/packages/manager-adapter` existe comme pont optionnel des façades vers `n8n-manager` ;
 - `n8nac` expose les modes communs via `setup` / `setup-modes` et la readiness/CRUD credentials via `credentials ...` ;
 - l’extension VS Code/Cursor et le plugin OpenClaw consomment les mêmes contrats de modes façade.
+- `/home/etienne/repos/n8n-ecosystem-dev` fournit le bootstrap de développement local bout-en-bout avec `N8NAC_COMMAND`, `N8N_MANAGER_COMMAND` et un état isolé `.dev-state`.
 
 Le reste à faire est l’extraction progressive du vieux core encore présent dans `packages/cli/src/core` vers `workflow-core`, et le branchement complet du lifecycle Docker/diagnostics historique de YAGR vers `n8n-manager`. Les opérations destructives doivent rester explicites et gardées (`--force`, confirmations UI, distinction suppression config vs suppression volumes/données).
 
