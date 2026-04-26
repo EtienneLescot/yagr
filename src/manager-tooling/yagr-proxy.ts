@@ -6,15 +6,13 @@
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { N8nCredentialsManager, N8nRestCredentialClient, type N8nCredentialRef } from '@n8n-as-code/n8n-credentials-manager';
 import { getYagrN8nWorkspaceDir, getYagrPaths } from '../config/yagr-home.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { YagrN8nConfigService } from '../config/n8n-config-service.js';
-import { resolvePackageManagerCommand } from '../system/package-manager.js';
-import { spawnCommand } from '../system/process.js';
 import { emitToolEvent, type ToolExecutionObserver } from '../tools/observer.js';
 import {
   buildRelayInfo,
@@ -24,53 +22,6 @@ import {
   N8N_RELAY_FAKE_API_KEY,
 } from '../llm/llm-relay-server.js';
 import { parseJsonPayload } from '../tools/fs-utils.js';
-
-type RunResult = { stdout: string; stderr: string; exitCode: number };
-
-/**
- * Resolve which n8nac package to use based on YAGR_N8NAC_VERSION env var.
- * - Empty/unset: uses stable 'n8nac' from npm
- * - '@next': uses 'n8nac@next' preview release
- * - Other values: passed as-is (e.g., '1.5.2', '@beta')
- */
-function resolveN8nacPackage(): string {
-  const version = String(process.env.YAGR_N8NAC_VERSION || '').trim();
-  if (!version) {
-    return 'n8nac'; // stable
-  }
-  return version.startsWith('@') ? `n8nac${version}` : `n8nac@${version}`;
-}
-
-/**
- * Internal helper: runs n8nac as a subprocess.
- * Used only by yagrProxy for manager-side credential lifecycle operations.
- */
-async function runN8nacCommand(args: string[], cwd: string): Promise<RunResult> {
-  return new Promise((resolve) => {
-    const n8nacPackage = resolveN8nacPackage();
-    const child = spawnCommand(resolvePackageManagerCommand('npx'), ['--yes', n8nacPackage, ...args], {
-      cwd,
-      env: { ...process.env },
-      stdio: 'pipe',
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
-    child.on('error', (err) => resolve({ stdout, stderr: err.message, exitCode: 1 }));
-    child.on('close', (code) => resolve({ stdout, stderr, exitCode: code ?? 1 }));
-  });
-}
-
-async function listYagrProxyCredentials(cwd: string): Promise<Array<{ id?: string; name?: string; type?: string }>> {
-  const listResult = await runN8nacCommand(['credential', 'list', '--json'], cwd);
-  const existingList = parseJsonPayload(listResult.stdout);
-  return Array.isArray(existingList)
-    ? existingList as Array<{ id?: string; name?: string; type?: string }>
-    : [];
-}
 
 async function probeRelayHealth(url: string): Promise<{
   ok: boolean;
@@ -100,20 +51,6 @@ export function buildYagrProxyCredentialData(baseUrl: string): Record<string, st
   return { apiKey: N8N_RELAY_FAKE_API_KEY, url: baseUrl };
 }
 
-export function buildYagrProxyCredentialCreateArgs(dataFilePath: string): string[] {
-  return [
-    'credential',
-    'create',
-    '--type',
-    'openAiApi',
-    '--name',
-    N8N_RELAY_CREDENTIAL_NAME,
-    '--file',
-    dataFilePath,
-    '--json',
-  ];
-}
-
 /**
  * Resolve the active n8n host from the n8nac-config.json in the workspace.
  */
@@ -133,45 +70,38 @@ function resolveN8nHost(cwd: string): string | undefined {
   }
 }
 
-/**
- * Patch an existing n8n credential in-place via the REST API so that its
- * base URL is updated without changing the credential ID.
- *
- * This preserves all workflow-node references to that credential, which are
- * stored by ID in n8n — a delete+create would produce a new ID and break them.
- *
- * Returns true on success, false if the patch could not be performed (in which
- * case the caller should fall back to delete+create).
- */
-async function patchN8nCredentialUrl(credentialId: string, newBaseUrl: string, cwd: string): Promise<boolean> {
-  const n8nHost = resolveN8nHost(cwd);
-  if (!n8nHost) return false;
-  const apiKey = new YagrN8nConfigService().getApiKey(n8nHost);
-  if (!apiKey) return false;
-  try {
-    const response = await fetch(`${n8nHost}/api/v1/credentials/${credentialId}`, {
-      method: 'PATCH',
-      headers: { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: N8N_RELAY_CREDENTIAL_NAME,
-        type: 'openAiApi',
-        data: { apiKey: N8N_RELAY_FAKE_API_KEY, url: newBaseUrl, headerName: '', headerValue: '' },
-      }),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+function createYagrN8nCredentialsManager(): {
+  manager: N8nCredentialsManager;
+  client?: N8nRestCredentialClient;
+} {
+  const configService = new YagrN8nConfigService();
+  const n8nConfig = configService.getLocalConfig();
+  const host = n8nConfig.host ?? resolveN8nHost(getYagrN8nWorkspaceDir());
+  const apiKey = host ? configService.getApiKey(host) : undefined;
+  const client = host && apiKey
+    ? new N8nRestCredentialClient({ baseUrl: host, apiKey })
+    : undefined;
+
+  return {
+    manager: new N8nCredentialsManager({
+      client,
+      projectId: n8nConfig.projectId,
+    }),
+    client,
+  };
+}
+
+async function listYagrProxyCredentials(): Promise<N8nCredentialRef[]> {
+  const { client } = createYagrN8nCredentialsManager();
+  if (!client) return [];
+  return client.listCredentials();
 }
 
 export async function ensureYagrProxyCredential() {
-  const cwd = getYagrN8nWorkspaceDir();
-  // Align n8nac's instance-scoped API key with Yagr's store before spawning the CLI
-  // (n8nac prefers instanceProfiles[id] over hosts[], which caused 401s after managed bootstrap).
-  new YagrN8nConfigService().syncN8nacCliApiKey();
   const relay = await ensureN8nRelayServer();
   const effectiveRelayBaseUrl = relay.baseUrl;
-  const existingCredentials = await listYagrProxyCredentials(cwd);
+  const { manager } = createYagrN8nCredentialsManager();
+  const existingCredentials = await listYagrProxyCredentials();
   const existing = existingCredentials.find(
     (c) => c.name === N8N_RELAY_CREDENTIAL_NAME && c.type === 'openAiApi',
   );
@@ -188,43 +118,27 @@ export async function ensureYagrProxyCredential() {
       };
     }
 
-    // URL changed — patch in-place to preserve the credential ID so that
-    // existing workflow-node references (stored by ID in n8n) remain valid.
-    const patched = await patchN8nCredentialUrl(existing.id, effectiveRelayBaseUrl, cwd);
-    if (patched) {
-      (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
-    }
+    const ref = await manager.ensureCredential('llm-proxy', {
+      credentialName: N8N_RELAY_CREDENTIAL_NAME,
+      values: buildYagrProxyCredentialData(effectiveRelayBaseUrl),
+    });
+    (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
     return {
-      credentialId: existing.id,
+      credentialId: ref.id || existing.id,
       created: false,
-      reused: !patched,
+      reused: false,
       baseUrl: effectiveRelayBaseUrl,
       port: relay.port,
     };
   }
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-proxy-credential-'));
-  const credDataPath = path.join(tempDir, 'openAiApi.json');
-  fs.writeFileSync(credDataPath, JSON.stringify(buildYagrProxyCredentialData(effectiveRelayBaseUrl), null, 2), 'utf-8');
-  let createResult: RunResult;
-  try {
-    createResult = await runN8nacCommand(buildYagrProxyCredentialCreateArgs(credDataPath), cwd);
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-  const created = parseJsonPayload(createResult.stdout) as Record<string, unknown> | undefined;
-
-  if (createResult.exitCode !== 0) {
-    throw new Error(createResult.stderr || `Failed to create ${N8N_RELAY_CREDENTIAL_NAME} credential.`);
-  }
-
+  const ref = await manager.ensureCredential('llm-proxy', {
+    credentialName: N8N_RELAY_CREDENTIAL_NAME,
+    values: buildYagrProxyCredentialData(effectiveRelayBaseUrl),
+  });
   (new YagrConfigService()).updateLlmProxyCredentialBaseUrl(effectiveRelayBaseUrl);
-  const credentialId = created?.id as string | undefined;
-  if (credentialId) {
-    await patchN8nCredentialUrl(credentialId, effectiveRelayBaseUrl, cwd);
-  }
   return {
-    credentialId: credentialId ?? null,
+    credentialId: ref.id || null,
     created: true,
     reused: false,
     baseUrl: effectiveRelayBaseUrl,
@@ -233,10 +147,9 @@ export async function ensureYagrProxyCredential() {
 }
 
 export async function getYagrProxyStatus() {
-  const cwd = getYagrN8nWorkspaceDir();
   const relayState = getN8nRelayState();
   const proxyConfig = new YagrConfigService().getLocalConfig().llmProxy;
-  const existingCredentials = await listYagrProxyCredentials(cwd);
+  const existingCredentials = await listYagrProxyCredentials();
   const existing = existingCredentials.find(
     (c) => c.name === N8N_RELAY_CREDENTIAL_NAME && c.type === 'openAiApi',
   );

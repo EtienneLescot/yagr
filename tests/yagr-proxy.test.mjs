@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import { buildRelayInfo } from '../dist/llm/llm-relay-server.js';
 import {
-  buildYagrProxyCredentialCreateArgs,
   buildYagrProxyCredentialData,
   getYagrProxyStatus,
 } from '../dist/manager-tooling/yagr-proxy.js';
@@ -112,23 +111,6 @@ test('getYagrProxyStatus reports configured:false when llmProxy is not set', asy
   } finally {
     YagrConfigService.prototype.getLocalConfig = original;
   }
-});
-
-test('Yagr proxy credential creation uses a JSON file instead of inline --data', () => {
-  const args = buildYagrProxyCredentialCreateArgs('/tmp/openAiApi.json');
-
-  assert.deepEqual(args, [
-    'credential',
-    'create',
-    '--type',
-    'openAiApi',
-    '--name',
-    'Yagr LLM Proxy',
-    '--file',
-    '/tmp/openAiApi.json',
-    '--json',
-  ]);
-  assert.equal(args.includes('--data'), false);
 });
 
 test('Yagr proxy credential data contains the relay API key and base URL', () => {
