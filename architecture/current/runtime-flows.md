@@ -218,7 +218,35 @@ When a cross-cutting flow changes, you must:
 - verify that module names still match the repo
 - clearly signal any new cross-cutting coupling
 
-## 6. Central Invariant
+## 6. External n8n Manager and Credentials Readiness
+
+The target n8n readiness responsibility now lives outside Yagr in the standalone `n8n-as-code/n8n-manager` repo.
+
+```mermaid
+sequenceDiagram
+    participant Y as Yagr plugin-n8n-manager
+    participant LS as Yagr LLM config
+    participant NM as n8n-manager
+    participant CM as n8n-credentials-manager
+    participant NAC as n8n-as-code
+
+    Y->>LS: createYagrLlmSource()
+    Y->>NM: provide generic LlmSource
+    NM->>CM: ensureCredential("llm-proxy", source)
+    CM-->>NM: credential inventory
+    NM-->>NAC: available credentials
+```
+
+Rules:
+
+- Yagr may provide an LLM source descriptor.
+- `n8n-credentials-manager` owns credential recipes, starter kits, inventory statuses, and credential readiness semantics.
+- `N8nRestCredentialClient` owns n8n credential list/create/PATCH/test calls through the n8n REST API.
+- `src/manager-tooling/yagr-proxy.ts` now delegates LLM proxy credential provisioning to `@n8n-as-code/n8n-credentials-manager` instead of spawning `n8nac credential ...`.
+- `n8n-manager` must not depend on Yagr.
+- Yagr core remains agnostic; optional n8n integration stays behind `@yagr/plugin-n8n-manager`.
+
+## 7. Central Invariant
 
 The following boundary must remain visible:
 

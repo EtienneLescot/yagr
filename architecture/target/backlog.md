@@ -19,6 +19,10 @@ La direction cible de reference est documentee dans `yagr-engine-architecture.md
 - Extraire progressivement le couplage `n8n` encore present dans le prompt, le tooling et les flux de run
 - Unifier les edits chat et UI autour du meme pipeline de patch/validation `Yagr Engine`
 
+### n8n-manager extraction
+
+- Brancher le lifecycle Docker/diagnostics existant de Yagr vers `@n8n-as-code/n8n-manager-core`
+
 ### Session management unifie des facades (implémenté)
 
 - `@yagr/conversation-core` porte le registre canonique des commandes slash
