@@ -37,6 +37,8 @@ flowchart TD
     end
 
     subgraph ExternalN8n[External n8n-as-code Ecosystem]
+      WorkflowCore[n8n-as-code workflow-core]
+      N8nFacades[n8n-as-code/n8nac facades]
       ExternalManager[n8n-as-code/n8n-manager]
       Credentials[n8n-credentials-manager]
     end
@@ -54,7 +56,10 @@ flowchart TD
     SurfacesFacade --> TuiSurface
     AgentApp --> PluginRuntime
     PluginRuntime --> N8nManager
-    N8nManager -. optional LLM source adapter .-> ExternalManager
+    N8nFacades --> WorkflowCore
+    N8nFacades --> ExternalManager
+    N8nManager -. optional Yagr facade adapter .-> WorkflowCore
+    N8nManager -. optional Yagr facade adapter .-> ExternalManager
     ExternalManager --> Credentials
 ```
 
@@ -66,7 +71,11 @@ flowchart TD
   - `@yagr/runtime`
   - `@yagr/surfaces`
 - Manager-specific behavior is starting to move behind `@yagr/plugin-n8n-manager`.
-- The n8n infrastructure manager is now a separate external repo at `n8n-as-code/n8n-manager`; Yagr only keeps optional adapters such as `YAGR configured LLM` as a generic `LlmSource`.
+- The external n8n ecosystem now has two independent engines:
+  - `n8n-as-code workflow-core` for workflow intelligence
+  - `n8n-manager` for runtime, infrastructure, diagnostics, credentials, deploy, and execution
+- User-facing facades such as `n8nac`, the VS Code/Cursor extension, MCP, Claude/OpenClaw plugins, and Yagr integrations can orchestrate both engines.
+- Yagr only keeps optional adapters such as `YAGR configured LLM` as a generic `LlmSource`.
 
 ## What Yagr core owns now
 
@@ -80,7 +89,7 @@ Yagr core owns:
 - conversation/slash behavior
 - reusable surface primitives
 
-Yagr core does not own the generic n8n credentials manager. The external `n8n-manager` repo owns credential recipes, starter kits, inventory status, and the generic LLM proxy credential contract.
+Yagr core does not own the generic n8n credentials manager. The external `n8n-manager` repo owns credential recipes, starter kits, inventory status, and the generic LLM proxy credential contract. The same runtime-readiness behavior that was first available through Yagr should become available through all n8n-as-code facades.
 
 ## What is no longer the right mental model
 
