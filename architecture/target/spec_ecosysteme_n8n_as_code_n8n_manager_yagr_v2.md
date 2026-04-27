@@ -2,18 +2,19 @@
 
 ## Écosystème `n8n-as-code`, `n8n-manager`, `n8n-credentials-manager`, YAGR et intégrations agents
 
-## État d’implémentation au 2026-04-26
+## État d’implémentation au 2026-04-27
 
 La séparation n’est plus seulement documentaire :
 
 - `/home/etienne/repos/n8n-manager` existe comme repo indépendant ;
 - `@n8n-as-code/n8n-manager-core` porte les contrats de lifecycle runtime ;
-- `@n8n-as-code/n8n-credentials-manager` porte les recettes, starter kits, inventaire, client REST n8n et CRUD/test credentials ;
+- `@n8n-as-code/n8n-credentials-manager` porte le catalogue de credential types basé sur n8n, les overlays de recipes, les starter kits, l’inventaire, le client REST n8n et le CRUD/test credentials ;
+- `n8n-as-code` génère maintenant une ontologie `n8n-credentials-ontology.json` depuis les packages n8n locaux ; elle complète `n8n-nodes-technical.json` avec les credentials utilisés par les nodes ;
 - `/home/etienne/repos/n8n-as-code/packages/workflow-core` existe comme point d’ancrage du moteur workflow et des contrats de modes façade ;
 - `/home/etienne/repos/n8n-as-code/packages/manager-adapter` existe comme pont optionnel des façades vers `n8n-manager` ;
 - `n8nac` expose les modes communs via `setup` / `setup-modes` et la readiness/CRUD credentials via `credentials ...` ;
 - l’extension VS Code/Cursor et le plugin OpenClaw consomment les mêmes contrats de modes façade.
-- `/home/etienne/repos/n8n-ecosystem-dev` fournit le bootstrap de développement local bout-en-bout avec `N8NAC_COMMAND`, `N8N_MANAGER_COMMAND` et un état isolé `.dev-state`.
+- `/home/etienne/repos/n8n-ecosystem-dev` fournit le bootstrap de développement local bout-en-bout avec `N8NAC_COMMAND`, `N8N_MANAGER_COMMAND`, `N8N_CREDENTIAL_ONTOLOGY_PATH` et un état isolé `.dev-state`.
 
 Le reste à faire est l’extraction progressive du vieux core encore présent dans `packages/cli/src/core` vers `workflow-core`, et le branchement complet du lifecycle Docker/diagnostics historique de YAGR vers `n8n-manager`. Les opérations destructives doivent rester explicites et gardées (`--force`, confirmations UI, distinction suppression config vs suppression volumes/données).
 
@@ -627,13 +628,30 @@ Il prépare n8n à exécuter de vrais workflows.
 `n8n-credentials-manager` doit :
 
 ```txt
+résoudre les credential types depuis une source de vérité n8n
+exposer les schemas de credentials via n8n quand une instance est disponible
 créer des credentials n8n
 guider l’utilisateur pour les credentials OAuth
 tester les credentials
 inventorier les credentials disponibles
 exposer l’inventaire à n8n-as-code
-fournir des recipes de setup
+fournir des recipes de setup comme overlays UX, pas comme source d’autorité
 fournir un starter kit de credentials
+```
+
+Règle SSOT :
+
+```txt
+n8n est l’autorité pour les credential types et leurs champs.
+Les façades et starter kits ne doivent pas maintenir leur propre vérité parallèle.
+```
+
+Sources autorisées, par ordre de préférence :
+
+```txt
+1. API n8n runtime : /api/v1/credentials/schema/:type
+2. ontologie générée depuis les packages n8n : n8n-credentials-ontology.json
+3. recipes starter : seulement overlays UX, labels, flows guidés et kits recommandés
 ```
 
 Il doit gérer différents types de sources :
@@ -703,7 +721,44 @@ requires admin approval
 test failed
 ```
 
-## 7.2 Credential recipes
+## 7.2 Catalogue credentials et recipes
+
+Le catalogue de credentials répond à la question :
+
+```txt
+Quels credential types n8n existent, quels champs acceptent-ils, et quels nodes les utilisent ?
+```
+
+Il est dérivé de n8n :
+
+```txt
+n8n runtime schema API
+ou
+ontologie générée depuis le cache/packages n8n
+```
+
+Une `CredentialCatalogEntry` indicative :
+
+```ts
+type CredentialCatalogEntry = {
+  typeName: string
+  displayName: string
+  properties?: unknown[]
+  schema?: Record<string, unknown>
+  usedByNodes: Array<{
+    nodeName: string
+    nodeType?: string
+    nodeDisplayName?: string
+    required?: boolean
+  }>
+  source: "n8n-api" | "n8n-ontology" | "starter-overlay"
+  starterRecipeIds: string[]
+}
+```
+
+Les recipes ne sont pas le catalogue.
+
+Elles définissent seulement l’UX de setup :
 
 Une `CredentialRecipe` définit :
 
@@ -740,6 +795,8 @@ type CredentialRecipe = {
 
 ```ts
 interface N8nCredentialsManager {
+  listCredentialCatalog(): Promise<CredentialCatalogEntry[]>
+  getCredentialSchema(typeName: string): Promise<Record<string, unknown>>
   listRecipes(): Promise<CredentialRecipe[]>
   getCredentialInventory(): Promise<CredentialInventory>
   ensureCredential(recipeId: string, input: CredentialInput): Promise<N8nCredentialRef>
