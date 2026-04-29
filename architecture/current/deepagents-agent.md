@@ -11,7 +11,8 @@ The current model is:
 1. a pristine deepagentsjs core
 2. a coding-oriented overlay, agnostic, added only via middleware
 3. optional workspace instructions loaded by memory sources
-4. no built-in domain-specific backend tools or instructions
+4. optional installed Agent Skills passed to DeepAgents.js via native `skills` sources
+5. no built-in domain-specific backend tools or instructions
 
 ## High-Level Separation
 
@@ -27,6 +28,7 @@ flowchart TD
     subgraph InstructionLayer["Instructions"]
         HOME[YAGR_HOME/AGENTS.md]
         CTX[Registered context files]
+        SKILLS[Installed Agent Skills]
     end
 
     subgraph RuntimeLayer["Runtime"]
@@ -37,6 +39,7 @@ flowchart TD
 
     HOME --> PR
     CTX --> PR
+    SKILLS --> AF
     PR --> AF
     CO --> AF
     AF --> DA
@@ -55,3 +58,4 @@ flowchart TD
 - The coding-oriented overlay stays agnostic and only contains generic coding-agent guidance.
 - Domain-specific behavior must come from project files, user prompts, or explicitly installed external tools, not from built-in Yagr code.
 - The Yagr home remains the operational root for the local coding agent.
+- Yagr only resolves and passes skill source paths; DeepAgents.js owns skill metadata discovery, `SkillsMiddleware`, and progressive disclosure.

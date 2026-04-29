@@ -68,3 +68,16 @@ test('resetYagrLocalState removes active config stores for config+creds scope', 
     assert.equal(fs.existsSync(homeDir), true);
   });
 });
+
+test('resetYagrLocalState preserves installed skills for config+creds scope', async () => {
+  await withTempYagrEnv(async () => {
+    const paths = getYagrPaths();
+    const skillDir = path.join(paths.skillsDir, 'kept-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: kept-skill\ndescription: Kept skill.\n---\n');
+
+    await resetYagrLocalState('config+creds');
+
+    assert.equal(fs.existsSync(path.join(skillDir, 'SKILL.md')), true);
+  });
+});

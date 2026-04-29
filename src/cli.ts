@@ -22,11 +22,19 @@ import { YagrSetupApplicationService } from './setup/application-services.js';
 import { isPidAlive, killProcessTree, spawnCommand, spawnDetached } from './system/process.js';
 import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
+import {
+  getDeepAgentSkillSourcePaths,
+  installAgentSkills,
+  listAgentSkills,
+  removeAgentSkill,
+  resolveAgentSkillRoots,
+  type YagrSkillScope,
+} from './skills/agent-skills.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'start' | 'stop' | 'restart' | 'tui' | 'webui' | 'gateway' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'start' | 'stop' | 'restart' | 'tui' | 'webui' | 'gateway' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'skills-list' | 'skills-install' | 'skills-remove' | 'skills-path';
   startTarget?: 'webui' | 'tui';
   prompt?: string;
   interactive: boolean;
@@ -39,6 +47,7 @@ interface ParsedArgs {
   yes: boolean;
   dryRun: boolean;
   resetScope?: YagrResetScope;
+  skillScope?: YagrSkillScope;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -86,6 +95,11 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (a === 'proxy' && b === 'start') { parsed.command = 'proxy-start'; startIndex = 2; }
   if (a === 'proxy' && b === 'status') { parsed.command = 'proxy-status'; startIndex = 2; }
   if (a === 'proxy' && b === 'stop') { parsed.command = 'proxy-stop'; startIndex = 2; }
+  if (a === 'skills' && b === 'list') { parsed.command = 'skills-list'; startIndex = 2; }
+  if (a === 'skills' && b === 'install') { parsed.command = 'skills-install'; startIndex = 2; }
+  if (a === 'skills' && b === 'remove') { parsed.command = 'skills-remove'; startIndex = 2; }
+  if (a === 'skills' && b === 'path') { parsed.command = 'skills-path'; startIndex = 2; }
+  if (a === 'skills' && !parsed.command) throw new Error(`Unknown skills command: ${b ?? ''}`);
 
   const rest: string[] = [];
   for (let i = startIndex; i < argv.length; i += 1) {
@@ -99,7 +113,12 @@ function parseArgs(argv: string[]): ParsedArgs {
     else if (arg === '--provider') parsed.provider = parseProvider(argv[++i]);
     else if (arg === '--model') parsed.model = argv[++i];
     else if (arg === '--max-steps') parsed.maxSteps = Number(argv[++i]);
-    else if (arg === '--scope') parsed.resetScope = parseResetScope(argv[++i]);
+    else if (arg === '--scope') {
+      const value = argv[++i];
+      if (parsed.command?.startsWith('skills-')) parsed.skillScope = parseSkillScope(value);
+      else parsed.resetScope = parseResetScope(value);
+    }
+    else if (arg === '--workspace') parsed.skillScope = 'workspace';
     else if (!parsed.command && arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`);
     else rest.push(arg);
   }
@@ -127,13 +146,18 @@ function parseResetScope(value: string | undefined): YagrResetScope {
   throw new Error(`Unknown reset scope: ${value ?? ''}`);
 }
 
+function parseSkillScope(value: string | undefined): YagrSkillScope {
+  if (value === 'global' || value === 'workspace') return value;
+  throw new Error(`Unknown skill scope: ${value ?? ''}`);
+}
+
 export function getGatewayRestartDelayMs(failureCount: number): number {
   const cappedFailures = Math.max(0, Math.min(failureCount, 6));
   return Math.min(300_000, 60_000 * (2 ** cappedFailures));
 }
 
 function printHelp(): void {
-  process.stdout.write(`Yagr - autonomous local coding agent\n\nUsage:\n  yagr <prompt> [options]\n  yagr start [tui|webui] [options]\n  yagr setup\n  yagr llm setup\n\nCommands:\n  setup                      Configure local coding-agent runtime\n  llm setup                  Configure the language model\n  start [tui|webui]          Start an interactive local surface\n  tui                        Start terminal UI\n  webui                      Start Web UI\n  gateway start              Start configured background gateways\n  gateway status             Show gateway status\n  telegram setup             Configure Telegram gateway\n  telegram start             Start Telegram gateway\n  telegram status            Show Telegram gateway status\n  telegram onboarding        Show Telegram onboarding link\n  telegram reset             Remove Telegram configuration\n  proxy start <provider>     Start an account-backed provider proxy\n  proxy status [provider]    Show provider proxy status\n  proxy stop <provider>      Stop provider proxy\n  config show                Print local config\n  config reset               Remove local config and credentials\n  paths                      Print Yagr paths\n  reset [--scope <scope>]    Reset Yagr local state\n  uninstall                  Full local reset\n\nOptions:\n  --provider <name>          AI provider: ${VALID_PROVIDERS.join(', ')}\n  --model <name>             Model name to use\n  --max-steps <n>            Maximum number of agent steps\n  --interactive, -i          Keep the session open after the prompt\n  --hide-thinking            Hide agent thinking output\n  --hide-execution           Hide tool execution output\n  --yes                      Auto-confirm destructive operations\n  --dry-run                  Preview reset without changes\n  --version, -v              Print version\n  --help, -h                 Show this help\n`);
+  process.stdout.write(`Yagr - autonomous local coding agent\n\nUsage:\n  yagr <prompt> [options]\n  yagr start [tui|webui] [options]\n  yagr setup\n  yagr llm setup\n\nCommands:\n  setup                      Configure local coding-agent runtime\n  llm setup                  Configure the language model\n  start [tui|webui]          Start an interactive local surface\n  tui                        Start terminal UI\n  webui                      Start Web UI\n  gateway start              Start configured background gateways\n  gateway status             Show gateway status\n  telegram setup             Configure Telegram gateway\n  telegram start             Start Telegram gateway\n  telegram status            Show Telegram gateway status\n  telegram onboarding        Show Telegram onboarding link\n  telegram reset             Remove Telegram configuration\n  proxy start <provider>     Start an account-backed provider proxy\n  proxy status [provider]    Show provider proxy status\n  proxy stop <provider>      Stop provider proxy\n  skills list                List installed Agent Skills\n  skills install <source>    Install Agent Skills from a local or remote source\n  skills remove <name>       Remove an installed Agent Skill\n  skills path                Print Agent Skills source paths\n  config show                Print local config\n  config reset               Remove local config and credentials\n  paths                      Print Yagr paths\n  reset [--scope <scope>]    Reset Yagr local state\n  uninstall                  Full local reset\n\nOptions:\n  --provider <name>          AI provider: ${VALID_PROVIDERS.join(', ')}\n  --model <name>             Model name to use\n  --max-steps <n>            Maximum number of agent steps\n  --interactive, -i          Keep the session open after the prompt\n  --hide-thinking            Hide agent thinking output\n  --hide-execution           Hide tool execution output\n  --yes                      Auto-confirm destructive operations\n  --dry-run                  Preview reset without changes\n  --scope <scope>            Scope for reset or skills: global, workspace\n  --workspace                Install/remove skills in the workspace scope\n  --version, -v              Print version\n  --help, -h                 Show this help\n`);
 }
 
 function printVersion(): void {
@@ -208,6 +232,32 @@ async function runProxyCommand(args: ParsedArgs): Promise<void> {
   }
 }
 
+async function runSkillsCommand(args: ParsedArgs): Promise<void> {
+  if (args.command === 'skills-list') {
+    process.stdout.write(`${JSON.stringify(listAgentSkills(), null, 2)}\n`);
+    return;
+  }
+  if (args.command === 'skills-path') {
+    process.stdout.write(`${JSON.stringify({
+      roots: resolveAgentSkillRoots(),
+      deepAgentSkillSourcePaths: getDeepAgentSkillSourcePaths({ includeEmpty: true }),
+      activeDeepAgentSkillSourcePaths: getDeepAgentSkillSourcePaths(),
+    }, null, 2)}\n`);
+    return;
+  }
+  if (args.command === 'skills-install') {
+    if (!args.prompt) throw new Error('Skill source is required.');
+    const installed = await installAgentSkills(args.prompt, { scope: args.skillScope ?? 'global' });
+    process.stdout.write(`${JSON.stringify(installed, null, 2)}\n`);
+    return;
+  }
+  if (args.command === 'skills-remove') {
+    if (!args.prompt) throw new Error('Skill name is required.');
+    const result = await removeAgentSkill(args.prompt, { scope: args.skillScope ?? 'global' });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const configService = new YagrConfigService();
@@ -234,6 +284,7 @@ async function main(): Promise<void> {
     case 'telegram-onboarding': showTelegramOnboarding(configService); return;
     case 'telegram-reset': resetTelegramGateway(configService); return;
     case 'proxy-start': case 'proxy-status': case 'proxy-stop': await runProxyCommand(args); return;
+    case 'skills-list': case 'skills-install': case 'skills-remove': case 'skills-path': await runSkillsCommand(args); return;
     case 'stop': return;
     default: await runPrompt(args, configService); return;
   }

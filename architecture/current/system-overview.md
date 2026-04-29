@@ -50,6 +50,7 @@ Yagr owns:
 
 - deepagent bootstrap
 - coding-oriented middleware
+- generic Agent Skills installation and source-path resolution
 - local shell and file execution semantics
 - provider/model runtime
 - sessions/checkpoints
@@ -68,3 +69,5 @@ Yagr is:
 - a reusable runtime platform
 - a set of thin local and remote chat surfaces
 - provider/runtime/session infrastructure for coding work
+
+Installed Agent Skills are external instructions. Yagr stores and exposes skill directories, while DeepAgents.js owns runtime discovery and progressive disclosure.

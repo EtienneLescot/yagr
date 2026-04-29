@@ -4,7 +4,7 @@
  * Keeps the Yagr runtime close to vanilla `createDeepAgent` while composing
  * a clearly separated coding-oriented middleware overlay:
  *
- *   - pristine deepagents core: host-native backend + native memory loading
+ *   - pristine deepagents core: host-native backend + native memory and skills loading
  *   - coding-oriented overlay: a dedicated middleware layer with generic
  *     coding guidance only
  *   - checkpointer so per-thread (=per-session) state is maintained and
@@ -25,6 +25,7 @@ import { buildPristineDeepAgentConfig, getPristineDeepAgentMemorySources } from 
 import { getYagrHomeDir } from './config/yagr-home.js';
 import type { YagrRunOptions } from './types.js';
 import { CompactionService } from './compaction/compaction-service.js';
+import { getDeepAgentSkillSourcePaths } from './skills/agent-skills.js';
 
 /** Returned by `createYagrDeepAgent`. */
 export interface YagrDeepAgentHandle {
@@ -39,6 +40,7 @@ export interface YagrDeepAgentHandle {
 }
 
 export const getYagrAgentMemorySources = getPristineDeepAgentMemorySources;
+export const getYagrAgentSkillSourcePaths = getDeepAgentSkillSourcePaths;
 
 /**
  * Instantiate a Yagr-configured deep agent.
@@ -72,6 +74,7 @@ export async function createYagrDeepAgent(
       model,
       checkpointer: checkpointerInstance,
       rootDir: getYagrHomeDir(),
+      skills: getDeepAgentSkillSourcePaths(),
     }),
     middleware: getCodingOrientedDeepAgentMiddleware(),
   });
