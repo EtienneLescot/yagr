@@ -10,7 +10,7 @@ import {
   DeepAgentSessionStore,
   buildDeepAgentSessionConfig,
   deriveSessionTitle,
-} from '../packages/session-service/dist/index.js';
+} from '../packages/session-checkpoint/dist/index.js';
 import { SessionService } from '../packages/session-service/dist/index.js';
 
 test('DeepAgentSessionStore resolves one active session per scope and can rotate it', () => {
@@ -196,14 +196,14 @@ test('CheckpointManager restoreCheckpoint returns null when no compaction state 
   assert.equal(restoredCompaction, null);
 });
 
-test('SessionService.ensureCheckpointAccess throws when no initializer and no checkpointer set', async () => {
+test('SessionService.saveCheckpoint throws when no initializer and no checkpointer set', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-session-service-noaccess-'));
   const sessionsDir = path.join(rootDir, 'sessions');
   const memoriesDir = path.join(rootDir, 'memories');
   const service = new SessionService({ sessionsDir, memoriesDir });
 
   await assert.rejects(
-    async () => service.listCheckpoints('some-session'),
+    async () => service.saveCheckpoint('some-session'),
     /Checkpoint access not available/,
   );
 });
@@ -218,10 +218,10 @@ test('SessionService.registerCheckpointInitializer enables lazy checkpoint acces
   service.registerCheckpointInitializer(async () => checkpointer);
 
   await service.ensureCheckpointAccess();
-  assert.equal(service.isCheckpointAccessReady(), true);
+  assert.deepEqual(await service.listCheckpoints('session-init-test'), []);
 });
 
-test('SessionService.restoreCheckpoint returns RestoreResult with compaction state', async () => {
+test('SessionService.restoreCheckpoint returns RestoreResult with payload state', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-session-service-restore-'));
   const sessionsDir = path.join(rootDir, 'sessions');
   const memoriesDir = path.join(rootDir, 'memories');
@@ -250,14 +250,14 @@ test('SessionService.restoreCheckpoint returns RestoreResult with compaction sta
     totalCompactions: 1,
   };
 
-  const saved = await service.saveCheckpoint('session-restore-test', { compactionState });
+  const saved = await service.saveCheckpoint('session-restore-test', { payloadState: compactionState });
   await checkpointer.deleteThread('session-restore-test');
 
   const result = await service.restoreCheckpoint('session-restore-test', saved.id);
 
   assert.equal(result.checkpointId, saved.id);
   assert.equal(result.sessionId, 'session-restore-test');
-  assert.equal(result.compactionState?.totalCompactions, 1);
-  assert.equal(result.compactionState?.lastCompaction?.summary, 'restore test');
+  assert.equal(result.payloadState?.totalCompactions, 1);
+  assert.equal(result.payloadState?.lastCompaction?.summary, 'restore test');
   assert.ok(result.restoredAt);
 });

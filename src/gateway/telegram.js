@@ -2,13 +2,14 @@ import { randomBytes } from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import { Telegraf } from 'telegraf';
 import { YagrConfigService } from '../config/yagr-config-service.js';
-import { YagrN8nConfigService, YagrSetupApplicationService } from '@yagr/plugin-n8n-manager';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-home.js';
+import { YagrSetupApplicationService } from '../setup/application-services.js';
 import { createYagrDeepAgent } from '../agent-factory.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import { SessionService, deriveSessionTitle } from '@yagr/session-service';
 import { SlashCommandService } from '@yagr/conversation-service';
-import { buildWorkflowBannerHtml, markdownToTelegramHtml, escapeHtml, } from './format-message.js';
+import { markdownToTelegramHtml, escapeHtml, } from './format-message.js';
 import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 function formatTelegramProgressHtml(update) {
@@ -546,20 +547,6 @@ class TelegramGateway {
             const htmlSections = [];
             if (accumulator.responseText.trim()) {
                 htmlSections.push(markdownToTelegramHtml(accumulator.responseText.trim()));
-            }
-            if (accumulator.workflowEmbeds.length > 0) {
-                const embeds = accumulator.workflowEmbeds.map((embed) => ({
-                    workflowId: embed.workflowId,
-                    url: embed.url,
-                    targetUrl: embed.targetUrl,
-                    title: embed.title,
-                    diagram: embed.diagram,
-                    executionResult: embed.executionResult,
-                }));
-                const banner = buildWorkflowBannerHtml(embeds);
-                if (banner) {
-                    htmlSections.push(banner);
-                }
             }
             const requiredActionsText = formatRequiredActions(accumulator.requiredActions);
             if (requiredActionsText) {

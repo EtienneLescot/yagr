@@ -7,14 +7,13 @@ import { getDisplayProjectName, } from 'n8nac';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
 import { SessionService, deriveSessionTitle } from '@yagr/session-service';
 import { SlashCommandService } from '@yagr/conversation-service';
-import { YagrN8nConfigService, YagrSetupApplicationService } from '@yagr/plugin-n8n-manager';
+import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
+import { YagrSetupApplicationService } from '../setup/application-services.js';
 import { providerRequiresApiKey, YAGR_SELECTABLE_MODEL_PROVIDERS, } from '../llm/provider-registry.js';
 import { getSnapshotContextWindow } from '../llm/provider-metadata.js';
-import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 import { createYagrDeepAgent } from '../agent-factory.js';
-import { decodeHtmlDataUrl, resolveStoredWorkflowOpenTarget } from './local-open-bridge.js';
 import { getWebUiGatewayStatus } from './webui-config.js';
 import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
 import { createRunAccumulator, processStreamEvent, extractLastAiMessage, } from './langgraph-events.js';
@@ -173,7 +172,7 @@ class WebUiGateway {
                 host: String(body.host ?? ''),
                 apiKey: body.apiKey ? String(body.apiKey) : undefined,
                 projectId: String(body.projectId ?? ''),
-                syncFolder: String(body.syncFolder ?? 'workflows'),
+                syncFolder: String(body.syncFolder ?? 'workspace'),
                 instanceProfile,
             });
             this.sendJson(response, 200, {
@@ -476,16 +475,6 @@ class WebUiGateway {
             this.sendJson(response, 200, { ok: true });
             return;
         }
-        if (method === 'GET' && url.pathname === '/api/n8n/workflow-session') {
-            const workflowUrl = String(url.searchParams.get('url') ?? url.searchParams.get('target') ?? '').trim();
-            await this.sendManagedN8nWorkflowSession(response, workflowUrl);
-            return;
-        }
-        if (method === 'GET' && (url.pathname === '/open/n8n-workflow' || url.pathname.startsWith('/open/n8n-workflow/'))) {
-            const workflowUrl = this.resolveWorkflowOpenUrl(url);
-            await this.openManagedN8nWorkflow(response, workflowUrl);
-            return;
-        }
         this.sendJson(response, 404, { error: 'Not found' });
     }
     async buildSnapshot() {
@@ -495,44 +484,6 @@ class WebUiGateway {
             webUiStatus,
             selectableProviders: VALID_PROVIDERS,
         });
-    }
-    async sendManagedN8nWorkflowSession(response, workflowUrl) {
-        if (workflowUrl.startsWith('data:text/html')) {
-            this.sendJson(response, 200, { mode: 'managed', targetUrl: workflowUrl, fallbackPage: decodeHtmlDataUrl(workflowUrl) });
-            return;
-        }
-        const session = resolveManagedN8nWorkflowOpen(workflowUrl);
-        if (!session.ok) {
-            this.sendJson(response, session.statusCode, { error: session.error });
-            return;
-        }
-        this.sendJson(response, 200, session.payload);
-    }
-    async openManagedN8nWorkflow(response, workflowUrl) {
-        if (workflowUrl.startsWith('data:text/html')) {
-            this.sendText(response, 200, decodeHtmlDataUrl(workflowUrl), 'text/html; charset=utf-8');
-            return;
-        }
-        const session = resolveManagedN8nWorkflowOpen(workflowUrl);
-        if (!session.ok) {
-            this.sendText(response, session.statusCode, session.error, 'text/plain; charset=utf-8');
-            return;
-        }
-        if (session.payload.mode === 'direct') {
-            response.writeHead(302, { Location: session.payload.targetUrl });
-            response.end();
-            return;
-        }
-        this.sendText(response, 200, session.payload.fallbackPage, 'text/html; charset=utf-8');
-    }
-    resolveWorkflowOpenUrl(url) {
-        const token = url.pathname.startsWith('/open/n8n-workflow/')
-            ? decodeURIComponent(url.pathname.slice('/open/n8n-workflow/'.length)).trim()
-            : '';
-        if (token) {
-            return resolveStoredWorkflowOpenTarget(token);
-        }
-        return String(url.searchParams.get('url') ?? url.searchParams.get('target') ?? '').trim();
     }
     async saveN8nConfig(input) {
         const warning = await this.setupService.saveN8nConfig(input);
@@ -708,19 +659,6 @@ class WebUiGateway {
                             });
                         }
                     },
-                    onWorkflowEmbed: (embed) => {
-                        writeEvent({
-                            type: 'embed',
-                            kind: embed.kind,
-                            workflowId: embed.workflowId,
-                            url: embed.url,
-                            openUrl: embed.url,
-                            targetUrl: embed.targetUrl,
-                            title: embed.title,
-                            diagram: embed.diagram,
-                            executionResult: embed.executionResult,
-                        });
-                    },
                     onCompaction: (compaction) => {
                         void compactionService.notifyCompaction(sessionId, compaction);
                         writeEvent({
@@ -734,7 +672,7 @@ class WebUiGateway {
                 });
             }
             if (DEBUG_AGENT_LOOP) {
-                console.error(`[DEBUG_AGENT_LOOP] Stream ended. eventCount=${eventCount} responseText.len=${accumulator.responseText.length} workflowEmbeds=${accumulator.workflowEmbeds.length} requiredActions=${accumulator.requiredActions.length}`);
+                console.error(`[DEBUG_AGENT_LOOP] Stream ended. eventCount=${eventCount} responseText.len=${accumulator.responseText.length} requiredActions=${accumulator.requiredActions.length}`);
                 console.error(`[DEBUG_AGENT_LOOP] responseText preview: ${accumulator.responseText.slice(0, 200)}`);
             }
             runFinished = true;
