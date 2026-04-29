@@ -1,11 +1,8 @@
 import { makeToolStartOperationEvent, makeToolEndOperationEvent, makeThinkingStartEvent, makeThinkingEndEvent, THINKING_OP_ID, } from '../runtime/user-visible-updates.js';
-import { WORKFLOW_EMBED_TYPE } from '../manager-tooling/present-workflow.js';
-import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 export function createRunAccumulator() {
     return {
         responseText: '',
         requiredActions: [],
-        workflowEmbeds: [],
         thinkingText: '',
         thinkingStartedAt: 0,
         activeOperations: new Map(),
@@ -283,12 +280,6 @@ function mapToolStartToUpdate(toolName, input) {
                 detail: typeof input?.command === 'string' ? truncate(input.command, 80) : undefined,
                 dedupeKey: `tool:execute:${input?.command ?? ''}`,
             };
-        case 'yagrProxy':
-            return {
-                tone: 'info',
-                title: 'Configuring LLM relay',
-                dedupeKey: 'tool:yagrProxy',
-            };
         case 'httpRequest':
             return {
                 tone: 'info',
@@ -314,15 +305,6 @@ function mapToolStartToUpdate(toolName, input) {
 async function handleToolEnd(toolName, rawOutput, accumulator, callbacks) {
     const output = parseToolOutput(rawOutput);
     switch (toolName) {
-        case 'execute': {
-            if (output?.__type === WORKFLOW_EMBED_TYPE) {
-                const embed = output;
-                const enriched = enrichWorkflowEmbedPayload(embed);
-                accumulator.workflowEmbeds.push(enriched);
-                await callbacks.onWorkflowEmbed?.(enriched);
-            }
-            break;
-        }
         case 'writeFile':
         case 'write_file':
         case 'writeWorkspaceFile':
@@ -331,16 +313,6 @@ async function handleToolEnd(toolName, rawOutput, accumulator, callbacks) {
         case 'moveFile':
         case 'replaceInFile': {
             accumulator.fileModificationDetected = true;
-            break;
-        }
-        case 'runScript':
-        case 'runShell': {
-            if (output?.__type === WORKFLOW_EMBED_TYPE) {
-                const embed = output;
-                const enriched = enrichWorkflowEmbedPayload(embed);
-                accumulator.workflowEmbeds.push(enriched);
-                await callbacks.onWorkflowEmbed?.(enriched);
-            }
             break;
         }
         case 'reportProgress': {
@@ -359,18 +331,6 @@ async function handleToolEnd(toolName, rawOutput, accumulator, callbacks) {
         case 'requestRequiredAction': {
             if (output && isRequiredAction(output)) {
                 accumulator.requiredActions.push(output);
-            }
-            break;
-        }
-        case 'presentWorkflowResult': {
-            if (DEBUG) {
-                console.error(`[DEBUG_LANGGRAPH_EVENTS]   presentWorkflowResult tool end, output type: ${typeof output}, __type: ${output?.__type}, keys: ${output ? Object.keys(output).join(', ') : 'none'}`);
-            }
-            if (output?.__type === WORKFLOW_EMBED_TYPE) {
-                const embed = output;
-                const enriched = enrichWorkflowEmbedPayload(embed);
-                accumulator.workflowEmbeds.push(enriched);
-                await callbacks.onWorkflowEmbed?.(enriched);
             }
             break;
         }
@@ -515,32 +475,6 @@ function isRequiredAction(obj) {
     return (typeof obj.id === 'string' &&
         typeof obj.title === 'string' &&
         typeof obj.message === 'string');
-}
-/**
- * Pass the embed payload through the n8n workflow middleware so the tunnel
- * URL is resolved if active (same logic as the Vercel AI SDK path).
- */
-function enrichWorkflowEmbedPayload(embed) {
-    // The middleware expects a YagrToolEvent — adapt, enrich, then extract back.
-    const fakeEvent = {
-        type: 'embed',
-        toolName: 'presentWorkflowResult',
-        kind: 'workflow',
-        workflowId: embed.workflowId,
-        url: embed.url,
-        targetUrl: embed.targetUrl,
-        title: embed.title,
-        diagram: embed.diagram,
-        executionResult: embed.executionResult,
-    };
-    const enriched = enrichWorkflowEmbed(fakeEvent);
-    return {
-        ...embed,
-        url: enriched.url ?? embed.url,
-        targetUrl: enriched.targetUrl ?? embed.targetUrl,
-        title: enriched.title ?? embed.title,
-        diagram: enriched.diagram ?? embed.diagram,
-    };
 }
 function truncate(value, maxLen) {
     return value.length > maxLen ? `${value.slice(0, maxLen)}…` : value;

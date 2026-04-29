@@ -1,20 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import { N8nApiClient, WorkspaceSetupService, getDisplayProjectName } from 'n8nac';
-import { Command } from 'commander';
-import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
+import { N8nApiClient, getDisplayProjectName } from 'n8nac';
 import { normalizeGatewaySurfaces, } from '../config/yagr-config-service.js';
-import { resolveWorkflowDir } from '../config/n8n-config-service.js';
-import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
 import { getDefaultBaseUrlForProvider, providerNeedsBaseUrlInput, } from '../llm/provider-registry.js';
 import { prepareProviderRuntime } from '../llm/proxy-runtime.js';
-import { buildRelayInfo, ensureN8nRelayServer, resolveDockerHostAddress } from '../llm/llm-relay-server.js';
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import { resolveModelProvider } from '../llm/create-langchain-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
-import { beginCodexAuth, completeCodexAuth, ensureOpenAiAccountSession, getOpenAiAccountSession } from '../llm/openai-account.js';
-import { ensureYagrProxyCredential } from '../manager-tooling/yagr-proxy.js';
-import { classifyConfiguredN8nInstance, classifyN8nInstanceCandidate, hasN8nInstanceTag, normalizeN8nUrlOrigin, resolveN8nInstanceProfile, } from '../n8n-local/instance-classification.js';
-import { ensureConfiguredLlmPublicExposure, refreshLlmPublicExposureForRelayHostBaseUrl } from '../n8n-local/public-exposure-service.js';
+import { beginCodexAuth, beginCodexDeviceAuth, completeCodexAuth, completeCodexDeviceAuth, ensureOpenAiAccountSession, getOpenAiAccountSession } from '../llm/openai-account.js';
+import { normalizeN8nUrlOrigin, resolveN8nInstanceProfile, } from '../n8n-local/instance-classification.js';
 import { getYagrSetupStatus } from './status.js';
 function defaultCreateN8nClient(credentials) {
     return new N8nApiClient(credentials);
@@ -25,23 +18,10 @@ function defaultCreateOnboardingToken() {
 function buildTelegramDeepLink(botUsername, onboardingToken) {
     return `https://t.me/${botUsername}?start=${onboardingToken}`;
 }
-async function defaultRefreshAiContext(credentials) {
-    const updateAi = new UpdateAiCommand(new Command());
-    const previousCwd = process.cwd();
-    try {
-        process.chdir(getYagrN8nWorkspaceDir());
-        await updateAi.run({}, credentials);
-    }
-    finally {
-        process.chdir(previousCwd);
-    }
-}
 export class YagrSetupApplicationService {
     yagrConfigService;
     n8nConfigService;
     createN8nClient;
-    ensureWorkspaceFiles;
-    refreshAiContextRunner;
     resolveTelegramIdentity;
     createOnboardingToken;
     fetchAvailableModelsRunner;
@@ -49,8 +29,6 @@ export class YagrSetupApplicationService {
         this.yagrConfigService = yagrConfigService;
         this.n8nConfigService = n8nConfigService;
         this.createN8nClient = dependencies.createN8nClient ?? defaultCreateN8nClient;
-        this.ensureWorkspaceFiles = dependencies.ensureWorkspaceFiles ?? WorkspaceSetupService.ensureWorkspaceFiles;
-        this.refreshAiContextRunner = dependencies.refreshAiContext ?? defaultRefreshAiContext;
         this.resolveTelegramIdentity = dependencies.resolveTelegramIdentity ?? (async () => {
             throw new Error('Telegram identity resolver is not configured.');
         });
@@ -101,8 +79,24 @@ export class YagrSetupApplicationService {
         }
         return false;
     }
-    async startAccountAuth(provider) {
+    async startAccountAuth(provider, authMethod) {
         if (provider === 'openai-oauth') {
+            if (authMethod === 'headless') {
+                const challenge = await beginCodexDeviceAuth();
+                return {
+                    kind: 'input',
+                    title: 'Connect OpenAI account (Device Code)',
+                    instructions: [
+                        `Open: ${challenge.verificationUriComplete ?? challenge.verificationUri}`,
+                        `Enter code: ${challenge.userCode}`,
+                        'Sign in with your ChatGPT account in the browser, then press Enter below to continue.',
+                        'If device login is not enabled for your account or workspace, go back and use browser sign-in instead.',
+                    ],
+                    placeholder: 'Press Enter after browser authorization',
+                    submitLabel: 'Continue after authorization',
+                    state: JSON.stringify({ method: 'device', ...challenge }),
+                };
+            }
             // Always start a fresh Codex OAuth flow when the user explicitly asks to sign in.
             // Do NOT check for an existing session here — that check lives in hasAccountSession
             // and determines whether to show the reuse screen. Once the user is on the auth
@@ -119,11 +113,11 @@ export class YagrSetupApplicationService {
                     challenge.authUrl,
                     'This uses your ChatGPT subscription — no API credits are consumed.',
                     callbackHint,
+                    'If the localhost callback cannot reach this terminal, paste the final callback URL here instead of waiting.',
                 ],
-                placeholder: challenge.callbackServerStarted
-                    ? 'Press Enter after signing in'
-                    : 'http://localhost:1455/auth/callback?code=...',
+                placeholder: 'Press Enter after signing in or paste callback URL',
                 submitLabel: challenge.callbackServerStarted ? 'Continue after sign-in' : 'Submit redirect URL',
+                state: JSON.stringify({ method: 'browser' }),
             };
         }
         if (provider === 'anthropic-proxy') {
@@ -162,7 +156,21 @@ export class YagrSetupApplicationService {
     }
     async completeAccountAuth(provider, input, state) {
         if (provider === 'openai-oauth') {
-            await completeCodexAuth();
+            const parsed = state ? JSON.parse(state) : undefined;
+            if (parsed?.method === 'device') {
+                if (!parsed.deviceAuthId || !parsed.userCode || !parsed.intervalMs || !parsed.expiresAt) {
+                    return { ok: false, error: 'OpenAI device flow state is missing.' };
+                }
+                await completeCodexDeviceAuth({
+                    deviceAuthId: parsed.deviceAuthId,
+                    userCode: parsed.userCode,
+                    intervalMs: parsed.intervalMs,
+                    expiresAt: parsed.expiresAt,
+                });
+            }
+            else {
+                await completeCodexAuth(input);
+            }
             const session = getOpenAiAccountSession();
             if (!session) {
                 throw new Error('OpenAI OAuth completed but could not read session. Try again.');
@@ -325,59 +333,6 @@ export class YagrSetupApplicationService {
         }
         this.yagrConfigService.setEnabledGatewaySurfaces(input.surfaces);
     }
-    async setupLlmProxy(n8nUrl, instanceProfile) {
-        const relay = await ensureN8nRelayServer();
-        // When the proxy was already configured, reuse the stored mode and host.
-        // relay.baseUrl reflects the current relay port with the stored host address.
-        const existingProxyConfig = this.yagrConfigService.getLocalConfig().llmProxy;
-        if (existingProxyConfig?.enabled && existingProxyConfig.mode) {
-            if (existingProxyConfig.mode === 'tunnel') {
-                await ensureConfiguredLlmPublicExposure(this.yagrConfigService);
-            }
-            const refreshedRelay = buildRelayInfo((await ensureN8nRelayServer()).port);
-            return {
-                mode: existingProxyConfig.mode,
-                credentialBaseUrl: refreshedRelay.baseUrl,
-                dockerHostAddress: existingProxyConfig.dockerHostAddress,
-                llmTunnelUrl: this.yagrConfigService.getLocalConfig().llmProxy?.llmTunnelUrl,
-            };
-        }
-        // First-time setup: derive mode from instance profile.
-        const classification = classifyN8nInstanceCandidate({
-            host: n8nUrl,
-            instanceProfile: instanceProfile ?? this.n8nConfigService.getLocalConfig().instanceProfile,
-        });
-        if (hasN8nInstanceTag(classification, 'CLOUD')) {
-            // Cloud/external n8n cannot reach loopback; spawn a Cloudflare tunnel.
-            const tunnel = await this.startCloudflareTunnel(relay.hostBaseUrl);
-            return { mode: 'tunnel', credentialBaseUrl: `${tunnel}/v1`, llmTunnelUrl: tunnel };
-        }
-        if (hasN8nInstanceTag(classification, 'DOCKER')) {
-            const dockerHost = await resolveDockerHostAddress();
-            return {
-                mode: 'docker',
-                credentialBaseUrl: `http://${dockerHost}:${relay.port}/v1`,
-                dockerHostAddress: dockerHost,
-            };
-        }
-        return { mode: 'local', credentialBaseUrl: relay.hostBaseUrl };
-    }
-    async startCloudflareTunnel(targetUrl) {
-        return refreshLlmPublicExposureForRelayHostBaseUrl(targetUrl, this.yagrConfigService);
-    }
-    saveLlmProxyConfig(config) {
-        this.yagrConfigService.saveLlmProxyConfig(config);
-    }
-    async provisionLlmProxyCredential() {
-        const classification = classifyConfiguredN8nInstance(this.n8nConfigService);
-        if (!classification.capabilities.shouldProvisionYagrLlmProxy) {
-            return;
-        }
-        await ensureYagrProxyCredential();
-    }
-    isLlmProxyEnabled() {
-        return this.yagrConfigService.isLlmProxyEnabled();
-    }
     async configureTelegram(botToken) {
         const token = botToken.trim();
         if (!token || !token.includes(':')) {
@@ -482,7 +437,7 @@ export class YagrSetupApplicationService {
             host,
             apiKey,
             project,
-            syncFolder: input.syncFolder?.trim() || this.n8nConfigService.getLocalConfig().syncFolder || 'workflows',
+            syncFolder: input.syncFolder?.trim() || this.n8nConfigService.getLocalConfig().syncFolder || 'workspace',
             instanceProfile: input.instanceProfile,
         });
         return { project, warning };
@@ -490,7 +445,7 @@ export class YagrSetupApplicationService {
     async saveN8nConfig(input) {
         const host = input.host.trim();
         const projectId = input.projectId.trim();
-        const syncFolder = input.syncFolder.trim() || 'workflows';
+        const syncFolder = input.syncFolder.trim() || 'workspace';
         if (!host) {
             throw new Error('n8n host is required.');
         }
@@ -528,7 +483,7 @@ export class YagrSetupApplicationService {
     }
     async persistConnectedN8nConfig(input) {
         const host = input.host.trim();
-        const syncFolder = input.syncFolder.trim() || 'workflows';
+        const syncFolder = input.syncFolder.trim() || 'workspace';
         const selectedProject = input.project;
         this.n8nConfigService.saveApiKey(host, input.apiKey);
         const instanceProfile = input.instanceProfile ?? resolveN8nInstanceProfile({
@@ -549,36 +504,7 @@ export class YagrSetupApplicationService {
         };
         this.n8nConfigService.saveLocalConfig(persistedConfig);
         this.n8nConfigService.syncN8nacCliApiKey?.();
-        const workflowDir = resolveWorkflowDir({ syncFolder, instanceIdentifier, projectName });
-        if (workflowDir) {
-            this.ensureWorkspaceFiles(workflowDir);
-        }
-        try {
-            await this.refreshAiContextRunner({ host, apiKey: input.apiKey });
-            // `n8nac update-ai` rewrites `n8nac-config.json`; re-apply Yagr metadata so
-            // later commands keep the instance classification chosen during setup.
-            this.n8nConfigService.saveLocalConfig(persistedConfig);
-            return undefined;
-        }
-        catch (error) {
-            this.n8nConfigService.saveLocalConfig(persistedConfig);
-            return `Workspace saved, but the n8n workspace instructions refresh failed: ${error instanceof Error ? error.message : String(error)}`;
-        }
+        return undefined;
     }
-    async refreshN8nWorkspaceInstructionsFromSavedConfig() {
-        const config = this.n8nConfigService.getLocalConfig();
-        if (!config.host) {
-            return false;
-        }
-        const apiKey = this.n8nConfigService.getApiKey(config.host);
-        if (!apiKey) {
-            return false;
-        }
-        await this.refreshAiContextRunner({ host: config.host, apiKey });
-        return true;
-    }
-}
-export async function refreshAiContext(credentials) {
-    await defaultRefreshAiContext(credentials);
 }
 //# sourceMappingURL=application-services.js.map
