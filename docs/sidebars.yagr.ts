@@ -20,6 +20,7 @@ const sidebars: SidebarsConfig = {
         id: 'usage/index',
       },
       items: [
+        'usage/skills',
         'usage/telegram',
         'usage/tui',
       ],

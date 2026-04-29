@@ -8,6 +8,8 @@ export {
   getYagrHomeDir,
   getYagrLaunchDir,
   getYagrPaths,
+  getYagrSkillsDir,
+  getYagrWorkspaceSkillsDir,
   registerContextMemorySource,
   resolveYagrHomeDir,
 } from './config/yagr-home.js';
@@ -65,6 +67,16 @@ export {
   createPristineDeepAgentBackend,
   getPristineDeepAgentMemorySources,
 } from './deepagents/pristine.js';
+export {
+  discoverAgentSkills,
+  getDeepAgentSkillSourcePaths,
+  getEffectiveAgentSkill,
+  installAgentSkills,
+  listAgentSkills,
+  removeAgentSkill,
+  resolveAgentSkillInstallDir,
+  resolveAgentSkillRoots,
+} from './skills/agent-skills.js';
 export type { Gateway, InboundMessage } from './gateway/types.js';
 export type { GatewayRuntimeHandle, GatewaySurface } from './gateway/types.js';
 export type { GatewaySupervisorStatus, GatewaySurfaceStatus } from './gateway/manager.js';
@@ -98,3 +110,12 @@ export type {
   YagrTelegramLinkedChat,
 } from './config/yagr-config-service.js';
 export type { YagrPaths } from './config/yagr-home.js';
+export type {
+  DeepAgentSkillSourcePathOptions,
+  InstallAgentSkillsOptions,
+  ListAgentSkillsOptions,
+  RemoveAgentSkillOptions,
+  YagrAgentSkillRecord,
+  YagrSkillRoot,
+  YagrSkillScope,
+} from './skills/agent-skills.js';

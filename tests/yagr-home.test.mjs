@@ -10,6 +10,7 @@ import {
   getYagrHomeDir,
   getYagrLaunchDir,
   getYagrPaths,
+  getYagrWorkspaceSkillsDir,
   registerContextMemorySource,
   resolveYagrHomeDir,
 } from '../dist/config/yagr-home.js';
@@ -68,6 +69,7 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
     const paths = getYagrPaths();
     assert.equal(paths.homeDir, path.resolve(getYagrLaunchDir(), '.yagr-test-workspace'));
     assert.equal(paths.memorySources, path.join(paths.homeDir, 'memory-sources.json'));
+    assert.equal(paths.skillsDir, path.join(paths.homeDir, 'skills'));
     assert.equal(paths.yagrConfigPath, path.join(paths.homeDir, 'yagr-config.json'));
     assert.equal(paths.yagrCredentialsPath, path.join(paths.homeDir, 'credentials.json'));
   } finally {
@@ -91,6 +93,7 @@ test('ensureYagrHomeDir creates all required directories', () => {
     assert.ok(fs.existsSync(paths.homeDir), 'homeDir created');
     assert.ok(fs.existsSync(paths.proxyRuntimeDir), 'proxyRuntimeDir created');
     assert.ok(fs.existsSync(paths.accountAuthDir), 'accountAuthDir created');
+    assert.ok(fs.existsSync(paths.skillsDir), 'skillsDir created');
 
     assert.ok(!fs.existsSync(path.join(tempHome, 'AGENTS.md')), 'no AGENTS.md written by home initialization');
   } finally {
@@ -101,6 +104,11 @@ test('ensureYagrHomeDir creates all required directories', () => {
     }
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
+});
+
+test('getYagrWorkspaceSkillsDir resolves under the launch context root', () => {
+  const contextRoot = path.join(os.tmpdir(), 'yagr-context-root');
+  assert.equal(getYagrWorkspaceSkillsDir(contextRoot), path.join(contextRoot, '.agents', 'skills'));
 });
 
 test('registerContextMemorySource persists correctly', () => {
