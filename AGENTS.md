@@ -94,23 +94,13 @@ They must not concentrate:
 
 ### 6. Coherent setup
 
-Setup, the wizard, and n8n bootstrap must converge toward unique setup services.
+Setup and the wizard must converge toward unique setup services.
 
 Do not duplicate onboarding logic between:
 
 - the wizard
 - the WebUI
 - other surfaces
-
-### 7. Orchestrator and automation backend
-
-Yagr stays above the orchestrator.
-
-- n8n is the main backend today
-- the agentic core must not be drowned in n8n integration details
-- backend contracts must remain clean and evolutive
-
-## Documentation maintenance rules
 
 ### Current architecture
 

@@ -67,7 +67,6 @@ conversation.md
 docs/static/api/*
 !docs/static/api/.gitkeep
 docs/static/img/logo.png
-n8nac.cmd
 
 workflows/
 !.github/workflows/
