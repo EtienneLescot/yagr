@@ -637,13 +637,13 @@ test('openai-oauth prepends Codex base instructions before application system pr
       inputFormat: 'prompt',
       mode: { type: 'regular' },
       prompt: [
-        { role: 'system', content: 'Use n8n workflow files and finish by presenting workflow output.' },
-        { role: 'user', content: [{ type: 'text', text: 'Create the workflow.' }] },
+        { role: 'system', content: 'Use n8n workspace files and finish by presenting the result.' },
+        { role: 'user', content: [{ type: 'text', text: 'Create the automation.' }] },
       ],
     });
 
     assert.match(seenBody.instructions, /^You are Codex, based on GPT-5\./);
-    assert.match(seenBody.instructions, /Use n8n workflow files and finish by presenting workflow output\./);
+    assert.match(seenBody.instructions, /Use n8n workspace files and finish by presenting the result\./);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousAuthPath === undefined) {
@@ -965,7 +965,7 @@ test('openai-oauth LangChain model preserves optional tool properties as optiona
       {
         type: 'response.function_call_arguments.delta',
         item_id: 'call_789',
-        delta: '{"pattern":"workflows/**/*.workflow.ts"}',
+        delta: '{"pattern":"workspace/**/*.ts"}',
       },
       {
         type: 'response.completed',
@@ -997,7 +997,7 @@ test('openai-oauth LangChain model preserves optional tool properties as optiona
       },
     ], { tool_choice: 'any' });
 
-    const result = await boundModel.invoke([new HumanMessage('Find workflow files.')]);
+    const result = await boundModel.invoke([new HumanMessage('Find workspace files.')]);
 
     assert.equal(seenBody.tools[0].name, 'glob');
     assert.equal(seenBody.tools[0].strict, true);
@@ -1005,7 +1005,7 @@ test('openai-oauth LangChain model preserves optional tool properties as optiona
     assert.deepEqual(seenBody.tools[0].parameters.properties.path.type, ['string', 'null']);
     assert.equal(result.tool_calls.length, 1);
     assert.equal(result.tool_calls[0].name, 'glob');
-    assert.deepEqual(result.tool_calls[0].args, { pattern: 'workflows/**/*.workflow.ts' });
+    assert.deepEqual(result.tool_calls[0].args, { pattern: 'workspace/**/*.ts' });
   } finally {
     globalThis.fetch = previousFetch;
     if (previousAuthPath === undefined) {

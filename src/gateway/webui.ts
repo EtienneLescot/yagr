@@ -25,9 +25,7 @@ import {
   YAGR_SELECTABLE_MODEL_PROVIDERS,
 } from '../llm/provider-registry.js';
 import { getSnapshotContextWindow } from '../llm/provider-metadata.js';
-import { resolveManagedN8nWorkflowOpen } from '../n8n-local/workflow-open.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
-import { decodeHtmlDataUrl, resolveStoredWorkflowOpenTarget } from './local-open-bridge.js';
 import { getWebUiConfig, getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
 import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
 import {
@@ -80,8 +78,7 @@ type WebUiChatStreamEvent =
   | { type: 'compaction'; summary: string; source: 'llm' | 'fallback'; messagesCompacted: number; preservedRecentMessages: number }
   | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
-  | { type: 'error'; error: string }
-  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; openUrl?: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
+  | { type: 'error'; error: string };
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -239,7 +236,7 @@ class WebUiGateway implements Gateway {
         host: String(body.host ?? ''),
         apiKey: body.apiKey ? String(body.apiKey) : undefined,
         projectId: String(body.projectId ?? ''),
-        syncFolder: String(body.syncFolder ?? 'workflows'),
+        syncFolder: String(body.syncFolder ?? 'workspace'),
         instanceProfile,
       });
       this.sendJson(response, 200, {
@@ -576,18 +573,6 @@ class WebUiGateway implements Gateway {
       return;
     }
 
-    if (method === 'GET' && url.pathname === '/api/n8n/workflow-session') {
-      const workflowUrl = String(url.searchParams.get('url') ?? url.searchParams.get('target') ?? '').trim();
-      await this.sendManagedN8nWorkflowSession(response, workflowUrl);
-      return;
-    }
-
-    if (method === 'GET' && (url.pathname === '/open/n8n-workflow' || url.pathname.startsWith('/open/n8n-workflow/'))) {
-      const workflowUrl = this.resolveWorkflowOpenUrl(url);
-      await this.openManagedN8nWorkflow(response, workflowUrl);
-      return;
-    }
-
     this.sendJson(response, 404, { error: 'Not found' });
   }
 
@@ -598,54 +583,6 @@ class WebUiGateway implements Gateway {
       webUiStatus,
       selectableProviders: VALID_PROVIDERS,
     });
-  }
-
-  private async sendManagedN8nWorkflowSession(response: ServerResponse, workflowUrl: string): Promise<void> {
-    if (workflowUrl.startsWith('data:text/html')) {
-      this.sendJson(response, 200, { mode: 'managed', targetUrl: workflowUrl, fallbackPage: decodeHtmlDataUrl(workflowUrl) });
-      return;
-    }
-
-    const session = resolveManagedN8nWorkflowOpen(workflowUrl);
-    if (!session.ok) {
-      this.sendJson(response, session.statusCode, { error: session.error });
-      return;
-    }
-
-    this.sendJson(response, 200, session.payload);
-  }
-
-  private async openManagedN8nWorkflow(response: ServerResponse, workflowUrl: string): Promise<void> {
-    if (workflowUrl.startsWith('data:text/html')) {
-      this.sendText(response, 200, decodeHtmlDataUrl(workflowUrl), 'text/html; charset=utf-8');
-      return;
-    }
-
-    const session = resolveManagedN8nWorkflowOpen(workflowUrl);
-    if (!session.ok) {
-      this.sendText(response, session.statusCode, session.error, 'text/plain; charset=utf-8');
-      return;
-    }
-
-    if (session.payload.mode === 'direct') {
-      response.writeHead(302, { Location: session.payload.targetUrl });
-      response.end();
-      return;
-    }
-
-    this.sendText(response, 200, session.payload.fallbackPage, 'text/html; charset=utf-8');
-  }
-
-  private resolveWorkflowOpenUrl(url: URL): string {
-    const token = url.pathname.startsWith('/open/n8n-workflow/')
-      ? decodeURIComponent(url.pathname.slice('/open/n8n-workflow/'.length)).trim()
-      : '';
-
-    if (token) {
-      return resolveStoredWorkflowOpenTarget(token);
-    }
-
-    return String(url.searchParams.get('url') ?? url.searchParams.get('target') ?? '').trim();
   }
 
   private async saveN8nConfig(input: {
@@ -862,19 +799,6 @@ class WebUiGateway implements Gateway {
               });
             }
           },
-          onWorkflowEmbed: (embed) => {
-            writeEvent({
-              type: 'embed',
-              kind: embed.kind,
-              workflowId: embed.workflowId,
-              url: embed.url,
-              openUrl: embed.url,
-              targetUrl: embed.targetUrl,
-              title: embed.title,
-              diagram: embed.diagram,
-              executionResult: embed.executionResult,
-            });
-          },
           onCompaction: (compaction) => {
             void compactionService.notifyCompaction(sessionId, compaction);
             writeEvent({
@@ -889,7 +813,7 @@ class WebUiGateway implements Gateway {
       }
 
       if (DEBUG_AGENT_LOOP) {
-        console.error(`[DEBUG_AGENT_LOOP] Stream ended. eventCount=${eventCount} responseText.len=${accumulator.responseText.length} workflowEmbeds=${accumulator.workflowEmbeds.length} requiredActions=${accumulator.requiredActions.length}`);
+        console.error(`[DEBUG_AGENT_LOOP] Stream ended. eventCount=${eventCount} responseText.len=${accumulator.responseText.length} requiredActions=${accumulator.requiredActions.length}`);
         console.error(`[DEBUG_AGENT_LOOP] responseText preview: ${accumulator.responseText.slice(0, 200)}`);
       }
 

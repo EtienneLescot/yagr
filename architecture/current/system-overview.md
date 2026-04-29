@@ -33,7 +33,6 @@ flowchart TD
 
     subgraph Plugins[Plugins]
       PluginRuntime[@yagr/plugin-runtime]
-      N8nManager[@yagr/plugin-n8n-manager]
     end
 
     subgraph ExternalN8n[External n8n-as-code Ecosystem]
@@ -55,11 +54,8 @@ flowchart TD
     SurfacesFacade --> WebuiSurface
     SurfacesFacade --> TuiSurface
     AgentApp --> PluginRuntime
-    PluginRuntime --> N8nManager
     N8nFacades --> WorkflowCore
     N8nFacades --> ExternalManager
-    N8nManager -. optional Yagr facade adapter .-> WorkflowCore
-    N8nManager -. optional Yagr facade adapter .-> ExternalManager
     ExternalManager --> Credentials
 ```
 
@@ -70,7 +66,7 @@ flowchart TD
 - The preferred product-facing entrypoints are the facades:
   - `@yagr/runtime`
   - `@yagr/surfaces`
-- Manager-specific behavior is starting to move behind `@yagr/plugin-n8n-manager`.
+- Manager-specific behavior has moved out of this repository.
 - The external n8n ecosystem now has two independent engines:
   - `n8n-as-code workflow-core` for workflow intelligence
   - `n8n-manager` for runtime, infrastructure, diagnostics, credentials, deploy, and execution

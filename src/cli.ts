@@ -26,15 +26,10 @@ import {
   stopManagedDockerN8n,
 } from './n8n-local/docker-manager.js';
 import { formatLocalN8nBootstrapAssessment, inspectLocalN8nBootstrap } from './n8n-local/detect.js';
-import {
-  prepareConfiguredN8nForLaunch,
-  getConfiguredManagedN8nState,
-} from './n8n-local/managed-runtime.js';
+import { getConfiguredManagedN8nState } from './n8n-local/managed-runtime.js';
 import { createN8nBootstrapPlan } from './n8n-local/plan.js';
-import { presentWorkflowResultCli } from './manager-tooling/present-workflow.js';
-import { runYagrProxyCli, syncProxyCredentialIfEnabled } from './manager-tooling/yagr-proxy.js';
 import { readManagedN8nState } from './n8n-local/state.js';
-import { getYagrSetupStatus, refreshN8nWorkspaceInstructionsFromSavedConfig, registerN8nContextSources, runYagrLlmSetup, runYagrLlmProxySetup, runYagrN8nSetup, runYagrSetup } from './setup.js';
+import { getYagrSetupStatus, registerN8nContextSources, runYagrLlmSetup, runYagrN8nSetup, runYagrSetup } from './setup.js';
 import { YagrSetupApplicationService } from './setup/application-services.js';
 import { openExternalUrl } from './system/open-external.js';
 import { isPidAlive, killProcessTree, spawnCommand, spawnDetached } from './system/process.js';
@@ -53,14 +48,13 @@ import {
   stopN8nPublicExposureSet,
   type ManagedN8nRestartHooks,
 } from './n8n-local/public-exposure-service.js';
-import { ensureStartupTunnelReachability, ensureFacadeTunnelReachability } from './n8n-local/tunnel-reachability.js';
-import { ensureN8nRelayServer } from './llm/llm-relay-server.js';
+import { ensureFacadeTunnelReachability } from './n8n-local/tunnel-reachability.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
 const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'llm-proxy-setup' | 'start' | 'stop' | 'restart' | 'tui' | 'webui' | 'gateway' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-setup' | 'n8n-context-setup' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url' | 'presentWorkflowResult' | 'yagrProxy';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'start' | 'stop' | 'restart' | 'tui' | 'webui' | 'gateway' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-setup' | 'n8n-context-setup' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url';
   startTarget?: 'webui' | 'tui';
   n8nLocalRuntime?: 'docker';
   prompt?: string;
@@ -74,14 +68,6 @@ interface ParsedArgs {
   yes: boolean;
   dryRun: boolean;
   resetScope?: YagrResetScope;
-  workflowId?: string;
-  workflowUrl?: string;
-  title?: string;
-  diagramFile?: string;
-  executionStatus?: 'success' | 'error' | 'waiting';
-  executionId?: string;
-  executionSummary?: string;
-  executionDataFile?: string;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -151,16 +137,6 @@ function parseArgs(argv: string[]): ParsedArgs {
     return parsed;
   }
 
-  if (argv[0] === 'presentWorkflowResult') {
-    parsed.command = 'presentWorkflowResult';
-    startIndex = 1;
-  }
-
-  if (argv[0] === 'yagrProxy') {
-    parsed.command = 'yagrProxy';
-    startIndex = 1;
-  }
-
   if (argv[0] === 'setup' || argv[0] === 'onboard') {
     parsed.command = 'setup';
     startIndex = 1;
@@ -199,11 +175,6 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (argv[0] === 'gateway' && argv[1] === 'status') {
     parsed.command = 'gateway-status';
     return parsed;
-  }
-
-  if (argv[0] === 'llm' && argv[1] === 'proxy' && argv[2] === 'setup') {
-    parsed.command = 'llm-proxy-setup';
-    startIndex = 3;
   }
 
   if (argv[0] === 'proxy' && argv[1] === 'start') {
@@ -418,59 +389,6 @@ function parseArgs(argv: string[]): ParsedArgs {
       throw new Error('Invalid value for --runtime. Docker is the only Yagr-managed local runtime.');
     }
 
-    if (arg === '--workflow-id') {
-      parsed.workflowId = argv[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--workflow-url') {
-      parsed.workflowUrl = argv[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--title') {
-      parsed.title = argv[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--diagram-file') {
-      parsed.diagramFile = argv[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--execution-status') {
-      const value = argv[index + 1];
-      if (value === 'success' || value === 'error' || value === 'waiting') {
-        parsed.executionStatus = value;
-        index += 1;
-        continue;
-      }
-
-      throw new Error('Invalid value for --execution-status. Use one of: success, error, waiting.');
-    }
-
-    if (arg === '--execution-id') {
-      parsed.executionId = argv[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--execution-summary') {
-      parsed.executionSummary = argv[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--execution-data-file') {
-      parsed.executionDataFile = argv[index + 1];
-      index += 1;
-      continue;
-    }
-
     if (arg === '--docker') {
       parsed.n8nLocalRuntime = 'docker';
       continue;
@@ -584,10 +502,6 @@ export function getGatewayRestartDelayMs(failureCount: number): number {
 }
 
 async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  await ensureManagedN8nAtLaunch();
-  await refreshN8nWorkspaceInstructionsAtLaunch();
-  await ensureRelayAtLaunch();
-
   await runGatewaySupervisor({
     provider: args.provider,
     model: args.model,
@@ -661,9 +575,6 @@ async function runGatewaySupervisorProcess(args: ParsedArgs, configService: Yagr
 }
 
 async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  await ensureManagedN8nAtLaunch();
-  await refreshN8nWorkspaceInstructionsAtLaunch();
-  await ensureRelayAtLaunch();
   const supervisorStatus = getGatewaySupervisorStatus(configService);
 
   if (supervisorStatus.startableSurfaces.length === 0) {
@@ -741,65 +652,12 @@ async function runTui(args: ParsedArgs): Promise<void> {
   });
 }
 
-function readOptionalTextFile(filePath: string | undefined): string | undefined {
-  if (!filePath) {
-    return undefined;
-  }
-
-  return fs.readFileSync(filePath, 'utf8');
-}
-
 async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
   await runGatewaySurfaces(['webui'], {
     provider: args.provider,
     model: args.model,
     maxSteps: args.maxSteps,
   }, configService);
-}
-
-async function ensureManagedN8nAtLaunch(): Promise<void> {
-  try {
-    const preparation = await prepareConfiguredN8nForLaunch();
-    if (preparation.warning) {
-      process.stderr.write(`Warning: ${preparation.warning}\n`);
-    }
-
-    if (!preparation.state) {
-      return;
-    }
-
-    if (preparation.started) {
-      process.stdout.write(`Restarted Yagr-managed n8n (Docker) at ${preparation.state.url}\n`);
-    }
-    if (preparation.reconciled) {
-      process.stdout.write(`Completed managed n8n startup reconciliation at ${preparation.state.url}\n`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`\nError: Could not start n8n.\n${message}\n\n`);
-    process.exit(1);
-  }
-}
-
-async function refreshN8nWorkspaceInstructionsAtLaunch(): Promise<void> {
-  try {
-    await refreshN8nWorkspaceInstructionsFromSavedConfig();
-  } catch (error) {
-    process.stderr.write(`Warning: n8n workspace instructions refresh failed during launch: ${error instanceof Error ? error.message : String(error)}\n`);
-  }
-}
-
-async function ensureRelayAtLaunch(): Promise<void> {
-  const configService = new YagrConfigService();
-  const llmProxy = configService.getLocalConfig().llmProxy;
-  if (!llmProxy?.enabled) return;
-  try {
-    await ensureN8nRelayServer();
-    await ensureStartupTunnelReachability(configService);
-    await syncProxyCredentialIfEnabled();
-  } catch (error) {
-    process.stderr.write(`Warning: LLM relay server failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
-  }
 }
 
 function buildManagedN8nRestartHooks(): ManagedN8nRestartHooks {
@@ -863,8 +721,6 @@ Commands:
   n8n tunnel status            Show tunnel status (JSON)
   n8n tunnel url               Print the current public tunnel URL
   n8n context setup            Register n8n workspace context for the agent
-  presentWorkflowResult        Internal manager command for workflow presentation JSON
-  yagrProxy                    Internal manager command for LLM proxy status JSON
 
   config show                  Show current configuration (JSON)
   config reset                 Clear all configuration and stored credentials
@@ -1031,13 +887,6 @@ async function main(): Promise<void> {
         process.env.YAGR_DEBUG_MODEL_DISCOVERY = '1';
       }
       await runYagrLlmSetup(configService);
-      // Re-sync the proxy credential after LLM config changes (best-effort).
-      await syncProxyCredentialIfEnabled().catch(() => {});
-      return;
-    }
-
-    if (args.command === 'llm-proxy-setup') {
-      await runYagrLlmProxySetup(configService);
       return;
     }
 
@@ -1275,34 +1124,6 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (args.command === 'presentWorkflowResult') {
-      if (!args.workflowId) {
-        throw new Error('presentWorkflowResult requires --workflow-id.');
-      }
-
-      const payload = await presentWorkflowResultCli({
-        workflowId: args.workflowId,
-        workflowUrl: args.workflowUrl,
-        title: args.title,
-        diagram: readOptionalTextFile(args.diagramFile),
-        executionResult: args.executionStatus
-          ? {
-              status: args.executionStatus,
-              executionId: args.executionId,
-              summary: args.executionSummary,
-              data: readOptionalTextFile(args.executionDataFile),
-            }
-          : undefined,
-      });
-      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-      return;
-    }
-
-    if (args.command === 'yagrProxy') {
-      const payload = await runYagrProxyCli();
-      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-      return;
-    }
   }
 
   if (args.command === 'stop') {
@@ -1396,9 +1217,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  await ensureManagedN8nAtLaunch();
-  await refreshN8nWorkspaceInstructionsAtLaunch();
-  await ensureRelayAtLaunch();
   await ensureFacadeTunnelReachability('cli').catch(() => {});
 
   const handle = await createYagrDeepAgent();

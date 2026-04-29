@@ -10,7 +10,7 @@ export interface YagrSetupStatus {
   llmConfigured: boolean;
   enabledSurfaces: GatewaySurface[];
   startableSurfaces: GatewaySurface[];
-  missingSteps: Array<'n8n' | 'llm'>;
+  missingSteps: Array<'llm'>;
 }
 
 export function buildYagrSetupStatus(input: {
@@ -19,11 +19,7 @@ export function buildYagrSetupStatus(input: {
   enabledSurfaces: GatewaySurface[];
   startableSurfaces: GatewaySurface[];
 }): YagrSetupStatus {
-  const missingSteps: Array<'n8n' | 'llm'> = [];
-
-  if (!input.n8nConfigured) {
-    missingSteps.push('n8n');
-  }
+  const missingSteps: Array<'llm'> = [];
 
   if (!input.llmConfigured) {
     missingSteps.push('llm');

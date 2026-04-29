@@ -7,7 +7,7 @@
 
 ## Context
 
-Yagr had a Cloudflare tunnel spam problem: orphaned `cloudflared` processes leaked during startup timeouts and the generic auto-restart logic that restarting tunnels indiscriminately at gateway worker restart. Three tunnels existed (n8n, workflow-open/bridge, llm-proxy) with spawn logic distributed in facades, no central wake-up policy, broken `TUNNEL_DOMAIN` DNS routing, and legacy state file names still being read.
+Yagr had a Cloudflare tunnel spam problem: orphaned `cloudflared` processes leaked during startup timeouts and the generic auto-restart logic restarted tunnels indiscriminately at gateway worker restart. Tunnel spawn logic was distributed in facades, with no central wake-up policy, broken `TUNNEL_DOMAIN` DNS routing, and legacy state file names still being read.
 
 ---
 
@@ -15,7 +15,7 @@ Yagr had a Cloudflare tunnel spam problem: orphaned `cloudflared` processes leak
 
 1. **Original Bug:** `startN8nTunnel()` / `startNamedTunnel()` left detached `cloudflared` processes alive on timeout/early-close (the process was unref'd before the URL was captured)
 2. **`ensureTunnelAtLaunch()`** in `cli.ts` restarting tunnels at every generic gateway worker restart, multiplying orphan accumulation
-3. **`workflow-open tunnel`** auto-started with the main n8n tunnel from tunnel setup/stop/refresh CLI commands
+3. **auth bridge tunnel** could be coupled to unrelated tunnel setup/stop/refresh CLI commands
 4. **`TUNNEL_DOMAIN`** mode broken: `cloudflared tunnel route dns` was never called, so hostnames did not point to the tunnel
 
 ---
@@ -101,7 +101,7 @@ When `TUNNEL_DOMAIN` is set:
 ### No Legacy
 
 - `proxy-tunnel.json` → `llm-tunnel.json`
-- `workflow-open-tunnel.json` → `n8n-auth-tunnel.json`
+- legacy auth tunnel state names converge on `n8n-auth-tunnel.json`
 - Field `tunnelUrl` → `publicUrl`
 - No legacy fallback maintained
 

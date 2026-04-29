@@ -18,17 +18,6 @@
   --violet-deep: #18222c;
   --rose: #e63d7a;
   --shadow: 0 8px 20px rgba(12, 16, 31, 0.06);
-  --workflow-card-bg: rgba(255, 255, 255, 0.88);
-  --workflow-card-bg-subtle: rgba(247, 252, 252, 0.92);
-  --workflow-card-border: rgba(142, 168, 178, 0.42);
-  --workflow-title-ink: #10202a;
-  --workflow-badge-ink: #f8fcfc;
-  --workflow-badge-bg: linear-gradient(135deg, #345766, #80bbc7);
-  --workflow-graph-edge: #9eb4c1;
-  --workflow-graph-loop: #d38a17;
-  --workflow-graph-node-bg: rgba(255, 255, 255, 0.98);
-  --workflow-graph-node-text: #1e293b;
-  --workflow-graph-node-muted: #64748b;
   --notice-text: #f7fbfb;
   --notice-bg: var(--violet-deep);
   --progress-success: #1f8f64;
@@ -56,17 +45,6 @@
     --violet: #80bbc7;
     --violet-deep: #80bbc7;
     --shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
-    --workflow-card-bg: rgba(20, 29, 38, 0.94);
-    --workflow-card-bg-subtle: rgba(16, 24, 32, 0.96);
-    --workflow-card-border: rgba(128, 187, 199, 0.26);
-    --workflow-title-ink: #edf3f5;
-    --workflow-badge-ink: #0e171d;
-    --workflow-badge-bg: linear-gradient(135deg, #a7d9e3, #7ab5c1);
-    --workflow-graph-edge: #5f7b89;
-    --workflow-graph-loop: #f3b24b;
-    --workflow-graph-node-bg: rgba(24, 34, 44, 0.98);
-    --workflow-graph-node-text: #edf3f5;
-    --workflow-graph-node-muted: #9fb1b8;
     --notice-text: #f7fbfb;
     --notice-bg: var(--violet-deep);
     --progress-success: #1f8f64;
@@ -92,17 +70,6 @@
   --violet: #456874;
   --violet-deep: #18222c;
   --shadow: 0 8px 20px rgba(12, 16, 31, 0.06);
-  --workflow-card-bg: rgba(255, 255, 255, 0.88);
-  --workflow-card-bg-subtle: rgba(247, 252, 252, 0.92);
-  --workflow-card-border: rgba(142, 168, 178, 0.42);
-  --workflow-title-ink: #10202a;
-  --workflow-badge-ink: #f8fcfc;
-  --workflow-badge-bg: linear-gradient(135deg, #345766, #80bbc7);
-  --workflow-graph-edge: #9eb4c1;
-  --workflow-graph-loop: #d38a17;
-  --workflow-graph-node-bg: rgba(255, 255, 255, 0.98);
-  --workflow-graph-node-text: #1e293b;
-  --workflow-graph-node-muted: #64748b;
   --notice-text: #f7fbfb;
   --notice-bg: var(--violet-deep);
 }
@@ -125,17 +92,6 @@
   --violet: #80bbc7;
   --violet-deep: #80bbc7;
   --shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
-  --workflow-card-bg: rgba(20, 29, 38, 0.94);
-  --workflow-card-bg-subtle: rgba(16, 24, 32, 0.96);
-  --workflow-card-border: rgba(128, 187, 199, 0.26);
-  --workflow-title-ink: #edf3f5;
-  --workflow-badge-ink: #0e171d;
-  --workflow-badge-bg: linear-gradient(135deg, #a7d9e3, #7ab5c1);
-  --workflow-graph-edge: #5f7b89;
-  --workflow-graph-loop: #f3b24b;
-  --workflow-graph-node-bg: rgba(24, 34, 44, 0.98);
-  --workflow-graph-node-text: #edf3f5;
-  --workflow-graph-node-muted: #9fb1b8;
   --notice-text: #f7fbfb;
   --notice-bg: var(--violet-deep);
   --progress-success: #1f8f64;
@@ -1277,10 +1233,6 @@ button {
   background: var(--progress-error, #c94d72);
 }
 
-.workflowBadge {
-  background: var(--workflow-badge-bg);
-}
-
 .gearButton {
   display: inline-flex;
   align-items: center;
@@ -1422,111 +1374,6 @@ button {
   }
 }
 
-/* ── Workflow header card ──────────────────────────────────── */
-
-.workflowCard {
-  margin-top: 0.75rem;
-  border-radius: 0.45rem;
-  background: var(--workflow-card-bg);
-  border: 1px solid var(--workflow-card-border);
-  overflow: hidden;
-}
-
-.workflowHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.625rem 0.875rem;
-}
-
-.workflowHeaderLeft {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  min-width: 0;
-}
-
-.workflowBadge {
-  display: inline-block;
-  padding: 0.12rem 0.48rem;
-  border-radius: 0.3rem;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  color: var(--workflow-badge-ink);
-  background: var(--workflow-badge-bg);
-}
-
-.workflowTitle {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--workflow-title-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workflowHeader .primaryButton {
-  flex-shrink: 0;
-  width: auto;
-}
-
-.workflowGraphWrap {
-  padding: 0.75rem 1rem;
-  border-top: 1px solid var(--workflow-card-border);
-  overflow-x: auto;
-  background: var(--workflow-card-bg-subtle);
-  /* set a max-height so very tall graphs don't overflow vertically */
-  max-height: 640px;
-  overflow-y: auto;
-}
-
-.workflowGraph {
-  display: block;
-  /* no max-width: 100% — let the SVG keep its intrinsic width so overflow-x: auto can scroll */
-}
-
-.workflowDiagram {
-  margin: 0;
-  color: var(--workflow-title-ink);
-}
-
-.executionResult {
-  padding: 0.5rem 0.875rem;
-  border-top: 1px solid var(--workflow-card-border);
-  font-size: 0.8rem;
-}
-
-.executionResultHeader {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.executionBadge {
-  font-weight: 600;
-}
-
-.executionBadge.execSuccess { color: #1cc98a; }
-.executionBadge.execError { color: #d94778; }
-.executionBadge.execWaiting { color: var(--muted); }
-
-.executionSummary {
-  color: var(--muted);
-}
-
-.executionData {
-  margin: 0.5rem 0 0;
-  padding: 0.5rem;
-  background: rgba(0,0,0,0.05);
-  border-radius: 0.3rem;
-  font-size: 0.75rem;
-  overflow-x: auto;
-}
-
 /* ── Simplified message rows ───────────────────────────────────── */
 
 .msgSimple {
@@ -1618,16 +1465,6 @@ button {
   color: var(--muted);
 }
 
-.workflowSimple {
-  padding: 0.2rem 0;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
 .execStatus.success { color: #1cc98a; }
 .execStatus.error { color: #d94778; }
 .execStatus.waiting { color: var(--muted); }
-
-.workflowSimple a {
-  color: var(--violet);
-}

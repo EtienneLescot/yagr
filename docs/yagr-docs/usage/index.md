@@ -42,13 +42,7 @@ For downstream products, the intended integration layer is:
 
 ## Plugins
 
-Manager-specific logic is moving behind plugins.
-
-The first explicit example is:
-
-- `@yagr/plugin-n8n-manager`
-
-The direction is that Yagr core remains reusable, while manager/integration logic moves out of core packages.
+Manager-specific n8n logic now lives outside this repository. Yagr core remains reusable and focused on the agent runtime and surfaces.
 
 ## Commands you still use today
 

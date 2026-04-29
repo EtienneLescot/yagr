@@ -32,7 +32,7 @@ export interface DeepAgentSessionRecord {
 
 /**
  * A rich UI message that can be saved alongside the CoreMessages so that
- * the WebUI can restore the full visual state (progress tickers, embeds, etc.)
+ * the WebUI can restore the full visual state (progress tickers, etc.)
  * without reconstructing it from raw LLM history.
  */
 export interface SerializedChatMessage {
@@ -47,20 +47,6 @@ export interface SerializedChatMessage {
     title: string;
     detail?: string;
   }>;
-  embed?: {
-    kind: 'workflow';
-    workflowId: string;
-    url: string;
-    targetUrl?: string;
-    title?: string;
-    diagram?: string;
-    executionResult?: {
-      status: 'success' | 'error' | 'waiting';
-      executionId?: string;
-      summary?: string;
-      data?: string;
-    };
-  };
 }
 
 /**

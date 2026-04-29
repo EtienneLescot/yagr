@@ -83,30 +83,7 @@ export function writeIsolatedYagrConfig(tempHome, provider, model) {
 }
 
 export function seedHomeAgentsMd(homeDir) {
-  const destPath = path.join(homeDir, 'AGENTS.md');
-  if (fs.existsSync(destPath)) {
-    return;
-  }
-
-  const launchDir = process.env.YAGR_LAUNCH_CWD || process.cwd();
-  const candidates = [
-    path.join(launchDir, 'node_modules', '@yagr', 'manager-tooling', 'YAGENTS.md'),
-    path.join(launchDir, 'src', 'manager-tooling', 'YAGENTS.md'),
-  ];
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      try {
-        const content = fs.readFileSync(candidate, 'utf8').trim();
-        if (content) {
-          fs.writeFileSync(destPath, `${content}\n`);
-        }
-      } catch {
-        // Best effort only.
-      }
-      return;
-    }
-  }
+  fs.mkdirSync(homeDir, { recursive: true });
 }
 
 /**

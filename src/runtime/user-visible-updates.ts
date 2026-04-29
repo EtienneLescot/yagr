@@ -20,77 +20,6 @@ function preserveBody(text: string): string {
   return text;
 }
 
-function tryParseJsonObject(raw: string): Record<string, unknown> | undefined {
-  if (!raw.startsWith('{') || !raw.endsWith('}')) {
-    return undefined;
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function extractLeadingJsonObject(raw: string): Record<string, unknown> | undefined {
-  if (!raw.startsWith('{')) {
-    return undefined;
-  }
-
-  let depth = 0;
-  let inString = false;
-  let escaping = false;
-
-  for (let i = 0; i < raw.length; i += 1) {
-    const ch = raw[i];
-
-    if (inString) {
-      if (escaping) {
-        escaping = false;
-      } else if (ch === '\\') {
-        escaping = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (ch === '{') {
-      depth += 1;
-      continue;
-    }
-
-    if (ch === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        return tryParseJsonObject(raw.slice(0, i + 1));
-      }
-    }
-  }
-
-  return undefined;
-}
-
-function extractWorkflowEmbedFromText(raw: string): Record<string, unknown> | undefined {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const parsed = tryParseJsonObject(trimmed) ?? extractLeadingJsonObject(trimmed);
-  if (parsed?.__type === 'workflow-embed') {
-    return parsed;
-  }
-
-  return undefined;
-}
-
 function summarize(text: string, max = 120): string {
   const line = text.split('\n').find((l) => l.trim().length > 0) ?? text;
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
@@ -148,18 +77,6 @@ export function makeToolStartOperationEvent(
   switch (toolName) {
     case 'execute': {
       const command = typeof input?.command === 'string' ? input.command : '';
-      if (looksLikeYagrProxyCommand(command)) {
-        return {
-          kind: 'operation',
-          operationId,
-          label: 'Configuring LLM relay',
-          category: 'tool',
-          status: 'running',
-          summary: command.slice(0, 120),
-          startedAt: now,
-        };
-      }
-
       return {
         kind: 'operation',
         operationId,
@@ -214,17 +131,6 @@ export function makeToolStartOperationEvent(
       };
     }
 
-    case 'yagrProxy': {
-      return {
-        kind: 'operation',
-        operationId: 'tool:yagrProxy',
-        label: 'Configuring LLM relay',
-        category: 'tool',
-        status: 'running',
-        startedAt: now,
-      };
-    }
-
     case 'write_todos': {
       return {
         kind: 'operation',
@@ -264,7 +170,6 @@ export function makeToolStartOperationEvent(
 
     case 'reportProgress':
     case 'requestRequiredAction':
-    case 'presentWorkflowResult':
       // handled separately
       return undefined;
 
@@ -313,10 +218,6 @@ function categoryForTool(toolName: string): YagrOperationCategory {
   return 'tool';
 }
 
-function looksLikeYagrProxyCommand(command: string): boolean {
-  return /(^|\s)(?:npx\s+)?yagr\s+yagrProxy(\s|$)/.test(command.trim());
-}
-
 // ---------------------------------------------------------------------------
 // Tool-end → operation event update
 // ---------------------------------------------------------------------------
@@ -337,18 +238,6 @@ export function makeToolEndOperationEvent(
     const exitMatch = text.match(/\[Command (?:succeeded|failed) with exit code (\d+)\]\s*$/);
     const exitCode = exitMatch ? parseInt(exitMatch[1], 10) : undefined;
     const body = exitMatch ? text.slice(0, exitMatch.index).trimEnd() : text;
-    const workflowEmbed = extractWorkflowEmbedFromText(body);
-    if (workflowEmbed) {
-      const title = typeof workflowEmbed.title === 'string' && workflowEmbed.title.trim()
-        ? workflowEmbed.title.trim()
-        : typeof workflowEmbed.workflowId === 'string' ? workflowEmbed.workflowId : 'workflow';
-      return {
-        ...base,
-        status: exitCode !== undefined && exitCode !== 0 ? 'error' : 'done',
-        body: '',
-        summary: `Workflow ready  ${title}`,
-      };
-    }
     const lastLine = body.split('\n').reverse().find((l) => l.trim()) ?? '';
     return {
       ...base,
@@ -370,19 +259,7 @@ export function makeToolEndOperationEvent(
     const stdout = typeof out.stdout === 'string' ? out.stdout : '';
     const stderr = typeof out.stderr === 'string' ? out.stderr : '';
     const command = typeof out.command === 'string' ? out.command : '';
-    const workflowEmbed = extractWorkflowEmbedFromText(stdout);
-    if (workflowEmbed) {
-      const title = typeof workflowEmbed.title === 'string' && workflowEmbed.title.trim()
-        ? workflowEmbed.title.trim()
-        : typeof workflowEmbed.workflowId === 'string' ? workflowEmbed.workflowId : 'workflow';
-      return {
-        ...base,
-        status: exitCode !== undefined && exitCode !== 0 ? 'error' : 'done',
-        body: '',
-        summary: `Workflow ready  ${title}`,
-      };
-    }
-    
+
     // Combine stdout and stderr for display
     let output = '';
     if (stdout) output += stdout;
