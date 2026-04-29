@@ -49,7 +49,7 @@ Type any command prefixed with `/` in the input prompt.
 
 - `/expand` — expand all collapsed shell outputs
 - `/collapse` — collapse shell outputs to a single line
-- `/open` — open the most recent workflow URL
+- `/open` — open the most recent local URL when available
 - `/stop` — request the current run to stop gracefully
 - `/toggle_thinking` — toggle display of agent thinking
 - `/toggle_cli` — toggle display of command executions

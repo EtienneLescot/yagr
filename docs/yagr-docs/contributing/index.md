@@ -10,7 +10,6 @@ This guide covers how to get Yagr running locally for development and how to run
 ## Prerequisites
 
 - Node.js ≥ 22
-- A running n8n instance (local or remote) for integration and provider tests
 - At least one LLM provider configured (API key or OAuth account)
 
 ## Local setup
@@ -36,10 +35,10 @@ Yagr has three test levels. See [Testing](./testing) for full details.
 | Command | What it runs |
 |---|---|
 | `npm test` | Unit tests (fast, no external deps) |
-| `npm run test:integration` | Scenario integration test against a single LLM provider |
-| `npm run test:providers` | Provider matrix — all providers, always in advanced + strict mode |
+| `npm run test:packages` | Package-level tests |
+| `npm run test:unit` | Root unit tests after build |
 
-## Development workflow
+## Development loop
 
 After editing source files, rebuild before running tests:
 

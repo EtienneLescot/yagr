@@ -84,7 +84,7 @@ const config: Config = {
     //     path: 'static/api',
     //     routeBasePath: 'api',
     //     sidebarPath: './sidebars.api.ts',
-    //     editUrl: 'https://github.com/EtienneLescot/n8n-as-code/tree/main/',
+    //     editUrl: 'https://github.com/EtienneLescot/yagr/tree/main/',
     //     showLastUpdateAuthor: true,
     //     showLastUpdateTime: true,
     //     breadcrumbs: true,
@@ -171,11 +171,11 @@ const config: Config = {
     // algolia: {
     //   appId: 'YOUR_APP_ID',
     //   apiKey: 'YOUR_SEARCH_API_KEY',
-    //   indexName: 'n8n-as-code',
+    //   indexName: 'yagr',
     //   contextualSearch: true,
     // },
     metadata: [
-      { name: 'keywords', content: 'yagr, n8n-as-code, automation, ai agent, telegram, tui, workflow, gitops' },
+      { name: 'keywords', content: 'yagr, local coding agent, ai agent, telegram, tui' },
       { name: 'twitter:card', content: 'summary_large_image' },
     ],
   } satisfies Preset.ThemeConfig,

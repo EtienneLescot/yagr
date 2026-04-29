@@ -1,156 +1,45 @@
-<table width="100%">
-  <tr>
-    <td width="320" align="center" valign="middle">
-      <img src="res/yagr-logo.png" alt="Yagr logo" width="130">
-    </td>
-    <td width="680" valign="middle">
-      <div><strong><font size="6">Yagr</font></strong></div>
-      <div><sub>(Y)our (A)gent (G)rounded in (R)eality</sub></div>
-      <br>
-      <div><strong>Agent runtime platform, shared surfaces, and plugins for durable automation products.</strong></div>
-      <br>
-      <div>
-        <a href="https://github.com/EtienneLescot/yagr/actions/workflows/ci.yml"><img src="https://github.com/EtienneLescot/yagr/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-        <a href="https://yagr.dev/docs/"><img src="https://github.com/EtienneLescot/yagr/actions/workflows/docs.yml/badge.svg" alt="Documentation"></a>
-        <a href="https://yagr.dev/"><img src="https://img.shields.io/badge/docs-yagr-black?logo=gitbook" alt="Yagr Docs"></a>
-        <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
-      </div>
-      <br>
-      <div>
-        <a href="https://yagr.dev/"><strong>Docs</strong></a> ·
-        <a href="https://yagr.dev/docs/getting-started/"><strong>Getting Started</strong></a> ·
-        <a href="https://yagr.dev/docs/reference/commands/"><strong>Commands</strong></a>
-      </div>
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <img src="./docs/static/img/yagr-logo.png" alt="Yagr" width="140" />
+  <h1>Yagr</h1>
+  <p><strong>Autonomous local coding agent.</strong></p>
+</div>
 
----
+Yagr is a local coding-agent runtime built on deepagentsjs. It combines a coding-oriented middleware layer, local shell/file execution, provider runtime support, sessions/checkpoints, and thin surfaces such as CLI, Web UI, and Telegram.
 
-## What Yagr Is Now
+## What It Owns
 
-Yagr is no longer only a single agent app.
+- local coding-agent behavior
+- provider/model configuration
+- account-backed provider proxies
+- session and checkpoint management
+- runtime event streaming
+- CLI/Web UI/Telegram surfaces
 
-It is becoming a broader platform with three layers:
+## What It Does Not Own
 
-- **Core runtime packages**
-- **Plugins**
-- **Apps and surfaces**
+Yagr does not include a built-in domain backend. If a project uses external tools, the agent can work with them as ordinary local files and shell commands, but those integrations are not part of Yagr core.
 
-Today, the repository still contains the `@yagr/agent` app package, but the architecture is now intentionally split so other products can reuse Yagr without importing a monolith.
-
-## Package Model
-
-### Core runtime packages
-
-Examples:
-
-- `@yagr/deepagent-bootstrap`
-- `@yagr/provider-runtime`
-- `@yagr/session-service`
-- `@yagr/runtime-events`
-- `@yagr/stream-adapter`
-- `@yagr/conversation-service`
-
-These packages hold the reusable execution/runtime logic.
-
-### Facade packages
-
-For downstream products, the preferred entrypoints are the facades:
-
-- `@yagr/runtime`
-- `@yagr/surfaces`
-
-The facades exist so products like Axcut do not need to depend on many tiny internal packages directly.
-
-### Plugin packages
-
-Plugins carry domain- or product-specific integrations.
-
-Examples:
-
-- `@yagr/plugin-runtime`
-
-Manager-specific n8n logic now lives outside this repository, not in Yagr core.
-
-## Why This Refactor Exists
-
-This split solves two problems:
-
-1. **Yagr internal modularity**
-2. **Product reuse by external consumers**
-
-The small internal packages are useful inside Yagr for:
-
-- dependency boundaries
-- testability
-- plugin isolation
-- safer refactors
-
-The facade packages are useful for downstream products because they provide a stable integration surface.
-
-## Current Product Direction
-
-Yagr still powers an agent experience that turns intent into automation on top of durable execution systems.
-
-The important shift is architectural:
-
-- Yagr core should stay product-agnostic
-- external manager logic should stay outside Yagr core
-- surfaces should stay thin
-- runtime/state/session/event logic should be reusable across products
-
-## Quick Start
-
-### Install
-
-```bash
-npm install -g @yagr/agent@latest
-```
-
-### Onboard
-
-```bash
-yagr onboard
-```
-
-### Run
-
-```bash
-yagr start
-yagr tui
-yagr webui
-```
-
-## Repository Layers
-
-Conceptually, the repo is moving toward:
-
-- **Core**
-  - runtime, providers, sessions, streaming, surfaces
-- **Plugins**
-  - in-repository extension contracts and product-specific integrations
-- **Apps**
-  - final assembled runnable products
-
-## For Integrators
-
-If you are integrating Yagr into another product:
-
-- prefer `@yagr/runtime`
-- prefer `@yagr/surfaces`
-- avoid depending on many low-level packages directly unless you truly need to
-
-## Development
+## Basic Usage
 
 ```bash
 npm install
-npm test
 npm run build
+node dist/cli.js "inspect this repository and summarize it"
 ```
 
-## Read Next
+Start the local Web UI:
 
-- [Documentation](https://yagr.dev/docs/)
-- [Architecture dossier](./architecture/README.md)
-- [n8n-as-code](https://github.com/EtienneLescot/n8n-as-code)
+```bash
+node dist/cli.js webui
+```
+
+Configure model/runtime settings:
+
+```bash
+node dist/cli.js setup
+node dist/cli.js llm setup
+```
+
+## Architecture
+
+See `architecture/current/` for the current module map and runtime flows.

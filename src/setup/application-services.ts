@@ -1,13 +1,10 @@
 import { randomBytes } from 'node:crypto';
-import { N8nApiClient, getDisplayProjectName, type IProject } from 'n8nac';
 import {
   normalizeGatewaySurfaces,
   type YagrConfigService,
   type YagrConfigStoreLike,
-  type YagrLocalConfig,
   type YagrTelegramLinkedChat,
 } from '../config/yagr-config-service.js';
-import type { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import {
   getDefaultBaseUrlForProvider,
   providerNeedsBaseUrlInput,
@@ -19,56 +16,12 @@ import { resolveModelProvider } from '../llm/create-langchain-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
 import { beginCodexAuth, beginCodexDeviceAuth, completeCodexAuth, completeCodexDeviceAuth, ensureOpenAiAccountSession, getOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';
-import {
-  normalizeN8nUrlOrigin,
-  resolveN8nInstanceProfile,
-} from '../n8n-local/instance-classification.js';
 import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
 
-type N8nProjectClient = Pick<N8nApiClient, 'testConnection' | 'getProjects'>;
-
 interface SetupApplicationServiceDependencies {
-  createN8nClient?: (credentials: { host: string; apiKey: string }) => N8nProjectClient;
   resolveTelegramIdentity?: (botToken: string) => Promise<{ username: string; firstName: string }>;
   createOnboardingToken?: () => string;
   fetchAvailableModels?: (provider: YagrModelProvider, apiKey?: string, baseUrl?: string) => Promise<string[]>;
-}
-
-
-
-interface YagrN8nConfigStoreLike {
-  getLocalConfig(): {
-    host?: string;
-    syncFolder?: string;
-    projectId?: string;
-    projectName?: string;
-    instanceIdentifier?: string;
-    customNodesPath?: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
-  };
-  getApiKey(host: string): string | undefined;
-  saveApiKey(host: string, apiKey: string): void;
-  saveBootstrapState(
-    host: string,
-    syncFolder?: string,
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud',
-  ): void;
-  getOrCreateInstanceIdentifier(host: string): Promise<string>;
-  /** Optional: mirrors API key into n8nac CLI instanceProfiles so subprocesses authenticate. */
-  syncN8nacCliApiKey?(): void;
-  saveLocalConfig(config: {
-    host?: string;
-    syncFolder?: string;
-    projectId?: string;
-    projectName?: string;
-    instanceIdentifier?: string;
-    customNodesPath?: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
-  }): void;
-}
-
-function defaultCreateN8nClient(credentials: { host: string; apiKey: string }): N8nProjectClient {
-  return new N8nApiClient(credentials);
 }
 
 function defaultCreateOnboardingToken(): string {
@@ -80,17 +33,14 @@ function buildTelegramDeepLink(botUsername: string, onboardingToken: string): st
 }
 
 export class YagrSetupApplicationService {
-  private readonly createN8nClient: (credentials: { host: string; apiKey: string }) => N8nProjectClient;
   private readonly resolveTelegramIdentity: (botToken: string) => Promise<{ username: string; firstName: string }>;
   private readonly createOnboardingToken: () => string;
   private readonly fetchAvailableModelsRunner: (provider: YagrModelProvider, apiKey?: string, baseUrl?: string) => Promise<string[]>;
 
   constructor(
     private readonly yagrConfigService: YagrConfigStoreLike,
-    private readonly n8nConfigService: YagrN8nConfigStoreLike,
     dependencies: SetupApplicationServiceDependencies = {},
   ) {
-    this.createN8nClient = dependencies.createN8nClient ?? defaultCreateN8nClient;
     this.resolveTelegramIdentity = dependencies.resolveTelegramIdentity ?? (async () => {
       throw new Error('Telegram identity resolver is not configured.');
     });
@@ -160,10 +110,6 @@ export class YagrSetupApplicationService {
         };
       }
 
-      // Always start a fresh Codex OAuth flow when the user explicitly asks to sign in.
-      // Do NOT check for an existing session here — that check lives in hasAccountSession
-      // and determines whether to show the reuse screen. Once the user is on the auth
-      // screen they have chosen to (re)authenticate, so always proceed.
       const challenge = await beginCodexAuth();
       const callbackHint = challenge.callbackServerStarted
         ? 'After signing in, Yagr captures the callback automatically.'
@@ -199,10 +145,6 @@ export class YagrSetupApplicationService {
     }
 
     if (provider === 'copilot-proxy') {
-      // Always start a fresh device flow when explicitly reaching the auth screen.
-      // The hasAccountSession check (used earlier in the wizard) decides whether to
-      // show the reuse screen. Once the user is on the auth screen — either because
-      // no session exists or because they chose "Renew" — we always start fresh.
       const challenge = await beginGitHubCopilotAuth();
       return {
         kind: 'input' as const,
@@ -287,15 +229,7 @@ export class YagrSetupApplicationService {
   }
 
   getSetupStatus(options: { activeSurfaces?: GatewaySurface[] } = {}): YagrSetupStatus {
-    return getYagrSetupStatus(
-      this.yagrConfigService as YagrConfigService,
-      this.n8nConfigService as YagrN8nConfigService,
-      options,
-    );
-  }
-
-  getSelectedN8nProjectId(): string | undefined {
-    return this.n8nConfigService.getLocalConfig().projectId;
+    return getYagrSetupStatus(this.yagrConfigService, options);
   }
 
   getTelegramStatus(): {
@@ -320,16 +254,7 @@ export class YagrSetupApplicationService {
     };
   }
 
-  getTelegramRuntimeConfig(overrideBotToken?: string): {
-    status: {
-      configured: boolean;
-      botUsername?: string;
-      linkedChats: YagrTelegramLinkedChat[];
-      deepLink?: string;
-    };
-    botToken?: string;
-    onboardingToken?: string;
-  } {
+  getTelegramRuntimeConfig(overrideBotToken?: string) {
     const status = this.getTelegramStatus();
     const localConfig = this.yagrConfigService.getLocalConfig();
     return {
@@ -349,7 +274,6 @@ export class YagrSetupApplicationService {
     };
     selectableProviders: YagrModelProvider[];
   }): Promise<Record<string, unknown>> {
-    const n8nConfig = this.n8nConfigService.getLocalConfig();
     const setupStatus = this.getSetupStatus({ activeSurfaces: input.activeSurfaces });
     const yagrConfig = this.yagrConfigService.getLocalConfig();
     const telegramStatus = this.getTelegramStatus();
@@ -382,15 +306,6 @@ export class YagrSetupApplicationService {
           provider,
           apiKeyStored: Boolean(this.yagrConfigService.getApiKey(provider)),
         })),
-      },
-      n8n: {
-        host: n8nConfig.host,
-        syncFolder: n8nConfig.syncFolder,
-        projectId: n8nConfig.projectId,
-        projectName: n8nConfig.projectName,
-        instanceProfile: n8nConfig.instanceProfile,
-        apiKeyStored: Boolean(n8nConfig.host && this.n8nConfigService.getApiKey(n8nConfig.host)),
-        projects: n8nConfig.projectId && n8nConfig.projectName ? [{ id: n8nConfig.projectId, name: n8nConfig.projectName }] : [],
       },
       availableModels,
     };
@@ -537,140 +452,5 @@ export class YagrSetupApplicationService {
       firstName: firstName ?? existing.firstName,
       lastSeenAt: new Date().toISOString(),
     });
-  }
-
-  async fetchN8nProjects(host: string, apiKeyOverride?: string): Promise<IProject[]> {
-    const normalizedHost = host.trim();
-    if (!normalizedHost) {
-      throw new Error('n8n host is required.');
-    }
-
-    const apiKey = apiKeyOverride ?? this.n8nConfigService.getApiKey(normalizedHost);
-    if (!apiKey) {
-      throw new Error('No n8n API key available for that host.');
-    }
-
-    const client = this.createN8nClient({ host: normalizedHost, apiKey });
-    const connected = await client.testConnection();
-    if (!connected) {
-      throw new Error('Unable to connect to n8n with the provided URL and API key.');
-    }
-
-    return client.getProjects();
-  }
-
-  async completeManagedN8nConnection(input: {
-    host: string;
-    apiKey: string;
-    syncFolder?: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
-  }): Promise<{ project: IProject; warning?: string }> {
-    const host = input.host.trim();
-    const apiKey = input.apiKey.trim();
-    if (!host) {
-      throw new Error('n8n host is required.');
-    }
-    if (!apiKey) {
-      throw new Error('An n8n API key is required.');
-    }
-
-    const projects = await this.fetchN8nProjects(host, apiKey);
-    const project = this.selectManagedConnectionProject(host, projects);
-    const warning = await this.persistConnectedN8nConfig({
-      host,
-      apiKey,
-      project,
-      syncFolder: input.syncFolder?.trim() || this.n8nConfigService.getLocalConfig().syncFolder || 'workspace',
-      instanceProfile: input.instanceProfile,
-    });
-
-    return { project, warning };
-  }
-
-  async saveN8nConfig(input: {
-    host: string;
-    apiKey?: string;
-    projectId: string;
-    syncFolder: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
-  }): Promise<string | undefined> {
-    const host = input.host.trim();
-    const projectId = input.projectId.trim();
-    const syncFolder = input.syncFolder.trim() || 'workspace';
-    if (!host) {
-      throw new Error('n8n host is required.');
-    }
-    if (!projectId) {
-      throw new Error('Select an n8n project first.');
-    }
-
-    const apiKey = input.apiKey?.trim() || this.n8nConfigService.getApiKey(host);
-    if (!apiKey) {
-      throw new Error('An n8n API key is required.');
-    }
-
-    const projects = await this.fetchN8nProjects(host, apiKey);
-    const selectedProject = projects.find((project) => project.id === projectId);
-    if (!selectedProject) {
-      throw new Error('The selected n8n project could not be found. Reload projects and try again.');
-    }
-
-    return this.persistConnectedN8nConfig({
-      host,
-      apiKey,
-      project: selectedProject,
-      syncFolder,
-      instanceProfile: input.instanceProfile,
-    });
-  }
-
-  private selectManagedConnectionProject(host: string, projects: IProject[]): IProject {
-    if (projects.length === 0) {
-      throw new Error('No n8n projects found. Create one in n8n first, then rerun setup.');
-    }
-
-    const currentConfig = this.n8nConfigService.getLocalConfig();
-    const currentHostOrigin = normalizeN8nUrlOrigin(currentConfig.host);
-    const targetHostOrigin = normalizeN8nUrlOrigin(host);
-    const persistedProject = currentConfig.projectId && currentHostOrigin && targetHostOrigin && currentHostOrigin === targetHostOrigin
-      ? projects.find((project) => project.id === currentConfig.projectId)
-      : undefined;
-
-    return persistedProject ?? projects[0];
-  }
-
-  private async persistConnectedN8nConfig(input: {
-    host: string;
-    apiKey: string;
-    project: IProject;
-    syncFolder: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
-  }): Promise<string | undefined> {
-    const host = input.host.trim();
-    const syncFolder = input.syncFolder.trim() || 'workspace';
-    const selectedProject = input.project;
-
-    this.n8nConfigService.saveApiKey(host, input.apiKey);
-    const instanceProfile = input.instanceProfile ?? resolveN8nInstanceProfile({
-      host,
-    });
-    this.n8nConfigService.saveBootstrapState(host, syncFolder, instanceProfile);
-    const instanceIdentifier = await this.n8nConfigService.getOrCreateInstanceIdentifier(host);
-    const currentConfig = this.n8nConfigService.getLocalConfig();
-    const projectName = getDisplayProjectName(selectedProject);
-    const persistedConfig = {
-      host,
-      syncFolder,
-      projectId: selectedProject.id,
-      projectName,
-      instanceIdentifier,
-      customNodesPath: currentConfig.customNodesPath,
-      instanceProfile,
-    };
-    this.n8nConfigService.saveLocalConfig(persistedConfig);
-
-    this.n8nConfigService.syncN8nacCliApiKey?.();
-
-    return undefined;
   }
 }

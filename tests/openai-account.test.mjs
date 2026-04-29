@@ -180,7 +180,7 @@ test('openai-oauth sends function tools and returns tool calls from Codex respon
         item: {
           type: 'function_call',
           call_id: 'call_123',
-          name: 'n8nac',
+          name: 'localTool',
           arguments: '',
         },
       },
@@ -209,8 +209,8 @@ test('openai-oauth sends function tools and returns tool calls from Codex respon
         type: 'regular',
         tools: [{
           type: 'function',
-          name: 'n8nac',
-          description: 'Run n8nac.',
+          name: 'localTool',
+          description: 'Run a local tool.',
           parameters: {
             type: 'object',
             properties: {
@@ -231,13 +231,13 @@ test('openai-oauth sends function tools and returns tool calls from Codex respon
     assert.equal(seenBody.model, 'gpt-5.4');
     assert.equal(Array.isArray(seenBody.tools), true);
     assert.equal(seenBody.tools[0].type, 'function');
-    assert.equal(seenBody.tools[0].name, 'n8nac');
+    assert.equal(seenBody.tools[0].name, 'localTool');
     assert.notEqual(seenBody.tools[0].strict, false);
     assert.deepEqual(seenBody.tools[0].parameters.required, ['action']);
     assert.equal(result.finishReason, 'tool-calls');
     assert.equal(Array.isArray(result.toolCalls), true);
     assert.equal(result.toolCalls.length, 1);
-    assert.equal(result.toolCalls[0].toolName, 'n8nac');
+    assert.equal(result.toolCalls[0].toolName, 'localTool');
     assert.equal(result.toolCalls[0].toolCallId, 'call_123');
     assert.equal(result.toolCalls[0].args, '{"action":"setup_check"}');
   } finally {
@@ -392,7 +392,7 @@ test('openai-oauth LangChain model preserves bindTools tool choice and sends bou
         item: {
           type: 'function_call',
           call_id: 'call_456',
-          name: 'n8nac',
+          name: 'localTool',
           arguments: '',
         },
       },
@@ -417,8 +417,8 @@ test('openai-oauth LangChain model preserves bindTools tool choice and sends bou
     const model = await createLangChainModel({ provider: 'openai-oauth', model: 'gpt-5.1-codex-mini' });
     const boundModel = model.bindTools([
       {
-        name: 'n8nac',
-        description: 'Run n8nac.',
+        name: 'localTool',
+        description: 'Run a local tool.',
         parameters: {
           type: 'object',
           properties: {
@@ -434,10 +434,10 @@ test('openai-oauth LangChain model preserves bindTools tool choice and sends bou
 
     assert.equal(seenBody.model, 'gpt-5.1-codex-mini');
     assert.equal(Array.isArray(seenBody.tools), true);
-    assert.equal(seenBody.tools[0].name, 'n8nac');
+    assert.equal(seenBody.tools[0].name, 'localTool');
     assert.equal(seenBody.tool_choice, 'required');
     assert.equal(result.tool_calls.length, 1);
-    assert.equal(result.tool_calls[0].name, 'n8nac');
+    assert.equal(result.tool_calls[0].name, 'localTool');
   } finally {
     globalThis.fetch = previousFetch;
     if (previousAuthPath === undefined) {
@@ -637,13 +637,13 @@ test('openai-oauth prepends Codex base instructions before application system pr
       inputFormat: 'prompt',
       mode: { type: 'regular' },
       prompt: [
-        { role: 'system', content: 'Use n8n workspace files and finish by presenting the result.' },
-        { role: 'user', content: [{ type: 'text', text: 'Create the automation.' }] },
+        { role: 'system', content: 'Use local project files and finish by presenting the result.' },
+        { role: 'user', content: [{ type: 'text', text: 'Update the code.' }] },
       ],
     });
 
     assert.match(seenBody.instructions, /^You are Codex, based on GPT-5\./);
-    assert.match(seenBody.instructions, /Use n8n workspace files and finish by presenting the result\./);
+    assert.match(seenBody.instructions, /Use local project files and finish by presenting the result\./);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousAuthPath === undefined) {

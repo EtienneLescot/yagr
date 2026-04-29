@@ -5,186 +5,66 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { resetYagrLocalState, buildYagrCleanupPlan } from '../dist/config/local-state.js';
-import { YagrN8nConfigService, resolveN8nRuntimeState } from '../dist/config/n8n-config-service.js';
 import { YagrConfigService } from '../dist/config/yagr-config-service.js';
 import { getYagrPaths } from '../dist/config/yagr-home.js';
 
 async function withTempYagrEnv(run) {
   const previousHome = process.env.YAGR_HOME;
-  const previousXdg = process.env.XDG_CONFIG_HOME;
-  const previousAppData = process.env.APPDATA;
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-local-state-'));
   const homeDir = path.join(tempRoot, 'home');
-  const xdgDir = path.join(tempRoot, 'xdg');
-  const appDataDir = path.join(tempRoot, 'appdata');
   fs.mkdirSync(homeDir, { recursive: true });
-  fs.mkdirSync(xdgDir, { recursive: true });
-  fs.mkdirSync(appDataDir, { recursive: true });
   process.env.YAGR_HOME = homeDir;
-  process.env.XDG_CONFIG_HOME = xdgDir;
-  process.env.APPDATA = appDataDir;
 
   try {
-    await run({ homeDir, xdgDir, appDataDir });
+    await run({ homeDir });
   } finally {
     if (previousHome === undefined) {
       delete process.env.YAGR_HOME;
     } else {
       process.env.YAGR_HOME = previousHome;
     }
-    if (previousXdg === undefined) {
-      delete process.env.XDG_CONFIG_HOME;
-    } else {
-      process.env.XDG_CONFIG_HOME = previousXdg;
-    }
-    if (previousAppData === undefined) {
-      delete process.env.APPDATA;
-    } else {
-      process.env.APPDATA = previousAppData;
-    }
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 }
 
-test('config services ignore legacy credential stores outside the Yagr home', async () => {
+test('config service ignores legacy credential stores outside the Yagr home', async () => {
   await withTempYagrEnv(async () => {
     const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-legacy-creds-'));
     const legacyYagrCredentialsPath = path.join(legacyRoot, 'yagr-nodejs', 'credentials.json');
-    const legacyN8nCredentialsPath = path.join(legacyRoot, 'n8nac-nodejs', 'credentials.json');
     fs.mkdirSync(path.dirname(legacyYagrCredentialsPath), { recursive: true });
-    fs.mkdirSync(path.dirname(legacyN8nCredentialsPath), { recursive: true });
     fs.writeFileSync(
       legacyYagrCredentialsPath,
       JSON.stringify({ providers: { openai: 'openai-key' }, telegram: { botToken: '123:telegram' } }),
     );
-    fs.writeFileSync(
-      legacyN8nCredentialsPath,
-      JSON.stringify({ hosts: { 'https://n8n.example.com': 'n8n-key' } }),
-    );
 
     const yagrConfigService = new YagrConfigService();
-    const n8nConfigService = new YagrN8nConfigService();
 
     assert.equal(yagrConfigService.getApiKey('openai'), undefined);
     assert.equal(yagrConfigService.getTelegramBotToken(), undefined);
-    assert.equal(n8nConfigService.getApiKey('https://n8n.example.com'), undefined);
     fs.rmSync(legacyRoot, { recursive: true, force: true });
   });
 });
 
-test('YagrN8nConfigService mirrors saved api keys into the n8nac compatibility store', async () => {
+test('buildYagrCleanupPlan has no external workspace preservation rules', async () => {
   await withTempYagrEnv(async () => {
-    const n8nConfigService = new YagrN8nConfigService();
-    const paths = getYagrPaths();
-
-    n8nConfigService.saveApiKey('https://n8n.example.com', 'n8n-key');
-
-    assert.equal(n8nConfigService.getApiKey('https://n8n.example.com'), 'n8n-key');
-    assert.equal(fs.existsSync(paths.n8nCredentialsPath), true);
-    assert.equal(
-      JSON.parse(fs.readFileSync(paths.n8nCredentialsPath, 'utf-8')).hosts['https://n8n.example.com'],
-      'n8n-key',
-    );
-  });
-});
-
-test('YagrN8nConfigService backfills the n8nac compatibility store from centralized credentials', async () => {
-  await withTempYagrEnv(async () => {
-    const paths = getYagrPaths();
-    fs.writeFileSync(paths.n8nCredentialsPath, JSON.stringify({ hosts: { 'https://n8n.example.com': 'n8n-key' } }));
-
-    const n8nConfigService = new YagrN8nConfigService();
-
-    assert.equal(n8nConfigService.getApiKey('https://n8n.example.com'), 'n8n-key');
-    assert.equal(
-      JSON.parse(fs.readFileSync(paths.n8nCredentialsPath, 'utf-8')).hosts['https://n8n.example.com'],
-      'n8n-key',
-    );
-  });
-});
-
-
-test('buildYagrCleanupPlan preserves external workspace directories on full reset', async () => {
-  await withTempYagrEnv(async () => {
-    const externalWorkspace = path.join(os.tmpdir(), `yagr-external-${Date.now()}`);
-    const n8nConfigService = new YagrN8nConfigService();
-    n8nConfigService.saveLocalConfig({
-      host: 'https://n8n.example.com',
-      syncFolder: externalWorkspace,
-      projectId: 'proj_1',
-      projectName: 'Test',
-    });
-
     const plan = buildYagrCleanupPlan('full');
 
     assert.deepEqual(plan.workspacePaths, []);
-    assert.deepEqual(plan.preservedWorkspacePaths, [externalWorkspace]);
-    assert.equal(plan.deletePaths.includes(externalWorkspace), false);
+    assert.deepEqual(plan.preservedWorkspacePaths, []);
+    assert.deepEqual(plan.deletePaths, [getYagrPaths().homeDir]);
   });
 });
 
 test('resetYagrLocalState removes active config stores for config+creds scope', async () => {
   await withTempYagrEnv(async ({ homeDir }) => {
     const paths = getYagrPaths();
-    fs.mkdirSync(paths.n8nWorkspaceDir, { recursive: true });
     fs.writeFileSync(paths.yagrConfigPath, JSON.stringify({ provider: 'openai' }));
     fs.writeFileSync(paths.yagrCredentialsPath, JSON.stringify({ providers: { openai: 'key' } }));
-    fs.writeFileSync(paths.n8nConfigPath, JSON.stringify({ syncFolder: 'workspace' }));
-    fs.writeFileSync(paths.n8nCredentialsPath, JSON.stringify({ hosts: { 'https://n8n.example.com': 'key' } }));
 
     await resetYagrLocalState('config+creds');
 
     assert.equal(fs.existsSync(paths.yagrConfigPath), false);
     assert.equal(fs.existsSync(paths.yagrCredentialsPath), false);
-    assert.equal(fs.existsSync(paths.n8nConfigPath), false);
-    assert.equal(fs.existsSync(paths.n8nCredentialsPath), false);
     assert.equal(fs.existsSync(homeDir), true);
-  });
-});
-
-test('resolveN8nRuntimeState prefers env credentials in env-first mode', async () => {
-  await withTempYagrEnv(async () => {
-    const n8nConfigService = new YagrN8nConfigService();
-    n8nConfigService.saveLocalConfig({
-      host: 'https://stored.example.com',
-      syncFolder: 'workspace',
-      projectId: 'stored-project',
-      projectName: 'Stored',
-    });
-    n8nConfigService.saveApiKey('https://stored.example.com', 'stored-key');
-
-    const resolved = resolveN8nRuntimeState(n8nConfigService, {
-      ...process.env,
-      YAGR_PREFER_ENV_CREDENTIALS: '1',
-      N8N_HOST: 'https://env.example.com',
-      N8N_API_KEY: 'env-key',
-    }, { allowEnvironmentFallback: true });
-
-    assert.equal(resolved.host, 'https://env.example.com');
-    assert.equal(resolved.apiKey, 'env-key');
-  });
-});
-
-test('resolveN8nRuntimeState does not fall back to stored api key in env-first mode', async () => {
-  await withTempYagrEnv(async () => {
-    const n8nConfigService = new YagrN8nConfigService();
-    n8nConfigService.saveLocalConfig({
-      host: 'https://stored.example.com',
-      syncFolder: 'workspace',
-      projectId: 'stored-project',
-      projectName: 'Stored',
-    });
-    n8nConfigService.saveApiKey('https://stored.example.com', 'stored-key');
-
-    const resolved = resolveN8nRuntimeState(n8nConfigService, {
-      ...process.env,
-      YAGR_PREFER_ENV_CREDENTIALS: '1',
-      N8N_HOST: 'https://stored.example.com',
-      N8N_API_KEY: '',
-    }, { allowEnvironmentFallback: true });
-
-    assert.equal(resolved.host, 'https://stored.example.com');
-    assert.equal(resolved.apiKey, undefined);
-    assert.equal(resolved.credentialsAvailable, false);
   });
 });

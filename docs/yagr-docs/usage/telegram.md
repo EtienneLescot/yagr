@@ -42,7 +42,7 @@ If you need to share the link manually (for example to onboard a second chat or 
 yagr telegram onboarding
 ```
 
-Linked chats are persisted in the Yagr runtime configuration. That linked chat is then just another place where intent can enter the agent loop and be turned into workflows.
+Linked chats are persisted in the Yagr runtime configuration. That linked chat is then just another place where coding requests can enter the agent loop.
 
 ## Available commands
 
