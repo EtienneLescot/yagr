@@ -10,10 +10,8 @@ export const CODING_ORIENTATION_SYSTEM_PROMPT = [
 ].join(' ');
 /**
  * Returns the runtime path anchor injected into every system message.
- * Uses the yagr home directory (e.g. ~/.yagr) — not process.cwd() —
- * because n8n-workspace and all yagr-managed files live there.
- * Without this anchor the agent guesses paths like /n8n-workspace
- * instead of the correct ~/.yagr/n8n-workspace.
+ * Uses the yagr home directory (e.g. ~/.yagr), not process.cwd(),
+ * so the local coding agent resolves relative paths from a stable runtime root.
  */
 export function getRuntimePathAnchorPrompt() {
     return `Backend working directory: ${getYagrHomeDir()}`;

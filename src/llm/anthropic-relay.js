@@ -1,8 +1,8 @@
 /**
  * Translation layer between OpenAI Chat Completions API and Anthropic Messages API.
  *
- * The Yagr LLM relay receives requests in OpenAI Chat Completions format from n8n
- * (via lmChatOpenAi nodes). When the active provider is anthropic-proxy, these
+ * The Yagr LLM relay receives requests in OpenAI Chat Completions format.
+ * When the active provider is anthropic-proxy, these
  * requests are translated into Anthropic Messages API format, forwarded, and the
  * responses are translated back. Both streaming (SSE) and non-streaming modes are
  * supported, as well as tool calls.
@@ -264,7 +264,7 @@ export function createAnthropicSseTranslationState(model) {
  * translated response.
  *
  * When `options.fromResponsesApi` is true the response is re-translated into
- * OpenAI Responses API format so n8n receives the format it expects.
+ * OpenAI Responses API format for upstream compatibility.
  */
 export async function handleAnthropicRelay(req, res, body, apiKey, options) {
     let payload;

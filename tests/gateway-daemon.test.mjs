@@ -16,7 +16,7 @@ test('isYagrGatewayCommandLine recognizes Yagr gateway processes', () => {
 
 test('isYagrGatewayCommandLine rejects unrelated or non-gateway processes', () => {
   assert.equal(
-    isYagrGatewayCommandLine('node /home/user/repos/yagr/dist/cli.js n8n local status'),
+    isYagrGatewayCommandLine('node /home/user/repos/yagr/dist/cli.js paths'),
     false,
   );
   assert.equal(

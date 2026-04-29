@@ -14,7 +14,7 @@ test('processStreamEvent keeps concurrent execute outputs attached to the correc
     event: 'on_tool_start',
     name: 'execute',
     run_id: 'run-a',
-    data: { input: { input: JSON.stringify({ command: 'npx --yes n8nac skills validate --help' }) } },
+    data: { input: { input: JSON.stringify({ command: 'npm test -- --help' }) } },
   }, accumulator, {
     onOperation: async (event) => {
       operations.push(event);
@@ -25,7 +25,7 @@ test('processStreamEvent keeps concurrent execute outputs attached to the correc
     event: 'on_tool_start',
     name: 'execute',
     run_id: 'run-b',
-    data: { input: { input: JSON.stringify({ command: 'npx --yes n8nac node-schema lmChatOpenAi' }) } },
+    data: { input: { input: JSON.stringify({ command: 'npm run build' }) } },
   }, accumulator, {
     onOperation: async (event) => {
       operations.push(event);
@@ -57,8 +57,8 @@ test('processStreamEvent keeps concurrent execute outputs attached to the correc
   const completed = operations.filter((event) => event.status === 'done');
   assert.equal(completed.length, 2);
 
-  const validateOp = completed.find((event) => event.label === 'Shell: npx --yes n8nac skills validate --help');
-  const schemaOp = completed.find((event) => event.label === 'Shell: npx --yes n8nac node-schema lmChatOpenAi');
+  const validateOp = completed.find((event) => event.label === 'Shell: npm test -- --help');
+  const schemaOp = completed.find((event) => event.label === 'Shell: npm run build');
 
   assert.equal(validateOp?.body, 'validate help output');
   assert.equal(schemaOp?.body, 'node-schema output');

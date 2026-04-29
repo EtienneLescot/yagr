@@ -25,15 +25,6 @@ export interface ConfigSnapshot {
     baseUrl?: string;
     providers: Array<{ provider: Provider; apiKeyStored: boolean }>;
   };
-  n8n: {
-    host?: string;
-    syncFolder?: string;
-    projectId?: string;
-    projectName?: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
-    apiKeyStored: boolean;
-    projects: Array<{ id: string; name: string }>;
-  };
   availableModels: string[];
 }
 
@@ -61,7 +52,6 @@ interface WebUiState {
   sessionId: string;
   viewSessionId: string;
   snapshot?: ConfigSnapshot;
-  n8nProjects: Array<{ id: string; name: string }>;
   availableModels: string[];
   thread: ThreadEntry[];
   viewThread: ThreadEntry[] | null;
@@ -70,7 +60,6 @@ interface WebUiState {
   setBusyLabel: (value?: string) => void;
   setError: (value?: string) => void;
   setSnapshot: (snapshot: ConfigSnapshot) => void;
-  setProjects: (projects: Array<{ id: string; name: string }>) => void;
   setAvailableModels: (models: string[]) => void;
   pushEntry: (entry: ThreadEntry) => void;
   patchEntry: (id: string, patch: Partial<ThreadEntry>) => void;
@@ -115,7 +104,6 @@ const initialSessionId = isNewTab
 export const useWebUiStore = create<WebUiState>((set) => ({
   sessionId: initialSessionId,
   viewSessionId: initialSessionId,
-  n8nProjects: [],
   availableModels: [],
   sessionHistory: [],
   thread: [],
@@ -124,10 +112,8 @@ export const useWebUiStore = create<WebUiState>((set) => ({
   setError: (error) => set({ error }),
   setSnapshot: (snapshot) => set({
     snapshot,
-    n8nProjects: snapshot.n8n.projects,
     availableModels: snapshot.availableModels,
   }),
-  setProjects: (n8nProjects) => set({ n8nProjects }),
   setAvailableModels: (availableModels) => set({ availableModels }),
   pushEntry: (entry) => set((state) => ({ thread: [...state.thread, entry] })),
   patchEntry: (id, patch) => set((state) => ({

@@ -1,12 +1,7 @@
 export {
-  createN8nEngineFromWorkspace,
-  loadN8nEngineConfig,
-} from './config/load-n8n-engine-config.js';
-export {
   buildYagrCleanupPlan,
   resetYagrLocalState,
 } from './config/local-state.js';
-export { YagrN8nConfigService } from './config/n8n-config-service.js';
 export { YagrConfigService } from './config/yagr-config-service.js';
 export {
   getActiveMemorySourcePaths,
@@ -56,7 +51,6 @@ export { getProviderPlugin } from './llm/provider-plugin.js';
 export {
   buildYagrSetupStatus,
   getYagrSetupStatus,
-  registerN8nContextSources,
   runYagrSetup,
 } from './setup.js';
 export {
@@ -77,14 +71,11 @@ export type { GatewaySupervisorStatus, GatewaySurfaceStatus } from './gateway/ma
 export type { WebUiGatewayStatus } from './gateway/webui-config.js';
 export type { YagrSetupStatus } from './setup.js';
 export type { YagrResetScope, YagrCleanupPlan, YagrResetResult } from './config/local-state.js';
-export type { YagrN8nLocalConfig } from './config/n8n-config-service.js';
-
 export type {
   CredentialRequirement,
   EngineName,
   YagrLanguageModelConfig,
   YagrModelProvider,
-  N8nEngineConfig,
   NodeSummary,
   TemplateSummary,
   YagrRunOptions,

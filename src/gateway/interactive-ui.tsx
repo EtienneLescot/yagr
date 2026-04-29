@@ -64,7 +64,7 @@ function EmptyState(): JSX.Element {
   return (
     <TuiEmptyState
       logo={YAGR_LOGO}
-      title="Yagr turns an intent into executable automation."
+      title="Yagr turns coding intent into local edits."
       subtitle="Type your request below."
     />
   );

@@ -100,35 +100,15 @@ export class YagrConfigService {
     clearTelegramBotToken() {
         this.globalStore.delete('telegram.botToken');
     }
-    getLlmProxyConfig() {
-        return this.getLocalConfig().llmProxy;
-    }
-    isLlmProxyEnabled() {
-        return this.getLocalConfig().llmProxy?.enabled === true;
-    }
-    saveLlmProxyConfig(config) {
-        return this.updateLocalConfig((localConfig) => ({ ...localConfig, llmProxy: config }));
-    }
-    updateLlmProxyCredentialBaseUrl(credentialBaseUrl) {
-        this.updateLocalConfig((localConfig) => ({
-            ...localConfig,
-            llmProxy: localConfig.llmProxy ? { ...localConfig.llmProxy, confirmedCredentialBaseUrl: credentialBaseUrl } : localConfig.llmProxy,
-        }));
-    }
-    getN8nTunnelConfig() {
-        return this.getLocalConfig().n8nTunnel;
-    }
-    saveN8nTunnelConfig(config) {
-        return this.updateLocalConfig((localConfig) => ({ ...localConfig, n8nTunnel: config }));
-    }
-    clearN8nTunnelConfig() {
-        return this.updateLocalConfig(({ n8nTunnel: _removed, ...rest }) => rest);
-    }
 }
 function normalizeLocalConfig(config) {
     const provider = normalizeProviderId(config.provider);
+    const legacyConfig = config;
+    delete legacyConfig.llmProxy;
+    delete legacyConfig.legacyTunnel;
+    const rest = legacyConfig;
     return {
-        ...config,
+        ...rest,
         ...(provider ? { provider } : {}),
     };
 }

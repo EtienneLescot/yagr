@@ -1,7 +1,7 @@
 {
   "name": "@yagr/agent",
   "version": "0.2.30",
-  "description": "Autonomous automation agent grounded in deterministic workflow infrastructure",
+  "description": "Autonomous local coding agent",
   "workspaces": [
     "packages/*"
   ],
@@ -17,25 +17,15 @@
     "build:clean": "npm run clean && npm run build",
     "build:clean:symlink": "npm run clean && npm run build && node --eval \"import('fs').then(({chmodSync})=>chmodSync('dist/cli.js',0o755))\" && npm link",
     "clean": "node --input-type=module --eval \"const {rmSync,readdirSync}=await import('node:fs'); const targets=['dist','tsconfig.tsbuildinfo','node_modules/.cache',...readdirSync('packages').map(p=>`packages/${p}/dist`)]; for (const target of targets) rmSync(target,{recursive:true,force:true});\"",
-    "clean:yagr:all": "node scripts/clean-yagr-local.mjs",
     "test": "npm run test:packages && npm run test:unit",
     "test:packages": "npm run test --workspace @yagr/plugin-runtime && npm run test --workspace @yagr/session-memory && npm run test --workspace @yagr/session-service",
     "test:unit": "npm run build && node --test tests/*.test.mjs",
-    "test:bootstrap-profiles": "node scripts/test-bootstrap/validate-profiles.mjs",
     "test:minimax-discovery": "npm run build && node scripts/test-minimax-discovery.mjs",
-    "test:relay-inference": "npm run build && node --test tests/integration/llm-relay-inference.test.mjs",
-    "test:integration": "npm run build && node scripts/run-scenario-integration.mjs",
-    "test:integration:debug": "npm run build && node scripts/run-scenario-integration.mjs --debug --keep-temp",
-    "test:providers": "npm run build && node --import ./scripts/env-provider-advanced.mjs scripts/provider-integration-matrix.mjs --strict",
-    "test:providers:env-n8n": "npm run build && node --import ./scripts/env-provider-env-n8n.mjs scripts/provider-integration-matrix.mjs --strict --no-managed-docker",
-    "test:providers:debug": "npm run build && node --import ./scripts/env-provider-debug.mjs scripts/provider-integration-matrix.mjs --advanced --debug --keep-temp",
-    "test:providers:env-n8n:debug": "npm run build && node --import ./scripts/env-provider-env-n8n-debug.mjs scripts/provider-integration-matrix.mjs --advanced --debug --keep-temp --no-managed-docker",
     "typecheck": "tsc --noEmit",
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
     "yagr:onboard": "node --import ./scripts/env-yagr-test-workspace.mjs dist/cli.js onboard",
     "yagr:start": "node --import ./scripts/env-yagr-test-workspace.mjs dist/cli.js start",
     "yagr:gateway:status": "node --import ./scripts/env-yagr-test-workspace.mjs dist/cli.js gateway status",
-    "yagr:dev": "node scripts/yagr-dev-scenario.mjs",
     "yagr:test:workspace": "node scripts/yagr-test-workspace.mjs pwd",
     "yagr:test:init": "node scripts/yagr-test-workspace.mjs init",
     "yagr:test:agent": "node scripts/yagr-test-workspace.mjs agent",
@@ -46,8 +36,7 @@
     "check-versions": "node scripts/check-version-consistency.js",
     "docs": "npm --prefix docs start",
     "docs:build": "npm --prefix docs run build",
-    "update:snapshot": "node scripts/update-model-snapshot.mjs",
-    "n8n:delete-workflows": "node scripts/n8n-delete-workflows.mjs"
+    "update:snapshot": "node scripts/update-model-snapshot.mjs"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
@@ -62,7 +51,6 @@
     "dotenv": "^17.2.3",
     "fullscreen-ink": "^0.1.0",
     "ink": "^6.8.0",
-    "n8nac": "^1.6.0",
     "qrcode-terminal": "^0.12.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
