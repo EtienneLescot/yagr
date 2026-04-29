@@ -10,8 +10,8 @@ The current target model is:
 
 1. a deepagentsjs `pristine` core, minimal and readable
 2. a `coding-oriented` overlay, agnostic, added only via middleware
-3. manager and workspace instructions loaded by `memory` via `AGENTS.md`
-4. specific manager behaviors carried by shell commands `yagr ...`, not by tools injected into the agent
+3. optional workspace instructions loaded by memory sources
+4. no in-repository manager tools or manager instructions injected into the agent
 
 ## High-Level Separation
 
@@ -20,9 +20,8 @@ The reference architecture model is as follows:
 1. `src/deepagents/pristine.ts` carries the cleanest possible deepagentsjs base.
 2. `src/deepagents/coding-orientation.ts` carries the coding-oriented overlay, agnostic and explicit.
 3. `src/agent-factory.ts` composes these two layers without mixing them.
-4. `src/manager-tooling/YAGENTS.md` remains a template of manager instructions seeded into `YAGR_HOME/AGENTS.md`.
-5. `n8n-workspace/AGENTS.md` remains the business layer specific to the n8n workspace.
-6. The main deepagents backend remains `LocalShellBackend` in host-native mode: real cwd `YAGR_HOME`, relative paths from home, absolute paths on the host.
+4. `n8n-workspace/AGENTS.md` can be registered as an optional context source.
+5. The main deepagents backend remains `LocalShellBackend` in host-native mode: real cwd `YAGR_HOME`, relative paths from home, absolute paths on the host.
 
 ```mermaid
 flowchart TD
@@ -38,18 +37,12 @@ flowchart TD
         WORK[n8n-workspace/AGENTS.md]
     end
 
-    subgraph ManagerLayer["yagr-manager"]
-        CLI[yagr presentWorkflowResult\nyagr yagrProxy]
-        TEMPLATE[src/manager-tooling/YAGENTS.md]
-    end
-
     subgraph RuntimeLayer["Runtime"]
         BACKEND[LocalShellBackend]
         CHECKPOINT[MemorySaver]
         MODEL[LangChain BaseChatModel]
     end
 
-    TEMPLATE --> HOME
     HOME --> PR
     WORK --> PR
     PR --> AF
@@ -58,7 +51,6 @@ flowchart TD
     DA --> BACKEND
     DA --> CHECKPOINT
     AF --> MODEL
-    DA --> CLI
 ```
 
 ## Entry Point: `createYagrDeepAgent`
@@ -120,7 +112,7 @@ Implications:
 
 - `yagr-agent` carries no n8n-specific rules hardcoded in its pristine core or in its coding-oriented overlay
 - the home `AGENTS.md` is the first instruction layer loaded by the deep-agent
-- `src/manager-tooling/YAGENTS.md` remains the source template maintained by `yagr-manager`
+- there is no in-repo manager instruction template or manager tooling layer
 - the top-level n8n business behavior is carried by the `AGENTS.md` generated in `n8n-workspace`
 - the Yagr home remains the operational root; `n8n-workspace` is a sub-workspace
 - the coding-oriented overlay must remain agnostic, documented, and physically isolated from the pristine layer

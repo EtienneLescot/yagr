@@ -14,8 +14,6 @@ export {
   getYagrLaunchDir,
   getYagrPaths,
   registerContextMemorySource,
-  registerCoreMemorySource,
-  resolveBundledManagerInstructionsPath,
   resolveYagrHomeDir,
 } from './config/yagr-home.js';
 export { runCliGateway } from './gateway/cli.js';
@@ -73,10 +71,6 @@ export {
   createPristineDeepAgentBackend,
   getPristineDeepAgentMemorySources,
 } from './deepagents/pristine.js';
-export {
-  createYagrProxyTool,
-} from './tools/index.js';
-
 export type { Gateway, InboundMessage } from './gateway/types.js';
 export type { GatewayRuntimeHandle, GatewaySurface } from './gateway/types.js';
 export type { GatewaySupervisorStatus, GatewaySurfaceStatus } from './gateway/manager.js';
@@ -87,9 +81,7 @@ export type { YagrN8nLocalConfig } from './config/n8n-config-service.js';
 
 export type {
   CredentialRequirement,
-  DeployedWorkflow,
   EngineName,
-  GeneratedWorkflow,
   YagrLanguageModelConfig,
   YagrModelProvider,
   N8nEngineConfig,
@@ -106,10 +98,6 @@ export type {
   YagrRunPhase,
   YagrRunStep,
   YagrPhaseEvent,
-  WorkflowSpec,
-  WorkflowSpecConnection,
-  WorkflowSpecNode,
-  WorkflowValidationResult,
 } from './types.js';
 
 export type {

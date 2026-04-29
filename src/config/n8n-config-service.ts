@@ -4,13 +4,16 @@ import path from 'node:path';
 import {
   ConfigService,
   createFallbackInstanceIdentifier,
-  createProjectSlug,
   resolveInstanceIdentifier,
 } from 'n8nac';
-import { resolveManagerWorkflowDir, type YagrN8nInstanceProfile } from '@yagr/plugin-n8n-manager';
 import { ensureYagrHomeDir, getYagrN8nWorkspaceDir, getYagrPaths } from './yagr-home.js';
 
-export type { YagrN8nInstanceProfile };
+export type YagrN8nInstanceProfile =
+  | 'yagr-managed-docker'
+  | 'yagr-managed-direct'
+  | 'custom-local-docker'
+  | 'custom-local-direct'
+  | 'custom-cloud';
 
 export interface YagrN8nLocalConfig {
   host?: string;
@@ -39,7 +42,6 @@ export interface YagrResolvedN8nRuntimeState {
   projectId?: string;
   projectName?: string;
   instanceIdentifier?: string;
-  workflowDir?: string;
   credentialsAvailable: boolean;
   projectConfigured: boolean;
   initialized: boolean;
@@ -51,17 +53,6 @@ export interface ResolveN8nRuntimeStateOptions {
 
 interface N8nCredentialStore {
   hosts?: Record<string, string>;
-}
-
-/**
- * Computes the fully-qualified workflow directory for the current config:
- *   <syncFolder>/<instanceIdentifier>/<projectSlug>
- *
- * Returns undefined when any required field is missing (e.g. during bootstrap).
- * This is the single source of truth for this path calculation.
- */
-export function resolveWorkflowDir(config: YagrN8nLocalConfig): string | undefined {
-  return resolveManagerWorkflowDir(config, getYagrN8nWorkspaceDir());
 }
 
 function sanitizeRuntimeValue(value: string | undefined): string | undefined {
@@ -99,7 +90,6 @@ export function resolveN8nRuntimeState(
     projectId: localConfig.projectId,
     projectName: localConfig.projectName,
     instanceIdentifier: localConfig.instanceIdentifier,
-    workflowDir: resolveWorkflowDir(localConfig),
     credentialsAvailable: Boolean(host && apiKey),
     projectConfigured,
     initialized: Boolean(projectConfigured && apiKey),
@@ -153,7 +143,7 @@ export class YagrN8nConfigService {
 
   saveBootstrapState(
     host: string,
-    syncFolder = 'workflows',
+    syncFolder = 'workspace',
     instanceProfile?: YagrN8nLocalConfig['instanceProfile'],
   ): void {
     const current = this.getLocalConfig();

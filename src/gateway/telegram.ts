@@ -12,8 +12,6 @@ import { createRunAccumulator, processStreamEvent } from './langgraph-events.js'
 import { SessionService, deriveSessionTitle } from '@yagr/session-service';
 import { SlashCommandService } from '@yagr/conversation-service';
 import {
-  type WorkflowEmbed,
-  buildWorkflowBannerHtml,
   markdownToTelegramHtml,
   escapeHtml,
 } from './format-message.js';
@@ -725,21 +723,6 @@ class TelegramGateway implements Gateway {
 
       if (accumulator.responseText.trim()) {
         htmlSections.push(markdownToTelegramHtml(accumulator.responseText.trim()));
-      }
-
-      if (accumulator.workflowEmbeds.length > 0) {
-        const embeds: WorkflowEmbed[] = accumulator.workflowEmbeds.map((embed) => ({
-          workflowId: embed.workflowId,
-          url: embed.url,
-          targetUrl: embed.targetUrl,
-          title: embed.title,
-          diagram: embed.diagram,
-          executionResult: embed.executionResult,
-        }));
-        const banner = buildWorkflowBannerHtml(embeds);
-        if (banner) {
-          htmlSections.push(banner);
-        }
       }
 
       const requiredActionsText = formatRequiredActions(accumulator.requiredActions);

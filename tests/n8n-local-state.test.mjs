@@ -50,7 +50,7 @@ test('resolveManagedN8nBootstrapStage returns connected for a configured managed
     configService.saveApiKey('http://127.0.0.1:5678', 'test-api-key');
     configService.saveLocalConfig({
       host: 'http://127.0.0.1:5678',
-      syncFolder: 'workflows',
+      syncFolder: 'workspace',
       projectId: 'personal',
       projectName: 'Personal',
       instanceProfile: 'yagr-managed-docker',
@@ -95,7 +95,7 @@ test('resolveManagedN8nBootstrapStage returns connected when the configured host
     configService.saveApiKey('https://entered-gig-institution-tennessee.trycloudflare.com', 'test-api-key');
     configService.saveLocalConfig({
       host: 'https://entered-gig-institution-tennessee.trycloudflare.com',
-      syncFolder: 'workflows',
+      syncFolder: 'workspace',
       projectId: 'personal',
       projectName: 'Personal',
       instanceProfile: 'yagr-managed-docker',

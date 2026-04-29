@@ -2,9 +2,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useWebUiStore, isNewTabOpen, type ThreadEntry, type ChatProgressEntry, type ChatWorkflowEmbed, type ConfigSnapshot, type SessionHistoryEntry } from './store.js';
+import { useWebUiStore, isNewTabOpen, type ThreadEntry, type ChatProgressEntry, type ConfigSnapshot, type SessionHistoryEntry } from './store.js';
 import type { SerializedChatMessage } from '../session/session-types.js';
-import { parseWorkflowMap } from '../gateway/workflow-diagram.js';
 import yagrLogoUrl from '../../docs/static/img/yagr-logo.png';
 
 type ApiError = { error?: string };
@@ -31,8 +30,7 @@ type ChatStreamEvent =
   | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
-  | { type: 'error'; error: string }
-  | { type: 'embed'; kind: 'workflow'; workflowId: string; url: string; openUrl?: string; targetUrl?: string; title?: string; diagram?: string; executionResult?: { status: 'success' | 'error' | 'waiting'; executionId?: string; summary?: string; data?: string } };
+  | { type: 'error'; error: string };
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -96,183 +94,6 @@ const OPERATION_CATEGORY_ICON: Record<string, string> = {
   'phase': '🏁',
   'thinking': '💭',
 };
-
-const NODE_COLORS: Record<string, string> = {
-  manualTrigger: '#7c3aed', scheduleTrigger: '#7c3aed', webhook: '#7c3aed',
-  set: '#059669', code: '#059669', functionItem: '#059669',
-  httpRequest: '#2563eb', slack: '#e11d48', telegram: '#0EA5E9',
-  gmail: '#ea580c', googleSheets: '#16a34a', openWeatherMap: '#0284c7',
-  nasa: '#7c3aed', if: '#d97706', switch: '#d97706', merge: '#6366f1',
-};
-
-function nodeColor(type: string): string {
-  return NODE_COLORS[type] ?? '#6366f1';
-}
-
-const NODE_W = 140;
-const NODE_H = 52;
-const COL_GAP = 60;
-const ROW_GAP = 24;
-const PAD = 16;
-
-function WorkflowGraph({ diagram }: { diagram: string }): React.JSX.Element | null {
-  const graph = React.useMemo(() => parseWorkflowMap(diagram), [diagram]);
-  if (!graph || graph.nodes.length === 0) return <pre className="workflowDiagram">{diagram}</pre>;
-
-  const maxCol = Math.max(...graph.nodes.map((n) => n.col));
-  const maxRowPerCol = new Map<number, number>();
-  for (const n of graph.nodes) {
-    maxRowPerCol.set(n.col, Math.max(maxRowPerCol.get(n.col) ?? 0, n.row));
-  }
-  const maxRow = Math.max(...maxRowPerCol.values());
-  const hasLoopEdges = graph.edges.some((e) => e.isLoop);
-
-  const svgW = PAD * 2 + (maxCol + 1) * NODE_W + maxCol * COL_GAP;
-  const svgH = PAD * 2 + (maxRow + 1) * NODE_H + maxRow * ROW_GAP + (hasLoopEdges ? 80 : 0);
-
-  const pos = (n: (typeof graph.nodes)[number]) => ({
-    x: PAD + n.col * (NODE_W + COL_GAP),
-    y: PAD + n.row * (NODE_H + ROW_GAP),
-  });
-
-  return (
-    <svg
-      className="workflowGraph"
-      viewBox={`${svgW} ${svgH}`}
-      width={svgW}
-      height={svgH}
-    >
-      <defs>
-        <marker id="wf-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-          <path d="M0,0 L8,3 L0,6" fill="var(--workflow-graph-edge)" />
-        </marker>
-        <marker id="wf-loop-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-          <path d="M0,0 L8,3 L0,6" fill="var(--workflow-graph-loop)" />
-        </marker>
-      </defs>
-      {graph.edges.map((e, i) => {
-        const src = graph.nodes.find((n) => n.id === e.from);
-        const tgt = graph.nodes.find((n) => n.id === e.to);
-        if (!src || !tgt) return null;
-        const sp = pos(src);
-        const tp = pos(tgt);
-        if (e.isLoop) {
-          const x1 = sp.x + NODE_W / 2;
-          const y1 = sp.y + NODE_H;
-          const x2 = tp.x + NODE_W / 2;
-          const y2 = tp.y + NODE_H;
-          const cpY = svgH - 20;
-          return (
-            <path
-              key={`e${i}`}
-              d={`M${x1},${y1} C${x1},${cpY} ${x2},${cpY} ${x2},${y2}`}
-              fill="none"
-              stroke="var(--workflow-graph-loop)"
-              strokeWidth={1.5}
-              strokeDasharray="5 3"
-              markerEnd="url(#wf-loop-arrow)"
-            />
-          );
-        }
-        const x1 = sp.x + NODE_W;
-        const y1 = sp.y + NODE_H / 2;
-        const x2 = tp.x;
-        const y2 = tp.y + NODE_H / 2;
-        const cx = (x1 + x2) / 2;
-        return (
-          <path
-            key={`e${i}`}
-            d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
-            fill="none"
-            stroke="var(--workflow-graph-edge)"
-            strokeWidth={2}
-            markerEnd="url(#wf-arrow)"
-          />
-        );
-      })}
-      {graph.nodes.map((n) => {
-        const p = pos(n);
-        const color = nodeColor(n.type);
-        return (
-          <g key={n.id}>
-            <rect
-              x={p.x} y={p.y}
-              width={NODE_W} height={NODE_H}
-              rx={10} ry={10}
-              fill="var(--workflow-graph-node-bg)"
-              stroke={color}
-              strokeWidth={2}
-            />
-            <text
-              x={p.x + NODE_W / 2} y={p.y + 20}
-              textAnchor="middle"
-              fontSize={11}
-              fontWeight={600}
-              fill="var(--workflow-graph-node-text)"
-            >
-              {n.label.length > 18 ? `${n.label.slice(0, 16)}…` : n.label}
-            </text>
-            <text
-              x={p.x + NODE_W / 2} y={p.y + 36}
-              textAnchor="middle"
-              fontSize={9}
-              fill="var(--workflow-graph-node-muted)"
-            >
-              {n.type}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function WorkflowBanner({ embed }: { embed: ChatWorkflowEmbed }): React.JSX.Element {
-  const resolvedUrl = embed.openUrl ?? embed.url;
-
-  const exec = embed.executionResult;
-  const execStatusClass = exec
-    ? exec.status === 'success' ? 'execSuccess' : exec.status === 'error' ? 'execError' : 'execWaiting'
-    : '';
-
-  return (
-    <div className="workflowCard">
-      <div className="workflowHeader">
-        <div className="workflowHeaderLeft">
-          <span className="workflowBadge">Workflow</span>
-          <span className="workflowTitle">{embed.title ?? `Workflow ${embed.workflowId}`}</span>
-        </div>
-        <a
-          className="primaryButton"
-          href={resolvedUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open in n8n
-        </a>
-      </div>
-      {exec ? (
-        <div className={`executionResult ${execStatusClass}`}>
-          <div className="executionResultHeader">
-            <span className={`executionBadge ${execStatusClass}`}>
-              {exec.status === 'success' ? '✓ Success' : exec.status === 'error' ? '✗ Error' : '⧗ Waiting'}
-              {exec.executionId ? ` · #${exec.executionId}` : ''}
-            </span>
-            {exec.summary ? <span className="executionSummary">{exec.summary}</span> : null}
-          </div>
-          {exec.data ? (
-            <pre className="executionData">{exec.data}</pre>
-          ) : null}
-        </div>
-      ) : null}
-      {embed.diagram ? (
-        <div className="workflowGraphWrap">
-          <WorkflowGraph diagram={embed.diagram} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 function readThemeMode(): ThemeMode {
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -406,7 +227,6 @@ function AssistantBodyRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'assi
         </svg>
       </span>
       {entry.text ? <MarkdownBody text={entry.text} /> : null}
-      {entry.embed ? <WorkflowBanner embed={entry.embed} /> : null}
     </div>
   );
 }
@@ -775,7 +595,7 @@ function restoreSessionThread(session: {
       for (const op of msg.progress ?? []) {
         res.push({ kind: 'operation', id: op.id, entry: op });
       }
-      res.push({ kind: 'assistant-body', id: `${msg.id}:body`, text: msg.text ?? '', streaming: false, finalState: msg.finalState, embed: msg.embed });
+      res.push({ kind: 'assistant-body', id: `${msg.id}:body`, text: msg.text ?? '', streaming: false, finalState: msg.finalState });
       return res;
     });
   }
@@ -1195,22 +1015,6 @@ function App() {
 
         if (streamEvent.type === 'context-usage') {
           setContextFillPercent(streamEvent.fillPercent);
-          return;
-        }
-
-        if (streamEvent.type === 'embed') {
-          patchEntry(bodyId, {
-            embed: {
-              kind: streamEvent.kind,
-              workflowId: streamEvent.workflowId,
-              url: streamEvent.url,
-              openUrl: streamEvent.openUrl,
-              targetUrl: streamEvent.targetUrl,
-              title: streamEvent.title,
-              diagram: streamEvent.diagram,
-              executionResult: streamEvent.executionResult,
-            },
-          });
           return;
         }
 

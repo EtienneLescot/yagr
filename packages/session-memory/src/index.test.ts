@@ -8,12 +8,12 @@ import { extractSessionMemory, FileSessionMemoryAdapter, type SessionMessage } f
 
 test('extractSessionMemory collects compact structured memory', () => {
   const messages: SessionMessage[] = [
-    { role: 'user', content: 'Build a workflow for onboarding' },
+    { role: 'user', content: 'Set up onboarding automation' },
     {
       role: 'assistant',
       content: [
-        { type: 'text', text: 'I created the onboarding workflow.' },
-        { type: 'tool-call', toolName: 'presentWorkflowResult', args: { workflowId: 'wf_123', title: 'Onboarding Flow' } },
+        { type: 'text', text: 'I created the onboarding automation.' },
+        { type: 'tool-call', toolName: 'execute', args: { command: 'npm test' } },
       ],
     },
   ];
@@ -21,7 +21,7 @@ test('extractSessionMemory collects compact structured memory', () => {
   const record = extractSessionMemory('sess_1', 'Onboarding', '2026-04-23T10:00:00.000Z', messages);
   assert.equal(record.sessionId, 'sess_1');
   assert.ok(record.summary.includes('Requests:'));
-  assert.equal(record.workflowRefs[0]?.id, 'wf_123');
+  assert.deepEqual(record.toolsUsed, ['execute']);
 });
 
 test('FileSessionMemoryAdapter persists and lists records', () => {
@@ -34,7 +34,6 @@ test('FileSessionMemoryAdapter persists and lists records', () => {
     updatedAt: '2026-04-23T10:01:00.000Z',
     summary: 'Summary',
     toolsUsed: ['toolA'],
-    workflowRefs: [],
   });
 
   assert.equal(adapter.get('sess_1')?.title, 'Title');

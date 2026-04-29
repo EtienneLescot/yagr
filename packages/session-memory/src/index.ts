@@ -1,11 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export interface WorkflowRef {
-  id: string;
-  title: string;
-}
-
 export interface SessionMemoryRecord {
   sessionId: string;
   title: string;
@@ -13,7 +8,6 @@ export interface SessionMemoryRecord {
   updatedAt: string;
   summary: string;
   toolsUsed: string[];
-  workflowRefs: WorkflowRef[];
 }
 
 export interface SessionMessage {
@@ -96,7 +90,7 @@ export class FileSessionMemoryAdapter implements SessionMemoryAdapter {
   }
 }
 
-const NOISE_TOOLS = new Set(['reportProgress', 'requestRequiredAction', 'presentWorkflowResult']);
+const NOISE_TOOLS = new Set(['reportProgress', 'requestRequiredAction']);
 
 export function extractSessionMemory(
   sessionId: string,
@@ -106,8 +100,6 @@ export function extractSessionMemory(
 ): SessionMemoryRecord {
   const userTexts: string[] = [];
   const toolNames = new Set<string>();
-  const workflowRefs: WorkflowRef[] = [];
-  const seenWorkflowIds = new Set<string>();
   let lastAssistantText = '';
 
   for (const msg of messages) {
@@ -144,16 +136,6 @@ export function extractSessionMemory(
       if (toolName && !NOISE_TOOLS.has(toolName)) {
         toolNames.add(toolName);
       }
-
-      if (toolName === 'presentWorkflowResult') {
-        const args = typedPart.args as Record<string, unknown> | undefined;
-        const workflowId = String(args?.workflowId ?? '').trim();
-        const workflowTitle = String(args?.title ?? workflowId).trim();
-        if (workflowId && !seenWorkflowIds.has(workflowId)) {
-          seenWorkflowIds.add(workflowId);
-          workflowRefs.push({ id: workflowId, title: workflowTitle || workflowId });
-        }
-      }
     }
 
     if (typeof msg.content === 'string' && msg.content.trim()) {
@@ -166,9 +148,6 @@ export function extractSessionMemory(
   if (distinctRequests.length > 0) {
     summaryParts.push(`Requests: ${distinctRequests.map((text) => `"${text}"`).join('; ')}.`);
   }
-  if (workflowRefs.length > 0) {
-    summaryParts.push(`Workflows: ${workflowRefs.map((workflow) => `"${workflow.title}" (${workflow.id})`).join(', ')}.`);
-  }
   if (lastAssistantText) {
     summaryParts.push(`Last response: ${lastAssistantText.length > 180 ? `${lastAssistantText.slice(0, 177)}…` : lastAssistantText}`);
   }
@@ -180,7 +159,6 @@ export function extractSessionMemory(
     updatedAt: new Date().toISOString(),
     summary: summaryParts.join(' '),
     toolsUsed: [...toolNames].sort(),
-    workflowRefs,
   };
 }
 

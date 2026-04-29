@@ -17,17 +17,7 @@ export interface SessionMemoryRecord {
   summary: string;
   /**
    * Names of meaningful tools used (excludes pure-commentary tools like
-   * reportProgress and presentWorkflowResult so the signal stays clear).
+   * reportProgress so the signal stays clear).
    */
   toolsUsed: string[];
-  /**
-   * Workflow IDs touched during the session (from presentWorkflowResult calls).
-   * Helps the agent recognize existing workflows across sessions.
-   */
-  workflowRefs: WorkflowRef[];
-}
-
-export interface WorkflowRef {
-  id: string;
-  title: string;
 }

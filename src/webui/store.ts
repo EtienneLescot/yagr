@@ -37,22 +37,6 @@ export interface ConfigSnapshot {
   availableModels: string[];
 }
 
-export interface ChatWorkflowEmbed {
-  kind: 'workflow';
-  workflowId: string;
-  url: string;
-  openUrl?: string;
-  targetUrl?: string;
-  title?: string;
-  diagram?: string;
-  executionResult?: {
-    status: 'success' | 'error' | 'waiting';
-    executionId?: string;
-    summary?: string;
-    data?: string;
-  };
-}
-
 export interface ChatProgressEntry {
   id: string;
   tone: 'info' | 'success' | 'error';
@@ -71,7 +55,7 @@ export type ThreadEntry =
   | { kind: 'system-notice'; id: string; text: string; timestamp?: number }
   | { kind: 'assistant-header'; id: string; streaming: boolean; statusLabel?: string; phase?: string; startedAt?: number }
   | { kind: 'operation'; id: string; entry: ChatProgressEntry }
-  | { kind: 'assistant-body'; id: string; text: string; streaming: boolean; finalState?: string; embed?: ChatWorkflowEmbed };
+  | { kind: 'assistant-body'; id: string; text: string; streaming: boolean; finalState?: string };
 
 interface WebUiState {
   sessionId: string;

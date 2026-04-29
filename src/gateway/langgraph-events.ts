@@ -7,7 +7,6 @@
  *   - Text delta accumulation
  *   - `YagrUserVisibleUpdate` for progress / phase events
  *   - `YagrRequiredAction` collection from `requestRequiredAction` tool output
- *   - Workflow embed extraction from `presentWorkflowResult` tool output
  *   - `write_todos` (deepagents planning tool) mapped to a plan-phase update
  *   - `YagrOperationEvent` for per-tool and thinking operation cards
  *   - `YagrContextCompactionEvent` for context compaction events
@@ -22,9 +21,6 @@ import {
   makeThinkingEndEvent,
   THINKING_OP_ID,
 } from '../runtime/user-visible-updates.js';
-import { WORKFLOW_EMBED_TYPE } from '../manager-tooling/present-workflow.js';
-import type { WorkflowEmbedPayload } from '../manager-tooling/present-workflow.js';
-import { enrichWorkflowEmbed } from './n8n-workflow-middleware.js';
 
 // ---------------------------------------------------------------------------
 // Public contract
@@ -35,8 +31,6 @@ export interface LangGraphRunAccumulator {
   responseText: string;
   /** Required actions raised via `requestRequiredAction` tool calls. */
   requiredActions: YagrRequiredAction[];
-  /** Workflow embeds raised via `presentWorkflowResult` tool calls. */
-  workflowEmbeds: WorkflowEmbedPayload[];
   /** Accumulated thinking text across the current turn. */
   thinkingText: string;
   /** When the current thinking block started (ms). */
@@ -54,7 +48,6 @@ export interface LangGraphEventCallbacks {
   /** Called with each reasoning/thinking text delta from the LLM. */
   onThinkingDelta?: (delta: string) => void | Promise<void>;
   onUserVisibleUpdate?: (update: YagrUserVisibleUpdate) => void | Promise<void>;
-  onWorkflowEmbed?: (embed: WorkflowEmbedPayload) => void | Promise<void>;
   /**
    * Called when an operation card is created or updated.
    * Callers patch by `operationId` — a second call for the same id is an update.
@@ -68,7 +61,6 @@ export function createRunAccumulator(): LangGraphRunAccumulator {
   return {
     responseText: '',
     requiredActions: [],
-    workflowEmbeds: [],
     thinkingText: '',
     thinkingStartedAt: 0,
     activeOperations: new Map(),
@@ -390,13 +382,6 @@ function mapToolStartToUpdate(
         dedupeKey: `tool:execute:${input?.command ?? ''}`,
       };
 
-    case 'yagrProxy':
-      return {
-        tone: 'info',
-        title: 'Configuring LLM relay',
-        dedupeKey: 'tool:yagrProxy',
-      };
-
     case 'httpRequest':
       return {
         tone: 'info',
@@ -431,16 +416,6 @@ async function handleToolEnd(
   const output = parseToolOutput(rawOutput);
 
   switch (toolName) {
-    case 'execute': {
-      if (output?.__type === WORKFLOW_EMBED_TYPE) {
-        const embed = output as unknown as WorkflowEmbedPayload;
-        const enriched = enrichWorkflowEmbedPayload(embed);
-        accumulator.workflowEmbeds.push(enriched);
-        await callbacks.onWorkflowEmbed?.(enriched);
-      }
-      break;
-    }
-
     case 'writeFile':
     case 'write_file':
     case 'writeWorkspaceFile':
@@ -449,17 +424,6 @@ async function handleToolEnd(
     case 'moveFile':
     case 'replaceInFile': {
       accumulator.fileModificationDetected = true;
-      break;
-    }
-
-    case 'runScript':
-    case 'runShell': {
-      if (output?.__type === WORKFLOW_EMBED_TYPE) {
-        const embed = output as unknown as WorkflowEmbedPayload;
-        const enriched = enrichWorkflowEmbedPayload(embed);
-        accumulator.workflowEmbeds.push(enriched);
-        await callbacks.onWorkflowEmbed?.(enriched);
-      }
       break;
     }
 
@@ -480,19 +444,6 @@ async function handleToolEnd(
     case 'requestRequiredAction': {
       if (output && isRequiredAction(output)) {
         accumulator.requiredActions.push(output as unknown as YagrRequiredAction);
-      }
-      break;
-    }
-
-    case 'presentWorkflowResult': {
-      if (DEBUG) {
-        console.error(`[DEBUG_LANGGRAPH_EVENTS]   presentWorkflowResult tool end, output type: ${typeof output}, __type: ${(output as Record<string, unknown>)?.__type}, keys: ${output ? Object.keys(output as object).join(', ') : 'none'}`);
-      }
-      if (output?.__type === WORKFLOW_EMBED_TYPE) {
-        const embed = output as unknown as WorkflowEmbedPayload;
-        const enriched = enrichWorkflowEmbedPayload(embed);
-        accumulator.workflowEmbeds.push(enriched);
-        await callbacks.onWorkflowEmbed?.(enriched);
       }
       break;
     }
@@ -666,33 +617,6 @@ function isRequiredAction(obj: Record<string, unknown>): boolean {
     typeof obj.title === 'string' &&
     typeof obj.message === 'string'
   );
-}
-
-/**
- * Pass the embed payload through the n8n workflow middleware so the tunnel
- * URL is resolved if active (same logic as the Vercel AI SDK path).
- */
-function enrichWorkflowEmbedPayload(embed: WorkflowEmbedPayload): WorkflowEmbedPayload {
-  // The middleware expects a YagrToolEvent — adapt, enrich, then extract back.
-  const fakeEvent = {
-    type: 'embed' as const,
-    toolName: 'presentWorkflowResult',
-    kind: 'workflow' as const,
-    workflowId: embed.workflowId,
-    url: embed.url,
-    targetUrl: embed.targetUrl,
-    title: embed.title,
-    diagram: embed.diagram,
-    executionResult: embed.executionResult,
-  };
-  const enriched = enrichWorkflowEmbed(fakeEvent) as Extract<YagrToolEvent, { type: 'embed' }>;
-  return {
-    ...embed,
-    url: enriched.url ?? embed.url,
-    targetUrl: enriched.targetUrl ?? embed.targetUrl,
-    title: enriched.title ?? embed.title,
-    diagram: enriched.diagram ?? embed.diagram,
-  };
 }
 
 function truncate(value: string, maxLen: number): string {

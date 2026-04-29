@@ -28,10 +28,7 @@ Reusable core packages should own:
 
 ### Plugins
 
-Plugins should own domain-specific integrations such as:
-
-- `@yagr/plugin-n8n-manager`
-- future Telegram/WhatsApp or other product-specific integrations
+Plugins should own domain-specific integrations such as future Telegram/WhatsApp or other product-specific integrations. The n8n manager integration is external to this repository.
 
 ### Surfaces
 

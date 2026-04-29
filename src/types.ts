@@ -1,5 +1,3 @@
-import type { N8nWorkflow } from '@n8n-as-code/transformer';
-import type { ValidationResult as SkillsValidationResult } from '@n8n-as-code/skills';
 import type { YagrLanguageModelConfig } from './llm/create-langchain-model.js';
 import type { YagrModelProvider } from './llm/provider-registry.js';
 
@@ -21,34 +19,6 @@ export interface TemplateSummary {
   url?: string;
 }
 
-export interface WorkflowSpecNode {
-  name: string;
-  type: string;
-  parameters: Record<string, unknown>;
-  typeVersion?: number;
-  position?: [number, number];
-  credentials?: Record<string, { id?: string; name?: string }>;
-}
-
-export interface WorkflowSpecConnection {
-  from: string;
-  to: string;
-  type?: string;
-  index?: number;
-}
-
-export type WorkflowSpecConnections =
-  | WorkflowSpecConnection[]
-  | Record<string, Record<string, Array<Array<{ node: string; type: string; index?: number }>>>>
-  | Record<string, WorkflowSpecConnection[]>;
-
-export interface WorkflowSpec {
-  name: string;
-  nodes: WorkflowSpecNode[];
-  connections: WorkflowSpecConnections;
-  active?: boolean;
-}
-
 export interface CredentialRequirement {
   nodeName: string;
   credentialType: string;
@@ -56,29 +26,6 @@ export interface CredentialRequirement {
   required: boolean;
   status: 'missing' | 'linked' | 'unknown';
   helpUrl?: string;
-}
-
-export interface GeneratedWorkflow {
-  engine: EngineName;
-  name: string;
-  sourceType: 'n8n-json' | 'yagr-python';
-  definition: N8nWorkflow | string;
-  credentialRequirements: CredentialRequirement[];
-}
-
-export interface DeployedWorkflow {
-  id: string;
-  engine: EngineName;
-  name: string;
-  active: boolean;
-  workflowUrl?: string;
-  credentialRequirements: CredentialRequirement[];
-}
-
-export interface WorkflowValidationResult {
-  valid: boolean;
-  errors: SkillsValidationResult['errors'];
-  warnings: SkillsValidationResult['warnings'];
 }
 
 export interface N8nEngineConfig {
@@ -139,8 +86,6 @@ export interface YagrActionSignal {
   success: boolean;
   exitCode?: number;
   filename?: string;
-  workflowId?: string;
-  workflowUrl?: string;
   title?: string;
   validateFile?: string;
   asyncTrigger?: boolean;
@@ -177,23 +122,6 @@ export type YagrToolEvent =
       type: 'result';
       toolName: string;
       message: string;
-    }
-  | {
-      type: 'embed';
-      toolName: string;
-      kind: 'workflow';
-      workflowId: string;
-      url: string;
-      targetUrl?: string;
-      via?: 'direct' | 'self-contained-auth';
-      title?: string;
-      diagram?: string;
-      executionResult?: {
-        status: 'success' | 'error' | 'waiting';
-        executionId?: string;
-        summary?: string;
-        data?: string;
-      };
     };
 
 export interface YagrRunStep {

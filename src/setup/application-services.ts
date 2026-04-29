@@ -1,46 +1,34 @@
 import { randomBytes } from 'node:crypto';
-import { N8nApiClient, WorkspaceSetupService, getDisplayProjectName, type IProject } from 'n8nac';
-import { Command } from 'commander';
-import { UpdateAiCommand } from 'n8nac/dist/commands/init-ai.js';
+import { N8nApiClient, getDisplayProjectName, type IProject } from 'n8nac';
 import {
   normalizeGatewaySurfaces,
   type YagrConfigService,
   type YagrConfigStoreLike,
-  type YagrLlmProxyConfig,
   type YagrLocalConfig,
   type YagrTelegramLinkedChat,
 } from '../config/yagr-config-service.js';
-import { resolveWorkflowDir, type YagrN8nConfigService } from '../config/n8n-config-service.js';
-import { getYagrN8nWorkspaceDir } from '../config/yagr-home.js';
+import type { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import {
   getDefaultBaseUrlForProvider,
   providerNeedsBaseUrlInput,
   type YagrModelProvider,
 } from '../llm/provider-registry.js';
 import { prepareProviderRuntime } from '../llm/proxy-runtime.js';
-import { buildRelayInfo, ensureN8nRelayServer, resolveDockerHostAddress } from '../llm/llm-relay-server.js';
 import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import { resolveModelProvider } from '../llm/create-langchain-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
 import { beginCodexAuth, beginCodexDeviceAuth, completeCodexAuth, completeCodexDeviceAuth, ensureOpenAiAccountSession, getOpenAiAccountSession } from '../llm/openai-account.js';
 import type { GatewaySurface } from '../gateway/types.js';
-import { ensureYagrProxyCredential } from '../manager-tooling/yagr-proxy.js';
 import {
-  classifyConfiguredN8nInstance,
-  classifyN8nInstanceCandidate,
-  hasN8nInstanceTag,
   normalizeN8nUrlOrigin,
   resolveN8nInstanceProfile,
 } from '../n8n-local/instance-classification.js';
-import { ensureConfiguredLlmPublicExposure, refreshLlmPublicExposureForRelayHostBaseUrl } from '../n8n-local/public-exposure-service.js';
 import { getYagrSetupStatus, type YagrSetupStatus } from './status.js';
 
 type N8nProjectClient = Pick<N8nApiClient, 'testConnection' | 'getProjects'>;
 
 interface SetupApplicationServiceDependencies {
   createN8nClient?: (credentials: { host: string; apiKey: string }) => N8nProjectClient;
-  ensureWorkspaceFiles?: (workflowDir: string) => void;
-  refreshAiContext?: (credentials: { host: string; apiKey: string }) => Promise<void>;
   resolveTelegramIdentity?: (botToken: string) => Promise<{ username: string; firstName: string }>;
   createOnboardingToken?: () => string;
   fetchAvailableModels?: (provider: YagrModelProvider, apiKey?: string, baseUrl?: string) => Promise<string[]>;
@@ -91,22 +79,8 @@ function buildTelegramDeepLink(botUsername: string, onboardingToken: string): st
   return `https://t.me/${botUsername}?start=${onboardingToken}`;
 }
 
-async function defaultRefreshAiContext(credentials: { host: string; apiKey: string }): Promise<void> {
-  const updateAi = new UpdateAiCommand(new Command());
-  const previousCwd = process.cwd();
-
-  try {
-    process.chdir(getYagrN8nWorkspaceDir());
-    await updateAi.run({}, credentials);
-  } finally {
-    process.chdir(previousCwd);
-  }
-}
-
 export class YagrSetupApplicationService {
   private readonly createN8nClient: (credentials: { host: string; apiKey: string }) => N8nProjectClient;
-  private readonly ensureWorkspaceFiles: (workflowDir: string) => void;
-  private readonly refreshAiContextRunner: (credentials: { host: string; apiKey: string }) => Promise<void>;
   private readonly resolveTelegramIdentity: (botToken: string) => Promise<{ username: string; firstName: string }>;
   private readonly createOnboardingToken: () => string;
   private readonly fetchAvailableModelsRunner: (provider: YagrModelProvider, apiKey?: string, baseUrl?: string) => Promise<string[]>;
@@ -117,8 +91,6 @@ export class YagrSetupApplicationService {
     dependencies: SetupApplicationServiceDependencies = {},
   ) {
     this.createN8nClient = dependencies.createN8nClient ?? defaultCreateN8nClient;
-    this.ensureWorkspaceFiles = dependencies.ensureWorkspaceFiles ?? WorkspaceSetupService.ensureWorkspaceFiles;
-    this.refreshAiContextRunner = dependencies.refreshAiContext ?? defaultRefreshAiContext;
     this.resolveTelegramIdentity = dependencies.resolveTelegramIdentity ?? (async () => {
       throw new Error('Telegram identity resolver is not configured.');
     });
@@ -481,74 +453,6 @@ export class YagrSetupApplicationService {
     this.yagrConfigService.setEnabledGatewaySurfaces(input.surfaces);
   }
 
-  async setupLlmProxy(n8nUrl: string, instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud'): Promise<{
-    mode: YagrLlmProxyConfig['mode'];
-    credentialBaseUrl: string;
-    dockerHostAddress?: string;
-    llmTunnelUrl?: string;
-  }> {
-    const relay = await ensureN8nRelayServer();
-
-    // When the proxy was already configured, reuse the stored mode and host.
-    // relay.baseUrl reflects the current relay port with the stored host address.
-    const existingProxyConfig = this.yagrConfigService.getLocalConfig().llmProxy;
-    if (existingProxyConfig?.enabled && existingProxyConfig.mode) {
-      if (existingProxyConfig.mode === 'tunnel') {
-        await ensureConfiguredLlmPublicExposure(this.yagrConfigService);
-      }
-      const refreshedRelay = buildRelayInfo((await ensureN8nRelayServer()).port);
-      return {
-        mode: existingProxyConfig.mode,
-        credentialBaseUrl: refreshedRelay.baseUrl,
-        dockerHostAddress: existingProxyConfig.dockerHostAddress,
-        llmTunnelUrl: this.yagrConfigService.getLocalConfig().llmProxy?.llmTunnelUrl,
-      };
-    }
-
-    // First-time setup: derive mode from instance profile.
-    const classification = classifyN8nInstanceCandidate({
-      host: n8nUrl,
-      instanceProfile: instanceProfile ?? this.n8nConfigService.getLocalConfig().instanceProfile,
-    });
-
-    if (hasN8nInstanceTag(classification, 'CLOUD')) {
-      // Cloud/external n8n cannot reach loopback; spawn a Cloudflare tunnel.
-      const tunnel = await this.startCloudflareTunnel(relay.hostBaseUrl);
-      return { mode: 'tunnel', credentialBaseUrl: `${tunnel}/v1`, llmTunnelUrl: tunnel };
-    }
-
-    if (hasN8nInstanceTag(classification, 'DOCKER')) {
-      const dockerHost = await resolveDockerHostAddress();
-      return {
-        mode: 'docker',
-        credentialBaseUrl: `http://${dockerHost}:${relay.port}/v1`,
-        dockerHostAddress: dockerHost,
-      };
-    }
-    return { mode: 'local', credentialBaseUrl: relay.hostBaseUrl };
-  }
-
-  private async startCloudflareTunnel(targetUrl: string): Promise<string> {
-    return refreshLlmPublicExposureForRelayHostBaseUrl(targetUrl, this.yagrConfigService);
-  }
-
-  saveLlmProxyConfig(config: YagrLlmProxyConfig): void {
-    this.yagrConfigService.saveLlmProxyConfig(config);
-  }
-
-  async provisionLlmProxyCredential(): Promise<void> {
-    const classification = classifyConfiguredN8nInstance(this.n8nConfigService);
-    if (!classification.capabilities.shouldProvisionYagrLlmProxy) {
-      return;
-    }
-
-    await ensureYagrProxyCredential();
-  }
-
-  isLlmProxyEnabled(): boolean {
-    return this.yagrConfigService.isLlmProxyEnabled();
-  }
-
   async configureTelegram(botToken: string): Promise<{ username: string; firstName: string }> {
     const token = botToken.trim();
     if (!token || !token.includes(':')) {
@@ -676,7 +580,7 @@ export class YagrSetupApplicationService {
       host,
       apiKey,
       project,
-      syncFolder: input.syncFolder?.trim() || this.n8nConfigService.getLocalConfig().syncFolder || 'workflows',
+      syncFolder: input.syncFolder?.trim() || this.n8nConfigService.getLocalConfig().syncFolder || 'workspace',
       instanceProfile: input.instanceProfile,
     });
 
@@ -692,7 +596,7 @@ export class YagrSetupApplicationService {
   }): Promise<string | undefined> {
     const host = input.host.trim();
     const projectId = input.projectId.trim();
-    const syncFolder = input.syncFolder.trim() || 'workflows';
+    const syncFolder = input.syncFolder.trim() || 'workspace';
     if (!host) {
       throw new Error('n8n host is required.');
     }
@@ -743,7 +647,7 @@ export class YagrSetupApplicationService {
     instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
   }): Promise<string | undefined> {
     const host = input.host.trim();
-    const syncFolder = input.syncFolder.trim() || 'workflows';
+    const syncFolder = input.syncFolder.trim() || 'workspace';
     const selectedProject = input.project;
 
     this.n8nConfigService.saveApiKey(host, input.apiKey);
@@ -767,39 +671,6 @@ export class YagrSetupApplicationService {
 
     this.n8nConfigService.syncN8nacCliApiKey?.();
 
-    const workflowDir = resolveWorkflowDir({ syncFolder, instanceIdentifier, projectName });
-    if (workflowDir) {
-      this.ensureWorkspaceFiles(workflowDir);
-    }
-
-    try {
-      await this.refreshAiContextRunner({ host, apiKey: input.apiKey });
-      // `n8nac update-ai` rewrites `n8nac-config.json`; re-apply Yagr metadata so
-      // later commands keep the instance classification chosen during setup.
-      this.n8nConfigService.saveLocalConfig(persistedConfig);
-      return undefined;
-    } catch (error) {
-      this.n8nConfigService.saveLocalConfig(persistedConfig);
-      return `Workspace saved, but the n8n workspace instructions refresh failed: ${error instanceof Error ? error.message : String(error)}`;
-    }
+    return undefined;
   }
-
-  async refreshN8nWorkspaceInstructionsFromSavedConfig(): Promise<boolean> {
-    const config = this.n8nConfigService.getLocalConfig();
-    if (!config.host) {
-      return false;
-    }
-
-    const apiKey = this.n8nConfigService.getApiKey(config.host);
-    if (!apiKey) {
-      return false;
-    }
-
-    await this.refreshAiContextRunner({ host: config.host, apiKey });
-    return true;
-  }
-}
-
-export async function refreshAiContext(credentials: { host: string; apiKey: string }): Promise<void> {
-  await defaultRefreshAiContext(credentials);
 }

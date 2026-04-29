@@ -8,13 +8,13 @@ import { MemorySaver } from '@langchain/langgraph';
 
 import {
   SlashCommandService,
-} from '../dist/conversation/slash-command-service.js';
+} from '../packages/conversation-service/dist/index.js';
 import {
   resolveCommand,
   getCommandsForSurface,
   getAllCommands,
-} from '../dist/conversation/slash-command-registry.js';
-import { SessionService } from '../dist/session/index.js';
+} from '../packages/conversation-core/dist/index.js';
+import { SessionService } from '../packages/session-service/dist/index.js';
 
 function createTempSessionService() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-slash-test-'));
