@@ -10,6 +10,7 @@ export interface YagrPaths {
   proxyRuntimeDir: string;
   accountAuthDir: string;
   deepAgentSessionsDir: string;
+  skillsDir: string;
   memorySources: string;
   yagrConfigPath: string;
   yagrCredentialsPath: string;
@@ -114,12 +115,21 @@ export function getYagrDeepAgentSessionsDir(): string {
   return path.join(getYagrHomeDir(), 'deepagent-sessions');
 }
 
+export function getYagrSkillsDir(): string {
+  return path.join(getYagrHomeDir(), 'skills');
+}
+
+export function getYagrWorkspaceSkillsDir(contextRoot: string = getYagrLaunchDir()): string {
+  return path.join(contextRoot, '.agents', 'skills');
+}
+
 export function getYagrPaths(): YagrPaths {
   const launchDir = getYagrLaunchDir();
   const homeDir = getYagrHomeDir();
   const proxyRuntimeDir = getYagrProxyRuntimeDir();
   const accountAuthDir = getYagrAccountAuthDir();
   const deepAgentSessionsDir = getYagrDeepAgentSessionsDir();
+  const skillsDir = getYagrSkillsDir();
 
   return {
     launchDir,
@@ -127,6 +137,7 @@ export function getYagrPaths(): YagrPaths {
     proxyRuntimeDir,
     accountAuthDir,
     deepAgentSessionsDir,
+    skillsDir,
     memorySources: path.join(homeDir, 'memory-sources.json'),
     yagrConfigPath: path.join(homeDir, 'yagr-config.json'),
     yagrCredentialsPath: path.join(homeDir, 'credentials.json'),
@@ -141,5 +152,6 @@ export function ensureYagrHomeDir(): string {
   fs.mkdirSync(paths.proxyRuntimeDir, { recursive: true });
   fs.mkdirSync(paths.accountAuthDir, { recursive: true });
   fs.mkdirSync(paths.deepAgentSessionsDir, { recursive: true });
+  fs.mkdirSync(paths.skillsDir, { recursive: true });
   return paths.homeDir;
 }

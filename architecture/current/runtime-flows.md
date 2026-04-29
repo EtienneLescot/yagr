@@ -11,6 +11,7 @@ sequenceDiagram
     participant H as YagrDeepAgentHandle
     participant P as pristine config
     participant C as coding middleware
+    participant S as DeepAgents SkillsMiddleware
     participant M as LangChain Model
     participant T as Deepagents native tools
     participant E as Local shell/files
@@ -18,8 +19,9 @@ sequenceDiagram
     U->>F: prompt
     F->>H: stream/invoke
     H->>P: backend + memory sources
+    H->>S: installed skill source paths
     H->>C: coding-oriented middleware
-    H->>M: run prompt with system instructions
+    H->>M: run prompt with system instructions + skill index
     M->>T: tool call(s)
     T->>E: file and shell tools
     E-->>T: results
@@ -33,6 +35,7 @@ Observations:
 - all conversational facades consume a `YagrDeepAgentHandle`
 - the deep-agent directly carries its deepagents native tool surface
 - the coding-oriented overlay is applied via middleware
+- installed skills are passed as native DeepAgents.js `skills` sources; DeepAgents.js owns discovery and progressive disclosure
 - external integrations are not built in; they are invoked only as ordinary local commands or files when present in the user's environment
 
 ## Instructions And Middleware
@@ -41,14 +44,18 @@ Observations:
 flowchart LR
     HOME[Home AGENTS.md]
     CTX[Registered context files]
+    SKILLS[Installed skills dirs]
     PR[pristine.ts]
+    DS[DeepAgents SkillsMiddleware]
     CODE[coding-orientation.ts]
     AGENT[deep-agent]
     SHELL[execute shell tool]
 
     HOME --> PR
     CTX --> PR
+    SKILLS --> DS
     PR --> AGENT
+    DS --> AGENT
     CODE --> AGENT
     AGENT --> SHELL
 ```

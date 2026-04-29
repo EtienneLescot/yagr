@@ -18,15 +18,18 @@ export function buildPristineDeepAgentConfig({
   model,
   checkpointer,
   rootDir = process.cwd(),
+  skills = [],
 }: {
   model: BaseChatModel;
   checkpointer: BaseCheckpointSaver;
   rootDir?: string;
+  skills?: string[];
 }) {
   return {
     model,
     checkpointer,
     memory: getPristineDeepAgentMemorySources(),
+    skills,
     backend: createPristineDeepAgentBackend(rootDir),
   };
 }

@@ -45,6 +45,7 @@ It wires:
 - provider setup
 - sessions and conversation services
 - CLI/WebUI/TUI/Telegram product entrypoints
+- generic Agent Skills installation and source-path resolution
 
 ## Dependency Direction
 

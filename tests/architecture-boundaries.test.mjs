@@ -75,3 +75,22 @@ test('legacy workspace-root standalone tool layer has been removed', () => {
     assert.equal(fs.existsSync(path.join(REPO_ROOT, relativePath)), false, `${relativePath} should be removed`);
   }
 });
+
+test('Yagr does not duplicate Deep Agents skill runtime behavior', () => {
+  assert.equal(fs.existsSync(path.join(REPO_ROOT, 'src/deepagents/agent-skills.ts')), false);
+
+  const skillService = readRepoFile('src/skills/agent-skills.ts');
+  assert.doesNotMatch(skillService, /load_skill/);
+  assert.doesNotMatch(skillService, /createSkillsMiddleware/);
+});
+
+test('generic skills integration stays free of n8n-specific code', () => {
+  for (const relativePath of [
+    'src/skills/agent-skills.ts',
+    'src/agent-factory.ts',
+    'src/deepagents/pristine.ts',
+  ]) {
+    const content = readRepoFile(relativePath);
+    assert.doesNotMatch(content, /n8n/i);
+  }
+});
