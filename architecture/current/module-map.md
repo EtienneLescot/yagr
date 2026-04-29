@@ -33,9 +33,8 @@ These are the preferred integration surfaces for downstream products.
 ### Plugin packages
 
 - `@yagr/plugin-runtime`
-- `@yagr/plugin-n8n-manager`
 
-`@yagr/plugin-n8n-manager` is now the optional Yagr-side adapter boundary for the external n8n-as-code ecosystem. It may expose Yagr-specific sources, such as `createYagrLlmSource(...)`, but it must not become the authority for generic n8n credential recipes, workflow intelligence, or infrastructure lifecycle.
+The migrated n8n manager integration now lives outside this repository.
 
 ## External n8n ecosystem
 

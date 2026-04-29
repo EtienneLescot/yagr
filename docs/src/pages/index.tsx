@@ -29,9 +29,9 @@ const proofPoints = [
   },
   {
     icon: '🧠',
-    value: 'Plugins isolate domains',
-    label: 'Manager logic should not define the core',
-    detail: 'The platform is moving manager-specific behavior behind plugins such as @yagr/plugin-n8n-manager.',
+    value: 'Core stays agnostic',
+    label: 'External managers do not define the agent',
+    detail: 'Manager-specific behavior now lives outside this repository; Yagr keeps the runtime and surfaces focused on the agent.',
   },
   {
     icon: '🏠',

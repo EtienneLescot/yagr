@@ -104,7 +104,7 @@ test('YagrN8nConfigService backfills the n8nac compatibility store from centrali
 });
 
 
-test('buildYagrCleanupPlan preserves external workflow directories on full reset', async () => {
+test('buildYagrCleanupPlan preserves external workspace directories on full reset', async () => {
   await withTempYagrEnv(async () => {
     const externalWorkspace = path.join(os.tmpdir(), `yagr-external-${Date.now()}`);
     const n8nConfigService = new YagrN8nConfigService();
@@ -129,7 +129,7 @@ test('resetYagrLocalState removes active config stores for config+creds scope', 
     fs.mkdirSync(paths.n8nWorkspaceDir, { recursive: true });
     fs.writeFileSync(paths.yagrConfigPath, JSON.stringify({ provider: 'openai' }));
     fs.writeFileSync(paths.yagrCredentialsPath, JSON.stringify({ providers: { openai: 'key' } }));
-    fs.writeFileSync(paths.n8nConfigPath, JSON.stringify({ syncFolder: 'workflows' }));
+    fs.writeFileSync(paths.n8nConfigPath, JSON.stringify({ syncFolder: 'workspace' }));
     fs.writeFileSync(paths.n8nCredentialsPath, JSON.stringify({ hosts: { 'https://n8n.example.com': 'key' } }));
 
     await resetYagrLocalState('config+creds');
@@ -147,7 +147,7 @@ test('resolveN8nRuntimeState prefers env credentials in env-first mode', async (
     const n8nConfigService = new YagrN8nConfigService();
     n8nConfigService.saveLocalConfig({
       host: 'https://stored.example.com',
-      syncFolder: 'workflows',
+      syncFolder: 'workspace',
       projectId: 'stored-project',
       projectName: 'Stored',
     });
@@ -170,7 +170,7 @@ test('resolveN8nRuntimeState does not fall back to stored api key in env-first m
     const n8nConfigService = new YagrN8nConfigService();
     n8nConfigService.saveLocalConfig({
       host: 'https://stored.example.com',
-      syncFolder: 'workflows',
+      syncFolder: 'workspace',
       projectId: 'stored-project',
       projectName: 'Stored',
     });

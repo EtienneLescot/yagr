@@ -702,11 +702,8 @@ async function runScenario(scenario, isolatedHome, testN8nRuntime) {
         steps: journal.length,
         journal,
       };
-      const embedWorkflowIds = (accumulator.workflowEmbeds || [])
-        .filter((e) => e.workflowId)
-        .map((e) => e.workflowId);
       const diskWorkflowIds = collectWorkflowIdsFromWorkflowTs(getIsolatedWorkspaceDir(isolatedHome));
-      const workflowIdsForOutcome = [...new Set([...embedWorkflowIds, ...diskWorkflowIds])];
+      const workflowIdsForOutcome = [...new Set(diskWorkflowIds)];
       const outcome = await buildScenarioOutcome(
         toolEvents,
         isolatedHome,
@@ -851,11 +848,8 @@ async function buildScenarioOutcome(toolEvents, isolatedHome, testN8nRuntime, wo
   const hasWorkflowWrites = events.some((event) =>
     event.type === 'status'
     && ['write_file', 'writeFile', 'edit_file', 'editFile', 'moveFile', 'move_file'].includes(event.toolName));
-  const usedYagrProxyTool = events.some((event) => event.toolName === 'yagrProxy')
-    || events.some((event) => event.type === 'command-start' && /(^|\s)(?:npx\s+)?yagr\s+yagrProxy(\s|$)/.test(String(event.command || '')));
   const successfulProdTestRuns = countSuccessfulProdTests(events);
-  const fromCliSignals = (usedYagrProxyTool && successfulProdTestRuns > 0)
-    || (successfulProdTestRuns > 0 && hasYagrProxyCredentialReference(isolatedHome));
+  const fromCliSignals = successfulProdTestRuns > 0 && hasYagrProxyCredentialReference(isolatedHome);
   const fromN8nApi = testN8nRuntime?.configured
     ? await relayConfirmedViaN8nExecutions(isolatedHome, testN8nRuntime, workflowIdsForLookup)
     : false;
@@ -1170,7 +1164,6 @@ function rawOutputToString(rawOutput) {
 /**
  * Register the workspace AGENTS.md as a context memory source in the isolated home.
  * Mirrors what `yagr n8n context setup` / registerN8nContextSources() does in production.
- * Manager instructions (YAGENTS.md) are injected via middleware and do NOT need a file entry.
  */
 function registerIsolatedContextSources(homeDir) {
   const workspaceAgentsMd = path.join(homeDir, 'n8n-workspace', 'AGENTS.md');

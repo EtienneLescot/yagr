@@ -88,7 +88,7 @@ function createN8nConfigStore(initialConfig = {}) {
     saveApiKey(host, apiKey) {
       apiKeys.set(host, apiKey);
     },
-    saveBootstrapState(host, syncFolder = 'workflows', instanceProfile) {
+    saveBootstrapState(host, syncFolder = 'workspace', instanceProfile) {
       localConfig = {
         host,
         syncFolder,
@@ -104,10 +104,9 @@ function createN8nConfigStore(initialConfig = {}) {
   };
 }
 
-test('saveN8nConfig persists host project and workflow workspace and returns refresh warning', async () => {
+test('saveN8nConfig persists host and project metadata', async () => {
   const yagrConfigStore = createYagrConfigStore();
   const n8nConfigStore = createN8nConfigStore({ customNodesPath: '/tmp/custom-nodes' });
-  const ensuredDirs = [];
 
   const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
     createN8nClient: () => ({
@@ -116,30 +115,22 @@ test('saveN8nConfig persists host project and workflow workspace and returns ref
         return [{ id: 'proj_1', name: 'Primary Project' }];
       },
     }),
-    ensureWorkspaceFiles(workflowDir) {
-      ensuredDirs.push(workflowDir);
-    },
-    async refreshAiContext() {
-      throw new Error('update-ai failed');
-    },
   });
 
   const warning = await service.saveN8nConfig({
     host: 'http://localhost:5678',
     apiKey: 'n8n-key',
     projectId: 'proj_1',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
   });
 
-  assert.match(warning, /workspace instructions refresh failed/i);
+  assert.equal(warning, undefined);
   assert.equal(n8nConfigStore.getApiKey('http://localhost:5678'), 'n8n-key');
   assert.equal(n8nConfigStore.getLocalConfig().projectId, 'proj_1');
   assert.equal(n8nConfigStore.getLocalConfig().instanceIdentifier, 'instance_test');
-  assert.equal(ensuredDirs.length, 1);
-  assert.match(ensuredDirs[0], /workflows/);
 });
 
-test('saveN8nConfig reapplies instanceProfile after n8nac refresh rewrites the workspace config', async () => {
+test('saveN8nConfig persists instanceProfile without workspace refresh side effects', async () => {
   const yagrConfigStore = createYagrConfigStore();
   const n8nConfigStore = createN8nConfigStore({ customNodesPath: '/tmp/custom-nodes' });
 
@@ -150,39 +141,27 @@ test('saveN8nConfig reapplies instanceProfile after n8nac refresh rewrites the w
         return [{ id: 'proj_1', name: 'Primary Project' }];
       },
     }),
-    async refreshAiContext() {
-      n8nConfigStore.saveLocalConfig({
-        version: 2,
-        activeInstanceId: 'instance_test',
-        instances: [{ id: 'instance_test', host: 'http://localhost:5678' }],
-        host: 'http://localhost:5678',
-        syncFolder: 'workflows',
-        projectId: 'proj_1',
-        projectName: 'Primary Project',
-        instanceIdentifier: 'instance_test',
-      });
-    },
   });
 
   await service.saveN8nConfig({
     host: 'http://localhost:5678',
     apiKey: 'n8n-key',
     projectId: 'proj_1',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     instanceProfile: 'yagr-managed-docker',
   });
 
   const saved = n8nConfigStore.getLocalConfig();
   assert.equal(saved.instanceProfile, 'yagr-managed-docker');
-  assert.equal(saved.version, 2);
-  assert.equal(saved.activeInstanceId, 'instance_test');
+  assert.equal(saved.projectId, 'proj_1');
+  assert.equal(saved.instanceIdentifier, 'instance_test');
 });
 
 test('completeManagedN8nConnection reuses the persisted project when it still exists', async () => {
   const yagrConfigStore = createYagrConfigStore();
   const n8nConfigStore = createN8nConfigStore({
     host: 'http://localhost:5678',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     projectId: 'proj_2',
     projectName: 'Existing Project',
     instanceProfile: 'yagr-managed-docker',
@@ -204,7 +183,7 @@ test('completeManagedN8nConnection reuses the persisted project when it still ex
   const result = await service.completeManagedN8nConnection({
     host: 'http://localhost:5678',
     apiKey: 'n8n-key',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     instanceProfile: 'yagr-managed-docker',
   });
 
@@ -217,7 +196,7 @@ test('completeManagedN8nConnection falls back to the first available project whe
   const yagrConfigStore = createYagrConfigStore();
   const n8nConfigStore = createN8nConfigStore({
     host: 'http://localhost:5678',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     projectId: 'missing',
     projectName: 'Missing Project',
     instanceProfile: 'yagr-managed-docker',
@@ -239,7 +218,7 @@ test('completeManagedN8nConnection falls back to the first available project whe
   const result = await service.completeManagedN8nConnection({
     host: 'http://localhost:5678',
     apiKey: 'n8n-key',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     instanceProfile: 'yagr-managed-docker',
   });
 
@@ -310,7 +289,7 @@ test('buildWebUiSnapshot centralizes setup and config state for the Web UI', asy
 
   const n8nConfigStore = createN8nConfigStore({
     host: 'http://localhost:5678',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     projectId: 'proj_1',
     projectName: 'Primary Project',
   });

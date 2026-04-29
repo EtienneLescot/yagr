@@ -73,15 +73,6 @@ export async function runYagrLlmSetup(
   return result.ok;
 }
 
-export async function runYagrLlmProxySetup(
-  yagrConfigService = new YagrConfigService(),
-  n8nConfigService = new YagrN8nConfigService(),
-): Promise<boolean> {
-  const callbacks = createSetupCallbacks(yagrConfigService, n8nConfigService);
-  const result = await runSetupWizard(callbacks, { mode: 'proxy-only' });
-  return result.ok;
-}
-
 function createSetupCallbacks(
   yagrConfigService: YagrConfigService,
   n8nConfigService: YagrN8nConfigService,
@@ -199,22 +190,6 @@ function createSetupCallbacks(
       setupService.saveSurfaces({ surfaces, telegram });
     },
 
-    async setupLlmProxy(n8nUrl, instanceProfile) {
-      return setupService.setupLlmProxy(n8nUrl, instanceProfile);
-    },
-
-    saveLlmProxyConfig(config) {
-      setupService.saveLlmProxyConfig(config);
-    },
-
-    async provisionLlmProxyCredential() {
-      await setupService.provisionLlmProxyCredential();
-    },
-
-    isLlmProxyEnabled() {
-      return setupService.isLlmProxyEnabled();
-    },
-
     async startN8nTunnel(targetUrl: string) {
       const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
       const { state } = await ensureN8nPublicExposure(targetUrl, {
@@ -228,20 +203,9 @@ function createSetupCallbacks(
   return callbacks;
 }
 
-export async function refreshN8nWorkspaceInstructionsFromSavedConfig(
-  n8nConfigService = new YagrN8nConfigService(),
-): Promise<boolean> {
-  const ok = await new YagrSetupApplicationService(new YagrConfigService(), n8nConfigService).refreshN8nWorkspaceInstructionsFromSavedConfig();
-  if (ok) {
-    registerN8nContextSources();
-  }
-  return ok;
-}
-
 /**
  * Register n8n workspace context files in ~/.yagr/memory-sources.json.
- * Called automatically at the end of refreshN8nWorkspaceInstructionsFromSavedConfig,
- * and exposed for standalone use via `yagr n8n context setup`.
+ * Exposed for standalone use via `yagr n8n context setup`.
  */
 export function registerN8nContextSources(): void {
   const paths = getYagrPaths();

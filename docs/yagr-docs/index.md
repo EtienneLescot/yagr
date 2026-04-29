@@ -56,14 +56,12 @@ The facades exist so downstream products do not need to depend on many tiny inte
 
 ## Plugins
 
-Plugins are where Yagr-specific integrations should increasingly live.
+Plugins are where Yagr-specific integrations live when they belong in this repository.
 
 Examples:
 
 - `@yagr/plugin-runtime`
-- `@yagr/plugin-n8n-manager`
-
-That means manager-specific logic should progressively move behind plugins instead of staying in the core runtime.
+Manager-specific n8n logic now lives outside this repository.
 
 ## What Yagr still does today
 

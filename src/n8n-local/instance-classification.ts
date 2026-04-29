@@ -9,7 +9,6 @@ export type N8nInstanceKind = 'unconfigured' | 'yagr-managed-local' | 'local' | 
 export interface N8nInstanceCapabilities {
   supportsManagedTunnel: boolean;
   requiresLlmProxyTunnel: boolean;
-  shouldProvisionYagrLlmProxy: boolean;
   shouldAutoStartManagedRuntime: boolean;
 }
 
@@ -91,7 +90,6 @@ function buildCapabilities(tags: readonly N8nInstanceTag[]): N8nInstanceCapabili
   return {
     supportsManagedTunnel: isManaged,
     requiresLlmProxyTunnel: isCloud,
-    shouldProvisionYagrLlmProxy: true,
     shouldAutoStartManagedRuntime: isManaged,
   };
 }

@@ -1,95 +1,11 @@
 /**
  * Shared message formatting utilities for TUI and Telegram gateways.
- * Single source of truth for workflow banner rendering and markdown-to-surface conversion.
+ * Single source of truth for markdown-to-surface conversion.
  */
-
-import type { YagrToolEvent } from '../types.js';
-
-// ---------------------------------------------------------------------------
-// Workflow embed extraction (from tool events)
-// ---------------------------------------------------------------------------
-
-export interface WorkflowEmbed {
-  workflowId: string;
-  url: string;
-  targetUrl?: string;
-  title?: string;
-  diagram?: string;
-  executionResult?: {
-    status: 'success' | 'error' | 'waiting';
-    executionId?: string;
-    summary?: string;
-    data?: string;
-  };
-}
-
-export function workflowEmbedKey(embed: WorkflowEmbed): string {
-  return `${embed.workflowId}::${embed.targetUrl ?? embed.url}`;
-}
-
-export function extractWorkflowEmbed(event: YagrToolEvent): WorkflowEmbed | undefined {
-  if (event.type === 'embed' && event.kind === 'workflow') {
-    return {
-      workflowId: event.workflowId,
-      url: event.url,
-      targetUrl: event.targetUrl,
-      title: event.title,
-      diagram: event.diagram,
-      executionResult: event.executionResult,
-    };
-  }
-  return undefined;
-}
-
-// ---------------------------------------------------------------------------
-// Workflow banner rendering — one per surface
-// ---------------------------------------------------------------------------
-
-export function formatWorkflowLinkPlain(embed: WorkflowEmbed): string {
-  const label = embed.title ?? `Workflow ${embed.workflowId}`;
-  return `🔗 ${label}`;
-}
-
-export function formatWorkflowLinkHtml(embed: WorkflowEmbed, openUrl = embed.url): string {
-  const label = escapeHtml(embed.title ?? `Workflow ${embed.workflowId}`);
-  return `🔗 <a href="${escapeHtml(openUrl)}">${label}</a>`;
-}
 
 export function formatTerminalLink(label: string, url: string): string {
   return `\x1b]8;;${url}\x07${label}\x1b]8;;\x07`;
 }
-
-export function formatWorkflowLinkTerminal(embed: WorkflowEmbed): string {
-  const label = embed.title ?? `Workflow ${embed.workflowId}`;
-  return `🔗 ${formatTerminalLink(label, resolveTerminalWorkflowOpenUrl(embed))}`;
-}
-
-// ---------------------------------------------------------------------------
-// Workflow footer builder (appended to response messages)
-// ---------------------------------------------------------------------------
-
-export function buildWorkflowBannerPlain(embeds: WorkflowEmbed[]): string {
-  const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
-  if (uniqueEmbeds.length === 0) return '';
-  return uniqueEmbeds.map(formatWorkflowLinkPlain).join('\n');
-}
-
-export function buildWorkflowBannerHtml(embeds: WorkflowEmbed[]): string {
-  const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
-  if (uniqueEmbeds.length === 0) return '';
-  return uniqueEmbeds.map((embed) => formatWorkflowLinkHtml(embed, embed.url)).join('\n');
-}
-
-export function buildWorkflowBannerTerminal(embeds: WorkflowEmbed[]): string {
-  const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
-  if (uniqueEmbeds.length === 0) return '';
-  return uniqueEmbeds.map(formatWorkflowLinkTerminal).join('\n');
-}
-
-// Backward-compatible aliases while the repo converges on the "banner" wording.
-export const buildWorkflowFooterPlain = buildWorkflowBannerPlain;
-export const buildWorkflowFooterHtml = buildWorkflowBannerHtml;
-export const buildWorkflowFooterTerminal = buildWorkflowBannerTerminal;
 
 // ---------------------------------------------------------------------------
 // HTML escaping
@@ -97,26 +13,6 @@ export const buildWorkflowFooterTerminal = buildWorkflowBannerTerminal;
 
 export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-export function resolveTerminalWorkflowOpenUrl(embed: WorkflowEmbed): string {
-  return embed.url;
-}
-
-function dedupeWorkflowEmbeds(embeds: WorkflowEmbed[]): WorkflowEmbed[] {
-  const seen = new Set<string>();
-  const unique: WorkflowEmbed[] = [];
-
-  for (const embed of embeds) {
-    const key = workflowEmbedKey(embed);
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    unique.push(embed);
-  }
-
-  return unique;
 }
 
 // ---------------------------------------------------------------------------

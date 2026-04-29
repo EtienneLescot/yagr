@@ -37,7 +37,7 @@ test('getConfiguredManagedN8nState returns managed state when configured host ma
   const configService = new YagrN8nConfigService();
   configService.saveLocalConfig({
     host: 'http://127.0.0.1:5678',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     projectId: 'p1',
     projectName: 'Demo',
     instanceProfile: 'yagr-managed-docker',
@@ -78,7 +78,7 @@ test('getConfiguredManagedN8nState upgrades configs without explicit managed cla
   const configService = new YagrN8nConfigService();
   configService.saveLocalConfig({
     host: 'http://127.0.0.1:5678',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     projectId: 'p1',
     projectName: 'Demo',
   });
@@ -118,7 +118,7 @@ test('getConfiguredManagedN8nState upgrades custom-local profiles when managed r
   const configService = new YagrN8nConfigService();
   configService.saveLocalConfig({
     host: 'http://127.0.0.1:5678',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     projectId: 'p1',
     projectName: 'Demo',
     instanceProfile: 'custom-local-direct',
@@ -178,7 +178,7 @@ test('prepareConfiguredN8nForLaunch reconciles managed startup when the instance
   const configService = new YagrN8nConfigService();
   configService.saveLocalConfig({
     host: managedState.url,
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     instanceProfile: 'yagr-managed-docker',
   });
 
@@ -244,7 +244,7 @@ test('prepareConfiguredN8nForLaunch is idempotent for already connected managed 
   configService.saveApiKey(managedState.url, 'stored-api-key');
   configService.saveLocalConfig({
     host: managedState.url,
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     projectId: 'proj_1',
     projectName: 'Primary Project',
     instanceProfile: 'yagr-managed-docker',
@@ -292,7 +292,7 @@ test('ensureConfiguredManagedN8nRunning recovers a managed Docker runtime from p
   const configService = new YagrN8nConfigService();
   configService.saveLocalConfig({
     host: 'http://127.0.0.1:5678',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     instanceProfile: 'yagr-managed-docker',
   });
 
@@ -350,7 +350,7 @@ test('ensureConfiguredManagedN8nRunning recreates stale managed state from persi
   const configService = new YagrN8nConfigService();
   configService.saveLocalConfig({
     host: 'http://127.0.0.1:5678',
-    syncFolder: 'workflows',
+    syncFolder: 'workspace',
     instanceProfile: 'yagr-managed-docker',
   });
 

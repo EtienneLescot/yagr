@@ -938,7 +938,6 @@ async function runYagrAdvancedScenarioWithPrelude(prelude, timeoutMs) {
     const checklist = buildAdvancedChecklist({
       toolEvents: execution.toolEvents,
       requiredActions: execution.requiredActions,
-      workflowEmbeds: execution.workflowEmbeds,
       changedWorkflows,
       createdRemoteWorkflows,
     });
@@ -1054,9 +1053,6 @@ async function validateAdvancedScenarioResult({
 
   const hasFinalSuccessSignal = Boolean(
     checklist?.hasVerifiedPushSuccess
-    || checklist?.hasWorkflowEmbed
-    || checklist?.hasWorkflowPresentation
-    || checklist?.hasWorkflowEmbedUrl
     || (checklist?.remoteWorkflowCount ?? 0) > 0
     || (
       checklist?.hasPush
@@ -1082,8 +1078,6 @@ async function validateAdvancedScenarioResult({
         && (
           (checklist?.successfulScriptRuns ?? 0) > 0
           || (checklist?.remoteWorkflowCount ?? 0) > 0
-          || checklist?.hasWorkflowEmbed
-          || checklist?.hasWorkflowPresentation
         )
       )
     )
@@ -1265,28 +1259,12 @@ async function runAdvancedAgentInProcess({
               logDebug(provider, `tool ${toolName} status: ${truncate(singleLine(String(statusMsg)), 200)}`);
             }
           }
-          if (
-            toolName === 'presentWorkflowResult'
-            && parsedOutput
-            && (
-              parsedOutput.__type === 'workflow_embed'
-              || parsedOutput.kind === 'workflow'
-              || parsedOutput.workflowId
-              || parsedOutput.url
-            )
-          ) {
-            toolEvents.push({
-              type: 'status',
-              toolName,
-              message: `workflow_embed:${parsedOutput.workflowId || parsedOutput.url || 'ok'}`,
-            });
-          }
           if (debug && outputText) {
             logDebug(provider, `tool ${toolName} output: ${truncate(singleLine(outputText), 220)}`);
           }
           journal.push({ type: 'tool-end', toolName, output: parsedOutput });
 
-          if (hasObservedAdvancedSuccess(toolEvents, accumulator.workflowEmbeds)) {
+          if (hasObservedAdvancedSuccess(toolEvents)) {
             if (debug) {
               logDebug(provider, 'advanced scenario success observed; stopping stream early');
             }
@@ -1301,7 +1279,6 @@ async function runAdvancedAgentInProcess({
         journal,
         toolEvents,
         requiredActions: accumulator.requiredActions,
-        workflowEmbeds: accumulator.workflowEmbeds,
         timedOut: false,
         error: '',
       };
@@ -1313,7 +1290,6 @@ async function runAdvancedAgentInProcess({
         journal,
         toolEvents,
         requiredActions: accumulator?.requiredActions ?? [],
-        workflowEmbeds: accumulator?.workflowEmbeds ?? [],
         timedOut: /timeout after/i.test(message),
         error: message,
       };
@@ -1372,14 +1348,8 @@ function extractCommandExitCode(text) {
   return undefined;
 }
 
-function hasObservedAdvancedSuccess(toolEvents, workflowEmbeds) {
-  const embeds = Array.isArray(workflowEmbeds) ? workflowEmbeds : [];
+function hasObservedAdvancedSuccess(toolEvents) {
   const allEvents = Array.isArray(toolEvents) ? toolEvents : [];
-  const hasWorkflowPresentation = allEvents.some((event) =>
-    event.type === 'status'
-    && event.toolName === 'presentWorkflowResult'
-    && String(event.message || '').startsWith('workflow_embed:'),
-  );
 
   const successfulCommands = allEvents.filter((event) =>
     event.type === 'command-end'
@@ -1392,24 +1362,6 @@ function hasObservedAdvancedSuccess(toolEvents, workflowEmbeds) {
 
   if (hasVerifiedPushSuccess) {
     return true;
-  }
-
-  // Also detect shell-based presentWorkflowResult (yagr presentWorkflowResult --workflow-id ...) as a success signal
-  const hasShellPresentWorkflowResult = successfulCommands.some((event) => {
-    const command = String(event.command || '').toLowerCase();
-    return command.includes('presentworkflowresult');
-  });
-
-  if (hasShellPresentWorkflowResult) {
-    const hasSuccessfulPushForShell = successfulCommands.some((event) => {
-      const command = String(event.command || '').toLowerCase();
-      return isN8nacCommand(command) && command.includes('push');
-    });
-    if (hasSuccessfulPushForShell) return true;
-  }
-
-  if (embeds.length === 0 && !hasWorkflowPresentation) {
-    return false;
   }
 
   const hasSuccessfulPush = successfulCommands.some((event) => {
@@ -1467,7 +1419,6 @@ async function withScopedEnv(overrides, fn) {
 function buildAdvancedChecklist({
   toolEvents,
   requiredActions,
-  workflowEmbeds,
   changedWorkflows,
   createdRemoteWorkflows,
 }) {
@@ -1495,14 +1446,6 @@ function buildAdvancedChecklist({
     || scriptMessages.some((msg) => isN8nacCommand(msg) && msg.includes('verify'))
     || executeCommands.some((cmd) => isN8nacCommand(cmd) && cmd.includes('verify'))
     || executeCommands.some((cmd) => isN8nacCommand(cmd) && cmd.includes('push') && cmd.includes('--verify'));
-  const hasWorkflowPresentation = allEvents.some((event) =>
-    event.type === 'status'
-    && event.toolName === 'presentWorkflowResult'
-    && String(event.message || '').startsWith('workflow_embed:'),
-  );
-
-  // Workflow embeds come from accumulator.workflowEmbeds (WorkflowEmbedPayload[])
-  const embeds = workflowEmbeds || [];
   const actionNames = [
     ...(hasPush ? ['push'] : []),
     ...(hasVerify ? ['verify'] : []),
@@ -1535,10 +1478,6 @@ function buildAdvancedChecklist({
     successfulScriptRuns,
     failedScriptRuns,
     hasVerifiedPushSuccess,
-    hasWorkflowEmbed: embeds.length > 0,
-    hasWorkflowPresentation,
-    hasWorkflowEmbedUrl: embeds.some((embed) => Boolean(String(embed.url || '').trim())),
-    hasWorkflowEmbedDiagram: embeds.some((embed) => Boolean(String(embed.diagram || '').trim())),
     wroteWorkflowFile,
     changedWorkflowFileCount: (changedWorkflows || []).length,
     remoteWorkflowCount: Array.isArray(createdRemoteWorkflows) ? createdRemoteWorkflows.length : 0,
@@ -1928,9 +1867,6 @@ function formatAdvancedChecklistNote(checklist) {
     `actions=${checklist.actionNames.length > 0 ? checklist.actionNames.join('/') : 'none'}`,
     `push=${checklist.hasPush ? 'yes' : 'no'}`,
     `verify=${checklist.hasVerify ? 'yes' : 'no'}`,
-    `embed=${checklist.hasWorkflowEmbed ? 'yes' : 'no'}`,
-    `embedUrl=${checklist.hasWorkflowEmbedUrl ? 'yes' : 'no'}`,
-    `embedDiagram=${checklist.hasWorkflowEmbedDiagram ? 'yes' : 'no'}`,
     `workflowFile=${checklist.wroteWorkflowFile ? 'yes' : 'no'}`,
     `remoteCreated=${checklist.remoteWorkflowCount}`,
     `blockingActions=${checklist.blockingRequiredActionCount}`,

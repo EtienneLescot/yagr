@@ -21,7 +21,7 @@ sequenceDiagram
     H->>C: coding-oriented middleware
     H->>M: run prompt with system instructions
     M->>T: tool call(s)
-    T->>E: file, shell, manager CLI, workspace CLI
+    T->>E: file and shell tools
     E-->>T: results
     T-->>M: tool results
     M-->>F: response and events
@@ -33,7 +33,7 @@ Observation:
 - all conversational facades consume a `YagrDeepAgentHandle`
 - the deep-agent directly carries its deepagents native surface
 - the coding-oriented overlay is applied via middleware, not via a monolithic runtime prompt file
-- manager and workspace behaviors then go through shell via `yagr ...` and `npx n8nac ...`
+- optional external integrations then go through explicit shell commands when the user asks for them
 
 ## 2. Current Instructions + Middleware + CLI Flow
 
@@ -45,23 +45,18 @@ flowchart LR
     CODE[coding-orientation.ts]
     AGENT[deep-agent]
     SHELL[execute shell tool]
-    HCLI[yagr manager commands]
-    WCLI[n8nac workspace commands]
 
     HOME --> PR
     WORK --> PR
     PR --> AGENT
     CODE --> AGENT
     AGENT --> SHELL
-    SHELL --> HCLI
-    SHELL --> WCLI
 ```
 
 Observation:
 
-- the Yagr home frames the usage of manager commands `yagr ...`
-- the n8n workspace frames the usage of commands `npx n8nac ...`
-- the deep-agent does not receive explicit manager or `n8nac` tools injected
+- the Yagr home remains the operational root
+- the deep-agent does not receive explicit manager or workflow tools injected
 - the coding-oriented overlay is physically separated from the pristine base
 - the Yagr home remains the operational root; `n8n-workspace` is a business sub-workspace, not the implicit cwd of the process
 
@@ -244,10 +239,9 @@ Rules:
 - All facades should offer the same product choice: connect an existing n8n, let `n8n-manager` create/manage n8n, or use generation-only mode.
 - `n8n-credentials-manager` owns credential recipes, starter kits, inventory statuses, and credential readiness semantics.
 - `N8nRestCredentialClient` owns n8n credential list/create/PATCH/test calls through the n8n REST API.
-- `src/manager-tooling/yagr-proxy.ts` now delegates LLM proxy credential provisioning to `@n8n-as-code/n8n-credentials-manager` instead of spawning `n8nac credential ...`.
 - `workflow-core` must not import `n8n-manager`.
 - `n8n-manager` must not depend on Yagr.
-- Yagr core remains agnostic; optional n8n integration stays behind `@yagr/plugin-n8n-manager`.
+- Yagr core remains agnostic; manager-specific code lives outside this repository.
 
 ## 7. Central Invariant
 
@@ -255,6 +249,6 @@ The following boundary must remain visible:
 
 - `src/deepagents/pristine.ts` = Deepagents base
 - `src/deepagents/coding-orientation.ts` = coding-oriented overlay
-- `src/manager-tooling/*` = manager behaviors and instruction templates
+- manager behavior is external to this repository
 
 If new logic does not clearly fit into one of these three areas, it must be isolated before being added.
