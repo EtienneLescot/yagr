@@ -29,6 +29,18 @@ yagr proxy status [provider]
 yagr proxy stop <provider>
 ```
 
+## Agent Skills
+
+```bash
+yagr skills list
+yagr skills install <source>
+yagr skills install <source> --scope workspace
+yagr skills remove <name>
+yagr skills path
+```
+
+Yagr only installs and exposes skill directories. The runtime skill discovery and progressive disclosure are provided by DeepAgents.js.
+
 ## Local State
 
 ```bash
