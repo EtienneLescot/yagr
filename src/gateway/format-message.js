@@ -1,87 +1,15 @@
 /**
  * Shared message formatting utilities for TUI and Telegram gateways.
- * Single source of truth for workflow banner rendering and markdown-to-surface conversion.
+ * Single source of truth for markdown-to-surface conversion.
  */
-export function workflowEmbedKey(embed) {
-    return `${embed.workflowId}::${embed.targetUrl ?? embed.url}`;
-}
-export function extractWorkflowEmbed(event) {
-    if (event.type === 'embed' && event.kind === 'workflow') {
-        return {
-            workflowId: event.workflowId,
-            url: event.url,
-            targetUrl: event.targetUrl,
-            title: event.title,
-            diagram: event.diagram,
-            executionResult: event.executionResult,
-        };
-    }
-    return undefined;
-}
-// ---------------------------------------------------------------------------
-// Workflow banner rendering — one per surface
-// ---------------------------------------------------------------------------
-export function formatWorkflowLinkPlain(embed) {
-    const label = embed.title ?? `Workflow ${embed.workflowId}`;
-    return `🔗 ${label}`;
-}
-export function formatWorkflowLinkHtml(embed, openUrl = embed.url) {
-    const label = escapeHtml(embed.title ?? `Workflow ${embed.workflowId}`);
-    return `🔗 <a href="${escapeHtml(openUrl)}">${label}</a>`;
-}
 export function formatTerminalLink(label, url) {
     return `\x1b]8;;${url}\x07${label}\x1b]8;;\x07`;
 }
-export function formatWorkflowLinkTerminal(embed) {
-    const label = embed.title ?? `Workflow ${embed.workflowId}`;
-    return `🔗 ${formatTerminalLink(label, resolveTerminalWorkflowOpenUrl(embed))}`;
-}
-// ---------------------------------------------------------------------------
-// Workflow footer builder (appended to response messages)
-// ---------------------------------------------------------------------------
-export function buildWorkflowBannerPlain(embeds) {
-    const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
-    if (uniqueEmbeds.length === 0)
-        return '';
-    return uniqueEmbeds.map(formatWorkflowLinkPlain).join('\n');
-}
-export function buildWorkflowBannerHtml(embeds) {
-    const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
-    if (uniqueEmbeds.length === 0)
-        return '';
-    return uniqueEmbeds.map((embed) => formatWorkflowLinkHtml(embed, embed.url)).join('\n');
-}
-export function buildWorkflowBannerTerminal(embeds) {
-    const uniqueEmbeds = dedupeWorkflowEmbeds(embeds);
-    if (uniqueEmbeds.length === 0)
-        return '';
-    return uniqueEmbeds.map(formatWorkflowLinkTerminal).join('\n');
-}
-// Backward-compatible aliases while the repo converges on the "banner" wording.
-export const buildWorkflowFooterPlain = buildWorkflowBannerPlain;
-export const buildWorkflowFooterHtml = buildWorkflowBannerHtml;
-export const buildWorkflowFooterTerminal = buildWorkflowBannerTerminal;
 // ---------------------------------------------------------------------------
 // HTML escaping
 // ---------------------------------------------------------------------------
 export function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-export function resolveTerminalWorkflowOpenUrl(embed) {
-    return embed.url;
-}
-function dedupeWorkflowEmbeds(embeds) {
-    const seen = new Set();
-    const unique = [];
-    for (const embed of embeds) {
-        const key = workflowEmbedKey(embed);
-        if (seen.has(key)) {
-            continue;
-        }
-        seen.add(key);
-        unique.push(embed);
-    }
-    return unique;
 }
 // ---------------------------------------------------------------------------
 // Markdown → Telegram HTML conversion

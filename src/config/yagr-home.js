@@ -1,25 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 const initialLaunchDir = process.env.YAGR_LAUNCH_CWD ?? process.cwd();
-// ---------------------------------------------------------------------------
-// Bundled manager instructions path resolution
-// ---------------------------------------------------------------------------
-export function resolveBundledManagerInstructionsPath(launchDir = getYagrLaunchDir()) {
-    const candidates = [
-        fileURLToPath(new URL('../manager-tooling/YAGENTS.md', import.meta.url)),
-        fileURLToPath(new URL('../src/manager-tooling/YAGENTS.md', import.meta.url)),
-        path.join(launchDir, 'node_modules', '@yagr', 'manager-tooling', 'YAGENTS.md'),
-        path.join(launchDir, 'src', 'manager-tooling', 'YAGENTS.md'),
-    ];
-    for (const candidate of candidates) {
-        if (fs.existsSync(candidate)) {
-            return candidate;
-        }
-    }
-    return undefined;
-}
 function readMemorySourcesFile(memorySources) {
     try {
         if (!fs.existsSync(memorySources))
@@ -45,30 +27,14 @@ function writeMemorySourcesFile(memorySources, data) {
 }
 /**
  * Returns all active memory source paths in load order:
- *   1. core (manager instructions)
- *   2. registered contexts (e.g. n8n-workspace/AGENTS.md)
+ *   1. registered contexts (e.g. project AGENTS.md files)
  * Only paths that exist on disk are returned.
  */
 export function getActiveMemorySourcePaths(memorySources) {
     const filePath = memorySources ?? path.join(getYagrHomeDir(), 'memory-sources.json');
     const data = readMemorySourcesFile(filePath);
-    const candidates = [
-        data.core,
-        ...(data.contexts ?? []),
-    ].filter((p) => typeof p === 'string' && p.length > 0);
+    const candidates = (data.contexts ?? []).filter((p) => typeof p === 'string' && p.length > 0);
     return candidates.filter((p) => fs.existsSync(p));
-}
-/**
- * Register or update the core manager instructions source.
- * Called on every startup from ensureYagrHomeDir so the path
- * stays current after package updates.
- */
-export function registerCoreMemorySource(absolutePath, memorySources) {
-    const filePath = memorySources ?? path.join(getYagrHomeDir(), 'memory-sources.json');
-    const data = readMemorySourcesFile(filePath);
-    if (data.core === absolutePath)
-        return;
-    writeMemorySourcesFile(filePath, { ...data, core: absolutePath });
 }
 /**
  * Register a workspace context file (e.g. n8n-workspace/AGENTS.md).

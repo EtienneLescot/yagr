@@ -1,7 +1,6 @@
-import fs from 'node:fs';
 import { createMiddleware, SystemMessage } from 'langchain';
 import { createInjectMemoryMiddleware } from './inject-memory.js';
-import { getYagrHomeDir, resolveBundledManagerInstructionsPath } from '../config/yagr-home.js';
+import { getYagrHomeDir } from '../config/yagr-home.js';
 export const CODING_ORIENTATION_SYSTEM_PROMPT = [
     'Operate as a coding-focused agent.',
     'Read the relevant repository files before making changes.',
@@ -19,35 +18,11 @@ export const CODING_ORIENTATION_SYSTEM_PROMPT = [
 export function getRuntimePathAnchorPrompt() {
     return `Backend working directory: ${getYagrHomeDir()}`;
 }
-/**
- * Load the bundled manager instructions (YAGENTS.md) at middleware creation time.
- *
- * We inject the content directly into the system message instead of loading
- * it as a deepagents memory file. When loaded via memory, deepagents prefixes
- * the system prompt with the source file path, which caused the agent to
- * anchor itself to the package dist directory instead of ~/.yagr.
- *
- * Direct injection avoids any file path being surfaced to the agent.
- */
-function loadBundledManagerInstructions() {
-    const bundledPath = resolveBundledManagerInstructionsPath();
-    if (!bundledPath)
-        return null;
-    try {
-        return fs.readFileSync(bundledPath, 'utf8').trim() || null;
-    }
-    catch {
-        return null;
-    }
-}
 export function createCodingOrientationMiddleware(prompt = CODING_ORIENTATION_SYSTEM_PROMPT) {
-    const managerInstructions = loadBundledManagerInstructions();
     return createMiddleware({
         name: 'YagrCodingOrientationMiddleware',
         wrapModelCall(request, handler) {
             const parts = [prompt, getRuntimePathAnchorPrompt()];
-            if (managerInstructions)
-                parts.push(managerInstructions);
             return handler({
                 ...request,
                 systemMessage: request.systemMessage.concat(new SystemMessage({ content: parts.join('\n\n') })),
