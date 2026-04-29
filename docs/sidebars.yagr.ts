@@ -22,8 +22,6 @@ const sidebars: SidebarsConfig = {
       items: [
         'usage/telegram',
         'usage/tui',
-        'usage/n8n-backend',
-        'usage/n8n-tunnel',
       ],
     },
     {

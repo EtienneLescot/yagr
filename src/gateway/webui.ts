@@ -3,15 +3,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  getDisplayProjectName,
-  type IProject,
-} from 'n8nac';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
 import type { SessionSummary } from '@yagr/session-service';
 import { SessionService, deriveSessionTitle } from '@yagr/session-service';
 import { SlashCommandService } from '@yagr/conversation-service';
-import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
@@ -27,7 +22,6 @@ import {
 import { getSnapshotContextWindow } from '../llm/provider-metadata.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
 import { getWebUiConfig, getWebUiGatewayStatus, type WebUiGatewayStatus } from './webui-config.js';
-import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
 import {
   createRunAccumulator,
   processStreamEvent,
@@ -121,7 +115,7 @@ class WebUiGateway implements Gateway {
     private readonly configService: YagrConfigService,
     private readonly status: WebUiGatewayStatus,
   ) {
-    this.setupService = new YagrSetupApplicationService(this.configService, new YagrN8nConfigService(), {
+    this.setupService = new YagrSetupApplicationService(this.configService, {
       resolveTelegramIdentity: resolveTelegramBotIdentity,
     });
   }
@@ -130,8 +124,6 @@ class WebUiGateway implements Gateway {
     if (this.server) {
       return;
     }
-
-    await ensureFacadeTunnelReachability('webui', this.configService);
 
     this.server = createServer(async (request, response) => {
       try {
@@ -210,39 +202,6 @@ class WebUiGateway implements Gateway {
 
     if (method === 'GET' && url.pathname === '/api/config') {
       this.sendJson(response, 200, await this.buildSnapshot());
-      return;
-    }
-
-    if (method === 'POST' && url.pathname === '/api/n8n/projects') {
-      const body = await this.readJson(request);
-      const projects = await this.setupService.fetchN8nProjects(String(body.host ?? ''), body.apiKey ? String(body.apiKey) : undefined);
-      this.sendJson(response, 200, {
-        projects: projects.map((project) => ({ id: project.id, name: getDisplayProjectName(project) })),
-        selectedProjectId: this.setupService.getSelectedN8nProjectId(),
-      });
-      return;
-    }
-
-    if (method === 'POST' && url.pathname === '/api/config/n8n') {
-      const body = await this.readJson(request);
-      const instanceProfile = body.instanceProfile === 'yagr-managed-docker'
-        || body.instanceProfile === 'yagr-managed-direct'
-        || body.instanceProfile === 'custom-local-docker'
-        || body.instanceProfile === 'custom-local-direct'
-        || body.instanceProfile === 'custom-cloud'
-        ? body.instanceProfile
-        : undefined;
-      const warning = await this.saveN8nConfig({
-        host: String(body.host ?? ''),
-        apiKey: body.apiKey ? String(body.apiKey) : undefined,
-        projectId: String(body.projectId ?? ''),
-        syncFolder: String(body.syncFolder ?? 'workspace'),
-        instanceProfile,
-      });
-      this.sendJson(response, 200, {
-        warning,
-        snapshot: await this.buildSnapshot(),
-      });
       return;
     }
 
@@ -583,20 +542,6 @@ class WebUiGateway implements Gateway {
       webUiStatus,
       selectableProviders: VALID_PROVIDERS,
     });
-  }
-
-  private async saveN8nConfig(input: {
-    host: string;
-    apiKey?: string;
-    projectId: string;
-    syncFolder: string;
-    instanceProfile?: 'yagr-managed-docker' | 'yagr-managed-direct' | 'custom-local-docker' | 'custom-local-direct' | 'custom-cloud';
-  }): Promise<string | undefined> {
-    const warning = await this.setupService.saveN8nConfig(input);
-    // Invalidate the cached agent handle so the next request picks up
-    // a fresh model built from the new config.
-    this.agentHandlePromise = undefined;
-    return warning;
   }
 
   private assertProvider(value: string): YagrModelProvider {

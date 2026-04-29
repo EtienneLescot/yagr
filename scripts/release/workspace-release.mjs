@@ -361,10 +361,10 @@ function getRepositoryBaseUrl() {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
-    repositoryBaseUrlCache = normalizeGitHubRepositoryUrl(remoteUrl) || 'https://github.com/EtienneLescot/n8n-as-code';
+    repositoryBaseUrlCache = normalizeGitHubRepositoryUrl(remoteUrl) || 'https://github.com/EtienneLescot/yagr';
     return repositoryBaseUrlCache;
   } catch {
-    repositoryBaseUrlCache = 'https://github.com/EtienneLescot/n8n-as-code';
+    repositoryBaseUrlCache = 'https://github.com/EtienneLescot/yagr';
     return repositoryBaseUrlCache;
   }
 }

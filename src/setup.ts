@@ -1,18 +1,6 @@
-import {
-  N8nApiClient,
-} from 'n8nac';
 import { YagrConfigService } from './config/yagr-config-service.js';
-import { YagrN8nConfigService } from './config/n8n-config-service.js';
 import { createOnboardingToken, resolveTelegramBotIdentity } from './gateway/telegram.js';
 import type { GatewaySurface } from './gateway/types.js';
-import { bootstrapManagedLocalN8n } from './n8n-local/bootstrap.js';
-import { installManagedDockerN8n } from './n8n-local/docker-manager.js';
-import { inspectLocalN8nBootstrap } from './n8n-local/detect.js';
-import { markManagedN8nBootstrapStage } from './n8n-local/state.js';
-import {
-  installCloudflaredIfNeeded,
-} from './n8n-local/n8n-tunnel.js';
-import { ensureN8nPublicExposure } from './n8n-local/public-exposure-service.js';
 import { YagrSetupApplicationService } from './setup/application-services.js';
 import {
   buildYagrSetupStatus as buildYagrSetupStatusBase,
@@ -20,8 +8,6 @@ import {
   type YagrSetupStatus,
 } from './setup/status.js';
 import { runSetupWizard, type SetupCallbacks } from './setup/setup-wizard.js';
-import { openExternalUrl } from './system/open-external.js';
-import { getYagrPaths, registerContextMemorySource } from './config/yagr-home.js';
 
 export type { YagrSetupStatus };
 
@@ -31,17 +17,15 @@ export function buildYagrSetupStatus(input: Parameters<typeof buildYagrSetupStat
 
 export function getYagrSetupStatus(
   yagrConfigService = new YagrConfigService(),
-  n8nConfigService = new YagrN8nConfigService(),
   options: { activeSurfaces?: GatewaySurface[] } = {},
 ): YagrSetupStatus {
-  return getYagrSetupStatusBase(yagrConfigService, n8nConfigService, options);
+  return getYagrSetupStatusBase(yagrConfigService, options);
 }
 
 export async function runYagrSetup(
   yagrConfigService = new YagrConfigService(),
-  n8nConfigService = new YagrN8nConfigService(),
 ): Promise<boolean> {
-  const callbacks = createSetupCallbacks(yagrConfigService, n8nConfigService);
+  const callbacks = createSetupCallbacks(yagrConfigService);
   const result = await runSetupWizard(callbacks);
 
   if (result.ok && result.telegramDeepLink) {
@@ -55,97 +39,22 @@ export async function runYagrSetup(
   return result.ok;
 }
 
-export async function runYagrN8nSetup(
-  yagrConfigService = new YagrConfigService(),
-  n8nConfigService = new YagrN8nConfigService(),
-): Promise<boolean> {
-  const callbacks = createSetupCallbacks(yagrConfigService, n8nConfigService);
-  const result = await runSetupWizard(callbacks, { mode: 'n8n-only' });
-  return result.ok;
-}
-
 export async function runYagrLlmSetup(
   yagrConfigService = new YagrConfigService(),
-  n8nConfigService = new YagrN8nConfigService(),
 ): Promise<boolean> {
-  const callbacks = createSetupCallbacks(yagrConfigService, n8nConfigService);
+  const callbacks = createSetupCallbacks(yagrConfigService);
   const result = await runSetupWizard(callbacks, { mode: 'llm-only' });
   return result.ok;
 }
 
 function createSetupCallbacks(
   yagrConfigService: YagrConfigService,
-  n8nConfigService: YagrN8nConfigService,
 ): SetupCallbacks {
-  const setupService = new YagrSetupApplicationService(yagrConfigService, n8nConfigService, {
+  const setupService = new YagrSetupApplicationService(yagrConfigService, {
     resolveTelegramIdentity: resolveTelegramBotIdentity,
     createOnboardingToken,
   });
-  const callbacks: SetupCallbacks = {
-    getN8nDefaults(urlOverride?: string) {
-      const cfg = n8nConfigService.getLocalConfig();
-      const hostForKey = urlOverride ?? cfg.host;
-      return {
-        url: sanitizeInputValue(cfg.host) ?? 'http://localhost:5678',
-        apiKey: hostForKey ? n8nConfigService.getApiKey(hostForKey) : undefined,
-        projectId: cfg.projectId,
-        syncFolder: cfg.syncFolder,
-        instanceProfile: cfg.instanceProfile,
-      };
-    },
-
-    async testN8nConnection(url, apiKey) {
-      const client = new N8nApiClient({ host: url, apiKey });
-      const connected = await client.testConnection();
-      if (!connected) throw new Error('Unable to connect to n8n with the provided URL and API key.');
-      markManagedN8nBootstrapStage(url, 'api-key-pending');
-      const projects = await client.getProjects();
-      if (projects.length === 0) throw new Error('No n8n projects found. Create one in n8n first, then rerun setup.');
-      return projects;
-    },
-
-    async saveN8nConfig({ url, apiKey, project, syncFolder, instanceProfile }) {
-      const warning = await setupService.saveN8nConfig({
-        host: url,
-        apiKey,
-        projectId: project.id,
-        syncFolder,
-        instanceProfile,
-      });
-      if (warning) {
-        process.stderr.write(`Warning: ${warning}\n`);
-      }
-      markManagedN8nBootstrapStage(url, 'connected');
-    },
-
-    async installManagedLocalN8n(strategy) {
-      const assessment = await inspectLocalN8nBootstrap();
-      if (!strategy || strategy === 'docker') {
-        if (!assessment.docker.available) {
-          throw new Error('Docker is not running. Yagr-managed local n8n requires Docker Desktop or a Docker daemon.');
-        }
-        if (assessment.docker.reachable === false) {
-          throw new Error('Docker is not running. Start Docker Desktop or the Docker daemon, then retry.');
-        }
-        return installManagedDockerN8n();
-      }
-
-      throw new Error('Docker is the only Yagr-managed local n8n runtime. Use Docker-managed local n8n or configure a custom n8n instance.');
-    },
-
-    async bootstrapManagedLocalN8n(url) {
-      const result = await bootstrapManagedLocalN8n({ url });
-      if (result.apiKey) {
-        n8nConfigService.saveApiKey(url, result.apiKey);
-        n8nConfigService.syncN8nacCliApiKey?.();
-      }
-      return result;
-    },
-
-    async openUrl(url) {
-      await openExternalUrl(url);
-    },
-
+  return {
     getLlmDefaults() {
       return setupService.getLlmDefaults();
     },
@@ -170,8 +79,8 @@ function createSetupCallbacks(
       return setupService.fetchModels(provider, apiKey, baseUrl);
     },
 
-    saveLlmConfig({ provider, apiKey, model, baseUrl }) {
-      setupService.saveLlmConfig({ provider, apiKey, model, baseUrl });
+    saveLlmConfig({ provider, apiKey, model, baseUrl, reasoningEffort }) {
+      setupService.saveLlmConfig({ provider, apiKey, model, baseUrl, reasoningEffort });
     },
 
     getSurfaceDefaults() {
@@ -189,34 +98,5 @@ function createSetupCallbacks(
     saveSurfaces({ surfaces, telegram }) {
       setupService.saveSurfaces({ surfaces, telegram });
     },
-
-    async startN8nTunnel(targetUrl: string) {
-      const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
-      const { state } = await ensureN8nPublicExposure(targetUrl, {
-        action: 'ensure',
-        cloudflaredBin: bin,
-        configService: new YagrConfigService(),
-      });
-      return { publicUrl: state.publicUrl };
-    },
   };
-  return callbacks;
-}
-
-/**
- * Register n8n workspace context files in ~/.yagr/memory-sources.json.
- * Exposed for standalone use via `yagr n8n context setup`.
- */
-export function registerN8nContextSources(): void {
-  const paths = getYagrPaths();
-  registerContextMemorySource(paths.workspaceInstructionsPath);
-}
-
-function sanitizeInputValue(value: string | undefined): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.replace(/^['"]|['"]$/g, '');
 }

@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 import './config/init-yagr-home.js';
-import os from 'node:os';
 import fs from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildYagrCleanupPlan, resetYagrLocalState, type YagrResetScope } from './config/local-state.js';
-import { YagrN8nConfigService } from './config/n8n-config-service.js';
 import { YagrConfigService } from './config/yagr-config-service.js';
 import { getYagrPaths } from './config/yagr-home.js';
 import { getGatewaySupervisorStatus, getGatewayRunningBanner, runGatewaySupervisor, runGatewaySurfaces } from './gateway/manager.js';
@@ -17,46 +15,19 @@ import {
   setupTelegramGateway,
 } from './gateway/telegram.js';
 import { createYagrDeepAgent } from './agent-factory.js';
+import { runCliGateway } from './gateway/cli.js';
 import type { YagrModelProvider } from './llm/provider-registry.js';
-import {
-  getManagedDockerN8nLogs,
-  getManagedDockerN8nStatus,
-  installManagedDockerN8n,
-  startManagedDockerN8n,
-  stopManagedDockerN8n,
-} from './n8n-local/docker-manager.js';
-import { formatLocalN8nBootstrapAssessment, inspectLocalN8nBootstrap } from './n8n-local/detect.js';
-import { getConfiguredManagedN8nState } from './n8n-local/managed-runtime.js';
-import { createN8nBootstrapPlan } from './n8n-local/plan.js';
-import { readManagedN8nState } from './n8n-local/state.js';
-import { getYagrSetupStatus, registerN8nContextSources, runYagrLlmSetup, runYagrN8nSetup, runYagrSetup } from './setup.js';
+import { getYagrSetupStatus, runYagrLlmSetup, runYagrSetup } from './setup.js';
 import { YagrSetupApplicationService } from './setup/application-services.js';
-import { openExternalUrl } from './system/open-external.js';
 import { isPidAlive, killProcessTree, spawnCommand, spawnDetached } from './system/process.js';
 import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
-import {
-  getActiveTunnelState,
-  getActiveN8nAuthTunnelState,
-  installCloudflaredIfNeeded,
-  isCloudflaredAvailable,
-  resolveN8nTunnelTargetUrl,
-  stopAllTunnels,
-} from './n8n-local/n8n-tunnel.js';
-import {
-  ensureConfiguredN8nPublicExposure,
-  stopN8nPublicExposureSet,
-  type ManagedN8nRestartHooks,
-} from './n8n-local/public-exposure-service.js';
-import { ensureFacadeTunnelReachability } from './n8n-local/tunnel-reachability.js';
 
 const VALID_PROVIDERS: YagrModelProvider[] = [...YAGR_SELECTABLE_MODEL_PROVIDERS];
-const CLI_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface ParsedArgs {
-  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'start' | 'stop' | 'restart' | 'tui' | 'webui' | 'gateway' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop' | 'n8n-setup' | 'n8n-context-setup' | 'n8n-doctor' | 'n8n-local-install' | 'n8n-local-start' | 'n8n-local-stop' | 'n8n-local-status' | 'n8n-local-logs' | 'n8n-local-open' | 'n8n-tunnel-setup' | 'n8n-tunnel-start' | 'n8n-tunnel-stop' | 'n8n-tunnel-refresh' | 'n8n-tunnel-status' | 'n8n-tunnel-url';
+  command?: 'help' | 'version' | 'config-show' | 'config-reset' | 'paths' | 'reset' | 'uninstall' | 'setup' | 'llm-setup' | 'start' | 'stop' | 'restart' | 'tui' | 'webui' | 'gateway' | 'gateway-start' | 'gateway-worker' | 'gateway-status' | 'telegram-setup' | 'telegram-start' | 'telegram-status' | 'telegram-reset' | 'telegram-onboarding' | 'proxy-start' | 'proxy-status' | 'proxy-stop';
   startTarget?: 'webui' | 'tui';
-  n8nLocalRuntime?: 'docker';
   prompt?: string;
   interactive: boolean;
   provider?: YagrModelProvider;
@@ -80,420 +51,80 @@ function parseArgs(argv: string[]): ParsedArgs {
     dryRun: false,
   };
 
-  if (argv.length === 0) {
+  if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
     parsed.command = 'help';
     return parsed;
   }
-
-  if (argv[0] === '--help' || argv[0] === '-h') {
-    parsed.command = 'help';
-    return parsed;
-  }
-
   if (argv[0] === '--version' || argv[0] === '-v' || argv[0] === '-V') {
     parsed.command = 'version';
     return parsed;
   }
 
   let startIndex = 0;
+  const [a, b] = argv;
+  if (a === 'config' && b === 'show') return { ...parsed, command: 'config-show' };
+  if (a === 'config' && b === 'reset') return { ...parsed, command: 'config-reset' };
+  if (a === 'paths') return { ...parsed, command: 'paths' };
+  if (a === 'stop') return { ...parsed, command: 'stop' };
+  if (a === 'tui') return { ...parsed, command: 'tui' };
+  if (a === 'webui') return { ...parsed, command: 'webui' };
+  if (a === 'setup' || a === 'onboard') { parsed.command = 'setup'; startIndex = 1; }
+  if (a === 'llm' && b === 'setup') { parsed.command = 'llm-setup'; startIndex = 2; }
+  if (a === 'start') { parsed.command = 'start'; startIndex = 1; }
+  if (a === 'restart') { parsed.command = 'restart'; startIndex = 1; }
+  if (a === 'reset') { parsed.command = 'reset'; startIndex = 1; }
+  if (a === 'uninstall') { parsed.command = 'uninstall'; startIndex = 1; }
+  if (a === 'gateway' && !b) { parsed.command = 'gateway'; startIndex = 1; }
+  if (a === 'gateway' && b === 'start') { parsed.command = 'gateway-start'; startIndex = 2; }
+  if (a === 'gateway' && b === 'worker') { parsed.command = 'gateway-worker'; startIndex = 2; }
+  if (a === 'gateway' && b === 'status') return { ...parsed, command: 'gateway-status' };
+  if (a === 'telegram' && b === 'setup') { parsed.command = 'telegram-setup'; startIndex = 2; }
+  if (a === 'telegram' && b === 'start') { parsed.command = 'telegram-start'; startIndex = 2; }
+  if (a === 'telegram' && b === 'status') return { ...parsed, command: 'telegram-status' };
+  if (a === 'telegram' && (b === 'onboarding' || b === 'link')) return { ...parsed, command: 'telegram-onboarding' };
+  if (a === 'telegram' && b === 'reset') return { ...parsed, command: 'telegram-reset' };
+  if (a === 'proxy' && b === 'start') { parsed.command = 'proxy-start'; startIndex = 2; }
+  if (a === 'proxy' && b === 'status') { parsed.command = 'proxy-status'; startIndex = 2; }
+  if (a === 'proxy' && b === 'stop') { parsed.command = 'proxy-stop'; startIndex = 2; }
 
-  if (argv[0] === 'config' && argv[1] === 'show') {
-    parsed.command = 'config-show';
-    return parsed;
+  const rest: string[] = [];
+  for (let i = startIndex; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--interactive' || arg === '-i') parsed.interactive = true;
+    else if (arg === '--hide-thinking') parsed.showThinking = false;
+    else if (arg === '--hide-execution') parsed.showExecution = false;
+    else if (arg === '--debug') parsed.debug = true;
+    else if (arg === '--yes') parsed.yes = true;
+    else if (arg === '--dry-run') parsed.dryRun = true;
+    else if (arg === '--provider') parsed.provider = parseProvider(argv[++i]);
+    else if (arg === '--model') parsed.model = argv[++i];
+    else if (arg === '--max-steps') parsed.maxSteps = Number(argv[++i]);
+    else if (arg === '--scope') parsed.resetScope = parseResetScope(argv[++i]);
+    else if (!parsed.command && arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`);
+    else rest.push(arg);
   }
 
-  if (argv[0] === 'config' && argv[1] === 'reset') {
-    parsed.command = 'config-reset';
-    return parsed;
-  }
-
-  if (argv[0] === 'paths') {
-    parsed.command = 'paths';
-    return parsed;
-  }
-
-  if (argv[0] === 'reset') {
-    parsed.command = 'reset';
-    startIndex = 1;
-  }
-
-  if (argv[0] === 'uninstall') {
-    parsed.command = 'uninstall';
-    startIndex = 1;
-  }
-
-  if (argv[0] === 'stop') {
-    parsed.command = 'stop';
-    return parsed;
-  }
-
-  if (argv[0] === 'tui') {
-    parsed.command = 'tui';
-    return parsed;
-  }
-
-  if (argv[0] === 'webui') {
-    parsed.command = 'webui';
-    return parsed;
-  }
-
-  if (argv[0] === 'setup' || argv[0] === 'onboard') {
-    parsed.command = 'setup';
-    startIndex = 1;
-  }
-
-  if (argv[0] === 'llm' && argv[1] === 'setup') {
-    parsed.command = 'llm-setup';
-    startIndex = 2;
-  }
-
-  if (argv[0] === 'start') {
-    parsed.command = 'start';
-    startIndex = 1;
-  }
-
-  if (argv[0] === 'restart') {
-    parsed.command = 'restart';
-    startIndex = 1;
-  }
-
-  if (argv[0] === 'gateway' && !argv[1]) {
-    parsed.command = 'gateway';
-    startIndex = 1;
-  }
-
-  if (argv[0] === 'gateway' && argv[1] === 'start') {
-    parsed.command = 'gateway-start';
-    startIndex = 2;
-  }
-
-  if (argv[0] === 'gateway' && argv[1] === 'worker') {
-    parsed.command = 'gateway-worker';
-    startIndex = 2;
-  }
-
-  if (argv[0] === 'gateway' && argv[1] === 'status') {
-    parsed.command = 'gateway-status';
-    return parsed;
-  }
-
-  if (argv[0] === 'proxy' && argv[1] === 'start') {
-    parsed.command = 'proxy-start';
-    startIndex = 2;
-  }
-
-  if (argv[0] === 'proxy' && argv[1] === 'status') {
-    parsed.command = 'proxy-status';
-    startIndex = 2;
-  }
-
-  if (argv[0] === 'proxy' && argv[1] === 'stop') {
-    parsed.command = 'proxy-stop';
-    startIndex = 2;
-  }
-
-  if (argv[0] === 'telegram' && argv[1] === 'setup') {
-    parsed.command = 'telegram-setup';
-    startIndex = 2;
-  }
-
-  if (argv[0] === 'telegram' && argv[1] === 'start') {
-    parsed.command = 'telegram-start';
-    startIndex = 2;
-  }
-
-  if (argv[0] === 'telegram' && argv[1] === 'status') {
-    parsed.command = 'telegram-status';
-    return parsed;
-  }
-
-  if (argv[0] === 'telegram' && (argv[1] === 'onboarding' || argv[1] === 'link')) {
-    parsed.command = 'telegram-onboarding';
-    return parsed;
-  }
-
-  if (argv[0] === 'telegram' && argv[1] === 'reset') {
-    parsed.command = 'telegram-reset';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'doctor') {
-    parsed.command = 'n8n-doctor';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'setup') {
-    parsed.command = 'n8n-setup';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'context' && argv[2] === 'setup') {
-    parsed.command = 'n8n-context-setup';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'install') {
-    parsed.command = 'n8n-local-install';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'start') {
-    parsed.command = 'n8n-local-start';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'status') {
-    parsed.command = 'n8n-local-status';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'stop') {
-    parsed.command = 'n8n-local-stop';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'logs') {
-    parsed.command = 'n8n-local-logs';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'local' && argv[2] === 'open') {
-    parsed.command = 'n8n-local-open';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'start') {
-    parsed.command = 'n8n-tunnel-start';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'setup') {
-    parsed.command = 'n8n-tunnel-setup';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'stop') {
-    parsed.command = 'n8n-tunnel-stop';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'refresh') {
-    parsed.command = 'n8n-tunnel-refresh';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'status') {
-    parsed.command = 'n8n-tunnel-status';
-    return parsed;
-  }
-
-  if (argv[0] === 'n8n' && argv[1] === 'tunnel' && argv[2] === 'url') {
-    parsed.command = 'n8n-tunnel-url';
-    return parsed;
-  }
-
-  for (let index = startIndex; index < argv.length; index += 1) {
-    const arg = argv[index];
-
-    if (parsed.command === 'start' && (arg === 'webui' || arg === 'tui')) {
-      parsed.startTarget = arg;
-      continue;
-    }
-
-    if (arg === '--interactive' || arg === '-i') {
-      parsed.interactive = true;
-      continue;
-    }
-
-    if (arg === '--provider') {
-      const value = argv[index + 1];
-      if (value && VALID_PROVIDERS.includes(value as YagrModelProvider)) {
-        parsed.provider = value as YagrModelProvider;
-        index += 1;
-        continue;
-      }
-      throw new Error(`Invalid value for --provider. Use one of: ${VALID_PROVIDERS.join(', ')}.`);
-    }
-
-    if (arg === '--model') {
-      parsed.model = argv[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--max-steps') {
-      const raw = argv[index + 1];
-      const value = Number(raw);
-      if (!Number.isInteger(value) || value <= 0) {
-        throw new Error('Invalid value for --max-steps. Use a positive integer.');
-      }
-      parsed.maxSteps = value;
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--hide-thinking') {
-      parsed.showThinking = false;
-      continue;
-    }
-
-    if (arg === '--hide-agent-thinking') {
-      parsed.showThinking = false;
-      continue;
-    }
-
-    if (arg === '--hide-cli' || arg === '--hide-execution') {
-      parsed.showExecution = false;
-      continue;
-    }
-
-    if (arg === '--hide-command-executions') {
-      parsed.showExecution = false;
-      continue;
-    }
-
-    if (arg === '--debug') {
-      parsed.debug = true;
-      continue;
-    }
-
-    if (arg === '--yes') {
-      parsed.yes = true;
-      continue;
-    }
-
-    if (arg === '--dry-run') {
-      parsed.dryRun = true;
-      continue;
-    }
-
-    if (arg === '--scope') {
-      const value = argv[index + 1];
-      if (value === 'config' || value === 'config+creds' || value === 'full') {
-        parsed.resetScope = value;
-        index += 1;
-        continue;
-      }
-
-      throw new Error('Invalid value for --scope. Use one of: config, config+creds, full.');
-    }
-
-    if (arg === '--runtime') {
-      const value = argv[index + 1];
-      if (value === 'docker') {
-        parsed.n8nLocalRuntime = value;
-        index += 1;
-        continue;
-      }
-
-      throw new Error('Invalid value for --runtime. Docker is the only Yagr-managed local runtime.');
-    }
-
-    if (arg === '--docker') {
-      parsed.n8nLocalRuntime = 'docker';
-      continue;
-    }
-
-    if (!parsed.prompt) {
-      parsed.prompt = arg;
-      continue;
-    }
-
-    parsed.prompt = `${parsed.prompt} ${arg}`;
-  }
-
-  if (!parsed.prompt) {
-    parsed.interactive = true;
+  if (!parsed.command) {
+    parsed.prompt = argv.join(' ').trim();
+  } else if (rest.length > 0) {
+    if ((parsed.command === 'start' || parsed.command === 'restart') && (rest[0] === 'webui' || rest[0] === 'web')) parsed.startTarget = 'webui';
+    else if ((parsed.command === 'start' || parsed.command === 'restart') && (rest[0] === 'tui' || rest[0] === 'terminal')) parsed.startTarget = 'tui';
+    else parsed.prompt = rest.join(' ').trim();
   }
 
   return parsed;
 }
 
-async function runWithSpinner<T>(message: string, task: () => Promise<T>, detail?: string): Promise<T> {
-  if (!process.stdout.isTTY) {
-    if (detail) {
-      process.stdout.write(`${message}\n`);
-      process.stdout.write(`${detail}\n`);
-    } else {
-      process.stdout.write(`${message}\n`);
-    }
-    return task();
+function parseProvider(value: string | undefined): YagrModelProvider {
+  if (!value || !VALID_PROVIDERS.includes(value as YagrModelProvider)) {
+    throw new Error(`Unknown provider: ${value ?? ''}`);
   }
-
-  const startedAt = Date.now();
-  let frame = 0;
-  const render = () => {
-    const elapsedSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-    const elapsedLabel = elapsedSeconds < 60
-      ? `${elapsedSeconds}s`
-      : `${Math.floor(elapsedSeconds / 60)}m ${String(elapsedSeconds % 60).padStart(2, '0')}s`;
-    const detailText = detail ? ` ${detail}` : '';
-    process.stdout.write(`\r${CLI_SPINNER_FRAMES[frame % CLI_SPINNER_FRAMES.length]} ${message}${detailText} Elapsed: ${elapsedLabel}`);
-    frame += 1;
-  };
-
-  render();
-  const interval = setInterval(render, 120);
-
-  try {
-    const result = await task();
-    clearInterval(interval);
-    process.stdout.write(`\r✓ ${message}\n`);
-    return result;
-  } catch (error) {
-    clearInterval(interval);
-    process.stdout.write(`\r✕ ${message}\n`);
-    throw error;
-  }
+  return value as YagrModelProvider;
 }
 
-async function spawnGatewayDaemon(args: ParsedArgs): Promise<number> {
-  const { getGatewayLogPath, writeGatewayPid, tryAcquireLock, releaseLock } = await import('./config/gateway-daemon.js');
-
-  if (!tryAcquireLock()) {
-    throw new Error('Gateway is already starting or running. Use "yagr stop" first or "yagr restart".');
-  }
-
-  const extraArgs: string[] = [];
-  if (args.provider) extraArgs.push('--provider', args.provider);
-  if (args.model) extraArgs.push('--model', args.model);
-  if (args.maxSteps) extraArgs.push('--max-steps', String(args.maxSteps));
-  const logPath = getGatewayLogPath();
-  const logFd = fs.openSync(logPath, 'a');
-  let child;
-  try {
-    child = spawnDetached(
-      process.execPath,
-      [process.argv[1], 'gateway', 'start', ...extraArgs],
-      {
-        stdio: ['ignore', logFd, logFd],
-        env: { ...process.env },
-      },
-    );
-  } catch (error) {
-    fs.closeSync(logFd);
-    releaseLock();
-    throw error;
-  }
-
-  child.unref();
-
-  if (!child.pid) {
-    fs.closeSync(logFd);
-    releaseLock();
-    throw new Error('Failed to spawn gateway daemon.');
-  }
-
-  writeGatewayPid(child.pid);
-  return child.pid;
-}
-
-function formatGatewayTimestamp(date = new Date()): string {
-  return date.toISOString();
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function parseResetScope(value: string | undefined): YagrResetScope {
+  if (value === 'config' || value === 'config+creds' || value === 'full') return value;
+  throw new Error(`Unknown reset scope: ${value ?? ''}`);
 }
 
 export function getGatewayRestartDelayMs(failureCount: number): number {
@@ -501,147 +132,29 @@ export function getGatewayRestartDelayMs(failureCount: number): number {
   return Math.min(300_000, 60_000 * (2 ** cappedFailures));
 }
 
-async function runGatewayWorker(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  await runGatewaySupervisor({
-    provider: args.provider,
-    model: args.model,
-    maxSteps: args.maxSteps,
-  }, configService);
+function printHelp(): void {
+  process.stdout.write(`Yagr - autonomous local coding agent\n\nUsage:\n  yagr <prompt> [options]\n  yagr start [tui|webui] [options]\n  yagr setup\n  yagr llm setup\n\nCommands:\n  setup                      Configure local coding-agent runtime\n  llm setup                  Configure the language model\n  start [tui|webui]          Start an interactive local surface\n  tui                        Start terminal UI\n  webui                      Start Web UI\n  gateway start              Start configured background gateways\n  gateway status             Show gateway status\n  telegram setup             Configure Telegram gateway\n  telegram start             Start Telegram gateway\n  telegram status            Show Telegram gateway status\n  telegram onboarding        Show Telegram onboarding link\n  telegram reset             Remove Telegram configuration\n  proxy start <provider>     Start an account-backed provider proxy\n  proxy status [provider]    Show provider proxy status\n  proxy stop <provider>      Stop provider proxy\n  config show                Print local config\n  config reset               Remove local config and credentials\n  paths                      Print Yagr paths\n  reset [--scope <scope>]    Reset Yagr local state\n  uninstall                  Full local reset\n\nOptions:\n  --provider <name>          AI provider: ${VALID_PROVIDERS.join(', ')}\n  --model <name>             Model name to use\n  --max-steps <n>            Maximum number of agent steps\n  --interactive, -i          Keep the session open after the prompt\n  --hide-thinking            Hide agent thinking output\n  --hide-execution           Hide tool execution output\n  --yes                      Auto-confirm destructive operations\n  --dry-run                  Preview reset without changes\n  --version, -v              Print version\n  --help, -h                 Show this help\n`);
 }
 
-async function runGatewaySupervisorProcess(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  const supervisorStatus = getGatewaySupervisorStatus(configService);
-
-  if (supervisorStatus.startableSurfaces.length === 0) {
-    const message = supervisorStatus.warnings[0] ?? 'No enabled and configured gateway surfaces are available.';
-    throw new Error(message);
-  }
-
-  let stopRequested = false;
-  let activeChild: import('node:child_process').ChildProcess | undefined;
-  let consecutiveFailures = 0;
-
-  const forwardStop = () => {
-    stopRequested = true;
-    if (activeChild?.pid) {
-      void killProcessTree(activeChild.pid);
-    }
-  };
-
-  process.once('SIGINT', forwardStop);
-  process.once('SIGTERM', forwardStop);
-
-  while (!stopRequested) {
-    const childArgs = [process.argv[1], 'gateway', 'worker'];
-    if (args.provider) childArgs.push('--provider', args.provider);
-    if (args.model) childArgs.push('--model', args.model);
-    if (args.maxSteps) childArgs.push('--max-steps', String(args.maxSteps));
-
-    const child = spawnCommand(process.execPath, childArgs, {
-      stdio: 'inherit',
-      env: {
-        ...process.env,
-        YAGR_GATEWAY_SUPERVISOR_PID: String(process.pid),
-      },
-    });
-    activeChild = child;
-    const startedAt = Date.now();
-
-    const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', (code, signal) => resolve({ code, signal }));
-    });
-
-    activeChild = undefined;
-
-    if (stopRequested) {
-      break;
-    }
-
-    const uptimeMs = Date.now() - startedAt;
-    if (exit.code === 0) {
-      process.stdout.write(`[${formatGatewayTimestamp()}] Gateway worker stopped cleanly.\n`);
-      break;
-    }
-
-    consecutiveFailures = uptimeMs >= 60_000 ? 0 : consecutiveFailures + 1;
-    const delayMs = getGatewayRestartDelayMs(consecutiveFailures);
-    const reason = exit.signal ? `signal ${exit.signal}` : `exit code ${exit.code ?? 'unknown'}`;
-    process.stderr.write(
-      `[${formatGatewayTimestamp()}] Gateway worker exited with ${reason}. Restarting in ${Math.round(delayMs / 1000)}s.\n`,
-    );
-    await sleep(delayMs);
-  }
+function printVersion(): void {
+  const pkgUrl = new URL('../package.json', import.meta.url);
+  const pkg = JSON.parse(readFileSync(fileURLToPath(pkgUrl), 'utf8')) as { version?: string };
+  process.stdout.write(`${pkg.version ?? '0.0.0'}\n`);
 }
 
-async function runGatewayOrFallback(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  const supervisorStatus = getGatewaySupervisorStatus(configService);
-
-  if (supervisorStatus.startableSurfaces.length === 0) {
-    process.stdout.write([
-      '',
-      'Yagr is configured.',
-      'No messaging gateways are enabled yet.',
-      '  \u00b7 Run `yagr tui`     to open a terminal chat session.',
-      '  \u00b7 Run `yagr webui`   to open the web interface.',
-      '  \u00b7 Run `yagr setup`   to configure Telegram or other gateways.',
-      '',
-    ].join('\n'));
-    return;
-  }
-
-  const { isGatewayRunning, getGatewayLogPath } = await import('./config/gateway-daemon.js');
-
-  const running = isGatewayRunning();
-  if (running.running) {
-    process.stdout.write(`Gateway already running (PID ${running.pid}).\n`);
-    process.stdout.write(getGatewayRunningBanner(configService, running.pid));
-    return;
-  }
-
-  process.stdout.write('Starting Yagr gateway...\n');
-  const pid = await spawnGatewayDaemon(args);
-
-  // Give the daemon time to connect and fail fast if broken
-  await new Promise<void>((resolve) => setTimeout(resolve, 2000));
-
-  if (!isPidAlive(pid)) {
-    const { clearGatewayPid } = await import('./config/gateway-daemon.js');
-    clearGatewayPid();
-    throw new Error(`Gateway daemon failed to start. Check logs: ${getGatewayLogPath()}`);
-  }
-
-  process.stdout.write(getGatewayRunningBanner(configService, pid));
+function printPaths(): void {
+  process.stdout.write(`${JSON.stringify(getYagrPaths(), null, 2)}\n`);
 }
 
-async function ensureGatewayRunning(configService: YagrConfigService): Promise<boolean> {
-  const { isGatewayRunning } = await import('./config/gateway-daemon.js');
-  const running = isGatewayRunning();
-  if (!running.running) {
-    process.stdout.write([
-      '',
-      '  Gateway is not running.',
-      '  Start it with: yagr start',
-      '  Or: yagr gateway',
-      '',
-    ].join('\n'));
-    return false;
-  }
-  return true;
+function printConfig(configService: YagrConfigService): void {
+  process.stdout.write(`${JSON.stringify(configService.getLocalConfig(), null, 2)}\n`);
 }
 
-async function runTui(args: ParsedArgs): Promise<void> {
-  const configService = new YagrConfigService();
-  if (!await ensureGatewayRunning(configService)) {
-    return;
+async function runPrompt(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  if (!args.prompt) {
+    throw new Error('Prompt is required.');
   }
-  await ensureFacadeTunnelReachability('tui', configService).catch(() => {});
-  const handle = await createYagrDeepAgent();
-  const { runCliGateway } = await import('./gateway/cli.js');
-
-  await runCliGateway(handle, {
-    prompt: args.prompt,
-    interactive: true,
+  const handle = await createYagrDeepAgent(configService, undefined, undefined, {
     provider: args.provider,
     model: args.model,
     maxSteps: args.maxSteps,
@@ -650,593 +163,83 @@ async function runTui(args: ParsedArgs): Promise<void> {
       showExecution: args.showExecution,
     },
   });
+  await runCliGateway(handle, { prompt: args.prompt, interactive: args.interactive });
 }
 
-async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  await runGatewaySurfaces(['webui'], {
-    provider: args.provider,
-    model: args.model,
-    maxSteps: args.maxSteps,
-  }, configService);
-}
-
-function buildManagedN8nRestartHooks(): ManagedN8nRestartHooks {
-  return {
-    onStart: (publicUrl) => {
-      process.stdout.write(`\nRestarting managed n8n so it picks up N8N_WEBHOOK_URL=${publicUrl}…\n`);
-    },
-    onSuccess: () => {
-      process.stdout.write('n8n restarted. Webhook URLs in the editor now show the public URL.\n');
-    },
-    onError: (error) => {
-      process.stderr.write(`Warning: could not restart managed n8n: ${error instanceof Error ? error.message : String(error)}\n`);
-      process.stderr.write('Run `yagr n8n local start` manually to apply the new webhook URL.\n');
-    },
-  };
-}
-
-function getVersion(): string {
-  const pkgPath = fileURLToPath(new URL('../package.json', import.meta.url));
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version: string };
-  return pkg.version;
-}
-
-function printHelp(): void {
-  const help = `
-Usage: yagr <command> [options]
-       yagr [prompt]           Run agent with a one-shot prompt
-
-Commands:
-  setup                        Run the setup wizard
-  n8n setup                    Reconfigure only the n8n instance
-  llm setup                    Run only the LLM setup wizard
-  llm proxy setup              Configure the LLM proxy only
-  start [tui|webui]            Start configured gateway(s), or a specific UI
-  tui                          Open an interactive terminal chat session
-  webui                        Open the web interface
-  stop                         Stop the running gateway daemon
-
-  gateway start                Start the gateway supervisor in the foreground
-  gateway status               Show gateway status (JSON)
-  proxy start                  Start a managed local model proxy
-  proxy status                 Show managed proxy status (JSON)
-  proxy stop                   Stop a managed local model proxy
-
-  telegram setup               Configure the Telegram gateway
-  telegram start               Start the Telegram gateway in the foreground
-  telegram status              Show Telegram gateway status (JSON)
-  telegram onboarding          Show the Telegram onboarding/link URL
-  telegram reset               Remove Telegram gateway configuration
-  n8n doctor                   Inspect local n8n bootstrap readiness
-  n8n local install            Install and start a Yagr-managed local n8n runtime
-  n8n local start              Start the Yagr-managed local n8n runtime
-  n8n local stop               Stop the Yagr-managed local n8n runtime
-  n8n local status             Show status for the Yagr-managed local n8n runtime
-  n8n local logs               Show recent logs for the Yagr-managed local n8n runtime
-  n8n local open               Open the Yagr-managed local n8n runtime in the browser
-  n8n tunnel setup             Install cloudflared (if needed) and start the tunnel
-  n8n tunnel start             Start the tunnel (cloudflared must be installed)
-  n8n tunnel stop              Stop the running n8n Cloudflare Tunnel
-  n8n tunnel refresh           Renew the tunnel (stop + start, new public URL)
-  n8n tunnel status            Show tunnel status (JSON)
-  n8n tunnel url               Print the current public tunnel URL
-  n8n context setup            Register n8n workspace context for the agent
-
-  config show                  Show current configuration (JSON)
-  config reset                 Clear all configuration and stored credentials
-  paths                        Show Yagr data paths (JSON)
-  reset                        Reset local state (requires --yes)
-  uninstall                    Remove all local data (requires --yes)
-
-Agent options (for \`yagr [prompt]\` and most commands):
-  --provider <name>            AI provider: ${VALID_PROVIDERS.join(', ')}
-  --model <name>               Model name to use
-  --max-steps <n>              Maximum number of agent steps
-  --interactive, -i            Keep the session open after the prompt
-  --hide-thinking              Hide agent thinking output
-  --hide-execution             Hide tool execution output
-  --debug                      Enable debug logs for setup/model discovery
-  --runtime <docker>           Runtime for \`n8n local install\`
-  --docker                     Shortcut for \`n8n local install --runtime docker\`
-  --yes                        Auto-confirm destructive operations
-  --dry-run                    Preview without making changes
-
-Info:
-  --version, -v                Print version
-  --help, -h                   Show this help
-`;
-  process.stdout.write(help);
-}
-
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-
-  if (args.command === 'version') {
-    process.stdout.write(`${getVersion()}\n`);
-    return;
-  }
-
-  if (args.command === 'help') {
-    printHelp();
-    return;
-  }
-
-  const configService = new YagrConfigService();
-  const setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
-
-  if (args.command) {
-    if (args.command === 'paths') {
-      const cleanupPlan = buildYagrCleanupPlan('full');
-      const payload = {
-        launchDir: cleanupPlan.paths.launchDir,
-        homeDir: cleanupPlan.paths.homeDir,
-        os: process.platform,
-        files: {
-          yagrConfig: cleanupPlan.paths.yagrConfigPath,
-          yagrCredentials: cleanupPlan.paths.yagrCredentialsPath,
-          n8nConfig: cleanupPlan.paths.n8nConfigPath,
-          n8nCredentials: cleanupPlan.paths.n8nCredentialsPath,
-        },
-        workspace: {
-          managed: cleanupPlan.workspacePaths,
-          preservedExternal: cleanupPlan.preservedWorkspacePaths,
-        },
-      };
-
-      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-      return;
-    }
-
-    if (args.command === 'reset' || args.command === 'uninstall') {
-      const scope = args.command === 'uninstall' ? 'full' : (args.resetScope ?? 'config+creds');
-      if (!args.dryRun && !args.yes) {
-        throw new Error('Refusing to remove local state without --yes. Use --dry-run to preview the cleanup plan.');
-      }
-
-      if (!args.dryRun) {
-        const { stopLocalN8nAuthBridge } = await import('./gateway/local-open-bridge.js');
-        await stopAllTunnels();
-        await stopLocalN8nAuthBridge();
-      }
-
-      const result = await resetYagrLocalState(scope, { dryRun: args.dryRun });
-      const payload = {
-        scope,
-        dryRun: args.dryRun,
-        deletePaths: result.plan.deletePaths,
-        preservedWorkspacePaths: result.plan.preservedWorkspacePaths,
-      };
-      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-      if (args.command === 'uninstall') {
-        const packageManagerHint = os.platform() === 'win32'
-          ? 'npm uninstall -g @yagr/agent'
-          : 'npm uninstall -g @yagr/agent';
-        process.stdout.write(`CLI package remains installed. Remove it separately with: ${packageManagerHint}\n`);
-      }
-      return;
-    }
-
-    if (args.command === 'config-show') {
-      const localConfig = configService.getLocalConfig();
-      const setupStatus = getYagrSetupStatus(configService);
-      const providers = VALID_PROVIDERS.map((provider) => ({
-        provider,
-        apiKeyStored: configService.hasApiKey(provider),
-      })).filter((entry) => entry.apiKeyStored);
-
-      process.stdout.write(`${JSON.stringify({ localConfig, providers, setupStatus }, null, 2)}\n`);
-      return;
-    }
-
-    if (args.command === 'config-reset') {
-      setupService.resetYagrConfig();
-      process.stdout.write('Yagr config reset.\n');
-      return;
-    }
-
-    if (args.command === 'telegram-setup') {
-      await setupTelegramGateway(configService);
-      return;
-    }
-
-    if (args.command === 'setup') {
-      const completed = await runYagrSetup(configService);
-      if (!completed) {
-        return;
-      }
-      // After onboarding, if n8n is a Yagr-managed instance and no tunnel is configured yet, offer tunnel setup.
-      const managedN8nState = getConfiguredManagedN8nState();
-      const tunnelCfg = configService.getN8nTunnelConfig();
-      if (managedN8nState && managedN8nState.status !== 'stopped' && !tunnelCfg?.enabled) {
-        process.stdout.write('\n──────────────────────────────────────────────────\n');
-        process.stdout.write('Your n8n instance is local. Setting up a Cloudflare Tunnel\n');
-        process.stdout.write('so it is reachable for webhooks and Telegram triggers…\n\n');
-        try {
-          const targetUrl = resolveN8nTunnelTargetUrl();
-          const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
-          const { state } = await runWithSpinner(
-            `Starting Cloudflare Tunnel for ${targetUrl}…`,
-            () => ensureConfiguredN8nPublicExposure({ action: 'start', cloudflaredBin: bin, configService }),
-            'Waiting for cloudflared to emit a public URL (up to 30s).',
-          );
-          process.stdout.write(`\nTunnel ready: ${state.publicUrl}\n`);
-          process.stdout.write('Gateway surfaces can wake this tunnel later if it is not running.\n');
-        } catch (err) {
-          process.stdout.write(`Tunnel setup skipped: ${(err as Error).message}\n`);
-          process.stdout.write('You can run it later with `yagr n8n tunnel setup`.\n');
-        }
-        process.stdout.write('──────────────────────────────────────────────────\n\n');
-      }
-      await runGatewayOrFallback(args, configService);
-      return;
-    }
-
-    if (args.command === 'n8n-setup') {
-      await runYagrN8nSetup(configService);
-      return;
-    }
-
-    if (args.command === 'n8n-context-setup') {
-      registerN8nContextSources();
-      process.stdout.write('n8n workspace context registered in ~/.yagr/memory-sources.json\n');
-      return;
-    }
-
-    if (args.command === 'llm-setup') {
-      if (args.debug) {
-        process.env.YAGR_DEBUG_MODEL_DISCOVERY = '1';
-      }
-      await runYagrLlmSetup(configService);
-      return;
-    }
-
-    if (args.command === 'gateway-status') {
-      const status = getGatewaySupervisorStatus(configService);
-      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
-      return;
-    }
-
-    if (args.command === 'proxy-status') {
-      const payload = args.provider
-        ? getProxyRuntimeStatus(args.provider)
-        : listProxyRuntimeStatuses();
-      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-      return;
-    }
-
-    if (args.command === 'proxy-start') {
-      if (!args.provider) {
-        throw new Error(`proxy start requires --provider. Use one of: ${VALID_PROVIDERS.join(', ')}.`);
-      }
-      const status = startProviderProxy(args.provider);
-      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
-      return;
-    }
-
-    if (args.command === 'proxy-stop') {
-      if (!args.provider) {
-        throw new Error(`proxy stop requires --provider. Use one of: ${VALID_PROVIDERS.join(', ')}.`);
-      }
-      const status = stopProviderProxy(args.provider);
-      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
-      return;
-    }
-
-    if (args.command === 'telegram-status') {
-      const status = getTelegramGatewayStatus(configService);
-      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
-      return;
-    }
-
-    if (args.command === 'telegram-onboarding') {
-      showTelegramOnboarding(configService);
-      return;
-    }
-
-    if (args.command === 'telegram-reset') {
-      resetTelegramGateway(configService);
-      process.stdout.write('Yagr Telegram config reset.\n');
-      return;
-    }
-
-    if (args.command === 'n8n-doctor') {
-      const assessment = await inspectLocalN8nBootstrap();
-      const plan = createN8nBootstrapPlan({ target: 'local-managed', assessment });
-      process.stdout.write(formatLocalN8nBootstrapAssessment(assessment));
-      process.stdout.write(`Bootstrap automation target: ${plan.automationLevel}\n`);
-      process.stdout.write(`Bootstrap can proceed: ${plan.canProceed ? 'yes' : 'no'}\n`);
-      if (plan.reasons.length > 0) {
-        process.stdout.write('Plan notes:\n');
-        for (const reason of plan.reasons) {
-          process.stdout.write(`- ${reason}\n`);
-        }
-      }
-      return;
-    }
-
-    if (args.command === 'n8n-local-install') {
-      const assessment = await inspectLocalN8nBootstrap();
-      const runtime = args.n8nLocalRuntime ?? assessment.recommendedStrategy;
-      if (runtime !== 'docker') {
-        throw new Error('No supported Yagr-managed local n8n runtime is available. Install and start Docker Desktop, then retry.');
-      }
-      const state = await runWithSpinner(
-        'Installing and starting a Yagr-managed local n8n instance…',
-        () => installManagedDockerN8n(),
-        'Docker mode. Waiting for the n8n API and editor to become ready.',
-      );
-      process.stdout.write(`Managed local n8n installed and started at ${state.url}\n`);
-      process.stdout.write('Next: run `yagr onboard` to continue with silent bootstrap and assisted fallback.\n');
-      return;
-    }
-
-    if (args.command === 'n8n-local-start') {
-      const state = await runWithSpinner(
-        'Starting the Yagr-managed local n8n instance…',
-        () => startManagedDockerN8n(),
-        'Docker mode.',
-      );
-      process.stdout.write(`Managed local n8n is running at ${state.url}\n`);
-      return;
-    }
-
-    if (args.command === 'n8n-local-status') {
-      const status = await getManagedDockerN8nStatus();
-      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
-      return;
-    }
-
-    if (args.command === 'n8n-local-stop') {
-      const state = await stopManagedDockerN8n();
-      process.stdout.write(`Managed local n8n stopped for ${state.url}\n`);
-      return;
-    }
-
-    if (args.command === 'n8n-local-logs') {
-      const logs = await getManagedDockerN8nLogs();
-      process.stdout.write(`${logs}\n`);
-      return;
-    }
-
-    if (args.command === 'n8n-local-open') {
-      const state = readManagedN8nState();
-      if (!state) {
-        throw new Error('No Yagr-managed local n8n instance is installed yet.');
-      }
-      await openExternalUrl(state.url);
-      process.stdout.write(`Opened ${state.url}\n`);
-      return;
-    }
-
-    if (args.command === 'n8n-tunnel-setup') {
-      const targetUrl = resolveN8nTunnelTargetUrl();
-      const alreadyAvailable = await isCloudflaredAvailable();
-      if (!alreadyAvailable) {
-        process.stdout.write('cloudflared not found. Downloading…\n');
-      }
-
-      const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
-      const { state } = await runWithSpinner(
-        `Starting Cloudflare Tunnel for ${targetUrl}…`,
-        () => ensureConfiguredN8nPublicExposure({
-          action: 'start',
-          cloudflaredBin: bin,
-          configService,
-          restartHooks: buildManagedN8nRestartHooks(),
-        }),
-        'Waiting for cloudflared to emit a public URL (up to 30s).',
-      );
-      process.stdout.write(`\nTunnel ready: ${state.publicUrl}\n`);
-      process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
-      process.stdout.write('n8n auth tunnels are started lazily by the surfaces that need them.\n');
-      return;
-    }
-
-    if (args.command === 'n8n-tunnel-start') {
-      const targetUrl = resolveN8nTunnelTargetUrl();
-      const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
-      const { state } = await runWithSpinner(
-        `Starting Cloudflare Tunnel for ${targetUrl}…`,
-        () => ensureConfiguredN8nPublicExposure({
-          action: 'start',
-          cloudflaredBin: bin,
-          configService,
-          restartHooks: buildManagedN8nRestartHooks(),
-        }),
-        'Waiting for cloudflared to emit a public URL (up to 30s).',
-      );
-      process.stdout.write(`Tunnel started: ${state.publicUrl}\n`);
-      process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
-      process.stdout.write('n8n auth tunnels are started lazily by the surfaces that need them.\n');
-      return;
-    }
-
-    if (args.command === 'n8n-tunnel-stop') {
-      await stopN8nPublicExposureSet(configService);
-
-      process.stdout.write('Tunnel set stopped (n8n + n8n auth tunnel).\n');
-      return;
-    }
-
-    if (args.command === 'n8n-tunnel-refresh') {
-      const targetUrl = resolveN8nTunnelTargetUrl();
-      const bin = await installCloudflaredIfNeeded((msg) => process.stdout.write(`${msg}\n`));
-      const { state } = await runWithSpinner(
-        `Refreshing Cloudflare Tunnel for ${targetUrl}…`,
-        () => ensureConfiguredN8nPublicExposure({
-          action: 'refresh',
-          cloudflaredBin: bin,
-          configService,
-          restartHooks: buildManagedN8nRestartHooks(),
-        }),
-        'Stopping current tunnel and starting a new one.',
-      );
-      process.stdout.write(`Tunnel refreshed: ${state.publicUrl}\n`);
-      process.stdout.write(`Target: ${state.targetUrl}  PID: ${state.pid}\n`);
-      process.stdout.write('n8n auth tunnels will be recreated lazily by the surfaces that need them.\n');
-      return;
-    }
-
-    if (args.command === 'n8n-tunnel-status') {
-      const active = getActiveTunnelState();
-      const n8nAuthTunnel = getActiveN8nAuthTunnelState();
-      const payload = active
-        ? {
-            running: true,
-            publicUrl: active.publicUrl,
-            targetUrl: active.targetUrl,
-            pid: active.pid,
-            startedAt: active.startedAt,
-            n8nAuthTunnel: n8nAuthTunnel
-              ? {
-                  running: true,
-                  publicUrl: n8nAuthTunnel.publicUrl,
-                  targetUrl: n8nAuthTunnel.targetUrl,
-                  pid: n8nAuthTunnel.pid,
-                  startedAt: n8nAuthTunnel.startedAt,
-                }
-              : { running: false },
-          }
-        : {
-            running: false,
-            n8nAuthTunnel: n8nAuthTunnel
-              ? {
-                  running: true,
-                  publicUrl: n8nAuthTunnel.publicUrl,
-                  targetUrl: n8nAuthTunnel.targetUrl,
-                  pid: n8nAuthTunnel.pid,
-                  startedAt: n8nAuthTunnel.startedAt,
-                }
-              : { running: false },
-          };
-      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-      return;
-    }
-
-    if (args.command === 'n8n-tunnel-url') {
-      const active = getActiveTunnelState();
-      if (!active) {
-        process.stdout.write('No tunnel is currently active. Run `yagr n8n tunnel start` first.\n');
-        return;
-      }
-
-      process.stdout.write(`${active.publicUrl}\n`);
-      return;
-    }
-
-  }
-
-  if (args.command === 'stop') {
-    const { isGatewayRunning, clearGatewayPid, releaseLock } = await import('./config/gateway-daemon.js');
-    const { stopLocalN8nAuthBridge } = await import('./gateway/local-open-bridge.js');
-    const running = isGatewayRunning();
-    if (!running.running || !running.pid) {
-      releaseLock();
-      await stopAllTunnels();
-      await stopLocalN8nAuthBridge();
-      process.stdout.write('No gateway is currently running.\n');
-      return;
-    }
-
-    await killProcessTree(running.pid);
-    await new Promise<void>((resolve) => setTimeout(resolve, 500));
-    clearGatewayPid();
-    releaseLock();
-    await stopAllTunnels();
-    await stopLocalN8nAuthBridge();
-    process.stdout.write(`Gateway stopped (PID ${running.pid}).\n`);
-    return;
-  }
-
-  if (args.command === 'restart') {
-    const { isGatewayRunning, clearGatewayPid, releaseLock } = await import('./config/gateway-daemon.js');
-    const { stopLocalN8nAuthBridge } = await import('./gateway/local-open-bridge.js');
-    const running = isGatewayRunning();
-    if (running.running && running.pid) {
-      process.stdout.write(`Stopping gateway (PID ${running.pid})...\n`);
-      await killProcessTree(running.pid);
-      await new Promise<void>((resolve) => setTimeout(resolve, 500));
-      clearGatewayPid();
-    }
-    await stopAllTunnels();
-    await stopLocalN8nAuthBridge();
-    await runGatewayOrFallback(args, configService);
-    return;
-  }
-
-  if (args.command === 'gateway-start') {
-    await runGatewaySupervisorProcess(args, configService);
-    return;
-  }
-
-  if (args.command === 'gateway-worker') {
-    await runGatewayWorker(args, configService);
-    return;
-  }
-
-  if (args.command === 'start') {
-    const status = getYagrSetupStatus(configService);
-    if (!status.ready) {
-      const completed = await runYagrSetup(configService);
-      if (!completed) {
-        return;
-      }
-    }
-
-    await runGatewayOrFallback(args, configService);
-    return;
-  }
-
-  if (args.command === 'gateway') {
-    await runGatewayOrFallback(args, configService);
-    return;
-  }
-
-  if (args.command === 'tui') {
-    await runTui(args);
-    return;
-  }
-
-  if (args.command === 'webui') {
-    if (!await ensureGatewayRunning(configService)) {
-      return;
-    }
-    await runWebUi(args, configService);
-    return;
-  }
-
-  if (args.command === 'telegram-start') {
-    if (!await ensureGatewayRunning(configService)) {
-      return;
-    }
-    await runTelegramGateway({
+async function runStart(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  if (args.startTarget === 'webui') {
+    await runGatewaySurfaces(['webui'], {
       provider: args.provider,
       model: args.model,
       maxSteps: args.maxSteps,
     }, configService);
     return;
   }
-
-  await ensureFacadeTunnelReachability('cli').catch(() => {});
-
-  const handle = await createYagrDeepAgent();
-  const { runCliGateway } = await import('./gateway/cli.js');
-
-  await runCliGateway(handle, {
-    prompt: args.prompt,
-    interactive: args.interactive,
+  await runCliGateway(await createYagrDeepAgent(configService, undefined, undefined, {
     provider: args.provider,
     model: args.model,
     maxSteps: args.maxSteps,
-    display: {
-      showThinking: args.showThinking,
-      showExecution: args.showExecution,
-    },
-  });
+  }), { interactive: true });
+}
+
+async function runReset(scope: YagrResetScope, dryRun: boolean): Promise<void> {
+  const result = await resetYagrLocalState(scope, { dryRun });
+  process.stdout.write(`${dryRun ? 'Would remove' : 'Removed'}:\n${result.removedPaths.map((p) => `- ${p}`).join('\n')}\n`);
+}
+
+async function runProxyCommand(args: ParsedArgs): Promise<void> {
+  const provider = args.prompt ? parseProvider(args.prompt.split(/\s+/)[0]) : args.provider;
+  if (args.command === 'proxy-status') {
+    const statuses = provider ? [getProxyRuntimeStatus(provider)] : listProxyRuntimeStatuses();
+    process.stdout.write(`${JSON.stringify(statuses, null, 2)}\n`);
+    return;
+  }
+  if (!provider) {
+    throw new Error('Provider is required.');
+  }
+  if (args.command === 'proxy-start') {
+    const runtime = await startProviderProxy(provider);
+    process.stdout.write(`${JSON.stringify(runtime, null, 2)}\n`);
+    return;
+  }
+  if (args.command === 'proxy-stop') {
+    await stopProviderProxy(provider);
+    process.stdout.write(`Stopped ${provider} proxy.\n`);
+  }
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  const configService = new YagrConfigService();
+
+  switch (args.command) {
+    case 'help': printHelp(); return;
+    case 'version': printVersion(); return;
+    case 'paths': printPaths(); return;
+    case 'config-show': printConfig(configService); return;
+    case 'config-reset': await runReset('config+creds', false); return;
+    case 'reset': await runReset(args.resetScope ?? 'config+creds', args.dryRun); return;
+    case 'uninstall': await runReset('full', args.dryRun); return;
+    case 'setup': await runYagrSetup(configService); return;
+    case 'llm-setup': await runYagrLlmSetup(configService); return;
+    case 'start': case 'restart': await runStart(args, configService); return;
+    case 'tui': await runStart({ ...args, startTarget: 'tui' }, configService); return;
+    case 'webui': await runGatewaySurfaces(['webui'], args, configService); return;
+    case 'gateway': case 'gateway-start': await runGatewaySupervisor(args, configService); return;
+    case 'gateway-worker': await runGatewaySupervisor(args, configService); return;
+    case 'gateway-status': process.stdout.write(`${getGatewayRunningBanner(configService)}\n`); return;
+    case 'telegram-setup': await setupTelegramGateway(configService); return;
+    case 'telegram-start': await runTelegramGateway(args, configService); return;
+    case 'telegram-status': process.stdout.write(`${JSON.stringify(getTelegramGatewayStatus(configService), null, 2)}\n`); return;
+    case 'telegram-onboarding': showTelegramOnboarding(configService); return;
+    case 'telegram-reset': resetTelegramGateway(configService); return;
+    case 'proxy-start': case 'proxy-status': case 'proxy-stop': await runProxyCommand(args); return;
+    case 'stop': return;
+    default: await runPrompt(args, configService); return;
+  }
 }
 
 main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`Yagr CLI error: ${message}\n`);
-  process.exit(1);
+  process.stderr.write(`Error: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
 });

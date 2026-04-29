@@ -37,7 +37,7 @@ test('runtime path anchor points to the yagr home directory (not process.cwd)', 
   const anchor = getRuntimePathAnchorPrompt();
   assert.match(anchor, /Backend working directory:/);
   // The anchor must reference the yagr home (e.g. ~/.yagr), not the process
-  // launch directory, so the agent navigates to the right n8n-workspace.
+  // launch directory, so the agent navigates from the stable Yagr home root.
   const { getYagrHomeDir } = await import('../dist/config/yagr-home.js');
   assert.ok(anchor.includes(getYagrHomeDir()), 'anchor should point to the yagr home directory');
 });

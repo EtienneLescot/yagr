@@ -1,7 +1,7 @@
 import type { YagrLanguageModelConfig } from './llm/create-langchain-model.js';
 import type { YagrModelProvider } from './llm/provider-registry.js';
 
-export type EngineName = 'n8n' | 'yagr-engine';
+export type EngineName = 'local-coding';
 
 export interface NodeSummary {
   name: string;
@@ -26,15 +26,6 @@ export interface CredentialRequirement {
   required: boolean;
   status: 'missing' | 'linked' | 'unknown';
   helpUrl?: string;
-}
-
-export interface N8nEngineConfig {
-  host: string;
-  apiKey: string;
-  syncFolder: string;
-  projectId: string;
-  projectName: string;
-  instanceIdentifier?: string;
 }
 
 export type { YagrLanguageModelConfig, YagrModelProvider };

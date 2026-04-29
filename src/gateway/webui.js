@@ -3,11 +3,9 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDisplayProjectName, } from 'n8nac';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
 import { SessionService, deriveSessionTitle } from '@yagr/session-service';
 import { SlashCommandService } from '@yagr/conversation-service';
-import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { YagrConfigService } from '../config/yagr-config-service.js';
 import { resolveTelegramBotIdentity } from './telegram.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
@@ -15,7 +13,6 @@ import { providerRequiresApiKey, YAGR_SELECTABLE_MODEL_PROVIDERS, } from '../llm
 import { getSnapshotContextWindow } from '../llm/provider-metadata.js';
 import { createYagrDeepAgent } from '../agent-factory.js';
 import { getWebUiGatewayStatus } from './webui-config.js';
-import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
 import { createRunAccumulator, processStreamEvent, extractLastAiMessage, } from './langgraph-events.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -74,7 +71,7 @@ class WebUiGateway {
         this.options = options;
         this.configService = configService;
         this.status = status;
-        this.setupService = new YagrSetupApplicationService(this.configService, new YagrN8nConfigService(), {
+        this.setupService = new YagrSetupApplicationService(this.configService, {
             resolveTelegramIdentity: resolveTelegramBotIdentity,
         });
     }
@@ -82,7 +79,6 @@ class WebUiGateway {
         if (this.server) {
             return;
         }
-        await ensureFacadeTunnelReachability('webui', this.configService);
         this.server = createServer(async (request, response) => {
             try {
                 await this.handleRequest(request, response);
@@ -148,37 +144,6 @@ class WebUiGateway {
         }
         if (method === 'GET' && url.pathname === '/api/config') {
             this.sendJson(response, 200, await this.buildSnapshot());
-            return;
-        }
-        if (method === 'POST' && url.pathname === '/api/n8n/projects') {
-            const body = await this.readJson(request);
-            const projects = await this.setupService.fetchN8nProjects(String(body.host ?? ''), body.apiKey ? String(body.apiKey) : undefined);
-            this.sendJson(response, 200, {
-                projects: projects.map((project) => ({ id: project.id, name: getDisplayProjectName(project) })),
-                selectedProjectId: this.setupService.getSelectedN8nProjectId(),
-            });
-            return;
-        }
-        if (method === 'POST' && url.pathname === '/api/config/n8n') {
-            const body = await this.readJson(request);
-            const instanceProfile = body.instanceProfile === 'yagr-managed-docker'
-                || body.instanceProfile === 'yagr-managed-direct'
-                || body.instanceProfile === 'custom-local-docker'
-                || body.instanceProfile === 'custom-local-direct'
-                || body.instanceProfile === 'custom-cloud'
-                ? body.instanceProfile
-                : undefined;
-            const warning = await this.saveN8nConfig({
-                host: String(body.host ?? ''),
-                apiKey: body.apiKey ? String(body.apiKey) : undefined,
-                projectId: String(body.projectId ?? ''),
-                syncFolder: String(body.syncFolder ?? 'workspace'),
-                instanceProfile,
-            });
-            this.sendJson(response, 200, {
-                warning,
-                snapshot: await this.buildSnapshot(),
-            });
             return;
         }
         if (method === 'POST' && url.pathname === '/api/llm/models') {
@@ -484,13 +449,6 @@ class WebUiGateway {
             webUiStatus,
             selectableProviders: VALID_PROVIDERS,
         });
-    }
-    async saveN8nConfig(input) {
-        const warning = await this.setupService.saveN8nConfig(input);
-        // Invalidate the cached agent handle so the next request picks up
-        // a fresh model built from the new config.
-        this.agentHandlePromise = undefined;
-        return warning;
     }
     assertProvider(value) {
         if (!VALID_PROVIDERS.includes(value)) {

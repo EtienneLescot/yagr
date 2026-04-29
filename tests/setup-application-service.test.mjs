@@ -66,171 +66,14 @@ function createYagrConfigStore(initialConfig = {}) {
       apiKeys.clear();
     },
     getDebugCounters() {
-      return {
-        clearedLocalConfig,
-        clearedApiKeys,
-      };
+      return { clearedLocalConfig, clearedApiKeys };
     },
   };
 }
-
-function createN8nConfigStore(initialConfig = {}) {
-  let localConfig = { ...initialConfig };
-  const apiKeys = new Map();
-
-  return {
-    getLocalConfig() {
-      return { ...localConfig };
-    },
-    getApiKey(host) {
-      return apiKeys.get(host);
-    },
-    saveApiKey(host, apiKey) {
-      apiKeys.set(host, apiKey);
-    },
-    saveBootstrapState(host, syncFolder = 'workspace', instanceProfile) {
-      localConfig = {
-        host,
-        syncFolder,
-        instanceProfile,
-      };
-    },
-    async getOrCreateInstanceIdentifier() {
-      return 'instance_test';
-    },
-    saveLocalConfig(config) {
-      localConfig = { ...localConfig, ...config };
-    },
-  };
-}
-
-test('saveN8nConfig persists host and project metadata', async () => {
-  const yagrConfigStore = createYagrConfigStore();
-  const n8nConfigStore = createN8nConfigStore({ customNodesPath: '/tmp/custom-nodes' });
-
-  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
-    createN8nClient: () => ({
-      async testConnection() { return true; },
-      async getProjects() {
-        return [{ id: 'proj_1', name: 'Primary Project' }];
-      },
-    }),
-  });
-
-  const warning = await service.saveN8nConfig({
-    host: 'http://localhost:5678',
-    apiKey: 'n8n-key',
-    projectId: 'proj_1',
-    syncFolder: 'workspace',
-  });
-
-  assert.equal(warning, undefined);
-  assert.equal(n8nConfigStore.getApiKey('http://localhost:5678'), 'n8n-key');
-  assert.equal(n8nConfigStore.getLocalConfig().projectId, 'proj_1');
-  assert.equal(n8nConfigStore.getLocalConfig().instanceIdentifier, 'instance_test');
-});
-
-test('saveN8nConfig persists instanceProfile without workspace refresh side effects', async () => {
-  const yagrConfigStore = createYagrConfigStore();
-  const n8nConfigStore = createN8nConfigStore({ customNodesPath: '/tmp/custom-nodes' });
-
-  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
-    createN8nClient: () => ({
-      async testConnection() { return true; },
-      async getProjects() {
-        return [{ id: 'proj_1', name: 'Primary Project' }];
-      },
-    }),
-  });
-
-  await service.saveN8nConfig({
-    host: 'http://localhost:5678',
-    apiKey: 'n8n-key',
-    projectId: 'proj_1',
-    syncFolder: 'workspace',
-    instanceProfile: 'yagr-managed-docker',
-  });
-
-  const saved = n8nConfigStore.getLocalConfig();
-  assert.equal(saved.instanceProfile, 'yagr-managed-docker');
-  assert.equal(saved.projectId, 'proj_1');
-  assert.equal(saved.instanceIdentifier, 'instance_test');
-});
-
-test('completeManagedN8nConnection reuses the persisted project when it still exists', async () => {
-  const yagrConfigStore = createYagrConfigStore();
-  const n8nConfigStore = createN8nConfigStore({
-    host: 'http://localhost:5678',
-    syncFolder: 'workspace',
-    projectId: 'proj_2',
-    projectName: 'Existing Project',
-    instanceProfile: 'yagr-managed-docker',
-  });
-
-  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
-    createN8nClient: () => ({
-      async testConnection() { return true; },
-      async getProjects() {
-        return [
-          { id: 'proj_1', name: 'First Project' },
-          { id: 'proj_2', name: 'Existing Project' },
-        ];
-      },
-    }),
-    async refreshAiContext() {},
-  });
-
-  const result = await service.completeManagedN8nConnection({
-    host: 'http://localhost:5678',
-    apiKey: 'n8n-key',
-    syncFolder: 'workspace',
-    instanceProfile: 'yagr-managed-docker',
-  });
-
-  assert.equal(result.project.id, 'proj_2');
-  assert.equal(n8nConfigStore.getLocalConfig().projectId, 'proj_2');
-  assert.equal(n8nConfigStore.getLocalConfig().projectName, 'Existing Project');
-});
-
-test('completeManagedN8nConnection falls back to the first available project when the persisted one is missing', async () => {
-  const yagrConfigStore = createYagrConfigStore();
-  const n8nConfigStore = createN8nConfigStore({
-    host: 'http://localhost:5678',
-    syncFolder: 'workspace',
-    projectId: 'missing',
-    projectName: 'Missing Project',
-    instanceProfile: 'yagr-managed-docker',
-  });
-
-  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
-    createN8nClient: () => ({
-      async testConnection() { return true; },
-      async getProjects() {
-        return [
-          { id: 'proj_1', name: 'First Project' },
-          { id: 'proj_2', name: 'Second Project' },
-        ];
-      },
-    }),
-    async refreshAiContext() {},
-  });
-
-  const result = await service.completeManagedN8nConnection({
-    host: 'http://localhost:5678',
-    apiKey: 'n8n-key',
-    syncFolder: 'workspace',
-    instanceProfile: 'yagr-managed-docker',
-  });
-
-  assert.equal(result.project.id, 'proj_1');
-  assert.equal(n8nConfigStore.getLocalConfig().projectId, 'proj_1');
-  assert.equal(n8nConfigStore.getLocalConfig().projectName, 'First Project');
-});
 
 test('saveLlmConfig writes provider model baseUrl and api key through the shared service', () => {
   const yagrConfigStore = createYagrConfigStore();
-  const n8nConfigStore = createN8nConfigStore();
-  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore);
+  const service = new YagrSetupApplicationService(yagrConfigStore);
 
   service.saveLlmConfig({
     provider: 'openrouter',
@@ -247,11 +90,8 @@ test('saveLlmConfig writes provider model baseUrl and api key through the shared
 });
 
 test('configureTelegram and resetTelegram share the same configuration path', async () => {
-  const yagrConfigStore = createYagrConfigStore({
-    gateway: { enabledSurfaces: [] },
-  });
-  const n8nConfigStore = createN8nConfigStore();
-  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
+  const yagrConfigStore = createYagrConfigStore({ gateway: { enabledSurfaces: [] } });
+  const service = new YagrSetupApplicationService(yagrConfigStore, {
     async resolveTelegramIdentity() {
       return { username: 'yagr_bot', firstName: 'Yagr' };
     },
@@ -287,15 +127,7 @@ test('buildWebUiSnapshot centralizes setup and config state for the Web UI', asy
   });
   yagrConfigStore.saveApiKey('openrouter', 'or-key');
 
-  const n8nConfigStore = createN8nConfigStore({
-    host: 'http://localhost:5678',
-    syncFolder: 'workspace',
-    projectId: 'proj_1',
-    projectName: 'Primary Project',
-  });
-  n8nConfigStore.saveApiKey('http://localhost:5678', 'n8n-key');
-
-  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore, {
+  const service = new YagrSetupApplicationService(yagrConfigStore, {
     async fetchAvailableModels() {
       return ['openai/gpt-5', 'openai/gpt-5-mini'];
     },
@@ -315,7 +147,6 @@ test('buildWebUiSnapshot centralizes setup and config state for the Web UI', asy
   assert.equal(snapshot.setupStatus.ready, true);
   assert.deepEqual(snapshot.gatewayStatus.enabledSurfaces, ['telegram', 'webui']);
   assert.equal(snapshot.yagr.provider, 'openrouter');
-  assert.equal(snapshot.n8n.projectId, 'proj_1');
   assert.deepEqual(snapshot.availableModels, ['openai/gpt-5', 'openai/gpt-5-mini']);
 });
 
@@ -327,8 +158,7 @@ test('telegram chat state mutations are centralized in the setup application ser
       linkedChats: [],
     },
   });
-  const n8nConfigStore = createN8nConfigStore();
-  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore);
+  const service = new YagrSetupApplicationService(yagrConfigStore);
 
   service.linkTelegramChat({
     chatId: '42',
@@ -348,13 +178,9 @@ test('telegram chat state mutations are centralized in the setup application ser
 });
 
 test('resetYagrConfig delegates config reset to the shared application service', () => {
-  const yagrConfigStore = createYagrConfigStore({
-    provider: 'openai',
-    model: 'gpt-4o',
-  });
+  const yagrConfigStore = createYagrConfigStore({ provider: 'openai', model: 'gpt-4o' });
   yagrConfigStore.saveApiKey('openai', 'sk-test');
-  const n8nConfigStore = createN8nConfigStore();
-  const service = new YagrSetupApplicationService(yagrConfigStore, n8nConfigStore);
+  const service = new YagrSetupApplicationService(yagrConfigStore);
 
   service.resetYagrConfig();
 
