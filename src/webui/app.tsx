@@ -4,7 +4,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWebUiStore, isNewTabOpen, type ThreadEntry, type ChatProgressEntry, type ConfigSnapshot, type SessionHistoryEntry } from './store.js';
 import type { SerializedChatMessage } from '../session/session-types.js';
-import yagrLogoUrl from '../../docs/static/img/yagr-logo.png';
 
 type ApiError = { error?: string };
 type ThemeMode = 'system' | 'light' | 'dark';
@@ -353,7 +352,7 @@ function SessionSidebar({
   return (
     <aside className="sidebar sidebarHome">
       <section className="panel brandCard">
-        <img className="brandMark" src={yagrLogoUrl} alt="Yagr logo" />
+        <div className="brandMark" aria-hidden="true">Y</div>
         <div className="brandCopy">
           <p className="eyebrow">Yagr Web UI</p>
           <h1 className="brandTitle">
@@ -527,7 +526,7 @@ function HomePage({
                   }
                 }}
                 rows={4}
-                placeholder="Ask Yagr to inspect, create, validate, or evolve an automation..."
+                placeholder="Ask Yagr to inspect, edit, validate, or explain code..."
               />
               {contextFillPercent != null && (
                 <div className="contextStatus">
@@ -565,9 +564,6 @@ function HomePage({
               <div className="composerBottom">
                 <span className="muted">{snapshot?.yagr.provider ?? '—'}</span>
                 <strong>{snapshot?.yagr.model ?? 'Not configured'}</strong>
-                <span className="footerSep" aria-hidden="true">·</span>
-                <span className="muted">n8n project:</span>
-                <strong>{snapshot?.n8n.projectName ?? 'No project'}</strong>
               </div>
             </form>
           )}

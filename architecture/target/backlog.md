@@ -7,29 +7,9 @@ Tout ce qui est deja implemente doit etre documente dans `../current/`, pas ici.
 
 ## Restant a faire
 
-La direction cible de reference est documentee dans `yagr-engine-architecture.md`.
-
-### Yagr Engine convergence
-
-- Renommer et recadrer `holon` en `Yagr Engine`
-- Formaliser un IR canonique distinct des backends cibles
-- Integrer l'UI graphe AI-native de `Yagr Engine` dans les surfaces `Yagr`
-- Faire de `Hatchet` le runtime du chemin `Yagr Engine`
-- Formaliser le choix backend amont `n8n` vs `Yagr Engine + Hatchet`
-- Extraire progressivement le couplage `n8n` encore present dans le prompt, le tooling et les flux de run
-- Unifier les edits chat et UI autour du meme pipeline de patch/validation `Yagr Engine`
-
-### n8n-manager extraction
-
-- Brancher le lifecycle Docker/diagnostics existant de Yagr vers `@n8n-as-code/n8n-manager-core`
-
-### Session management unifie des facades (implémenté)
-
-- `@yagr/conversation-core` porte le registre canonique des commandes slash
-- `@yagr/conversation-service` porte leur execution metier
-- `@yagr/session-service` porte la gestion de sessions/checkpoints par scope
-- `/resume` → session de conversation; `/restore` → checkpoint
-- TUI, Telegram et WebUI consomment la couche commune extraite
+- Finaliser le renommage produit public de Yagr si le nom Jaager devient canonique.
+- Continuer a extraire les facades reutilisables vers les packages `@yagr/runtime` et `@yagr/surfaces` lorsque le root app garde trop de logique d'assemblage.
+- Stabiliser l'onboarding interactif autour du modele local coding-agent uniquement.
 
 ## Regle de vie
 

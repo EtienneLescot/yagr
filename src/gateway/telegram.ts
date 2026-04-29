@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import { Telegraf, type Context } from 'telegraf';
 import { YagrConfigService, type YagrConfigStoreLike, type YagrTelegramLinkedChat } from '../config/yagr-config-service.js';
-import { YagrN8nConfigService } from '../config/n8n-config-service.js';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-home.js';
 import { YagrSetupApplicationService } from '../setup/application-services.js';
 import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
@@ -16,7 +15,6 @@ import {
   escapeHtml,
 } from './format-message.js';
 import type { Gateway, GatewayRuntimeHandle } from './types.js';
-import { ensureFacadeTunnelReachability } from '../n8n-local/tunnel-reachability.js';
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 
@@ -146,7 +144,7 @@ export async function resolveTelegramBotIdentity(botToken: string): Promise<{ us
 
 export async function setupTelegramGateway(configService = new YagrConfigService()): Promise<void> {
   const currentToken = configService.getTelegramBotToken() ?? '';
-  const setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService(), {
+  const setupService = new YagrSetupApplicationService(configService, {
     resolveTelegramIdentity: resolveTelegramBotIdentity,
     createOnboardingToken,
   });
@@ -187,7 +185,7 @@ export async function setupTelegramGateway(configService = new YagrConfigService
 }
 
 export function showTelegramOnboarding(configService = new YagrConfigService()): void {
-  const status = new YagrSetupApplicationService(configService, new YagrN8nConfigService()).getTelegramStatus();
+  const status = new YagrSetupApplicationService(configService).getTelegramStatus();
 
   if (!status.configured || !status.botUsername || !status.deepLink) {
     throw new Error('Telegram is not configured. Run `yagr telegram setup` first.');
@@ -208,18 +206,18 @@ export function showTelegramOnboarding(configService = new YagrConfigService()):
 }
 
 export function getTelegramGatewayStatus(configService: YagrConfigStoreLike = new YagrConfigService()): TelegramGatewayStatus {
-  return new YagrSetupApplicationService(configService, new YagrN8nConfigService()).getTelegramStatus();
+  return new YagrSetupApplicationService(configService).getTelegramStatus();
 }
 
 export function resetTelegramGateway(configService = new YagrConfigService()): void {
-  new YagrSetupApplicationService(configService, new YagrN8nConfigService()).resetTelegram();
+  new YagrSetupApplicationService(configService).resetTelegram();
 }
 
 export function createTelegramGatewayRuntime(
   options: TelegramGatewayRuntimeOptions = {},
   configService = new YagrConfigService(),
 ): GatewayRuntimeHandle {
-  const setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
+  const setupService = new YagrSetupApplicationService(configService);
   const { status, botToken, onboardingToken } = setupService.getTelegramRuntimeConfig(options.botToken);
 
   if (!botToken || !status.botUsername || !onboardingToken) {
@@ -234,7 +232,7 @@ export function createTelegramGatewayRuntime(
       `Yagr Telegram gateway listening as @${status.botUsername}. ${formatLinkedChatCount(linkedCount)}.`,
       linkedCount === 0
         ? `No linked chats. Onboarding link: ${status.deepLink}`
-        : 'Telegram transport is ready. The current orchestrator connection will be resolved on first message.',
+        : 'Telegram transport is ready.',
     ],
     onboardingLink: status.deepLink && linkedCount === 0 ? status.deepLink : undefined,
   };
@@ -259,7 +257,7 @@ class TelegramGateway implements Gateway {
     private readonly onboardingToken: string,
   ) {
     this.bot = new Telegraf(botToken);
-    this.setupService = new YagrSetupApplicationService(configService, new YagrN8nConfigService());
+    this.setupService = new YagrSetupApplicationService(configService);
   }
 
   private buildDeepLink(): string {
@@ -268,10 +266,6 @@ class TelegramGateway implements Gateway {
   }
 
   async start(): Promise<void> {
-    await ensureFacadeTunnelReachability('telegram', this.configService).catch((error) => {
-      process.stderr.write(`Warning: Telegram tunnel reachability is unavailable: ${error instanceof Error ? error.message : String(error)}\n`);
-    });
-
     this.bot.start(async (ctx) => {
       const payload = typeof ctx.payload === 'string' ? ctx.payload.trim() : '';
       const chatId = String(ctx.chat.id);

@@ -20,18 +20,18 @@ test('getUserFacingToolStatus exposes only explicitly user-facing status events'
     getUserFacingToolStatus({
       type: 'status',
       toolName: 'requestRequiredAction',
-      message: 'Need attention: reconnect the Gmail credential in n8n.',
+      message: 'Need attention: reconnect the external credential.',
     }),
     {
       title: 'Needs attention',
-      detail: 'Need attention: reconnect the Gmail credential in n8n.',
+      detail: 'Need attention: reconnect the external credential.',
     },
   );
 
   assert.equal(
     getUserFacingToolStatus({
       type: 'status',
-      toolName: 'n8nac',
+      toolName: 'shellTool',
       message: 'Runtime cwd=. envHost=- resolvedHost=http://127.0.0.1:5678',
     }),
     undefined,

@@ -25,21 +25,12 @@ function writeMemorySourcesFile(memorySources, data) {
         // Best effort only.
     }
 }
-/**
- * Returns all active memory source paths in load order:
- *   1. registered contexts (e.g. project AGENTS.md files)
- * Only paths that exist on disk are returned.
- */
 export function getActiveMemorySourcePaths(memorySources) {
     const filePath = memorySources ?? path.join(getYagrHomeDir(), 'memory-sources.json');
     const data = readMemorySourcesFile(filePath);
     const candidates = (data.contexts ?? []).filter((p) => typeof p === 'string' && p.length > 0);
     return candidates.filter((p) => fs.existsSync(p));
 }
-/**
- * Register a workspace context file (e.g. n8n-workspace/AGENTS.md).
- * Idempotent: calling it twice with the same path is a no-op.
- */
 export function registerContextMemorySource(absolutePath, memorySources) {
     const filePath = memorySources ?? path.join(getYagrHomeDir(), 'memory-sources.json');
     const data = readMemorySourcesFile(filePath);
@@ -48,7 +39,6 @@ export function registerContextMemorySource(absolutePath, memorySources) {
         return;
     writeMemorySourcesFile(filePath, { ...data, contexts: [...contexts, absolutePath] });
 }
-// ---------------------------------------------------------------------------
 if (!process.env.YAGR_LAUNCH_CWD) {
     process.env.YAGR_LAUNCH_CWD = initialLaunchDir;
 }
@@ -74,12 +64,6 @@ export function resolveYagrHomeDir(env = process.env, platform = process.platfor
 export function getYagrHomeDir() {
     return resolveYagrHomeDir(process.env, process.platform, os.homedir(), getYagrLaunchDir());
 }
-export function getYagrN8nWorkspaceDir() {
-    return path.join(getYagrHomeDir(), 'n8n-workspace');
-}
-export function getYagrManagedN8nDir() {
-    return path.join(getYagrHomeDir(), 'n8n');
-}
 export function getYagrProxyRuntimeDir() {
     return path.join(getYagrHomeDir(), 'proxy-runtime');
 }
@@ -98,37 +82,25 @@ export function getYagrDeepAgentSessionsDir() {
 export function getYagrPaths() {
     const launchDir = getYagrLaunchDir();
     const homeDir = getYagrHomeDir();
-    const n8nWorkspaceDir = getYagrN8nWorkspaceDir();
-    const managedN8nDir = getYagrManagedN8nDir();
     const proxyRuntimeDir = getYagrProxyRuntimeDir();
     const accountAuthDir = getYagrAccountAuthDir();
     const deepAgentSessionsDir = getYagrDeepAgentSessionsDir();
     return {
         launchDir,
         homeDir,
-        n8nWorkspaceDir,
-        managedN8nDir,
         proxyRuntimeDir,
         accountAuthDir,
         deepAgentSessionsDir,
-        workspaceInstructionsPath: path.join(n8nWorkspaceDir, 'AGENTS.md'),
         memorySources: path.join(homeDir, 'memory-sources.json'),
         yagrConfigPath: path.join(homeDir, 'yagr-config.json'),
         yagrCredentialsPath: path.join(homeDir, 'credentials.json'),
         proxyRuntimeStatePath: path.join(proxyRuntimeDir, 'state.json'),
-        n8nRelayStatePath: path.join(proxyRuntimeDir, 'llm-relay.json'),
-        llmTunnelStatePath: path.join(proxyRuntimeDir, 'llm-tunnel.json'),
-        n8nAuthTunnelStatePath: path.join(proxyRuntimeDir, 'n8n-auth-tunnel.json'),
         localOpenBridgeStatePath: path.join(proxyRuntimeDir, 'local-open-bridge.json'),
-        n8nConfigPath: path.join(n8nWorkspaceDir, 'n8nac-config.json'),
-        n8nCredentialsPath: path.join(homeDir, 'n8n-credentials.json'),
     };
 }
 export function ensureYagrHomeDir() {
     const paths = getYagrPaths();
     fs.mkdirSync(paths.homeDir, { recursive: true });
-    fs.mkdirSync(paths.n8nWorkspaceDir, { recursive: true });
-    fs.mkdirSync(paths.managedN8nDir, { recursive: true });
     fs.mkdirSync(paths.proxyRuntimeDir, { recursive: true });
     fs.mkdirSync(paths.accountAuthDir, { recursive: true });
     fs.mkdirSync(paths.deepAgentSessionsDir, { recursive: true });

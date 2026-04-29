@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { N8nApiClient, getDisplayProjectName } from 'n8nac';
 import { normalizeGatewaySurfaces, } from '../config/yagr-config-service.js';
 import { getDefaultBaseUrlForProvider, providerNeedsBaseUrlInput, } from '../llm/provider-registry.js';
 import { prepareProviderRuntime } from '../llm/proxy-runtime.js';
@@ -7,11 +6,7 @@ import { fetchAvailableModels } from '../llm/provider-discovery.js';
 import { resolveModelProvider } from '../llm/create-langchain-model.js';
 import { beginGitHubCopilotAuth, completeGitHubCopilotAuth, ensureGitHubCopilotSession } from '../llm/copilot-account.js';
 import { beginCodexAuth, beginCodexDeviceAuth, completeCodexAuth, completeCodexDeviceAuth, ensureOpenAiAccountSession, getOpenAiAccountSession } from '../llm/openai-account.js';
-import { normalizeN8nUrlOrigin, resolveN8nInstanceProfile, } from '../n8n-local/instance-classification.js';
 import { getYagrSetupStatus } from './status.js';
-function defaultCreateN8nClient(credentials) {
-    return new N8nApiClient(credentials);
-}
 function defaultCreateOnboardingToken() {
     return randomBytes(18).toString('base64url');
 }
@@ -20,15 +15,11 @@ function buildTelegramDeepLink(botUsername, onboardingToken) {
 }
 export class YagrSetupApplicationService {
     yagrConfigService;
-    n8nConfigService;
-    createN8nClient;
     resolveTelegramIdentity;
     createOnboardingToken;
     fetchAvailableModelsRunner;
-    constructor(yagrConfigService, n8nConfigService, dependencies = {}) {
+    constructor(yagrConfigService, dependencies = {}) {
         this.yagrConfigService = yagrConfigService;
-        this.n8nConfigService = n8nConfigService;
-        this.createN8nClient = dependencies.createN8nClient ?? defaultCreateN8nClient;
         this.resolveTelegramIdentity = dependencies.resolveTelegramIdentity ?? (async () => {
             throw new Error('Telegram identity resolver is not configured.');
         });
@@ -97,10 +88,6 @@ export class YagrSetupApplicationService {
                     state: JSON.stringify({ method: 'device', ...challenge }),
                 };
             }
-            // Always start a fresh Codex OAuth flow when the user explicitly asks to sign in.
-            // Do NOT check for an existing session here — that check lives in hasAccountSession
-            // and determines whether to show the reuse screen. Once the user is on the auth
-            // screen they have chosen to (re)authenticate, so always proceed.
             const challenge = await beginCodexAuth();
             const callbackHint = challenge.callbackServerStarted
                 ? 'After signing in, Yagr captures the callback automatically.'
@@ -134,10 +121,6 @@ export class YagrSetupApplicationService {
             };
         }
         if (provider === 'copilot-proxy') {
-            // Always start a fresh device flow when explicitly reaching the auth screen.
-            // The hasAccountSession check (used earlier in the wizard) decides whether to
-            // show the reuse screen. Once the user is on the auth screen — either because
-            // no session exists or because they chose "Renew" — we always start fresh.
             const challenge = await beginGitHubCopilotAuth();
             return {
                 kind: 'input',
@@ -209,10 +192,7 @@ export class YagrSetupApplicationService {
         return this.fetchAvailableModelsRunner(input.provider, apiKey, baseUrl);
     }
     getSetupStatus(options = {}) {
-        return getYagrSetupStatus(this.yagrConfigService, this.n8nConfigService, options);
-    }
-    getSelectedN8nProjectId() {
-        return this.n8nConfigService.getLocalConfig().projectId;
+        return getYagrSetupStatus(this.yagrConfigService, options);
     }
     getTelegramStatus() {
         const localConfig = this.yagrConfigService.getLocalConfig();
@@ -239,7 +219,6 @@ export class YagrSetupApplicationService {
         };
     }
     async buildWebUiSnapshot(input) {
-        const n8nConfig = this.n8nConfigService.getLocalConfig();
         const setupStatus = this.getSetupStatus({ activeSurfaces: input.activeSurfaces });
         const yagrConfig = this.yagrConfigService.getLocalConfig();
         const telegramStatus = this.getTelegramStatus();
@@ -271,15 +250,6 @@ export class YagrSetupApplicationService {
                     provider,
                     apiKeyStored: Boolean(this.yagrConfigService.getApiKey(provider)),
                 })),
-            },
-            n8n: {
-                host: n8nConfig.host,
-                syncFolder: n8nConfig.syncFolder,
-                projectId: n8nConfig.projectId,
-                projectName: n8nConfig.projectName,
-                instanceProfile: n8nConfig.instanceProfile,
-                apiKeyStored: Boolean(n8nConfig.host && this.n8nConfigService.getApiKey(n8nConfig.host)),
-                projects: n8nConfig.projectId && n8nConfig.projectName ? [{ id: n8nConfig.projectId, name: n8nConfig.projectName }] : [],
             },
             availableModels,
         };
@@ -405,106 +375,6 @@ export class YagrSetupApplicationService {
             firstName: firstName ?? existing.firstName,
             lastSeenAt: new Date().toISOString(),
         });
-    }
-    async fetchN8nProjects(host, apiKeyOverride) {
-        const normalizedHost = host.trim();
-        if (!normalizedHost) {
-            throw new Error('n8n host is required.');
-        }
-        const apiKey = apiKeyOverride ?? this.n8nConfigService.getApiKey(normalizedHost);
-        if (!apiKey) {
-            throw new Error('No n8n API key available for that host.');
-        }
-        const client = this.createN8nClient({ host: normalizedHost, apiKey });
-        const connected = await client.testConnection();
-        if (!connected) {
-            throw new Error('Unable to connect to n8n with the provided URL and API key.');
-        }
-        return client.getProjects();
-    }
-    async completeManagedN8nConnection(input) {
-        const host = input.host.trim();
-        const apiKey = input.apiKey.trim();
-        if (!host) {
-            throw new Error('n8n host is required.');
-        }
-        if (!apiKey) {
-            throw new Error('An n8n API key is required.');
-        }
-        const projects = await this.fetchN8nProjects(host, apiKey);
-        const project = this.selectManagedConnectionProject(host, projects);
-        const warning = await this.persistConnectedN8nConfig({
-            host,
-            apiKey,
-            project,
-            syncFolder: input.syncFolder?.trim() || this.n8nConfigService.getLocalConfig().syncFolder || 'workspace',
-            instanceProfile: input.instanceProfile,
-        });
-        return { project, warning };
-    }
-    async saveN8nConfig(input) {
-        const host = input.host.trim();
-        const projectId = input.projectId.trim();
-        const syncFolder = input.syncFolder.trim() || 'workspace';
-        if (!host) {
-            throw new Error('n8n host is required.');
-        }
-        if (!projectId) {
-            throw new Error('Select an n8n project first.');
-        }
-        const apiKey = input.apiKey?.trim() || this.n8nConfigService.getApiKey(host);
-        if (!apiKey) {
-            throw new Error('An n8n API key is required.');
-        }
-        const projects = await this.fetchN8nProjects(host, apiKey);
-        const selectedProject = projects.find((project) => project.id === projectId);
-        if (!selectedProject) {
-            throw new Error('The selected n8n project could not be found. Reload projects and try again.');
-        }
-        return this.persistConnectedN8nConfig({
-            host,
-            apiKey,
-            project: selectedProject,
-            syncFolder,
-            instanceProfile: input.instanceProfile,
-        });
-    }
-    selectManagedConnectionProject(host, projects) {
-        if (projects.length === 0) {
-            throw new Error('No n8n projects found. Create one in n8n first, then rerun setup.');
-        }
-        const currentConfig = this.n8nConfigService.getLocalConfig();
-        const currentHostOrigin = normalizeN8nUrlOrigin(currentConfig.host);
-        const targetHostOrigin = normalizeN8nUrlOrigin(host);
-        const persistedProject = currentConfig.projectId && currentHostOrigin && targetHostOrigin && currentHostOrigin === targetHostOrigin
-            ? projects.find((project) => project.id === currentConfig.projectId)
-            : undefined;
-        return persistedProject ?? projects[0];
-    }
-    async persistConnectedN8nConfig(input) {
-        const host = input.host.trim();
-        const syncFolder = input.syncFolder.trim() || 'workspace';
-        const selectedProject = input.project;
-        this.n8nConfigService.saveApiKey(host, input.apiKey);
-        const instanceProfile = input.instanceProfile ?? resolveN8nInstanceProfile({
-            host,
-        });
-        this.n8nConfigService.saveBootstrapState(host, syncFolder, instanceProfile);
-        const instanceIdentifier = await this.n8nConfigService.getOrCreateInstanceIdentifier(host);
-        const currentConfig = this.n8nConfigService.getLocalConfig();
-        const projectName = getDisplayProjectName(selectedProject);
-        const persistedConfig = {
-            host,
-            syncFolder,
-            projectId: selectedProject.id,
-            projectName,
-            instanceIdentifier,
-            customNodesPath: currentConfig.customNodesPath,
-            instanceProfile,
-        };
-        this.n8nConfigService.saveLocalConfig(persistedConfig);
-        this.n8nConfigService.syncN8nacCliApiKey?.();
-        return undefined;
     }
 }
 //# sourceMappingURL=application-services.js.map

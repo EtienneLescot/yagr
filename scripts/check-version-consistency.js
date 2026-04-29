@@ -102,7 +102,7 @@ function main() {
   if (hasErrors) {
     log('red', '❌ Outdated internal dependencies detected!');
     log('yellow', '\n💡 Solution: run the release preparation flow to re-pin workspace dependencies.');
-    log('yellow', '   The custom release automation updates internal dependency versions automatically.');
+    log('yellow', '   The custom release script updates internal dependency versions automatically.');
     process.exit(1);
   } else {
     log('green', `✅ All internal dependencies are up-to-date! (${checkedDeps.length} dependencies checked)`);

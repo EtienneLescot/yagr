@@ -1,27 +1,19 @@
 # Agent Architecture — deepagentsjs
 
-This document describes the current agent architecture after cleaning the Yagr wrapper and reintroducing an explicit, minimal, and separated overlay.
+This document describes the current coding-agent architecture.
 
 ## Overview
 
 The Yagr agent is built on `createDeepAgent(...)` from deepagentsjs.
 
-The current target model is:
+The current model is:
 
-1. a deepagentsjs `pristine` core, minimal and readable
-2. a `coding-oriented` overlay, agnostic, added only via middleware
+1. a pristine deepagentsjs core
+2. a coding-oriented overlay, agnostic, added only via middleware
 3. optional workspace instructions loaded by memory sources
-4. no in-repository manager tools or manager instructions injected into the agent
+4. no built-in domain-specific backend tools or instructions
 
 ## High-Level Separation
-
-The reference architecture model is as follows:
-
-1. `src/deepagents/pristine.ts` carries the cleanest possible deepagentsjs base.
-2. `src/deepagents/coding-orientation.ts` carries the coding-oriented overlay, agnostic and explicit.
-3. `src/agent-factory.ts` composes these two layers without mixing them.
-4. `n8n-workspace/AGENTS.md` can be registered as an optional context source.
-5. The main deepagents backend remains `LocalShellBackend` in host-native mode: real cwd `YAGR_HOME`, relative paths from home, absolute paths on the host.
 
 ```mermaid
 flowchart TD
@@ -34,7 +26,7 @@ flowchart TD
 
     subgraph InstructionLayer["Instructions"]
         HOME[YAGR_HOME/AGENTS.md]
-        WORK[n8n-workspace/AGENTS.md]
+        CTX[Registered context files]
     end
 
     subgraph RuntimeLayer["Runtime"]
@@ -44,7 +36,7 @@ flowchart TD
     end
 
     HOME --> PR
-    WORK --> PR
+    CTX --> PR
     PR --> AF
     CO --> AF
     AF --> DA
@@ -53,66 +45,13 @@ flowchart TD
     AF --> MODEL
 ```
 
-## Entry Point: `createYagrDeepAgent`
+## Entry Point
 
-```typescript
-export async function createYagrDeepAgent(
-  engine: EngineRuntimePort,
-  configStore?: YagrConfigStoreLike,
-  modelConfig?: { provider?: string; model?: string; apiKey?: string; baseUrl?: string },
-): Promise<YagrDeepAgentHandle>
-```
+`createYagrDeepAgent(...)` instantiates the LangChain model, checkpointer, pristine deepagents config, coding middleware, and compiled deep-agent graph.
 
-Responsibilities:
+## Invariants
 
-1. instantiate a LangChain `BaseChatModel` via `createLangChainModel(...)`
-2. build the `MemorySaver` checkpointer
-3. retrieve the pristine configuration via `buildPristineDeepAgentConfig(...)`
-4. add the middleware overlay: `middleware: getCodingOrientedDeepAgentMiddleware()`
-5. call `createDeepAgent(...)`
-
-## Pristine Layer
-
-The pristine layer only carries:
-
-- the host-native backend
-- AGENTS memory sources
-- the minimal assembly configuration of the deep-agent
-
-This layer must not contain:
-
-- manager logic
-- n8n-specific rules
-- injected Yagr tools
-- monolithic Yagr runtime prompt
-
-## Coding-oriented Overlay
-
-The coding-oriented overlay remains:
-
-- agnostic
-- minimal
-- documented
-- implemented only via middleware
-
-Its function is to orient Deepagents toward good coding agent behavior without reintroducing a specific business layer.
-
-## Backend Contract
-
-The current main backend is `LocalShellBackend` from deepagents in local host-native mode.
-
-Implications:
-
-- the shell cwd and the base of relative paths both point to `YAGR_HOME`
-- file tools and `execute` share the same path semantics
-- `virtualMode` is not used in this model
-- if Yagr someday needs a real virtual root common to file tools and `execute`, it will need to use a real deepagents sandbox backend, not `LocalShellBackend`
-
-## Architecture Invariants
-
-- `yagr-agent` carries no n8n-specific rules hardcoded in its pristine core or in its coding-oriented overlay
-- the home `AGENTS.md` is the first instruction layer loaded by the deep-agent
-- there is no in-repo manager instruction template or manager tooling layer
-- the top-level n8n business behavior is carried by the `AGENTS.md` generated in `n8n-workspace`
-- the Yagr home remains the operational root; `n8n-workspace` is a sub-workspace
-- the coding-oriented overlay must remain agnostic, documented, and physically isolated from the pristine layer
+- The pristine layer only carries backend, memory sources, and minimal deep-agent assembly.
+- The coding-oriented overlay stays agnostic and only contains generic coding-agent guidance.
+- Domain-specific behavior must come from project files, user prompts, or explicitly installed external tools, not from built-in Yagr code.
+- The Yagr home remains the operational root for the local coding agent.

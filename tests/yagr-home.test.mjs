@@ -9,7 +9,6 @@ import {
   getActiveMemorySourcePaths,
   getYagrHomeDir,
   getYagrLaunchDir,
-  getYagrN8nWorkspaceDir,
   getYagrPaths,
   registerContextMemorySource,
   resolveYagrHomeDir,
@@ -68,14 +67,9 @@ test('getYagrPaths exposes the internal file layout under YAGR_HOME', () => {
   try {
     const paths = getYagrPaths();
     assert.equal(paths.homeDir, path.resolve(getYagrLaunchDir(), '.yagr-test-workspace'));
-    assert.equal(paths.n8nWorkspaceDir, path.join(paths.homeDir, 'n8n-workspace'));
-    assert.equal(paths.managedN8nDir, path.join(paths.homeDir, 'n8n'));
     assert.equal(paths.memorySources, path.join(paths.homeDir, 'memory-sources.json'));
-    assert.equal(paths.workspaceInstructionsPath, path.join(paths.n8nWorkspaceDir, 'AGENTS.md'));
     assert.equal(paths.yagrConfigPath, path.join(paths.homeDir, 'yagr-config.json'));
     assert.equal(paths.yagrCredentialsPath, path.join(paths.homeDir, 'credentials.json'));
-    assert.equal(paths.n8nConfigPath, path.join(paths.n8nWorkspaceDir, 'n8nac-config.json'));
-    assert.equal(paths.n8nCredentialsPath, path.join(paths.homeDir, 'n8n-credentials.json'));
   } finally {
     if (previousYagrHome !== undefined) {
       process.env.YAGR_HOME = previousYagrHome;
@@ -95,8 +89,6 @@ test('ensureYagrHomeDir creates all required directories', () => {
     const paths = getYagrPaths();
 
     assert.ok(fs.existsSync(paths.homeDir), 'homeDir created');
-    assert.ok(fs.existsSync(paths.n8nWorkspaceDir), 'n8nWorkspaceDir created');
-    assert.ok(fs.existsSync(paths.managedN8nDir), 'managedN8nDir created');
     assert.ok(fs.existsSync(paths.proxyRuntimeDir), 'proxyRuntimeDir created');
     assert.ok(fs.existsSync(paths.accountAuthDir), 'accountAuthDir created');
 
@@ -114,7 +106,7 @@ test('ensureYagrHomeDir creates all required directories', () => {
 test('registerContextMemorySource persists correctly', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-mem-'));
   const memFile = path.join(tempHome, 'memory-sources.json');
-  const ctxPath = path.join(tempHome, 'n8n-workspace', 'AGENTS.md');
+  const ctxPath = path.join(tempHome, 'project', 'AGENTS.md');
 
   try {
     registerContextMemorySource(ctxPath, memFile);
@@ -146,21 +138,5 @@ test('getActiveMemorySourcePaths returns only paths that exist on disk', () => {
     assert.ok(!active.includes(missingCtx), 'missing context path excluded');
   } finally {
     fs.rmSync(tempHome, { recursive: true, force: true });
-  }
-});
-
-test('explicit n8n workspace helper resolves under YAGR_HOME', () => {
-  const previousYagrHome = process.env.YAGR_HOME;
-  process.env.YAGR_HOME = '.yagr-test-workspace';
-
-  try {
-    const homeDir = path.resolve(getYagrLaunchDir(), '.yagr-test-workspace');
-    assert.equal(getYagrN8nWorkspaceDir(), path.join(homeDir, 'n8n-workspace'));
-  } finally {
-    if (previousYagrHome !== undefined) {
-      process.env.YAGR_HOME = previousYagrHome;
-    } else {
-      delete process.env.YAGR_HOME;
-    }
   }
 });

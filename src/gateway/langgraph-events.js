@@ -288,7 +288,7 @@ function mapToolStartToUpdate(toolName, input) {
                 dedupeKey: `tool:httpRequest:${input?.url ?? ''}`,
             };
         default:
-            // For generic tool calls (n8nac, etc.) show a terse "Tool" banner.
+            // For generic tool calls show a terse "Tool" banner.
             if (toolName && toolName !== 'ls' && toolName !== 'glob') {
                 return {
                     tone: 'info',

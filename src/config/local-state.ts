@@ -1,7 +1,5 @@
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
-import path from 'node:path';
-import { YagrN8nConfigService } from './n8n-config-service.js';
 import { getYagrPaths, type YagrPaths } from './yagr-home.js';
 
 export type YagrResetScope = 'config' | 'config+creds' | 'full';
@@ -20,43 +18,10 @@ function uniquePaths(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-function isPathWithin(child: string, parent: string): boolean {
-  const relative = path.relative(parent, child);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-function collapsePaths(values: string[]): string[] {
-  const normalized = uniquePaths(values).sort((left, right) => left.length - right.length);
-  return normalized.filter((candidate, index) => {
-    return !normalized.slice(0, index).some((parent) => parent !== candidate && isPathWithin(candidate, parent));
-  });
-}
-
-function resolveWorkspacePaths(paths: YagrPaths): { workspacePaths: string[]; preservedWorkspacePaths: string[] } {
-  const n8nConfig = new YagrN8nConfigService().getLocalConfig();
-  if (!n8nConfig.syncFolder) {
-    return { workspacePaths: [], preservedWorkspacePaths: [] };
-  }
-
-  const resolvedSyncFolder = path.isAbsolute(n8nConfig.syncFolder)
-    ? n8nConfig.syncFolder
-    : path.resolve(paths.n8nWorkspaceDir, n8nConfig.syncFolder);
-
-  if (isPathWithin(resolvedSyncFolder, paths.n8nWorkspaceDir)) {
-    return { workspacePaths: [resolvedSyncFolder], preservedWorkspacePaths: [] };
-  }
-
-  return { workspacePaths: [], preservedWorkspacePaths: [resolvedSyncFolder] };
-}
-
 export function buildYagrCleanupPlan(scope: YagrResetScope = 'config+creds'): YagrCleanupPlan {
   const paths = getYagrPaths();
-  const configPaths = uniquePaths([paths.yagrConfigPath, paths.n8nConfigPath]);
-  const credentialPaths = uniquePaths([
-    paths.yagrCredentialsPath,
-    paths.n8nCredentialsPath,
-  ]);
-  const { workspacePaths, preservedWorkspacePaths } = resolveWorkspacePaths(paths);
+  const configPaths = uniquePaths([paths.yagrConfigPath]);
+  const credentialPaths = uniquePaths([paths.yagrCredentialsPath]);
 
   let deletePaths: string[];
   switch (scope) {
@@ -79,9 +44,9 @@ export function buildYagrCleanupPlan(scope: YagrResetScope = 'config+creds'): Ya
     paths,
     configPaths,
     credentialPaths,
-    deletePaths: collapsePaths(deletePaths),
-    workspacePaths,
-    preservedWorkspacePaths,
+    deletePaths,
+    workspacePaths: [],
+    preservedWorkspacePaths: [],
   };
 }
 
@@ -98,7 +63,9 @@ export async function resetYagrLocalState(scope: YagrResetScope, options: { dryR
   const plan = buildYagrCleanupPlan(scope);
   if (!options.dryRun) {
     for (const targetPath of plan.deletePaths) {
-      await removePath(targetPath);
+      if (fs.existsSync(targetPath)) {
+        await removePath(targetPath);
+      }
     }
   }
 

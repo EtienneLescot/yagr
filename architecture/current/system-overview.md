@@ -1,14 +1,14 @@
 # System Overview
 
-This page describes the repository as it exists now after the package split.
+This repository is now a local autonomous coding-agent runtime.
 
-## Current architectural model
+## Current Architectural Model
 
 ```mermaid
 flowchart TD
     User[User]
 
-    subgraph Apps[Apps]
+    subgraph App[App]
       AgentApp[@yagr/agent]
     end
 
@@ -31,17 +31,6 @@ flowchart TD
       TuiSurface[@yagr/tui-surface]
     end
 
-    subgraph Plugins[Plugins]
-      PluginRuntime[@yagr/plugin-runtime]
-    end
-
-    subgraph ExternalN8n[External n8n-as-code Ecosystem]
-      WorkflowCore[n8n-as-code workflow-core]
-      N8nFacades[n8n-as-code/n8nac facades]
-      ExternalManager[n8n-as-code/n8n-manager]
-      Credentials[n8n-credentials-manager]
-    end
-
     User --> AgentApp
     AgentApp --> RuntimeFacade
     AgentApp --> SurfacesFacade
@@ -53,31 +42,15 @@ flowchart TD
     RuntimeFacade --> Conversation
     SurfacesFacade --> WebuiSurface
     SurfacesFacade --> TuiSurface
-    AgentApp --> PluginRuntime
-    N8nFacades --> WorkflowCore
-    N8nFacades --> ExternalManager
-    ExternalManager --> Credentials
 ```
 
-## Key points
+## Core Ownership
 
-- The current app package is still `@yagr/agent`.
-- The repository now exposes reusable runtime and surface packages.
-- The preferred product-facing entrypoints are the facades:
-  - `@yagr/runtime`
-  - `@yagr/surfaces`
-- Manager-specific behavior has moved out of this repository.
-- The external n8n ecosystem now has two independent engines:
-  - `n8n-as-code workflow-core` for workflow intelligence
-  - `n8n-manager` for runtime, infrastructure, diagnostics, credentials, deploy, and execution
-- User-facing facades such as `n8nac`, the VS Code/Cursor extension, MCP, Claude/OpenClaw plugins, and Yagr integrations can orchestrate both engines.
-- Yagr only keeps optional adapters such as `YAGR configured LLM` as a generic `LlmSource`.
-
-## What Yagr core owns now
-
-Yagr core owns:
+Yagr owns:
 
 - deepagent bootstrap
+- coding-oriented middleware
+- local shell and file execution semantics
 - provider/model runtime
 - sessions/checkpoints
 - runtime events
@@ -85,17 +58,13 @@ Yagr core owns:
 - conversation/slash behavior
 - reusable surface primitives
 
-Yagr core does not own the generic n8n credentials manager. The external `n8n-manager` repo owns credential recipes, starter kits, inventory status, and the generic LLM proxy credential contract. The same runtime-readiness behavior that was first available through Yagr should become available through all n8n-as-code facades.
+Yagr does not own domain-specific backends. External systems can still be used by the agent through ordinary local shell and file operations when the user asks, but no such backend is part of the built-in architecture.
 
-## What is no longer the right mental model
+## Mental Model
 
-It is no longer accurate to think of Yagr as:
+Yagr is:
 
-- one agent app
-- plus a loose set of helper modules
-
-The more accurate model is:
-
+- a local autonomous coding agent
 - a reusable runtime platform
-- with plugins
-- with apps assembled on top
+- a set of thin local and remote chat surfaces
+- provider/runtime/session infrastructure for coding work

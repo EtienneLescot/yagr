@@ -3,9 +3,8 @@ import test from 'node:test';
 
 import { buildYagrSetupStatus, getYagrSetupStatus } from '../dist/setup.js';
 
-test('buildYagrSetupStatus reports all missing setup phases when nothing is ready', () => {
+test('buildYagrSetupStatus reports missing llm setup when runtime is not ready', () => {
   const status = buildYagrSetupStatus({
-    n8nConfigured: false,
     llmConfigured: false,
     enabledSurfaces: [],
     startableSurfaces: [],
@@ -15,9 +14,8 @@ test('buildYagrSetupStatus reports all missing setup phases when nothing is read
   assert.deepEqual(status.missingSteps, ['llm']);
 });
 
-test('buildYagrSetupStatus readiness depends on llm setup', () => {
+test('buildYagrSetupStatus readiness depends only on llm setup', () => {
   const status = buildYagrSetupStatus({
-    n8nConfigured: true,
     llmConfigured: true,
     enabledSurfaces: ['telegram', 'webui'],
     startableSurfaces: ['telegram'],
@@ -28,21 +26,12 @@ test('buildYagrSetupStatus readiness depends on llm setup', () => {
 });
 
 test('getYagrSetupStatus treats the active webui as a startable surface', () => {
-  let localConfig = {
-    provider: 'openai',
-    model: 'gpt-4o',
-    gateway: {
-      enabledSurfaces: [],
-    },
-  };
-
   const yagrConfigService = {
     getLocalConfig() {
-      return localConfig;
+      return { provider: 'openai', model: 'gpt-4o', gateway: { enabledSurfaces: [] } };
     },
     updateLocalConfig(updater) {
-      localConfig = updater(localConfig);
-      return localConfig;
+      return updater(this.getLocalConfig());
     },
     getEnabledGatewaySurfaces() {
       return [];
@@ -55,32 +44,14 @@ test('getYagrSetupStatus treats the active webui as a startable surface', () => 
     },
   };
 
-  const n8nConfigService = {
-    getLocalConfig() {
-      return {
-        host: 'http://localhost:5678',
-        syncFolder: '/tmp/yagr-sync',
-        projectId: 'proj_123',
-        projectName: 'Test Project',
-      };
-    },
-    getApiKey() {
-      return 'test-n8n-key';
-    },
-  };
-
-  const status = getYagrSetupStatus(
-    yagrConfigService,
-    n8nConfigService,
-    { activeSurfaces: ['webui'] },
-  );
+  const status = getYagrSetupStatus(yagrConfigService, { activeSurfaces: ['webui'] });
 
   assert.equal(status.ready, true);
   assert.deepEqual(status.missingSteps, []);
   assert.deepEqual(status.startableSurfaces, ['webui']);
 });
 
-test('getYagrSetupStatus accepts proxy-based llm providers without api keys', () => {
+test('getYagrSetupStatus accepts account-backed providers without api keys', () => {
   const yagrConfigService = {
     updateLocalConfig(updater) {
       return updater(this.getLocalConfig());
@@ -90,9 +61,7 @@ test('getYagrSetupStatus accepts proxy-based llm providers without api keys', ()
         provider: 'anthropic-proxy',
         model: 'claude-sonnet-4',
         baseUrl: 'http://127.0.0.1:3456/v1',
-        gateway: {
-          enabledSurfaces: [],
-        },
+        gateway: { enabledSurfaces: [] },
       };
     },
     getEnabledGatewaySurfaces() {
@@ -106,72 +75,8 @@ test('getYagrSetupStatus accepts proxy-based llm providers without api keys', ()
     },
   };
 
-  const n8nConfigService = {
-    getLocalConfig() {
-      return {
-        host: 'http://localhost:5678',
-        syncFolder: '/tmp/yagr-sync',
-        projectId: 'proj_123',
-        projectName: 'Test Project',
-      };
-    },
-    getApiKey() {
-      return 'test-n8n-key';
-    },
-  };
-
-  const status = getYagrSetupStatus(
-    yagrConfigService,
-    n8nConfigService,
-    { activeSurfaces: ['webui'] },
-  );
+  const status = getYagrSetupStatus(yagrConfigService, { activeSurfaces: ['webui'] });
 
   assert.equal(status.llmConfigured, true);
-  assert.equal(status.ready, true);
-});
-
-test('getYagrSetupStatus treats n8n as configured when the active host is tunnelized but the API key is stored on the local target URL', () => {
-  const yagrConfigService = {
-    getLocalConfig() {
-      return {
-        provider: 'google',
-        model: 'gemini-3-flash-preview',
-        n8nTunnel: {
-          enabled: true,
-          publicUrl: 'https://example.trycloudflare.com',
-          targetUrl: 'http://127.0.0.1:5678',
-        },
-        gateway: {
-          enabledSurfaces: ['telegram'],
-        },
-      };
-    },
-    getEnabledGatewaySurfaces() {
-      return ['telegram'];
-    },
-    getApiKey(provider) {
-      return provider === 'google' ? 'test-google-key' : undefined;
-    },
-    getTelegramBotToken() {
-      return 'telegram-token';
-    },
-  };
-
-  const n8nConfigService = {
-    getLocalConfig() {
-      return {
-        host: 'https://example.trycloudflare.com',
-        syncFolder: '/tmp/yagr-sync',
-        projectId: 'proj_123',
-        projectName: 'Test Project',
-      };
-    },
-    getApiKey(host) {
-      return host === 'http://127.0.0.1:5678' ? 'test-n8n-key' : undefined;
-    },
-  };
-
-  const status = getYagrSetupStatus(yagrConfigService, n8nConfigService);
-  assert.equal(status.n8nConfigured, true);
   assert.equal(status.ready, true);
 });
