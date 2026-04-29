@@ -70,9 +70,8 @@ Plugins carry domain- or product-specific integrations.
 Examples:
 
 - `@yagr/plugin-runtime`
-- `@yagr/plugin-n8n-manager`
 
-The long-term direction is that manager-specific logic belongs in plugins, not in Yagr core.
+Manager-specific n8n logic now lives outside this repository, not in Yagr core.
 
 ## Why This Refactor Exists
 
@@ -97,7 +96,7 @@ Yagr still powers an agent experience that turns intent into automation on top o
 The important shift is architectural:
 
 - Yagr core should stay product-agnostic
-- manager-specific logic should move behind plugins
+- external manager logic should stay outside Yagr core
 - surfaces should stay thin
 - runtime/state/session/event logic should be reusable across products
 
@@ -130,7 +129,7 @@ Conceptually, the repo is moving toward:
 - **Core**
   - runtime, providers, sessions, streaming, surfaces
 - **Plugins**
-  - manager integrations such as `@yagr/plugin-n8n-manager`
+  - in-repository extension contracts and product-specific integrations
 - **Apps**
   - final assembled runnable products
 

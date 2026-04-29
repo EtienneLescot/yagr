@@ -22,12 +22,6 @@ import type { YagrDeepAgentHandle } from '../agent-factory.js';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-home.js';
 import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
-import {
-  formatWorkflowLinkTerminal,
-  type WorkflowEmbed,
-  resolveTerminalWorkflowOpenUrl,
-  workflowEmbedKey,
-} from './format-message.js';
 import type {
   YagrAgentState,
   YagrDisplayOptions,
@@ -97,7 +91,6 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
   const [pendingRequiredActions, setPendingRequiredActions] = useState<YagrRequiredAction[]>([]);
   const [lastUserPrompt, setLastUserPrompt] = useState('');
   const [activeOperationText, setActiveOperationText] = useState('Ready for a request.');
-  const [workflowEmbeds, setWorkflowEmbeds] = useState<WorkflowEmbed[]>([]);
   const [loadingDots, setLoadingDots] = useState('');
   const [contextFillPercent, setContextFillPercent] = useState<number | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -317,7 +310,6 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
     setPhaseStatusText('Analyzing...');
     setActiveOperationText('Analyzing the workspace and constraints.');
     resetStreamingBuffers();
-    setWorkflowEmbeds([]);
     seenOperationStartRef.current = new Set();
     seenOperationEndRef.current = new Set();
     operationStateRef.current = new Map();
@@ -365,23 +357,6 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
               }
               setPhaseStatusText(update.title);
               if (update.detail) setActiveOperationText(update.detail);
-            },
-            onWorkflowEmbed: async (embed) => {
-              const w: WorkflowEmbed = {
-                workflowId: embed.workflowId,
-                url: embed.url,
-                targetUrl: embed.targetUrl,
-                title: embed.title,
-                diagram: embed.diagram,
-                executionResult: embed.executionResult,
-              };
-              setWorkflowEmbeds((prev) => (
-                prev.some((entry) => workflowEmbedKey(entry) === workflowEmbedKey(w))
-                  ? prev
-                  : [...prev, w]
-              ));
-              pushEntry('result', 'Workflow available', formatWorkflowLinkTerminal(w), 'strong');
-              setActiveOperationText(`Workflow ready: ${w.targetUrl ?? w.url}`);
             },
             onCompaction: async (compaction) => {
               await compactionService.notifyCompaction(threadIdRef.current, compaction);
@@ -478,24 +453,6 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
         return;
       }
 
-      if (parsed.command === 'open') {
-        const latestEmbed = workflowEmbeds[workflowEmbeds.length - 1];
-        if (!latestEmbed) {
-          setActiveOperationText('No recent workflow to open.');
-          return;
-        }
-        try {
-          await openExternalUrl(resolveTerminalWorkflowOpenUrl(latestEmbed));
-          pushEntry('result', 'Opened workflow', latestEmbed.targetUrl ?? latestEmbed.url);
-          setActiveOperationText(`Workflow opened: ${latestEmbed.targetUrl ?? latestEmbed.url}`);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          pushEntry('interrupt', 'Workflow open failed', message);
-          setActiveOperationText(`Workflow open failed: ${message}`);
-        }
-        return;
-      }
-
       const ctx = {
         surface: 'tui' as const,
         sessionId: 'default',
@@ -511,7 +468,6 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
         resetLocalState: () => {
           setFeed([]);
           setPendingRequiredActions([]);
-          setWorkflowEmbeds([]);
           seenOperationStartRef.current = new Set();
           seenOperationEndRef.current = new Set();
           operationStateRef.current = new Map();
@@ -575,7 +531,7 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
 
     setInputVersion((previous) => previous + 1);
     await runPrompt(prompt);
-  }, [agent, app, compactionService, display, expandAllShellBlocks, collapseAllShellBlocks, pendingRequiredActions, pushEntry, resetStreamingBuffers, runPrompt, sessions, threadIdRef, workflowEmbeds]);
+  }, [agent, app, compactionService, display, expandAllShellBlocks, collapseAllShellBlocks, pendingRequiredActions, pushEntry, resetStreamingBuffers, runPrompt, sessions, threadIdRef]);
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
@@ -652,9 +608,6 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
 
   const idleIcon = currentState === 'completed' ? '●' : currentState === 'failed_terminal' ? '✕' : '○';
   const statusText = isRunning ? activeOperationText : phaseStatusText;
-  const latestWorkflow = workflowEmbeds.length > 0 ? workflowEmbeds[workflowEmbeds.length - 1] : undefined;
-  const latestWorkflowOpenUrl = latestWorkflow ? resolveTerminalWorkflowOpenUrl(latestWorkflow) : undefined;
-
   const headerHeight = feed.length === 0 ? 12 : 1;
   const statusHeight = 1;
   const separatorHeight = 1;
@@ -743,9 +696,7 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
       </Box>
 
       <Text dimColor>
-        {latestWorkflowOpenUrl
-          ? '/help · /sessions · /new · /expand · /collapse · /open · /stop · ↑↓ scroll'
-          : '/help · /sessions · /new · /expand · /collapse · /stop · ↑↓ scroll'}
+        /help · /sessions · /new · /expand · /collapse · /stop · ↑↓ scroll
       </Text>
     </Box>
   );

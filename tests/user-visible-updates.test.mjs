@@ -30,14 +30,14 @@ test('mapStateEventToUserVisibleUpdate surfaces actionable waiting states only',
     mapStateEventToUserVisibleUpdate({
       state: 'waiting_for_permission',
       phase: 'edit',
-      message: 'Need permission to push the workflow.',
+      message: 'Need permission to push the update.',
     }),
     {
       tone: 'info',
       title: 'Needs permission',
-      detail: 'Need permission to push the workflow.',
+      detail: 'Need permission to push the update.',
       phase: 'edit',
-      dedupeKey: 'state:waiting_for_permission:Need permission to push the workflow.',
+      dedupeKey: 'state:waiting_for_permission:Need permission to push the update.',
     },
   );
 
@@ -88,17 +88,4 @@ test('makeToolEndOperationEvent preserves full execute output for shell logs', (
   assert.equal(event.status, 'done');
   assert.equal(event.body, body);
   assert.match(event.summary, /^exit 0/);
-});
-
-test('makeToolEndOperationEvent suppresses workflow embed JSON for execute output', () => {
-  const event = makeToolEndOperationEvent(
-    'tool:execute:test',
-    'execute',
-    `{"__type":"workflow-embed","workflowId":"wf-123","url":"data:text/html,stub"}\n[Command succeeded with exit code 0]`,
-    Date.now() - 100,
-  );
-
-  assert.equal(event.status, 'done');
-  assert.equal(event.body, '');
-  assert.equal(event.summary, 'Workflow ready  wf-123');
 });

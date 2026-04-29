@@ -12,7 +12,6 @@ import {
   getYagrN8nWorkspaceDir,
   getYagrPaths,
   registerContextMemorySource,
-  registerCoreMemorySource,
   resolveYagrHomeDir,
 } from '../dist/config/yagr-home.js';
 
@@ -101,8 +100,7 @@ test('ensureYagrHomeDir creates all required directories', () => {
     assert.ok(fs.existsSync(paths.proxyRuntimeDir), 'proxyRuntimeDir created');
     assert.ok(fs.existsSync(paths.accountAuthDir), 'accountAuthDir created');
 
-    // Manager instructions are injected via middleware (no file written, no memory-sources entry).
-    assert.ok(!fs.existsSync(path.join(tempHome, 'AGENTS.md')), 'no AGENTS.md written — manager content goes via middleware injection');
+    assert.ok(!fs.existsSync(path.join(tempHome, 'AGENTS.md')), 'no AGENTS.md written by home initialization');
   } finally {
     if (previousYagrHome !== undefined) {
       process.env.YAGR_HOME = previousYagrHome;
@@ -113,27 +111,14 @@ test('ensureYagrHomeDir creates all required directories', () => {
   }
 });
 
-test('registerCoreMemorySource and registerContextMemorySource persist correctly', () => {
+test('registerContextMemorySource persists correctly', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-mem-'));
   const memFile = path.join(tempHome, 'memory-sources.json');
-  const corePath = path.join(tempHome, 'YAGENTS.md');
   const ctxPath = path.join(tempHome, 'n8n-workspace', 'AGENTS.md');
 
   try {
-    // Start empty — registerCoreMemorySource should create the file.
-    registerCoreMemorySource(corePath, memFile);
-    let raw = JSON.parse(fs.readFileSync(memFile, 'utf8'));
-    assert.equal(raw.core, corePath);
-    assert.deepEqual(raw.contexts ?? [], []);
-
-    // Idempotent: calling again with same path must not change the file.
-    const before = fs.readFileSync(memFile, 'utf8');
-    registerCoreMemorySource(corePath, memFile);
-    assert.equal(fs.readFileSync(memFile, 'utf8'), before);
-
-    // Register a context source.
     registerContextMemorySource(ctxPath, memFile);
-    raw = JSON.parse(fs.readFileSync(memFile, 'utf8'));
+    let raw = JSON.parse(fs.readFileSync(memFile, 'utf8'));
     assert.deepEqual(raw.contexts, [ctxPath]);
 
     // Idempotent: registering same context twice must not duplicate it.
@@ -148,16 +133,16 @@ test('registerCoreMemorySource and registerContextMemorySource persist correctly
 test('getActiveMemorySourcePaths returns only paths that exist on disk', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-home-active-'));
   const memFile = path.join(tempHome, 'memory-sources.json');
-  const existingCore = path.join(tempHome, 'YAGENTS.md');
-  const missingCtx = path.join(tempHome, 'n8n-workspace', 'AGENTS.md');
+  const existingCtx = path.join(tempHome, 'AGENTS.md');
+  const missingCtx = path.join(tempHome, 'missing', 'AGENTS.md');
 
   try {
-    fs.writeFileSync(existingCore, '# Manager\n');
-    registerCoreMemorySource(existingCore, memFile);
+    fs.writeFileSync(existingCtx, '# Context\n');
+    registerContextMemorySource(existingCtx, memFile);
     registerContextMemorySource(missingCtx, memFile);
 
     const active = getActiveMemorySourcePaths(memFile);
-    assert.ok(active.includes(existingCore), 'existing core path included');
+    assert.ok(active.includes(existingCtx), 'existing context path included');
     assert.ok(!active.includes(missingCtx), 'missing context path excluded');
   } finally {
     fs.rmSync(tempHome, { recursive: true, force: true });

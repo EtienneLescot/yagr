@@ -10,8 +10,8 @@ import {
   DeepAgentSessionStore,
   buildDeepAgentSessionConfig,
   deriveSessionTitle,
-} from '../dist/session/deepagent-sessions.js';
-import { SessionService } from '../dist/session/index.js';
+} from '../packages/session-service/dist/index.js';
+import { SessionService } from '../packages/session-service/dist/index.js';
 
 test('DeepAgentSessionStore resolves one active session per scope and can rotate it', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-deepagent-sessions-'));
