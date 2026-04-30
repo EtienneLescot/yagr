@@ -157,7 +157,7 @@ export function getGatewayRestartDelayMs(failureCount: number): number {
 }
 
 function printHelp(): void {
-  process.stdout.write(`Yagr - autonomous local coding agent\n\nUsage:\n  yagr <prompt> [options]\n  yagr start [tui|webui] [options]\n  yagr setup\n  yagr llm setup\n\nCommands:\n  setup                      Configure local coding-agent runtime\n  llm setup                  Configure the language model\n  start [tui|webui]          Start an interactive local surface\n  tui                        Start terminal UI\n  webui                      Start Web UI\n  gateway start              Start configured background gateways\n  gateway status             Show gateway status\n  telegram setup             Configure Telegram gateway\n  telegram start             Start Telegram gateway\n  telegram status            Show Telegram gateway status\n  telegram onboarding        Show Telegram onboarding link\n  telegram reset             Remove Telegram configuration\n  proxy start <provider>     Start an account-backed provider proxy\n  proxy status [provider]    Show provider proxy status\n  proxy stop <provider>      Stop provider proxy\n  skills list                List installed Agent Skills\n  skills install <source>    Install Agent Skills from a local or remote source\n  skills remove <name>       Remove an installed Agent Skill\n  skills path                Print Agent Skills source paths\n  config show                Print local config\n  config reset               Remove local config and credentials\n  paths                      Print Yagr paths\n  reset [--scope <scope>]    Reset Yagr local state\n  uninstall                  Full local reset\n\nOptions:\n  --provider <name>          AI provider: ${VALID_PROVIDERS.join(', ')}\n  --model <name>             Model name to use\n  --max-steps <n>            Maximum number of agent steps\n  --interactive, -i          Keep the session open after the prompt\n  --hide-thinking            Hide agent thinking output\n  --hide-execution           Hide tool execution output\n  --yes                      Auto-confirm destructive operations\n  --dry-run                  Preview reset without changes\n  --scope <scope>            Scope for reset or skills: global, workspace\n  --workspace                Install/remove skills in the workspace scope\n  --version, -v              Print version\n  --help, -h                 Show this help\n`);
+  process.stdout.write(`Yagr - autonomous local coding agent\n\nUsage:\n  yagr <prompt> [options]\n  yagr start [tui|webui] [options]\n  yagr setup\n  yagr llm setup\n\nCommands:\n  setup                      Configure local coding-agent runtime\n  llm setup                  Configure the language model\n  start [tui|webui]          Start configured gateway surfaces\n  tui                        Start terminal UI\n  webui                      Start Web UI\n  gateway start              Start configured gateway surfaces\n  gateway status             Show gateway status\n  telegram setup             Configure Telegram gateway\n  telegram start             Start Telegram gateway\n  telegram status            Show Telegram gateway status\n  telegram onboarding        Show Telegram onboarding link\n  telegram reset             Remove Telegram configuration\n  proxy start <provider>     Start an account-backed provider proxy\n  proxy status [provider]    Show provider proxy status\n  proxy stop <provider>      Stop provider proxy\n  skills list                List installed Agent Skills\n  skills install <source>    Install Agent Skills from a local or remote source\n  skills remove <name>       Remove an installed Agent Skill\n  skills path                Print Agent Skills source paths\n  config show                Print local config\n  config reset               Remove local config and credentials\n  paths                      Print Yagr paths\n  reset [--scope <scope>]    Reset Yagr local state\n  uninstall                  Full local reset\n\nOptions:\n  --provider <name>          AI provider: ${VALID_PROVIDERS.join(', ')}\n  --model <name>             Model name to use\n  --max-steps <n>            Maximum number of agent steps\n  --interactive, -i          Keep the session open after the prompt\n  --hide-thinking            Hide agent thinking output\n  --hide-execution           Hide tool execution output\n  --yes                      Auto-confirm destructive operations\n  --dry-run                  Preview reset without changes\n  --scope <scope>            Scope for reset or skills: global, workspace\n  --workspace                Install/remove skills in the workspace scope\n  --version, -v              Print version\n  --help, -h                 Show this help\n`);
 }
 
 function printVersion(): void {
@@ -199,6 +199,18 @@ async function runStart(args: ParsedArgs, configService: YagrConfigService): Pro
     }, configService);
     return;
   }
+  if (args.startTarget === 'tui') {
+    await runCliGateway(await createYagrDeepAgent(configService, undefined, undefined, {
+      provider: args.provider,
+      model: args.model,
+      maxSteps: args.maxSteps,
+    }), { interactive: true });
+    return;
+  }
+  await runGatewaySupervisor(args, configService);
+}
+
+async function runTui(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
   await runCliGateway(await createYagrDeepAgent(configService, undefined, undefined, {
     provider: args.provider,
     model: args.model,
@@ -273,7 +285,7 @@ async function main(): Promise<void> {
     case 'setup': await runYagrSetup(configService); return;
     case 'llm-setup': await runYagrLlmSetup(configService); return;
     case 'start': case 'restart': await runStart(args, configService); return;
-    case 'tui': await runStart({ ...args, startTarget: 'tui' }, configService); return;
+    case 'tui': await runTui(args, configService); return;
     case 'webui': await runGatewaySurfaces(['webui'], args, configService); return;
     case 'gateway': case 'gateway-start': await runGatewaySupervisor(args, configService); return;
     case 'gateway-worker': await runGatewaySupervisor(args, configService); return;
