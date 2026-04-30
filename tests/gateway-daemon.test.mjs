@@ -9,6 +9,10 @@ test('isYagrGatewayCommandLine recognizes Yagr gateway processes', () => {
     true,
   );
   assert.equal(
+    isYagrGatewayCommandLine('node /home/user/repos/yagr/dist/cli.js gateway worker'),
+    true,
+  );
+  assert.equal(
     isYagrGatewayCommandLine('"C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@yagr\\agent\\dist\\cli.js" gateway start'),
     true,
   );

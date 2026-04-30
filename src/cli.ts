@@ -3,10 +3,18 @@ import './config/init-yagr-home.js';
 import fs from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildYagrCleanupPlan, resetYagrLocalState, type YagrResetScope } from './config/local-state.js';
+import { resetYagrLocalState, type YagrResetScope } from './config/local-state.js';
+import {
+  clearGatewayPid,
+  getGatewayLogPath,
+  isGatewayRunning,
+  readGatewayPid,
+  writeGatewayPid,
+} from './config/gateway-daemon.js';
 import { YagrConfigService } from './config/yagr-config-service.js';
 import { getYagrPaths } from './config/yagr-home.js';
 import { getGatewaySupervisorStatus, getGatewayRunningBanner, runGatewaySupervisor, runGatewaySurfaces } from './gateway/manager.js';
+import { getWebUiGatewayStatus } from './gateway/webui-config.js';
 import {
   getTelegramGatewayStatus,
   resetTelegramGateway,
@@ -17,9 +25,8 @@ import {
 import { createYagrDeepAgent } from './agent-factory.js';
 import { runCliGateway } from './gateway/cli.js';
 import type { YagrModelProvider } from './llm/provider-registry.js';
-import { getYagrSetupStatus, runYagrLlmSetup, runYagrSetup } from './setup.js';
-import { YagrSetupApplicationService } from './setup/application-services.js';
-import { isPidAlive, killProcessTree, spawnCommand, spawnDetached } from './system/process.js';
+import { runYagrLlmSetup, runYagrSetup } from './setup.js';
+import { isPidAlive, killProcessTree, spawnDetached } from './system/process.js';
 import { YAGR_SELECTABLE_MODEL_PROVIDERS } from './llm/provider-registry.js';
 import { getProxyRuntimeStatus, listProxyRuntimeStatuses, startProviderProxy, stopProviderProxy } from './llm/proxy-runtime.js';
 import {
@@ -157,7 +164,7 @@ export function getGatewayRestartDelayMs(failureCount: number): number {
 }
 
 function printHelp(): void {
-  process.stdout.write(`Yagr - autonomous local coding agent\n\nUsage:\n  yagr <prompt> [options]\n  yagr start [tui|webui] [options]\n  yagr setup\n  yagr llm setup\n\nCommands:\n  setup                      Configure local coding-agent runtime\n  llm setup                  Configure the language model\n  start [tui|webui]          Start configured gateway surfaces\n  tui                        Start terminal UI\n  webui                      Start Web UI\n  gateway start              Start configured gateway surfaces\n  gateway status             Show gateway status\n  telegram setup             Configure Telegram gateway\n  telegram start             Start Telegram gateway\n  telegram status            Show Telegram gateway status\n  telegram onboarding        Show Telegram onboarding link\n  telegram reset             Remove Telegram configuration\n  proxy start <provider>     Start an account-backed provider proxy\n  proxy status [provider]    Show provider proxy status\n  proxy stop <provider>      Stop provider proxy\n  skills list                List installed Agent Skills\n  skills install <source>    Install Agent Skills from a local or remote source\n  skills remove <name>       Remove an installed Agent Skill\n  skills path                Print Agent Skills source paths\n  config show                Print local config\n  config reset               Remove local config and credentials\n  paths                      Print Yagr paths\n  reset [--scope <scope>]    Reset Yagr local state\n  uninstall                  Full local reset\n\nOptions:\n  --provider <name>          AI provider: ${VALID_PROVIDERS.join(', ')}\n  --model <name>             Model name to use\n  --max-steps <n>            Maximum number of agent steps\n  --interactive, -i          Keep the session open after the prompt\n  --hide-thinking            Hide agent thinking output\n  --hide-execution           Hide tool execution output\n  --yes                      Auto-confirm destructive operations\n  --dry-run                  Preview reset without changes\n  --scope <scope>            Scope for reset or skills: global, workspace\n  --workspace                Install/remove skills in the workspace scope\n  --version, -v              Print version\n  --help, -h                 Show this help\n`);
+  process.stdout.write(`Yagr - autonomous local coding agent\n\nUsage:\n  yagr <prompt> [options]\n  yagr start [tui|webui] [options]\n  yagr setup\n  yagr llm setup\n\nCommands:\n  setup                      Configure local coding-agent runtime\n  llm setup                  Configure the language model\n  start [tui|webui]          Start configured gateway surfaces in background\n  tui                        Start terminal UI\n  webui                      Start Web UI\n  gateway start              Start configured gateway surfaces in background\n  gateway status             Show gateway status\n  telegram setup             Configure Telegram gateway\n  telegram start             Start Telegram gateway\n  telegram status            Show Telegram gateway status\n  telegram onboarding        Show Telegram onboarding link\n  telegram reset             Remove Telegram configuration\n  proxy start <provider>     Start an account-backed provider proxy\n  proxy status [provider]    Show provider proxy status\n  proxy stop <provider>      Stop provider proxy\n  skills list                List installed Agent Skills\n  skills install <source>    Install Agent Skills from a local or remote source\n  skills remove <name>       Remove an installed Agent Skill\n  skills path                Print Agent Skills source paths\n  config show                Print local config\n  config reset               Remove local config and credentials\n  paths                      Print Yagr paths\n  reset [--scope <scope>]    Reset Yagr local state\n  uninstall                  Full local reset\n\nOptions:\n  --provider <name>          AI provider: ${VALID_PROVIDERS.join(', ')}\n  --model <name>             Model name to use\n  --max-steps <n>            Maximum number of agent steps\n  --interactive, -i          Keep the session open after the prompt\n  --hide-thinking            Hide agent thinking output\n  --hide-execution           Hide tool execution output\n  --yes                      Auto-confirm destructive operations\n  --dry-run                  Preview reset without changes\n  --scope <scope>            Scope for reset or skills: global, workspace\n  --workspace                Install/remove skills in the workspace scope\n  --version, -v              Print version\n  --help, -h                 Show this help\n`);
 }
 
 function printVersion(): void {
@@ -190,13 +197,114 @@ async function runPrompt(args: ParsedArgs, configService: YagrConfigService): Pr
   await runCliGateway(handle, { prompt: args.prompt, interactive: args.interactive });
 }
 
-async function runStart(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
-  if (args.startTarget === 'webui') {
+function buildGatewayWorkerArgs(args: ParsedArgs): string[] {
+  const workerArgs = ['gateway', 'worker'];
+  if (args.provider) workerArgs.push('--provider', args.provider);
+  if (args.model) workerArgs.push('--model', args.model);
+  if (args.maxSteps !== undefined) workerArgs.push('--max-steps', String(args.maxSteps));
+  if (args.debug) workerArgs.push('--debug');
+  return workerArgs;
+}
+
+async function stopGatewayDaemon({ silent = false }: { silent?: boolean } = {}): Promise<boolean> {
+  const running = isGatewayRunning();
+  if (!running.running) {
+    clearGatewayPid();
+    if (!silent) process.stdout.write('Yagr gateway is not running.\n');
+    return false;
+  }
+
+  await killProcessTree(running.pid);
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (!isPidAlive(running.pid)) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  if (isPidAlive(running.pid)) {
+    await killProcessTree(running.pid, { force: true });
+  }
+
+  clearGatewayPid();
+  if (!silent) process.stdout.write('Stopped Yagr gateway.\n');
+  return true;
+}
+
+async function startGatewayDaemon(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  const status = getGatewaySupervisorStatus(configService);
+  if (status.startableSurfaces.length === 0) {
+    const message = status.warnings[0] ?? 'No enabled and configured gateway surfaces are available.';
+    throw new Error(message);
+  }
+
+  if (args.command === 'restart') {
+    await stopGatewayDaemon({ silent: true });
+  }
+
+  const running = isGatewayRunning();
+  if (running.running) {
+    process.stdout.write(getGatewayRunningBanner(configService, running.pid));
+    return;
+  }
+
+  const logPath = getGatewayLogPath();
+  const out = fs.openSync(logPath, 'a');
+  const err = fs.openSync(logPath, 'a');
+  const child = spawnDetached(process.execPath, [fileURLToPath(import.meta.url), ...buildGatewayWorkerArgs(args)], {
+    stdio: ['ignore', out, err],
+    env: process.env,
+  });
+
+  if (!child.pid) {
+    fs.closeSync(out);
+    fs.closeSync(err);
+    throw new Error('Failed to start Yagr gateway process.');
+  }
+
+  child.unref();
+  fs.closeSync(out);
+  fs.closeSync(err);
+  writeGatewayPid(child.pid);
+
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  if (!isPidAlive(child.pid)) {
+    if (readGatewayPid() === child.pid) clearGatewayPid();
+    throw new Error(`Yagr gateway process exited during startup. See log: ${logPath}`);
+  }
+
+  process.stdout.write(`Started Yagr gateway in background. Log: ${logPath}\n`);
+  process.stdout.write(getGatewayRunningBanner(configService, child.pid));
+}
+
+function isAddressInUseError(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && (error as NodeJS.ErrnoException).code === 'EADDRINUSE';
+}
+
+async function runWebUi(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  try {
     await runGatewaySurfaces(['webui'], {
       provider: args.provider,
       model: args.model,
       maxSteps: args.maxSteps,
     }, configService);
+  } catch (error) {
+    if (!isAddressInUseError(error)) {
+      throw error;
+    }
+
+    const status = getWebUiGatewayStatus(configService);
+    process.stdout.write(`Yagr Web UI is already available at ${status.url}\n`);
+  }
+}
+
+async function runStart(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
+  if (args.startTarget === 'webui') {
+    await runWebUi(args, configService);
     return;
   }
   if (args.startTarget === 'tui') {
@@ -207,7 +315,7 @@ async function runStart(args: ParsedArgs, configService: YagrConfigService): Pro
     }), { interactive: true });
     return;
   }
-  await runGatewaySupervisor(args, configService);
+  await startGatewayDaemon(args, configService);
 }
 
 async function runTui(args: ParsedArgs, configService: YagrConfigService): Promise<void> {
@@ -286,8 +394,8 @@ async function main(): Promise<void> {
     case 'llm-setup': await runYagrLlmSetup(configService); return;
     case 'start': case 'restart': await runStart(args, configService); return;
     case 'tui': await runTui(args, configService); return;
-    case 'webui': await runGatewaySurfaces(['webui'], args, configService); return;
-    case 'gateway': case 'gateway-start': await runGatewaySupervisor(args, configService); return;
+    case 'webui': await runWebUi(args, configService); return;
+    case 'gateway': case 'gateway-start': await startGatewayDaemon(args, configService); return;
     case 'gateway-worker': await runGatewaySupervisor(args, configService); return;
     case 'gateway-status': process.stdout.write(`${getGatewayRunningBanner(configService)}\n`); return;
     case 'telegram-setup': await setupTelegramGateway(configService); return;
@@ -297,7 +405,7 @@ async function main(): Promise<void> {
     case 'telegram-reset': resetTelegramGateway(configService); return;
     case 'proxy-start': case 'proxy-status': case 'proxy-stop': await runProxyCommand(args); return;
     case 'skills-list': case 'skills-install': case 'skills-remove': case 'skills-path': await runSkillsCommand(args); return;
-    case 'stop': return;
+    case 'stop': await stopGatewayDaemon(); return;
     default: await runPrompt(args, configService); return;
   }
 }
