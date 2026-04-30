@@ -1,17 +1,17 @@
 /* Yagr Documentation Theme */
 
 :root {
-  --ifm-color-primary: #4f46e5;
-  --ifm-color-primary-dark: #4338ca;
-  --ifm-color-primary-darker: #3730a3;
-  --ifm-color-primary-darkest: #312e81;
-  --ifm-color-primary-light: #6366f1;
-  --ifm-color-primary-lighter: #818cf8;
-  --ifm-color-primary-lightest: #a5b4fc;
+  --ifm-color-primary: #0f766e;
+  --ifm-color-primary-dark: #0b625c;
+  --ifm-color-primary-darker: #09544f;
+  --ifm-color-primary-darkest: #073f3b;
+  --ifm-color-primary-light: #129185;
+  --ifm-color-primary-lighter: #20a99c;
+  --ifm-color-primary-lightest: #74d7cb;
 }
 
 .hero--primary {
-  background: linear-gradient(135deg, #111827 0%, #3730a3 100%);
+  background: linear-gradient(135deg, #111827 0%, #0f766e 100%);
 }
 
 .button--primary {

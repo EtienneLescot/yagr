@@ -4,16 +4,16 @@ import styles from './styles.module.css';
 
 const FeatureList = [
   {
-    title: 'Local Coding Agent',
-    description: 'Inspect, edit, and validate local repositories through a deepagents-based runtime.',
+    title: 'Grounded Runtime',
+    description: 'Run autonomous coding against real files, shell commands, sessions, checkpoints, and project instructions.',
   },
   {
-    title: 'Provider Runtime',
-    description: 'Configure API-key and account-backed model providers through one local runtime.',
+    title: 'Provider Freedom',
+    description: 'Configure API-key and account-backed model providers through one local runtime boundary.',
   },
   {
     title: 'Thin Surfaces',
-    description: 'Use CLI, Web UI, and Telegram surfaces over the same sessions and checkpoints.',
+    description: 'Use CLI, TUI, Web UI, and Telegram over the same agent, sessions, and checkpoints.',
   },
 ];
 

@@ -1,11 +1,11 @@
 ---
 title: Getting Started
-description: "Run the current Yagr agent app, while understanding that it now sits on top of a reusable core/platform split."
+description: "Install and start the local-first Yagr coding-agent runtime."
 ---
 
 # Getting Started
 
-Today, the easiest way to use Yagr is still through the `@yagr/agent` app package.
+The easiest way to use Yagr is through the `@yagr/agent` app package.
 
 ```bash
 npm install -g @yagr/agent@latest
@@ -20,37 +20,34 @@ yagr tui
 yagr webui
 ```
 
-## What this installs
+## What you get
 
-Right now you are installing the assembled Yagr app.
+You are installing the assembled Yagr app:
 
-Under the hood, Yagr is being refactored into:
+- a local autonomous coding-agent runtime
+- provider/model configuration
+- local shell and file execution
+- session and checkpoint management
+- CLI, TUI, Web UI, and Telegram surfaces
 
-- **core runtime packages**
-- **plugin packages**
-- **surface packages**
-- **facade packages**
+Under the hood, the app consumes reusable runtime and surface packages. Integrators should prefer `@yagr/runtime` and `@yagr/surfaces` when embedding Yagr elsewhere.
 
-The current app is therefore both:
-
-- the easiest way to try Yagr today
-- one consumer of the broader Yagr platform architecture
-
-## Current prerequisites
+## Prerequisites
 
 - **Node.js** `v22.16.0` or higher
-- **Docker** is optional, but still useful for managed local runtime scenarios
+- A configured model provider
 
-## Current app flow
+Docker is optional. It can still be useful when your own project or tools need managed local services.
 
-`yagr onboard` still handles:
+## Setup flow
 
-- runtime configuration
+`yagr onboard` handles the first-run configuration:
+
 - provider configuration
 - local setup state
-- optional integrations
+- optional surfaces and integrations
 
-After that, `yagr start`, `yagr tui`, and `yagr webui` launch the current assembled app surfaces.
+After that, `yagr start`, `yagr tui`, and `yagr webui` launch the local agent surfaces.
 
 ## Architectural note
 
