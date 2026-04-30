@@ -200,16 +200,8 @@ function SystemRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'system-noti
   );
 }
 
-function AssistantHeaderRow({ entry, now }: { entry: Extract<ThreadEntry, { kind: 'assistant-header' }>; now: number }): React.JSX.Element | null {
-  if (!entry.streaming) return null;
-
-  const elapsed = entry.startedAt ? formatElapsed(now - entry.startedAt) : undefined;
-
-  return (
-    <div className="msgSimple msgStreaming">
-      {entry.statusLabel ?? 'Yagr is working…'}{elapsed && ` · ${elapsed}`}
-    </div>
-  );
+function AssistantHeaderRow({ entry: _entry, now: _now }: { entry: Extract<ThreadEntry, { kind: 'assistant-header' }>; now: number }): React.JSX.Element | null {
+  return null;
 }
 
 function AssistantBodyRow({ entry }: { entry: Extract<ThreadEntry, { kind: 'assistant-body' }> }): React.JSX.Element {
@@ -413,6 +405,7 @@ function SessionSidebar({
                 className="historyItemDelete"
                 title="Delete conversation"
                 aria-label="Delete conversation"
+                disabled={session.id === viewSessionId}
                 onClick={() => onDeleteSession(session.id)}
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">

@@ -513,6 +513,10 @@ label span,
   display: inline-flex;
 }
 
+.historyItem:hover .historyItemDelete:disabled {
+  display: none;
+}
+
 .historyItemDelete:hover {
   background: var(--panel-strong);
   color: #d94778;
