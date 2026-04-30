@@ -14,6 +14,13 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Concepts',
+      items: [
+        'concepts/grounded-in-reality',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Usage',
       link: {
         type: 'doc',

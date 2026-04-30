@@ -6,7 +6,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'Yagr',
-  tagline: '(Y)our (A)gent (G)rounded in (R)eality',
+  tagline: 'Autonomous coding without the black box',
   favicon: 'img/favicon.ico',
 
 
@@ -175,7 +175,7 @@ const config: Config = {
     //   contextualSearch: true,
     // },
     metadata: [
-      { name: 'keywords', content: 'yagr, local coding agent, ai agent, telegram, tui' },
+      { name: 'keywords', content: 'yagr, autonomous coding agent, local coding agent, deepagents, langchain, observability, telegram, tui, webui' },
       { name: 'twitter:card', content: 'summary_large_image' },
     ],
   } satisfies Preset.ThemeConfig,
