@@ -77,6 +77,37 @@ sequenceDiagram
 
 Setup readiness depends on LLM/provider configuration. Gateway surfaces are optional and remain thin.
 
+## Gateway Daemon Startup
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant CLI as src/cli.ts
+    participant PID as config/gateway-daemon.ts
+    participant W as gateway worker process
+    participant GM as gateway/manager.ts
+    participant S as Gateway surfaces
+
+    U->>CLI: yagr start or yagr gateway start
+    CLI->>GM: inspect configured/startable surfaces
+    CLI->>PID: check existing gateway PID
+    CLI->>W: spawn detached `yagr gateway worker`
+    CLI->>PID: write gateway.pid
+    CLI-->>U: print status banner and return terminal
+    W->>GM: run gateway supervisor in foreground child
+    GM->>S: start configured gateway runtimes
+    U->>CLI: yagr stop
+    CLI->>PID: read and validate gateway PID
+    CLI->>W: terminate process
+    CLI->>PID: clear gateway.pid
+```
+
+Observations:
+
+- `yagr start` and `yagr gateway start` are non-blocking daemon launchers
+- `yagr gateway worker` is the internal foreground entrypoint that owns gateway runtime lifetimes
+- PID and log paths are centralized in `config/gateway-daemon.ts`
+
 ## Provider Flow
 
 ```mermaid
