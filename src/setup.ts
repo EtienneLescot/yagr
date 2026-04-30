@@ -97,6 +97,7 @@ function createSetupCallbacks(
 
     saveSurfaces({ surfaces, telegram }) {
       setupService.saveSurfaces({ surfaces, telegram });
+      return { telegramDeepLink: setupService.getTelegramStatus().deepLink };
     },
   };
 }
