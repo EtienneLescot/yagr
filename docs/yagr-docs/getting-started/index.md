@@ -47,7 +47,7 @@ Docker is optional. It can still be useful when your own project or tools need m
 - local setup state
 - optional surfaces and integrations
 
-After that, `yagr start`, `yagr tui`, and `yagr webui` launch the local agent surfaces.
+After that, `yagr start` launches configured gateway surfaces. Use `yagr tui` or `yagr webui` for a single local surface.
 
 ## Architectural note
 
