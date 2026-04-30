@@ -13,7 +13,7 @@ Yagr's local interface is the fastest way to operate it when you are on the mach
 yagr start tui
 ```
 
-If setup is incomplete, Yagr will first drive you through the missing bootstrap steps. Use `yagr start` to launch the configured gateway surfaces instead.
+If setup is incomplete, Yagr will first drive you through the missing bootstrap steps. Use `yagr start` to launch the configured gateway surfaces in the background instead.
 
 ## What the TUI is for
 

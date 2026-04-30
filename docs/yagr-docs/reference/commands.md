@@ -6,7 +6,7 @@
 yagr "<prompt>"              # run a one-shot local coding-agent prompt
 yagr setup                   # configure the local runtime
 yagr llm setup               # configure the language model
-yagr start                   # start configured gateway surfaces
+yagr start                   # start configured gateway surfaces in background
 yagr tui                     # start the terminal UI
 yagr webui                   # start the Web UI
 yagr gateway status          # show gateway status
