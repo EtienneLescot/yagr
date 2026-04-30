@@ -9,6 +9,10 @@
   --panel-border-strong: #8ea8b2;
   --panel-border-deep: #2c3f4a;
   --panel-highlight: transparent;
+  --message-user-bg: var(--panel-soft);
+  --message-assistant-bg: transparent;
+  --message-user-accent: var(--blue-deep);
+  --message-assistant-accent: var(--violet);
   --ink: #0d1020;
   --muted: #4b616b;
   --field-bg: #f7faf9;
@@ -37,6 +41,10 @@
     --panel-border: #2d3f4c;
     --panel-border-strong: #4d6975;
     --panel-border-deep: #9ecdd7;
+    --message-user-bg: #172532;
+    --message-assistant-bg: transparent;
+    --message-user-accent: #80bbc7;
+    --message-assistant-accent: #6f7aa6;
     --ink: #edf3f5;
     --muted: #9fb1b8;
     --field-bg: #111922;
@@ -62,6 +70,10 @@
   --panel-border: #bfd1d7;
   --panel-border-strong: #8ea8b2;
   --panel-border-deep: #2c3f4a;
+  --message-user-bg: var(--panel-soft);
+  --message-assistant-bg: transparent;
+  --message-user-accent: var(--blue-deep);
+  --message-assistant-accent: var(--violet);
   --ink: #0d1020;
   --muted: #4b616b;
   --field-bg: #f7faf9;
@@ -84,6 +96,10 @@
   --panel-border: #2d3f4c;
   --panel-border-strong: #4d6975;
   --panel-border-deep: #9ecdd7;
+  --message-user-bg: #172532;
+  --message-assistant-bg: transparent;
+  --message-user-accent: #80bbc7;
+  --message-assistant-accent: #6f7aa6;
   --ink: #edf3f5;
   --muted: #9fb1b8;
   --field-bg: #111922;
@@ -421,6 +437,7 @@ label span,
 .historyPanel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  row-gap: 0.6rem;
   min-height: 0;
   padding: 1.15rem;
 }
@@ -1377,39 +1394,54 @@ button {
 /* ── Simplified message rows ───────────────────────────────────── */
 
 .msgSimple {
+  position: relative;
   padding: 0.5rem 0.75rem;
+  padding-left: 1rem;
   line-height: 1.6;
-  border-radius: 0.5rem;
+  border-radius: 0;
   margin-bottom: 0.5rem;
 }
 
+.msgSimple::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--msg-accent) 58%, transparent) 0 6px,
+    transparent 6px 10px
+  );
+}
+
 .msgUser {
-  background: var(--panel-soft);
-  border-left: 3px solid var(--blue-deep);
+  --msg-accent: var(--message-user-accent);
+  background: var(--message-user-bg);
   color: var(--ink);
-  margin-right: 2rem;
 }
 
 .msgAssistant {
-  background: var(--panel);
-  border-left: 3px solid var(--violet);
+  --msg-accent: var(--message-assistant-accent);
+  background: var(--message-assistant-bg);
   color: var(--ink);
 }
 
 .msgSystem {
+  --msg-accent: var(--muted);
   color: var(--muted);
   font-size: 0.9rem;
   background: transparent;
-  border-left: 3px solid var(--muted);
   margin-left: 2rem;
   margin-right: 2rem;
 }
 
 .msgStreaming {
+  --msg-accent: var(--muted);
   color: var(--muted);
   font-style: italic;
   background: var(--panel);
-  border-left: 3px solid var(--muted);
 }
 
 .msgIcon {
