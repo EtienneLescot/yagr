@@ -1,7 +1,7 @@
 import { stdin as input, stdout as output } from 'node:process';
 import React, { useState } from 'react';
 import { Box, Text, render, useInput } from 'ink';
-import { TextInput } from '@inkjs/ui';
+import { PasswordInput, TextInput } from '@inkjs/ui';
 import { normalizeGatewaySurfaces } from '../config/yagr-config-service.js';
 import type { GatewaySurface } from '../gateway/types.js';
 import {
@@ -138,12 +138,12 @@ async function configureLlm(
   } else if (providerRequiresApiKey(provider)) {
     apiKey = await promptRequiredApiKey(provider, existingApiKey);
   } else {
-    apiKey = await promptOptional('API key (optional)', existingApiKey ? '<stored>' : undefined);
+    apiKey = await promptOptionalSecret('API key (optional)', existingApiKey ? '<stored>' : undefined);
     if (apiKey === '<stored>') apiKey = existingApiKey;
   }
 
   const defaultModel = defaults.getDefaultModel(provider) || getDefaultModelForProvider(provider);
-  const model = await promptRequired('Model', defaultModel || undefined);
+  const model = await promptModel(callbacks, provider, apiKey, baseUrl, defaultModel || undefined);
   const reasoningEffort = await promptReasoningEffort(defaults.reasoningEffort);
 
   callbacks.saveLlmConfig({
@@ -215,8 +215,14 @@ async function configureAccountProvider(
   existingApiKey: string | undefined,
 ): Promise<string | undefined> {
   if (await callbacks.hasAccountSession(provider)) {
-    output.write('Existing account session found.\n');
-    return existingApiKey;
+    const authAction = await promptSelect(`${describeProvider(provider)} authentication`, [
+      { label: 'Use existing login', value: 'existing' },
+      { label: 'Renew login', value: 'renew' },
+    ], 'existing');
+
+    if (authAction === 'existing') {
+      return existingApiKey;
+    }
   }
 
   const authMethod = provider === 'openai-oauth'
@@ -239,6 +245,47 @@ async function configureAccountProvider(
   return completed.apiKey ?? existingApiKey;
 }
 
+async function promptModel(
+  callbacks: SetupCallbacks,
+  provider: YagrModelProvider,
+  apiKey: string | undefined,
+  baseUrl: string | undefined,
+  defaultModel: string | undefined,
+): Promise<string> {
+  output.write(`Fetching available models for ${describeProvider(provider)}...\n`);
+
+  let models: string[] = [];
+  try {
+    models = await callbacks.fetchModels(provider, apiKey, baseUrl);
+  } catch (error) {
+    output.write(`Model discovery failed: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+
+  const modelOptions = buildModelOptions(models, defaultModel);
+  if (modelOptions.length === 0) {
+    return promptRequired('Model', defaultModel);
+  }
+
+  const selected = await promptSelect('Model', [
+    ...modelOptions.map((model) => ({ label: model, value: model })),
+    { label: 'Enter manually...', value: '__custom__' },
+  ], defaultModel && modelOptions.includes(defaultModel) ? defaultModel : modelOptions[0]);
+
+  if (selected === '__custom__') {
+    return promptRequired('Model', defaultModel);
+  }
+
+  return selected;
+}
+
+function buildModelOptions(models: string[], defaultModel: string | undefined): string[] {
+  const uniqueModels = Array.from(new Set(models.filter((model) => model.trim().length > 0)));
+  if (defaultModel && !uniqueModels.includes(defaultModel)) {
+    return [defaultModel, ...uniqueModels];
+  }
+  return uniqueModels;
+}
+
 async function promptAuthMethod(): Promise<'browser' | 'headless'> {
   return promptSelect('OpenAI account sign-in method', [
     { label: 'Browser sign-in', value: 'browser' },
@@ -252,7 +299,7 @@ async function promptRequiredApiKey(
 ): Promise<string> {
   while (true) {
     const label = existingApiKey ? 'API key [stored, press Enter to keep]' : `API key for ${provider}`;
-    const answer = (await promptText(label)).trim();
+    const answer = (await promptSecret(label)).trim();
     if (answer) return answer;
     if (existingApiKey) return existingApiKey;
     output.write('An API key is required for this provider.\n');
@@ -276,6 +323,14 @@ async function promptOptional(
   defaultValue: string | undefined,
 ): Promise<string | undefined> {
   const answer = (await promptText(label, defaultValue)).trim();
+  return answer || defaultValue;
+}
+
+async function promptOptionalSecret(
+  label: string,
+  defaultValue: string | undefined,
+): Promise<string | undefined> {
+  const answer = (await promptSecret(label, defaultValue)).trim();
   return answer || defaultValue;
 }
 
@@ -346,7 +401,7 @@ async function promptTelegramToken(
   existingToken: string | undefined,
 ): Promise<string> {
   while (true) {
-    const answer = (await promptText(existingToken ? 'Telegram BotFather token [stored, press Enter to keep]' : 'Telegram BotFather token')).trim();
+    const answer = (await promptSecret(existingToken ? 'Telegram BotFather token [stored, press Enter to keep]' : 'Telegram BotFather token')).trim();
     const token = answer || existingToken;
     if (token && token.includes(':')) return token;
     output.write('Enter a valid Telegram BotFather token.\n');
@@ -370,6 +425,24 @@ async function promptText(label: string, defaultValue?: string): Promise<string>
       <TextPrompt
         label={label}
         defaultValue={defaultValue}
+        onSubmit={(value) => {
+          app.unmount();
+          resolve(value);
+        }}
+      />,
+      { stdin: input, stdout: output },
+    );
+  });
+}
+
+async function promptSecret(label: string, defaultValue?: string): Promise<string> {
+  return new Promise<string>((resolve) => {
+    let app: ReturnType<typeof render>;
+    app = render(
+      <TextPrompt
+        label={label}
+        defaultValue={defaultValue}
+        secret
         onSubmit={(value) => {
           app.unmount();
           resolve(value);
@@ -415,6 +488,12 @@ function SelectPrompt<T extends string>({
 }) {
   const defaultIndex = Math.max(0, options.findIndex((option) => option.value === defaultValue));
   const [focusedIndex, setFocusedIndex] = useState(defaultIndex);
+  const visibleRowCount = Math.min(12, options.length);
+  const firstVisibleIndex = Math.min(
+    Math.max(0, focusedIndex - Math.floor(visibleRowCount / 2)),
+    Math.max(0, options.length - visibleRowCount),
+  );
+  const visibleOptions = options.slice(firstVisibleIndex, firstVisibleIndex + visibleRowCount);
 
   useInput((_inputValue, key) => {
     if (key.upArrow) {
@@ -435,11 +514,16 @@ function SelectPrompt<T extends string>({
   return (
     <Box flexDirection="column">
       <Text>{label}</Text>
-      {options.map((option, index) => (
-        <Text key={option.value} color={index === focusedIndex ? 'cyan' : undefined}>
-          {index === focusedIndex ? '❯ ' : '  '}{option.label}
+      {firstVisibleIndex > 0 ? <Text dimColor>  ...</Text> : null}
+      {visibleOptions.map((option, visibleIndex) => {
+        const absoluteIndex = firstVisibleIndex + visibleIndex;
+        return (
+        <Text key={option.value} color={absoluteIndex === focusedIndex ? 'cyan' : undefined}>
+          {absoluteIndex === focusedIndex ? '❯ ' : '  '}{option.label}
         </Text>
-      ))}
+        );
+      })}
+      {firstVisibleIndex + visibleRowCount < options.length ? <Text dimColor>  ...</Text> : null}
     </Box>
   );
 }
@@ -447,16 +531,20 @@ function SelectPrompt<T extends string>({
 function TextPrompt({
   label,
   defaultValue,
+  secret = false,
   onSubmit,
 }: {
   label: string;
   defaultValue?: string;
+  secret?: boolean;
   onSubmit: (value: string) => void;
 }) {
   return (
     <Box>
       <Text>{label}{defaultValue ? ` [${defaultValue}]` : ''}: </Text>
-      <TextInput defaultValue={defaultValue} onSubmit={onSubmit} />
+      {secret
+        ? <PasswordInput placeholder={defaultValue ? 'Press Enter to keep, or type a new value' : ''} onSubmit={onSubmit} />
+        : <TextInput placeholder={defaultValue ? 'Press Enter to keep, or type a new value' : ''} onSubmit={onSubmit} />}
     </Box>
   );
 }
