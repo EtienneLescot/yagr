@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWebUiStore, isNewTabOpen, type ThreadEntry, type ChatProgressEntry, type ConfigSnapshot, type SessionHistoryEntry } from './store.js';
 import type { SerializedChatMessage } from '../session/session-types.js';
+import yagrLogo from '../../res/yagr-logo.png';
 
 type ApiError = { error?: string };
 type ThemeMode = 'system' | 'light' | 'dark';
@@ -352,7 +353,7 @@ function SessionSidebar({
   return (
     <aside className="sidebar sidebarHome">
       <section className="panel brandCard">
-        <div className="brandMark" aria-hidden="true">Y</div>
+        <img className="brandMark" src={yagrLogo} alt="" aria-hidden="true" />
         <div className="brandCopy">
           <p className="eyebrow">Yagr Web UI</p>
           <h1 className="brandTitle">
@@ -792,6 +793,7 @@ function App() {
         // Server creates the session file immediately → it appears in the list right away.
         const { id } = await request<{ id: string }>('/api/sessions', { method: 'POST' });
         switchSession(id);
+        setThread([]);
         void refreshSessions();
       } catch (error) {
         notify(error instanceof Error ? error.message : String(error), 'error');
