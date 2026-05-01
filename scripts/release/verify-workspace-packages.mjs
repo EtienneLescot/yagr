@@ -23,6 +23,10 @@ function run(command, args, options = {}) {
 }
 
 function assertNoLocalDependencies(manifest, manifestPath) {
+  if (manifest.repository?.url !== 'https://github.com/EtienneLescot/yagr') {
+    throw new Error(`${manifestPath} must set repository.url to https://github.com/EtienneLescot/yagr for npm provenance`);
+  }
+
   for (const field of dependencyFields) {
     for (const [name, spec] of Object.entries(manifest[field] || {})) {
       if (/^(file|link|workspace):/.test(spec)) {

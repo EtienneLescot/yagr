@@ -30,9 +30,18 @@ function getVersionPlan(packages) {
   return new Map(packages.map(pkg => [pkg.name, pkg.version]));
 }
 
-function transformManifest(pkg, packageMap, versionPlan) {
+function normalizeRepositoryForProvenance(repository) {
+  if (!repository?.url) return repository;
+  return {
+    ...repository,
+    url: repository.url.replace(/^git\+/, '').replace(/\.git$/, ''),
+  };
+}
+
+function transformManifest(pkg, packageMap, versionPlan, rootManifest) {
   const manifest = structuredClone(pkg.manifest);
   manifest.files = ['dist/'];
+  manifest.repository = normalizeRepositoryForProvenance(manifest.repository || rootManifest.repository);
   manifest.publishConfig = { ...(manifest.publishConfig || {}), access: 'public' };
 
   for (const field of dependencyFields) {
@@ -52,6 +61,10 @@ function transformManifest(pkg, packageMap, versionPlan) {
 export function stageWorkspacePackages({ stageRoot = defaultStageRoot, includeRoot = true } = {}) {
   const packages = topologicalPackages(getPackageGraph()).filter(pkg => includeRoot || pkg.path !== '.');
   const packageMap = new Map(packages.map(pkg => [pkg.name, pkg]));
+  const rootManifest = packageMap.get('@yagr/agent')?.manifest;
+  if (!rootManifest?.repository?.url) {
+    throw new Error('Root package repository.url is required for provenance-compatible staged packages.');
+  }
   const versionPlan = getVersionPlan(packages);
   fs.rmSync(stageRoot, { recursive: true, force: true });
   fs.mkdirSync(stageRoot, { recursive: true });
@@ -66,7 +79,7 @@ export function stageWorkspacePackages({ stageRoot = defaultStageRoot, includeRo
 
     const target = path.join(stageRoot, pkg.name.replace('/', '__'));
     fs.mkdirSync(target, { recursive: true });
-    fs.writeFileSync(path.join(target, 'package.json'), `${JSON.stringify(transformManifest(pkg, packageMap, versionPlan), null, 2)}\n`);
+    fs.writeFileSync(path.join(target, 'package.json'), `${JSON.stringify(transformManifest(pkg, packageMap, versionPlan, rootManifest), null, 2)}\n`);
     copyDirectory(distPath, path.join(target, 'dist'));
 
     staged.push({ name: pkg.name, version: pkg.version, path: target });
