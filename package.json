@@ -1,6 +1,6 @@
 {
   "name": "@yagr/agent",
-  "version": "0.2.31",
+  "version": "0.2.31-next.0",
   "description": "Autonomous local coding agent",
   "workspaces": [
     "packages/*"
