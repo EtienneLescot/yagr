@@ -23,5 +23,8 @@
     "@yagr/runtime-events": "file:../runtime-events",
     "@yagr/session-service": "file:../session-service",
     "@yagr/stream-adapter": "file:../stream-adapter"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -16,7 +16,10 @@
   "peerDependencies": {
     "react": "^19.0.0"
   },
-  "dependencies": {
-    "@yagr/runtime-events": "file:../runtime-events"
+  "files": [
+    "dist/"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

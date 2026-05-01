@@ -12,5 +12,11 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"
+  },
+  "files": [
+    "dist/"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

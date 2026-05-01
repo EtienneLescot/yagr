@@ -14,6 +14,7 @@ export type SlashCommandName =
   | 'pending'
   | 'approve'
   | 'compact'
+  | 'open'
   | 'toggle_thinking'
   | 'toggle_cli'
   | 'stop'
@@ -47,6 +48,7 @@ const COMMANDS: SlashCommandMeta[] = [
   { name: 'pending', description: 'Show pending required actions', usage: '/pending', surfaces: ['tui', 'webui', 'telegram'], aliases: [] },
   { name: 'approve', description: 'Grant pending permissions', usage: '/approve', surfaces: ['tui', 'webui', 'telegram'], aliases: [] },
   { name: 'compact', description: 'Trigger conversation compaction', usage: '/compact', surfaces: ['tui', 'webui', 'telegram'], aliases: [] },
+  { name: 'open', description: 'Open the current conversation in the local surface', usage: '/open', surfaces: ['tui'], aliases: [] },
   { name: 'toggle_thinking', description: 'Toggle display of agent thinking', usage: '/toggle_thinking', surfaces: ['tui'], aliases: ['toggle-thinking', 'toggle-agent-thinking'] },
   { name: 'toggle_cli', description: 'Toggle display of command executions', usage: '/toggle_cli', surfaces: ['tui'], aliases: ['toggle-cli', 'toggle-command-executions'] },
   { name: 'stop', description: 'Stop the current run', usage: '/stop', surfaces: ['tui', 'webui', 'telegram'], aliases: [] },
