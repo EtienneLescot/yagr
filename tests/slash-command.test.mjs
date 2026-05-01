@@ -36,7 +36,6 @@ test('resolveCommand parses canonical names', () => {
   assert.equal(resolveCommand('/pending'), 'pending');
   assert.equal(resolveCommand('/approve'), 'approve');
   assert.equal(resolveCommand('/compact'), 'compact');
-  assert.equal(resolveCommand('/open'), 'open');
   assert.equal(resolveCommand('/toggle_thinking'), 'toggle_thinking');
   assert.equal(resolveCommand('/toggle_cli'), 'toggle_cli');
   assert.equal(resolveCommand('/stop'), 'stop');
@@ -70,7 +69,6 @@ test('getCommandsForSurface returns only commands available on that surface', ()
   assert.ok(names.includes('resume'));
   assert.ok(names.includes('delete'));
   assert.ok(names.includes('new'));
-  assert.ok(names.includes('open'));
   assert.ok(names.includes('toggle_thinking'));
   assert.ok(names.includes('exit'));
   assert.ok(!names.includes('unknown_fake_command'));
@@ -81,7 +79,6 @@ test('getCommandsForSurface returns only commands available on that surface', ()
   assert.ok(tNames.includes('sessions'));
   assert.ok(tNames.includes('resume'));
   assert.ok(tNames.includes('delete'));
-  assert.ok(!tNames.includes('open'));
   assert.ok(!tNames.includes('exit'));
   assert.ok(!tNames.includes('toggle_thinking'));
 
@@ -90,7 +87,6 @@ test('getCommandsForSurface returns only commands available on that surface', ()
   assert.ok(wNames.includes('help'));
   assert.ok(wNames.includes('sessions'));
   assert.ok(wNames.includes('resume'));
-  assert.ok(!wNames.includes('open'));
   assert.ok(!wNames.includes('exit'));
   assert.ok(!wNames.includes('toggle_thinking'));
 });
