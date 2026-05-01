@@ -16,5 +16,11 @@
   "peerDependencies": {
     "ink": "^6.0.0",
     "react": "^19.0.0"
+  },
+  "files": [
+    "dist/"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

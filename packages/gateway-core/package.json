@@ -15,5 +15,11 @@
   },
   "dependencies": {
     "@yagr/session-service": "file:../session-service"
+  },
+  "files": [
+    "dist/"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

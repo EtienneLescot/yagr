@@ -16,5 +16,11 @@
   "dependencies": {
     "@yagr/conversation-core": "file:../conversation-core",
     "@yagr/session-service": "file:../session-service"
+  },
+  "files": [
+    "dist/"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }
