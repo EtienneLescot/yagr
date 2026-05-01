@@ -50,7 +50,6 @@ export interface SlashHandler {
   resumeSession(scope: DeepAgentSessionScope, sessionId: string): void;
   resetLocalState(): void;
   approvePendingPermissions?(): Promise<number> | number;
-  openExternalUrl?(url: string): Promise<void>;
   getDisplayOptions?(): { showThinking: boolean; showExecution: boolean };
   setDisplayOptions?(opts: { showThinking?: boolean; showExecution?: boolean }): void;
 }
@@ -103,8 +102,6 @@ export class SlashCommandService {
         return this.executeApprove(handler);
       case 'compact':
         return { kind: 'ok', message: 'Compaction runs automatically when needed.' };
-      case 'open':
-        return { kind: 'error', message: '/open requires a recent workflow. No workflow available.' };
       case 'toggle_thinking':
         if (handler.setDisplayOptions) {
           const current = handler.getDisplayOptions?.() ?? { showThinking: true, showExecution: true };
@@ -208,7 +205,7 @@ export class SlashCommandService {
     };
   }
 
-  private executeDelete(args: string[], ctx: SlashCommandContext, handler: SlashHandler): SlashCommandResult {
+  private async executeDelete(args: string[], ctx: SlashCommandContext, handler: SlashHandler): Promise<SlashCommandResult> {
     if (args.length === 0) {
       return { kind: 'invalid_arguments', message: 'Usage: /delete <session_id>' };
     }
@@ -222,7 +219,12 @@ export class SlashCommandService {
     const activeSession = this.sessions.getActiveForScope(scope);
     const isActive = activeSession?.id === targetId;
 
-    void this.sessions.delete(targetId);
+    try {
+      await this.sessions.delete(targetId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { kind: 'error', message: `Failed to delete session: ${message}` };
+    }
 
     if (isActive) {
       const fresh = this.sessions.rotateForScope(scope, { title: 'New conversation' });
