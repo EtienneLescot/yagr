@@ -19,5 +19,8 @@
   "dependencies": {
     "@yagr/tui-surface": "file:../tui-surface",
     "@yagr/webui-surface": "file:../webui-surface"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

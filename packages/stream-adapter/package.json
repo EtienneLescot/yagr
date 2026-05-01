@@ -16,5 +16,11 @@
   "dependencies": {
     "@langchain/core": "^1.0.0",
     "@yagr/runtime-events": "file:../runtime-events"
+  },
+  "files": [
+    "dist/"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

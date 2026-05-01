@@ -53,8 +53,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check workspace dependencies
+        run: npm run deps:check
+
       - name: Build and test
         run: npm test
+
+      - name: Verify staged workspace packages
+        run: npm run publish:verify
 
       - name: Inspect publish environment
         run: |
@@ -64,8 +70,8 @@ jobs:
           npm config get @yagr:registry
           npm config list
 
-      - name: Publish stable package
-        run: npm publish --provenance --access public
+      - name: Publish stable packages
+        run: npm run publish:workspace
 
   publish-next:
     if: github.ref == 'refs/heads/next'
@@ -88,24 +94,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set next package version
+        run: npm run release:prerelease:set-versions -- --sequence "${{ github.run_number }}.${{ github.run_attempt }}"
+
+      - name: Synchronize workspace dependencies
+        run: npm run deps:sync
+
+      - name: Check workspace dependencies
+        run: npm run deps:check
+
       - name: Build and test
         run: npm test
 
-      - name: Compute next version
-        id: next-version
-        run: |
-          node --input-type=module <<'EOF' >> "$GITHUB_OUTPUT"
-          import fs from 'node:fs';
-
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          const baseVersion = pkg.version.split('-')[0];
-          const nextVersion = `${baseVersion}-next.${process.env.GITHUB_RUN_NUMBER}.${process.env.GITHUB_RUN_ATTEMPT}`;
-
-          console.log(`version=${nextVersion}`);
-          EOF
-
-      - name: Set next package version
-        run: npm version --no-git-tag-version "${{ steps.next-version.outputs.version }}"
+      - name: Verify staged workspace packages
+        run: npm run publish:verify
 
       - name: Inspect publish environment
         run: |
@@ -115,5 +117,5 @@ jobs:
           npm config get @yagr:registry
           npm config list
 
-      - name: Publish next package
-        run: npm publish --provenance --tag next --access public
+      - name: Publish next packages
+        run: npm run publish:workspace:next

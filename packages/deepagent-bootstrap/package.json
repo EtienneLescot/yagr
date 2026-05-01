@@ -16,5 +16,11 @@
   "dependencies": {
     "deepagents": "^1.8.8",
     "langchain": "^1.2.39"
+  },
+  "files": [
+    "dist/"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }
