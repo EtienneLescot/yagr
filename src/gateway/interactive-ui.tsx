@@ -20,7 +20,6 @@ import { SlashCommandService } from '@yagr/conversation-service';
 import { SessionService } from '@yagr/session-service';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-home.js';
-import { openExternalUrl } from '../system/open-external.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import type {
   YagrAgentState,
@@ -481,9 +480,6 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
           }
           setPendingRequiredActions((previous) => previous.filter((action) => action.kind !== 'permission'));
           return permissionActions.length;
-        },
-        openExternalUrl: async (url) => {
-          await openExternalUrl(url);
         },
         getDisplayOptions: () => ({ showThinking: display.showThinking, showExecution: display.showExecution }),
         setDisplayOptions: (opts) => {
