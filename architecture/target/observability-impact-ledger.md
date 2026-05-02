@@ -22,7 +22,7 @@ Operational rule:
 
 ## Scope
 
-This target plan is about a future observability layer. It does not describe current architecture until implemented.
+This target plan tracks the remaining observability layer work beyond the current foundation documented in `architecture/current/`: `@yagr/impact-ledger` owns the canonical impact event schema and append-only local JSONL ledger, and `@yagr/reality-observer` can classify selected `RuntimeOperationEvent` entries into impact events.
 
 It must not turn Yagr into a fixed orchestrator, a narrow workflow runner, or a domain-specific backend.
 
@@ -289,6 +289,8 @@ Skills and plugins can add richer support for specific orchestrators, but the co
 
 ### Phase 1: Impact schema and local ledger
 
+Status: implemented as the current `@yagr/impact-ledger` package.
+
 - Add canonical impact event types.
 - Add append-only local persistence.
 - Link impact events to session IDs and runtime operation IDs.
@@ -296,6 +298,8 @@ Skills and plugins can add richer support for specific orchestrators, but the co
 - Keep existing runtime events intact.
 
 ### Phase 2: Runtime effect capture
+
+Status: partially implemented as `@yagr/reality-observer` for selected runtime operation events. Streaming WebUI, TUI, and Telegram runs pass operation events through the shared gateway stream adapter into the ledger. Remaining work includes deeper filesystem snapshots, process metadata, raw evidence separation, and broader high-risk detection.
 
 - Convert meaningful `RuntimeOperationEvent` entries into impact candidates.
 - Capture file write events and shell commands at the shared runtime boundary.
@@ -317,6 +321,8 @@ Skills and plugins can add richer support for specific orchestrators, but the co
 - Flag unverified claims instead of treating them as truth.
 
 ### Phase 5: Dashboard surfaces
+
+Status: partially implemented as a shared `/impact` summary command for WebUI, TUI, and Telegram. Dedicated dashboard views remain target work.
 
 - Add Impact, Artifacts, Automations, and Cleanup views to WebUI.
 - Expose compact impact summaries in TUI/CLI.
