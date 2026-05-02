@@ -8,6 +8,7 @@ import pacote from 'pacote';
 import { dependencyFields, getPackageGraph, topologicalPackages, workspaceRoot } from './workspace-packages.mjs';
 
 const verificationRoot = path.join(workspaceRoot, '.tmp/package-verify');
+const expectedRepositoryUrl = 'https://github.com/EtienneLescot/yagr';
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -30,6 +31,15 @@ function parsePackOutput(output) {
 }
 
 function assertNoLocalDependencies(manifest, manifestPath) {
+  const repositoryUrl = typeof manifest.repository === 'string'
+    ? manifest.repository
+    : manifest.repository?.url;
+  const normalizedRepositoryUrl = repositoryUrl?.replace(/^git\+/, '').replace(/\.git$/, '');
+
+  if (normalizedRepositoryUrl !== expectedRepositoryUrl) {
+    throw new Error(`${manifestPath} must set repository.url to ${expectedRepositoryUrl} for npm provenance`);
+  }
+
   for (const field of dependencyFields) {
     for (const [name, spec] of Object.entries(manifest[field] || {})) {
       if (/^(file|link|workspace):/.test(spec)) {
