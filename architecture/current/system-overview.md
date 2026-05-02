@@ -22,6 +22,8 @@ flowchart TD
       Provider[@yagr/provider-runtime]
       Session[@yagr/session-service]
       Events[@yagr/runtime-events]
+      Impact[@yagr/impact-ledger]
+      Observer[@yagr/reality-observer]
       Stream[@yagr/stream-adapter]
       Conversation[@yagr/conversation-service]
     end
@@ -38,6 +40,8 @@ flowchart TD
     RuntimeFacade --> Provider
     RuntimeFacade --> Session
     RuntimeFacade --> Events
+    RuntimeFacade --> Impact
+    RuntimeFacade --> Observer
     RuntimeFacade --> Stream
     RuntimeFacade --> Conversation
     SurfacesFacade --> WebuiSurface
@@ -55,6 +59,9 @@ Yagr owns:
 - provider/model runtime
 - sessions/checkpoints
 - runtime events
+- impact event schema and append-only local impact ledger
+- runtime-to-impact classification for meaningful operation events
+- shared `/impact` slash summaries for WebUI, TUI, and Telegram
 - stream adaptation
 - conversation/slash behavior
 - reusable surface primitives
@@ -71,3 +78,7 @@ Yagr is:
 - provider/runtime/session infrastructure for coding work
 
 Installed Agent Skills are external instructions. Yagr stores and exposes skill directories, while DeepAgents.js owns runtime discovery and progressive disclosure.
+
+The Impact Ledger is the current authority for append-only records of meaningful effects. The Reality Observer is the current runtime-side classifier that can convert selected `RuntimeOperationEvent` entries into impact events without putting observability policy in providers or surfaces.
+
+WebUI, TUI, and Telegram expose impact through the shared `/impact` slash command. The facades only pass user input to `@yagr/conversation-service` and render the returned summary; ledger querying and summary formatting stay in the runtime/conversation layer.
