@@ -8,6 +8,8 @@ This page maps the repository at the package/system level.
 
 - `@yagr/runtime`
 - `@yagr/runtime-events`
+- `@yagr/impact-ledger`
+- `@yagr/reality-observer`
 - `@yagr/plugin-runtime`
 - `@yagr/provider-runtime`
 
@@ -37,6 +39,8 @@ These are the preferred integration surfaces for downstream products.
 - `@yagr/session-service`
 - `@yagr/session-memory`
 - `@yagr/runtime-events`
+- `@yagr/impact-ledger`
+- `@yagr/reality-observer`
 - `@yagr/stream-adapter`
 - `@yagr/conversation-core`
 - `@yagr/conversation-service`
@@ -64,6 +68,7 @@ For a VS Code extension, prefer this composition path:
 
 - import runtime construction from `@yagr/runtime`
 - render progress and tool activity from `@yagr/runtime-events`
+- record meaningful runtime effects with `@yagr/impact-ledger` and `@yagr/reality-observer`
 - use `@yagr/plugin-runtime` for plugin contracts
 - use `@yagr/session-service` only if the extension owns Yagr-compatible session UX directly
 
@@ -77,6 +82,7 @@ It wires:
 - surface packages
 - provider setup
 - sessions and conversation services
+- gateway-level impact ledger wiring for streaming WebUI, TUI, and Telegram runs
 - CLI/WebUI/TUI/Telegram product entrypoints
 - generic Agent Skills installation and source-path resolution
 

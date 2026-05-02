@@ -20,6 +20,7 @@ import { SlashCommandService } from '@yagr/conversation-service';
 import { SessionService } from '@yagr/session-service';
 import type { YagrDeepAgentHandle } from '../agent-factory.js';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir } from '../config/yagr-home.js';
+import { getGatewayImpactLedger } from './impact.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
 import type {
   YagrAgentState,
@@ -336,6 +337,10 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
             console.error(`[DEBUG_AGENT_STREAM] #${eventCount} event=${eventType} name=${eventName}`);
           }
           await processStreamEvent(event, accumulator, {
+            impact: {
+              ledger: getGatewayImpactLedger(),
+              context: { sessionId: threadIdRef.current },
+            },
             onTextDelta: async (delta) => {
               if (display.showResponses) {
                 appendAssistantDelta(delta);
@@ -443,7 +448,7 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
       return;
     }
 
-    const slashService = new SlashCommandService(sessions, compactionService);
+    const slashService = new SlashCommandService(sessions, compactionService, getGatewayImpactLedger());
     const parsed = slashService.parse(prompt);
 
     if (parsed) {
@@ -499,6 +504,8 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
           pushEntry('result', 'Sessions', result.message);
         } else if (parsed.command === 'checkpoints') {
           pushEntry('result', 'Checkpoints', result.message);
+        } else if (parsed.command === 'impact') {
+          pushEntry('result', 'Impact', result.message);
         } else if (parsed.command === 'save') {
           pushEntry('result', 'Checkpoint saved', result.message);
         } else if (parsed.command === 'restore') {
@@ -692,7 +699,7 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
       </Box>
 
       <Text dimColor>
-        /help · /sessions · /new · /expand · /collapse · /stop · ↑↓ scroll
+        /help · /sessions · /impact · /new · /expand · /collapse · /stop · ↑↓ scroll
       </Text>
     </Box>
   );

@@ -1,5 +1,5 @@
 {
-  "name": "@yagr/conversation-service",
+  "name": "@yagr/impact-ledger",
   "version": "0.1.1-next.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,17 +10,13 @@
       "default": "./dist/index.js"
     }
   },
-  "scripts": {
-    "build": "tsc -p tsconfig.json"
-  },
-  "dependencies": {
-    "@yagr/conversation-core": "file:../conversation-core",
-    "@yagr/impact-ledger": "file:../impact-ledger",
-    "@yagr/session-service": "file:../session-service"
-  },
   "files": [
     "dist/"
   ],
+  "scripts": {
+    "build": "node --input-type=module --eval \"(await import('node:fs')).rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "test": "node --import tsx --test src/**/*.test.ts"
+  },
   "publishConfig": {
     "access": "public"
   }

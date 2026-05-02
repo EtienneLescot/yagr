@@ -8,6 +8,7 @@ import type { YagrRequiredAction, YagrRunOptions } from '../types.js';
 import type { YagrUserVisibleUpdate } from '../runtime/user-visible-updates.js';
 import { createYagrDeepAgent, type YagrDeepAgentHandle } from '../agent-factory.js';
 import { createRunAccumulator, processStreamEvent } from './langgraph-events.js';
+import { getGatewayImpactLedger } from './impact.js';
 import { SessionService, deriveSessionTitle } from '@yagr/session-service';
 import { SlashCommandService } from '@yagr/conversation-service';
 import {
@@ -458,6 +459,21 @@ class TelegramGateway implements Gateway {
       await ctx.reply(result.message);
     });
 
+    this.bot.command('impact', async (ctx) => {
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
+      const handle = await this.resolveAgentHandle();
+      const threadId = await this.getOrCreateThreadId(chatId);
+      const args = (ctx.message?.text ?? '').split(' ').slice(1);
+      const service = new SlashCommandService(this.sessions, handle.compactionService, getGatewayImpactLedger());
+      const result = await service.execute(
+        { command: 'impact', args, raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
+    });
+
     this.bot.command('resume', async (ctx) => {
       const chatId = String(ctx.chat?.id);
       if (!this.isLinkedChat(chatId)) return;
@@ -697,6 +713,10 @@ class TelegramGateway implements Gateway {
 
       for await (const event of stream) {
         await processStreamEvent(event, accumulator, {
+          impact: {
+            ledger: getGatewayImpactLedger(),
+            context: { sessionId: threadId },
+          },
           onUserVisibleUpdate: sendProgressUpdate,
           onCompaction: async (compaction) => {
             const { compactionService } = await this.resolveAgentHandle();

@@ -12,6 +12,9 @@
  *   - `YagrContextCompactionEvent` for context compaction events
  */
 import type { StreamEvent } from '@langchain/core/tracers/log_stream';
+import type { ImpactLedger } from '@yagr/impact-ledger';
+import { recordRuntimeOperationImpact, type RuntimeImpactContext } from '@yagr/reality-observer';
+import type { RuntimeOperationEvent } from '@yagr/runtime-events';
 import type { YagrContextCompactionEvent, YagrOperationEvent, YagrRequiredAction, YagrToolEvent } from '../types.js';
 import {
   type YagrUserVisibleUpdate,
@@ -53,6 +56,10 @@ export interface LangGraphEventCallbacks {
    * Callers patch by `operationId` — a second call for the same id is an update.
    */
   onOperation?: (event: YagrOperationEvent) => void | Promise<void>;
+  impact?: {
+    ledger: ImpactLedger;
+    context: RuntimeImpactContext;
+  };
   /** Called when a context compaction event occurs. */
   onCompaction?: (event: YagrContextCompactionEvent) => void | Promise<void>;
 }
@@ -108,10 +115,10 @@ export async function processStreamEvent(
           // Emit the opening "thinking" card.
           const startEvent = makeThinkingStartEvent();
           accumulator.thinkingStartedAt = startEvent.startedAt;
-          await callbacks.onOperation?.(startEvent);
+          await emitOperation(callbacks, startEvent);
         } else {
           // Update the card body incrementally.
-          await callbacks.onOperation?.({
+          await emitOperation(callbacks, {
             kind: 'operation',
             operationId: THINKING_OP_ID,
             label: 'Thinking…',
@@ -138,7 +145,7 @@ export async function processStreamEvent(
           };
           accumulator.activeOperations.set('thinking:closed', closedSentinel);
           const endPatch = makeThinkingEndEvent(accumulator.thinkingText, accumulator.thinkingStartedAt);
-          await callbacks.onOperation?.({
+          await emitOperation(callbacks, {
             kind: 'operation',
             operationId: THINKING_OP_ID,
             label: 'Thinking',
@@ -184,7 +191,7 @@ export async function processStreamEvent(
       const opEvent = makeToolStartOperationEvent(toolName, input);
       if (opEvent) {
         accumulator.activeOperations.set(operationKey, opEvent);
-        await callbacks.onOperation?.(opEvent);
+        await emitOperation(callbacks, opEvent);
       }
       break;
     }
@@ -200,7 +207,7 @@ export async function processStreamEvent(
       if (active) {
         const patch = makeToolEndOperationEvent(active.operationId, toolName, event.data?.output, active.startedAt);
         const endEvent: YagrOperationEvent = { ...active, ...patch };
-        await callbacks.onOperation?.(endEvent);
+        await emitOperation(callbacks, endEvent);
         accumulator.activeOperations.delete(operationKey);
       }
 
@@ -229,6 +236,18 @@ export async function processStreamEvent(
 
     default:
       break;
+  }
+}
+
+async function emitOperation(callbacks: LangGraphEventCallbacks, event: YagrOperationEvent): Promise<void> {
+  await callbacks.onOperation?.(event);
+  if (!callbacks.impact) {
+    return;
+  }
+  try {
+    recordRuntimeOperationImpact(callbacks.impact.ledger, callbacks.impact.context, event as RuntimeOperationEvent);
+  } catch (err) {
+    console.error('[impact-ledger] Failed to record runtime operation impact:', err);
   }
 }
 
