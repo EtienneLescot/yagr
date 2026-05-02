@@ -15,7 +15,8 @@
   ],
   "scripts": {
     "build": "node --input-type=module --eval \"(await import('node:fs')).rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
-    "test": "node --import tsx --test src/**/*.test.ts"
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "prepublishOnly": "node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const f of ['dependencies','peerDependencies','optionalDependencies'])for(const [n,s] of Object.entries(p[f]||{}))if(/^(file|link|workspace):/.test(s)){console.error('Refusing to publish '+p.name+': '+f+'.'+n+' uses local spec '+s);process.exit(1)}\""
   },
   "publishConfig": {
     "access": "public"
