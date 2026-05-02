@@ -13,6 +13,8 @@ import {
   writeJson,
 } from './workspace-packages.mjs';
 
+const publishGuardScript = 'node -e "const fs=require(\'fs\');const p=JSON.parse(fs.readFileSync(\'package.json\',\'utf8\'));for(const f of [\'dependencies\',\'peerDependencies\',\'optionalDependencies\'])for(const [n,s] of Object.entries(p[f]||{}))if(/^(file|link|workspace):/.test(s)){console.error(\'Refusing to publish \'+p.name+\': \'+f+\'.\'+n+\' uses local spec \'+s);process.exit(1)}"';
+
 function ensurePackageMetadata(manifest, pkg) {
   let changed = false;
 
@@ -23,6 +25,11 @@ function ensurePackageMetadata(manifest, pkg) {
 
   if (!manifest.publishConfig || manifest.publishConfig.access !== 'public') {
     manifest.publishConfig = { ...(manifest.publishConfig || {}), access: 'public' };
+    changed = true;
+  }
+
+  if (manifest.scripts?.prepublishOnly !== publishGuardScript) {
+    manifest.scripts = { ...(manifest.scripts || {}), prepublishOnly: publishGuardScript };
     changed = true;
   }
 

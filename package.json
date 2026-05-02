@@ -44,7 +44,8 @@
     "check-versions": "node scripts/check-version-consistency.js",
     "docs": "npm --prefix docs start",
     "docs:build": "npm --prefix docs run build",
-    "update:snapshot": "node scripts/update-model-snapshot.mjs"
+    "update:snapshot": "node scripts/update-model-snapshot.mjs",
+    "prepublishOnly": "node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const f of ['dependencies','peerDependencies','optionalDependencies'])for(const [n,s] of Object.entries(p[f]||{}))if(/^(file|link|workspace):/.test(s)){console.error('Refusing to publish '+p.name+': '+f+'.'+n+' uses local spec '+s);process.exit(1)}\""
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
