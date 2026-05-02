@@ -13,8 +13,18 @@ import {
   writeJson,
 } from './workspace-packages.mjs';
 
+const repository = {
+  type: 'git',
+  url: 'git+https://github.com/EtienneLescot/yagr.git',
+};
+
 function ensurePackageMetadata(manifest, pkg) {
   let changed = false;
+
+  if (JSON.stringify(manifest.repository) !== JSON.stringify(repository)) {
+    manifest.repository = repository;
+    changed = true;
+  }
 
   if (pkg.path !== '.' && JSON.stringify(manifest.files) !== JSON.stringify(['dist/'])) {
     manifest.files = ['dist/'];
