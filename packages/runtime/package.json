@@ -1,6 +1,6 @@
 {
   "name": "@yagr/runtime",
-  "version": "0.1.1-next.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,18 +14,17 @@
     "dist/"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prepublishOnly": "node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const f of ['dependencies','peerDependencies','optionalDependencies'])for(const [n,s] of Object.entries(p[f]||{}))if(/^(file|link|workspace):/.test(s)){console.error('Refusing to publish '+p.name+': '+f+'.'+n+' uses local spec '+s);process.exit(1)}\""
+    "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@yagr/conversation-service": "file:../conversation-service",
-    "@yagr/deepagent-bootstrap": "file:../deepagent-bootstrap",
-    "@yagr/impact-ledger": "file:../impact-ledger",
-    "@yagr/provider-runtime": "file:../provider-runtime",
-    "@yagr/reality-observer": "file:../reality-observer",
-    "@yagr/runtime-events": "file:../runtime-events",
-    "@yagr/session-service": "file:../session-service",
-    "@yagr/stream-adapter": "file:../stream-adapter"
+    "@yagr/conversation-service": "workspace:*",
+    "@yagr/deepagent-bootstrap": "workspace:*",
+    "@yagr/impact-ledger": "workspace:*",
+    "@yagr/provider-runtime": "workspace:*",
+    "@yagr/reality-observer": "workspace:*",
+    "@yagr/runtime-events": "workspace:*",
+    "@yagr/session-service": "workspace:*",
+    "@yagr/stream-adapter": "workspace:*"
   },
   "publishConfig": {
     "access": "public"

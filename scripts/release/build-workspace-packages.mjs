@@ -7,7 +7,7 @@ const packages = topologicalPackages(getPackageGraph()).filter(pkg => pkg.path !
 
 for (const pkg of packages) {
   process.stdout.write(`\n> Building ${pkg.name}\n`);
-  const result = spawnSync('npm', ['run', 'build', '--workspace', pkg.name], {
+  const result = spawnSync('pnpm', ['--filter', pkg.name, 'run', 'build'], {
     cwd: workspaceRoot,
     stdio: 'inherit',
   });

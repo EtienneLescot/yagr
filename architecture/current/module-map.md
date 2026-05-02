@@ -62,7 +62,9 @@ All packages required by the transitive npm graph are published publicly so cons
 
 Publication does not mean every package is a recommended standalone API. Lower-level packages such as checkpoint, memory, bootstrap, registry, and individual surface packages are installable for npm resolution but are not promoted as primary integration bricks unless their APIs are explicitly stabilized.
 
-Source manifests keep local `file:` dependencies for workspace development. Publish artifacts are generated in a staging directory, where internal dependencies are rewritten to registry versions. Dependency reconciliation is automated from the workspace package graph and must not be performed manually across package manifests.
+The package manager SSOT is the pnpm workspace graph in `pnpm-workspace.yaml`. Source manifests use `workspace:*` for internal `@yagr/*` dependencies. `pnpm pack` and Changesets publishing rewrite those workspace ranges to concrete npm versions in package artifacts, so published manifests must not contain `file:`, `link:`, or `workspace:` dependencies.
+
+Changesets is the release SSOT. Stable releases are prepared through a Changesets version PR on `main` and are published to npm `latest` only from stable semver source manifests. `next` publishes are CI-only Changesets snapshot releases under the npm `next` dist-tag; snapshot or prerelease versions are not committed to source manifests.
 
 For a VS Code extension, prefer this composition path:
 

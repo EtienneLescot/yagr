@@ -13,8 +13,6 @@ import {
   writeJson,
 } from './workspace-packages.mjs';
 
-const publishGuardScript = 'node -e "const fs=require(\'fs\');const p=JSON.parse(fs.readFileSync(\'package.json\',\'utf8\'));for(const f of [\'dependencies\',\'peerDependencies\',\'optionalDependencies\'])for(const [n,s] of Object.entries(p[f]||{}))if(/^(file|link|workspace):/.test(s)){console.error(\'Refusing to publish \'+p.name+\': \'+f+\'.\'+n+\' uses local spec \'+s);process.exit(1)}"';
-
 function ensurePackageMetadata(manifest, pkg) {
   let changed = false;
 
@@ -25,11 +23,6 @@ function ensurePackageMetadata(manifest, pkg) {
 
   if (!manifest.publishConfig || manifest.publishConfig.access !== 'public') {
     manifest.publishConfig = { ...(manifest.publishConfig || {}), access: 'public' };
-    changed = true;
-  }
-
-  if (manifest.scripts?.prepublishOnly !== publishGuardScript) {
-    manifest.scripts = { ...(manifest.scripts || {}), prepublishOnly: publishGuardScript };
     changed = true;
   }
 
@@ -49,7 +42,7 @@ function syncPackage(manifest, pkg, packageMap, internalNames, check) {
       if (!internalNames.has(dependencyName)) continue;
       if (!detected.has(dependencyName)) {
         if (check) {
-          throw new Error(`${pkg.packageJsonPath} declares unused internal dependency ${dependencyName}. Run npm run deps:sync.`);
+          throw new Error(`${pkg.packageJsonPath} declares unused internal dependency ${dependencyName}. Run pnpm run deps:sync.`);
         }
         delete dependencies[dependencyName];
         changed = true;
@@ -83,7 +76,7 @@ function syncPackage(manifest, pkg, packageMap, internalNames, check) {
   }
 
   if (check && changed) {
-    throw new Error(`${pkg.packageJsonPath} is not synchronized. Run npm run deps:sync.`);
+    throw new Error(`${pkg.packageJsonPath} is not synchronized. Run pnpm run deps:sync.`);
   }
 
   if (!check && changed) {

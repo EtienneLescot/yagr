@@ -25,6 +25,9 @@ permissions:
   id-token: write
   issues: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
 # However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
@@ -45,21 +48,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install docs dependencies
-        working-directory: ./docs
-        run: npm ci
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: TypeScript type checking
-        working-directory: ./docs
-        run: npm run typecheck
+        run: pnpm --dir docs run typecheck
 
       - name: Build documentation
-        working-directory: ./docs
-        run: npm run build
+        run: pnpm --dir docs run build
 
       - name: Setup Pages
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

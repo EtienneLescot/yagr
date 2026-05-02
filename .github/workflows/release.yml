@@ -1,6 +1,6 @@
 name: Release
 
-# Main pushes drive stable release PR creation; next pushes publish prereleases.
+# Main pushes drive Changesets release PRs and stable publishes; next pushes publish CI-only snapshots.
 
 on:
   push:
@@ -11,67 +11,55 @@ on:
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  release-please:
+  release-main:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      issues: write
       pull-requests: write
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-    steps:
-      - name: Run release-please
-        id: release
-        uses: googleapis/release-please-action@v4.4.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-
-  publish-stable:
-    if: github.ref == 'refs/heads/main' && needs.release-please.outputs.release_created == 'true'
-    needs: release-please
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
       id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable Corepack
+        run: corepack enable
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Check workspace dependencies
-        run: npm run deps:check
+      - name: Check stable release state
+        run: pnpm run release:check
 
       - name: Build and test
-        run: npm test
+        run: pnpm test
 
-      - name: Verify staged workspace packages
-        run: npm run publish:verify
+      - name: Verify package artifacts
+        run: pnpm run publish:verify
 
-      - name: Inspect publish environment
-        run: |
-          node -v
-          npm -v
-          npm config get registry
-          npm config get @yagr:registry
-          npm config list
-
-      - name: Publish stable packages
-        run: npm run publish:workspace
+      - name: Create release PR or publish packages
+        uses: changesets/action@v1
+        with:
+          version: pnpm run version-packages
+          publish: pnpm run release-packages
+          commit: 'chore: release packages'
+          title: 'chore: release packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-next:
     if: github.ref == 'refs/heads/next'
@@ -82,40 +70,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable Corepack
+        run: corepack enable
 
       - name: Install dependencies
-        run: npm ci
-
-      - name: Set next package version
-        run: npm run release:prerelease:set-versions -- --sequence "${{ github.run_number }}.${{ github.run_attempt }}"
-
-      - name: Synchronize workspace dependencies
-        run: npm run deps:sync
+        run: pnpm install --frozen-lockfile
 
       - name: Check workspace dependencies
-        run: npm run deps:check
+        run: pnpm run deps:check
 
       - name: Build and test
-        run: npm test
+        run: pnpm test
 
-      - name: Verify staged workspace packages
-        run: npm run publish:verify
+      - name: Set snapshot package versions
+        run: pnpm run release:snapshot:version
 
-      - name: Inspect publish environment
-        run: |
-          node -v
-          npm -v
-          npm config get registry
-          npm config get @yagr:registry
-          npm config list
+      - name: Verify snapshot package artifacts
+        run: pnpm run publish:verify
 
       - name: Publish next packages
-        run: npm run publish:workspace:next
+        run: pnpm run release:snapshot:publish

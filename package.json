@@ -1,10 +1,8 @@
 {
   "name": "@yagr/agent",
-  "version": "0.2.31-next.0",
+  "version": "0.2.31",
   "description": "Autonomous local coding agent",
-  "workspaces": [
-    "packages/*"
-  ],
+  "packageManager": "pnpm@10.28.0",
   "type": "module",
   "bin": {
     "yagr": "dist/cli.js"
@@ -12,16 +10,16 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "npm run build:packages && npm run build:root",
+    "build": "pnpm run build:packages && pnpm run build:root",
     "build:root": "tsc -b && node scripts/build-webui.mjs",
     "build:packages": "node scripts/release/build-workspace-packages.mjs",
-    "build:clean": "npm run clean && npm run build",
-    "build:clean:symlink": "npm run clean && npm run build && node --eval \"import('fs').then(({chmodSync})=>chmodSync('dist/cli.js',0o755))\" && npm link",
+    "build:clean": "pnpm run clean && pnpm run build",
+    "build:clean:symlink": "pnpm run clean && pnpm run build && node --eval \"import('fs').then(({chmodSync})=>chmodSync('dist/cli.js',0o755))\" && pnpm link --global",
     "clean": "node scripts/clean.mjs",
-    "test": "npm run test:unit && npm run test:packages",
-    "test:packages": "npm run test --workspace @yagr/plugin-runtime && npm run test --workspace @yagr/session-memory && npm run test --workspace @yagr/session-service && npm run test --workspace @yagr/impact-ledger && npm run test --workspace @yagr/reality-observer",
-    "test:unit": "npm run build && node --test tests/*.test.mjs",
-    "test:minimax-discovery": "npm run build && node scripts/test-minimax-discovery.mjs",
+    "test": "pnpm run test:unit && pnpm run test:packages",
+    "test:packages": "pnpm --filter @yagr/plugin-runtime test && pnpm --filter @yagr/session-memory test && pnpm --filter @yagr/session-service test && pnpm --filter @yagr/impact-ledger test && pnpm --filter @yagr/reality-observer test",
+    "test:unit": "pnpm run build && node --test tests/*.test.mjs",
+    "test:minimax-discovery": "pnpm run build && node scripts/test-minimax-discovery.mjs",
     "typecheck": "tsc --noEmit",
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
     "yagr:onboard": "node --import ./scripts/env-yagr-test-workspace.mjs dist/cli.js onboard",
@@ -30,42 +28,44 @@
     "yagr:test:workspace": "node scripts/yagr-test-workspace.mjs pwd",
     "yagr:test:init": "node scripts/yagr-test-workspace.mjs init",
     "yagr:test:agent": "node scripts/yagr-test-workspace.mjs agent",
-    "release:plan": "node scripts/release/workspace-release.mjs stable-pr",
-    "release:prepare": "node scripts/release/workspace-release.mjs stable-pr --apply",
-    "release:prerelease": "node scripts/release/workspace-release.mjs prerelease",
-    "release:prerelease:set-versions": "node scripts/release/set-workspace-prerelease-versions.mjs",
-    "release:pending": "node scripts/release/workspace-release.mjs pending-stable",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release-packages": "changeset publish",
+    "release:check": "node scripts/release/check-release-state.mjs --stable",
+    "release:snapshot:version": "changeset version --snapshot next",
+    "release:snapshot:publish": "changeset publish --tag next --no-git-tag",
     "deps:sync": "node scripts/release/sync-workspace-dependencies.mjs",
-    "deps:check": "node scripts/release/sync-workspace-dependencies.mjs --check",
-    "publish:stage": "node scripts/release/stage-workspace-packages.mjs",
+    "deps:check": "node scripts/release/sync-workspace-dependencies.mjs --check && manypkg check && pnpm run deps:versions",
+    "deps:versions": "syncpack lint --dependency-types prod,dev",
+    "deps:unused": "knip",
     "publish:verify": "node scripts/release/verify-workspace-packages.mjs",
-    "publish:workspace": "node scripts/release/publish-workspace-packages.mjs",
-    "publish:workspace:next": "node scripts/release/publish-workspace-packages.mjs --tag next",
     "check-versions": "node scripts/check-version-consistency.js",
-    "docs": "npm --prefix docs start",
-    "docs:build": "npm --prefix docs run build",
-    "update:snapshot": "node scripts/update-model-snapshot.mjs",
-    "prepublishOnly": "node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const f of ['dependencies','peerDependencies','optionalDependencies'])for(const [n,s] of Object.entries(p[f]||{}))if(/^(file|link|workspace):/.test(s)){console.error('Refusing to publish '+p.name+': '+f+'.'+n+' uses local spec '+s);process.exit(1)}\""
+    "docs": "pnpm --dir docs start",
+    "docs:build": "pnpm --dir docs build",
+    "update:snapshot": "node scripts/update-model-snapshot.mjs"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
     "@langchain/anthropic": "^1.3.26",
+    "@langchain/core": "^1.1.43",
     "@langchain/google-genai": "^2.1.26",
     "@langchain/langgraph": "^1.2.7",
+    "@langchain/langgraph-checkpoint": "^1.0.1",
     "@langchain/mistralai": "^1.0.7",
     "@langchain/openai": "^1.4.2",
     "@types/qrcode-terminal": "^0.12.2",
-    "@yagr/conversation-service": "file:packages/conversation-service",
-    "@yagr/impact-ledger": "file:packages/impact-ledger",
-    "@yagr/reality-observer": "file:packages/reality-observer",
-    "@yagr/runtime-events": "file:packages/runtime-events",
-    "@yagr/session-service": "file:packages/session-service",
-    "@yagr/tui-surface": "file:packages/tui-surface",
+    "@yagr/conversation-service": "workspace:*",
+    "@yagr/impact-ledger": "workspace:*",
+    "@yagr/reality-observer": "workspace:*",
+    "@yagr/runtime-events": "workspace:*",
+    "@yagr/session-service": "workspace:*",
+    "@yagr/tui-surface": "workspace:*",
     "conf": "^13.0.1",
     "deepagents": "^1.9.0",
     "dotenv": "^17.2.3",
     "fullscreen-ink": "^0.1.0",
     "ink": "^6.8.0",
+    "langchain": "^1.3.5",
     "pacote": "^21.5.0",
     "qrcode-terminal": "^0.12.0",
     "react": "^19.2.4",
@@ -77,14 +77,20 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.1",
+    "@changesets/cli": "^2.29.7",
+    "@manypkg/cli": "^0.25.1",
     "@types/node": "^20.10.0",
     "@types/pacote": "^11.1.8",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "esbuild": "^0.25.3",
+    "knip": "^5.71.0",
+    "publint": "^0.3.15",
+    "syncpack": "^14.0.0",
     "testcontainers": "^11.13.0",
     "tsx": "^4.20.6",
-    "typescript": "^5.3.3",
+    "typescript": "~5.6.2",
     "yaml": "^2.8.3"
   },
   "files": [
@@ -96,6 +102,25 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "pnpm": {
+    "overrides": {
+      "webpack": "5.105.4"
+    },
+    "onlyBuiltDependencies": [
+      "core-js",
+      "core-js-pure",
+      "cpu-features",
+      "esbuild",
+      "protobufjs",
+      "ssh2"
+    ]
+  },
+  "manypkg": {
+    "workspaceProtocol": "require",
+    "ignoredRules": [
+      "ROOT_HAS_PROD_DEPENDENCIES"
+    ]
   },
   "author": "Etienne Lescot",
   "license": "MIT"

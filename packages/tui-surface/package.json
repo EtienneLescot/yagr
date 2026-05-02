@@ -1,6 +1,6 @@
 {
   "name": "@yagr/tui-surface",
-  "version": "0.1.1-next.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -11,12 +11,15 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prepublishOnly": "node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const f of ['dependencies','peerDependencies','optionalDependencies'])for(const [n,s] of Object.entries(p[f]||{}))if(/^(file|link|workspace):/.test(s)){console.error('Refusing to publish '+p.name+': '+f+'.'+n+' uses local spec '+s);process.exit(1)}\""
+    "build": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
     "ink": "^6.0.0",
     "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "ink": "^6.8.0",
+    "react": "^19.2.4"
   },
   "files": [
     "dist/"
