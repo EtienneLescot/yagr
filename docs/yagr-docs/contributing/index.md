@@ -9,7 +9,8 @@ This guide covers how to get Yagr running locally for development and how to run
 
 ## Prerequisites
 
-- Node.js ≥ 22
+- Node.js ≥ 24
+- pnpm via Corepack
 - At least one LLM provider configured (API key or OAuth account)
 
 ## Local setup
@@ -19,13 +20,14 @@ Clone the repository and install dependencies:
 ```bash
 git clone https://github.com/EtienneLescot/yagr.git
 cd yagr
-npm install
+corepack enable
+pnpm install
 ```
 
 Build the project:
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 ## Tests
@@ -34,21 +36,21 @@ Yagr has three test levels. See [Testing](./testing) for full details.
 
 | Command | What it runs |
 |---|---|
-| `npm test` | Unit tests (fast, no external deps) |
-| `npm run test:packages` | Package-level tests |
-| `npm run test:unit` | Root unit tests after build |
+| `pnpm test` | Unit tests (fast, no external deps) |
+| `pnpm run test:packages` | Package-level tests |
+| `pnpm run test:unit` | Root unit tests after build |
 
 ## Development loop
 
 After editing source files, rebuild before running tests:
 
 ```bash
-npm run build
-npm test
+pnpm run build
+pnpm test
 ```
 
-Use `npm run typecheck` to check types without rebuilding:
+Use `pnpm run typecheck` to check types without rebuilding:
 
 ```bash
-npm run typecheck
+pnpm run typecheck
 ```

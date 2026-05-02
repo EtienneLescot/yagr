@@ -2,10 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   pull_request:
-    branches: [main]
+    branches: [main, next]
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   unit:
@@ -18,15 +21,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: "**/package-lock.json"
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable Corepack
+        run: corepack enable
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Validate integration test bootstrap profiles
-        run: npm run test:bootstrap-profiles
+      - name: Check workspace dependencies
+        run: pnpm run deps:check
 
-      - name: Run unit tests
-        run: npm run test:unit
+      - name: Run tests
+        run: pnpm test
+
+      - name: Verify package artifacts
+        run: pnpm run publish:verify
