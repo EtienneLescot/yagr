@@ -15,9 +15,11 @@ sequenceDiagram
     participant M as LangChain Model
     participant T as Deepagents native tools
     participant E as Local shell/files
+    participant O as Reality Observer
+    participant L as Impact Ledger
 
     U->>F: prompt
-    F->>H: stream/invoke
+    F->>H: stream
     H->>P: backend + memory sources
     H->>S: installed skill source paths
     H->>C: coding-oriented middleware
@@ -25,6 +27,8 @@ sequenceDiagram
     M->>T: tool call(s)
     T->>E: file and shell tools
     E-->>T: results
+    T-->>O: meaningful RuntimeOperationEvent entries
+    O->>L: append impact event when classified
     T-->>M: tool results
     M-->>F: response and events
     F-->>U: rendered output
@@ -37,6 +41,31 @@ Observations:
 - the coding-oriented overlay is applied via middleware
 - installed skills are passed as native DeepAgents.js `skills` sources; DeepAgents.js owns discovery and progressive disclosure
 - external integrations are not built in; they are invoked only as ordinary local commands or files when present in the user's environment
+- impact recording is a runtime-side concern: the shared gateway stream adapter passes operation events to `@yagr/reality-observer`, and `@yagr/impact-ledger` persists append-only JSONL records
+- WebUI, TUI, and Telegram expose recorded impact through the same `/impact` slash command handled by `@yagr/conversation-service`
+
+## Impact Summary Command
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as WebUI/TUI/Telegram
+    participant C as SlashCommandService
+    participant L as Impact Ledger
+
+    U->>F: /impact [all|limit]
+    F->>C: execute shared slash command
+    C->>L: query session or global impact events
+    L-->>C: impact events
+    C-->>F: compact summary
+    F-->>U: render message
+```
+
+Observations:
+
+- facades do not query or format impact records directly
+- `/impact` defaults to the current session/thread and accepts `all` for global recent events
+- rich dashboard views remain future work; the current surface contract is a compact shared summary
 
 ## Instructions And Middleware
 

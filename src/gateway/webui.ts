@@ -27,6 +27,7 @@ import {
   processStreamEvent,
   extractLastAiMessage,
 } from './langgraph-events.js';
+import { getGatewayImpactLedger } from './impact.js';
 import type { CompactionState } from '../compaction/compaction-types.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -491,7 +492,7 @@ class WebUiGateway implements Gateway {
       }
 
       const handle = await this.resolveAgentHandle();
-      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const service = new SlashCommandService(this.sessions, handle.compactionService, getGatewayImpactLedger());
       const parsed = service.parse(`/${command} ${args.join(' ')}`.trim());
       if (!parsed) {
         this.sendJson(response, 400, { error: `Unknown command: /${command}` });
@@ -716,6 +717,10 @@ class WebUiGateway implements Gateway {
         }
 
         await processStreamEvent(event, accumulator, {
+          impact: {
+            ledger: getGatewayImpactLedger(),
+            context: { sessionId },
+          },
           onTextDelta: (delta) => {
             writeEvent({ type: 'text-delta', delta });
           },

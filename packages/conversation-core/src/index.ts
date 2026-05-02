@@ -7,6 +7,7 @@ export type SlashCommandName =
   | 'delete'
   | 'new'
   | 'reset'
+  | 'impact'
   | 'checkpoints'
   | 'save'
   | 'restore'
@@ -40,6 +41,7 @@ const COMMANDS: SlashCommandMeta[] = [
   { name: 'delete', description: 'Delete a conversation session', usage: '/delete <session_id>', surfaces: ['tui', 'webui', 'telegram'], aliases: ['del', 'rm'] },
   { name: 'new', description: 'Start a new conversation session', usage: '/new', surfaces: ['tui', 'webui', 'telegram'], aliases: [] },
   { name: 'reset', description: 'Reset the current conversation (alias of /new)', usage: '/reset', surfaces: ['tui', 'webui', 'telegram'], aliases: [] },
+  { name: 'impact', description: 'Show recent recorded impact for the current session', usage: '/impact [all|<limit>]', surfaces: ['tui', 'webui', 'telegram'], aliases: [] },
   { name: 'checkpoints', description: 'List all checkpoints for the current session', usage: '/checkpoints', surfaces: ['tui', 'webui', 'telegram'], aliases: [] },
   { name: 'save', description: 'Save a checkpoint of the current session', usage: '/save', surfaces: ['tui', 'webui', 'telegram'], aliases: ['checkpoint_save'] },
   { name: 'restore', description: 'Restore a checkpoint of the current session', usage: '/restore <checkpoint_id>', surfaces: ['tui', 'webui', 'telegram'], aliases: [] },

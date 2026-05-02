@@ -19,7 +19,9 @@
   "dependencies": {
     "@yagr/conversation-service": "file:../conversation-service",
     "@yagr/deepagent-bootstrap": "file:../deepagent-bootstrap",
+    "@yagr/impact-ledger": "file:../impact-ledger",
     "@yagr/provider-runtime": "file:../provider-runtime",
+    "@yagr/reality-observer": "file:../reality-observer",
     "@yagr/runtime-events": "file:../runtime-events",
     "@yagr/session-service": "file:../session-service",
     "@yagr/stream-adapter": "file:../stream-adapter"

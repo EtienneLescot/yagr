@@ -5,6 +5,7 @@ import {
   type SlashCommandMeta,
   type SlashSurface,
 } from '@yagr/conversation-core';
+import { buildImpactSummary, type ImpactLedger, type ImpactLedgerQuery } from '@yagr/impact-ledger';
 import type { CheckpointMetadata, DeepAgentSessionScope, SessionService } from '@yagr/session-service';
 
 export interface SessionListEntry {
@@ -64,6 +65,7 @@ export class SlashCommandService {
   constructor(
     private readonly sessions: SessionService,
     private readonly checkpointPayloads: CheckpointPayloadManager,
+    private readonly impactLedger?: ImpactLedger,
   ) {}
 
   parse(raw: string): ParsedSlashInput | undefined {
@@ -85,6 +87,8 @@ export class SlashCommandService {
       case 'new':
       case 'reset':
         return this.executeNew(ctx, handler);
+      case 'impact':
+        return this.buildImpactResult(args, ctx);
       case 'checkpoints':
         return this.buildCheckpointsResult(ctx);
       case 'save':
@@ -181,6 +185,20 @@ export class SlashCommandService {
       kind: 'ok',
       message: `Sessions:\n${lines.join('\n')}`,
       data: { sessions: entries },
+    };
+  }
+
+  private buildImpactResult(args: string[], ctx: SlashCommandContext): SlashCommandResult {
+    if (!this.impactLedger) {
+      return { kind: 'unsupported_in_surface', message: 'Impact ledger is not available in this runtime.' };
+    }
+
+    const query = parseImpactArgs(args, ctx.threadId);
+    const summary = buildImpactSummary(this.impactLedger, query);
+    return {
+      kind: 'ok',
+      message: summary.message,
+      data: { events: summary.events },
     };
   }
 
@@ -323,6 +341,22 @@ export class SlashCommandService {
       return { kind: 'error', message: `Failed to delete checkpoint: ${message}` };
     }
   }
+}
+
+function parseImpactArgs(args: string[], sessionId: string): ImpactLedgerQuery {
+  const query: ImpactLedgerQuery = { sessionId, limit: 12 };
+  for (const arg of args) {
+    const normalized = arg.toLowerCase();
+    if (normalized === 'all') {
+      delete query.sessionId;
+      continue;
+    }
+    const maybeLimit = Number.parseInt(normalized, 10);
+    if (Number.isInteger(maybeLimit) && maybeLimit > 0) {
+      query.limit = maybeLimit;
+    }
+  }
+  return query;
 }
 
 export type { ParsedSlashInput, SlashCommandMeta, SlashSurface } from '@yagr/conversation-core';
