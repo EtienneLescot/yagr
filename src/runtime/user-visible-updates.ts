@@ -83,6 +83,7 @@ export function makeToolStartOperationEvent(
         label: `Shell: ${command.slice(0, 80)}`,
         category: 'shell',
         status: 'running',
+        inputSummary: command,
         summary: command.slice(0, 120),
         startedAt: now,
       };
@@ -97,6 +98,7 @@ export function makeToolStartOperationEvent(
         label: `Read ${p}`,
         category: 'file-read',
         status: 'running',
+        inputSummary: p,
         summary: p,
         startedAt: now,
       };
@@ -112,6 +114,7 @@ export function makeToolStartOperationEvent(
         label: `Write ${p}`,
         category: 'file-write',
         status: 'running',
+        inputSummary: p,
         summary: p,
         startedAt: now,
       };
@@ -126,6 +129,7 @@ export function makeToolStartOperationEvent(
         label: `${method} ${url.slice(0, 80)}`,
         category: 'web',
         status: 'running',
+        inputSummary: `${method} ${url}`,
         summary: url.slice(0, 120),
         startedAt: now,
       };
@@ -151,6 +155,7 @@ export function makeToolStartOperationEvent(
         label: `Edit ${p}`,
         category: 'file-write',
         status: 'running',
+        inputSummary: p,
         summary: p,
         startedAt: now,
       };
@@ -188,8 +193,9 @@ export function makeToolStartOperationEvent(
         kind: 'operation',
         operationId,
         label: `${label}: ${summary || 'command'}`,
-        category: 'tool',
+        category: 'shell',
         status: 'running',
+        inputSummary: command,
         summary,
         startedAt: now,
       };

@@ -348,7 +348,7 @@ function parseImpactArgs(args: string[], sessionId: string): ImpactLedgerQuery {
   for (const arg of args) {
     const normalized = arg.toLowerCase();
     if (normalized === 'all') {
-      delete query.sessionId;
+      delete query.limit;
       continue;
     }
     const maybeLimit = Number.parseInt(normalized, 10);

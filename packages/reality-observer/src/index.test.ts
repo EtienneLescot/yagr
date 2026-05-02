@@ -38,6 +38,24 @@ test('impactFromRuntimeOperation classifies file writes', () => {
   assert.deepEqual(impact?.relatedFiles, ['.github/workflows/ci.yml']);
 });
 
+test('impactFromRuntimeOperation preserves file input after completion summary changes', () => {
+  const impact = impactFromRuntimeOperation({ sessionId: 'sess_1' }, {
+    kind: 'operation',
+    operationId: 'write_1',
+    label: 'Write package.json',
+    category: 'file-write',
+    status: 'done',
+    inputSummary: 'package.json',
+    summary: '20 lines written',
+    startedAt: Date.parse('2026-05-01T10:00:00.000Z'),
+    endedAt: Date.parse('2026-05-01T10:00:01.000Z'),
+  });
+
+  assert.equal(impact?.category, 'file_change');
+  assert.equal(impact?.impact, 'medium');
+  assert.deepEqual(impact?.relatedFiles, ['package.json']);
+});
+
 test('impactFromRuntimeOperation classifies dependency shell commands', () => {
   const impact = impactFromRuntimeOperation({ sessionId: 'sess_1' }, {
     kind: 'operation',
@@ -52,6 +70,23 @@ test('impactFromRuntimeOperation classifies dependency shell commands', () => {
   assert.equal(impact?.category, 'dependency_change');
   assert.equal(impact?.impact, 'high');
   assert.equal(impact?.persistence, 'durable');
+  assert.deepEqual(impact?.relatedCommands, ['npm install lodash']);
+});
+
+test('impactFromRuntimeOperation preserves shell input after completion summary changes', () => {
+  const impact = impactFromRuntimeOperation({ sessionId: 'sess_1' }, {
+    kind: 'operation',
+    operationId: 'shell_1',
+    label: 'Shell: npm install lodash',
+    category: 'shell',
+    status: 'done',
+    inputSummary: 'npm install lodash',
+    summary: 'exit 0',
+    startedAt: Date.parse('2026-05-01T10:00:00.000Z'),
+  });
+
+  assert.equal(impact?.category, 'dependency_change');
+  assert.equal(impact?.impact, 'high');
   assert.deepEqual(impact?.relatedCommands, ['npm install lodash']);
 });
 

@@ -16,7 +16,8 @@ export function impactFromRuntimeOperation(
   }
 
   switch (event.category) {
-    case 'file-write':
+    case 'file-write': {
+      const files = extractPathCandidates(event);
       return {
         ...baseImpact(context, event),
         actor: 'tool',
@@ -24,10 +25,12 @@ export function impactFromRuntimeOperation(
         impact: classifyFileImpact(event),
         persistence: 'durable',
         reversible: 'unknown',
-        summary: event.summary ? `File change: ${event.summary}` : event.label,
-        relatedFiles: extractPathCandidates(event),
+        summary: files?.length ? `File change: ${files.join(', ')}` : event.label,
+        relatedFiles: files,
       };
-    case 'shell':
+    }
+    case 'shell': {
+      const command = commandText(event);
       return {
         ...baseImpact(context, event),
         actor: 'tool',
@@ -35,9 +38,10 @@ export function impactFromRuntimeOperation(
         impact: classifyShellImpact(event),
         persistence: classifyShellPersistence(event),
         reversible: 'unknown',
-        summary: event.summary ? `Shell command: ${event.summary}` : event.label,
-        relatedCommands: event.summary ? [event.summary] : undefined,
+        summary: command ? `Shell command: ${command}` : event.label,
+        relatedCommands: command ? [command] : undefined,
       };
+    }
     case 'web':
       return {
         ...baseImpact(context, event),
@@ -115,11 +119,13 @@ function classifyShellPersistence(event: RuntimeOperationEvent): ImpactEventInpu
 }
 
 function commandText(event: RuntimeOperationEvent): string {
-  return `${event.summary ?? ''} ${event.body ?? ''}`.trim();
+  const outputText = `${event.summary ?? ''} ${event.body ?? ''}`.trim();
+  return (event.inputSummary ?? (outputText || event.label)).trim();
 }
 
 function extractPathCandidates(event: RuntimeOperationEvent): string[] | undefined {
-  const text = `${event.summary ?? ''} ${event.body ?? ''}`;
+  const outputText = `${event.summary ?? ''} ${event.body ?? ''}`.trim();
+  const text = `${event.inputSummary ?? ''} ${outputText || event.label}`;
   const matches = text.match(/(?:^|\s)([./~]?[\w@.-][\w@./-]*\.[\w.-]+)(?=\s|$|[,;:])/g) ?? [];
   const paths = [...new Set(matches.map((match) => match.trim()))];
   return paths.length > 0 ? paths : undefined;
