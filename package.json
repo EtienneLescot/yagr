@@ -32,6 +32,7 @@
     "version-packages": "changeset version",
     "release-packages": "changeset publish",
     "release:check": "node scripts/release/check-release-state.mjs --stable",
+    "release:snapshot:changeset": "node scripts/release/ensure-next-changeset.mjs",
     "release:snapshot:version": "changeset version --snapshot next",
     "release:snapshot:publish": "changeset publish --tag next --no-git-tag",
     "deps:sync": "node scripts/release/sync-workspace-dependencies.mjs",
