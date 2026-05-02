@@ -17,6 +17,7 @@ export interface RuntimeOperationEvent {
   label: string;
   category: RuntimeOperationCategory;
   status: 'running' | 'done' | 'error';
+  inputSummary?: string;
   summary?: string;
   body?: string;
   startedAt: number;
@@ -81,6 +82,7 @@ export function makeGenericToolStartOperationEvent(
     label: summary ? `${toolName}: ${summary.slice(0, 80)}` : toolName,
     category: inferOperationCategory(toolName),
     status: 'running',
+    inputSummary: summary,
     summary,
     startedAt: Date.now(),
   };
