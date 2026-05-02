@@ -234,6 +234,8 @@ export interface YagrOperationEvent {
   /** Semantic category driving icon and colour. */
   category: YagrOperationCategory;
   status: YagrOperationStatus;
+  /** Original tool input summary, preserved when completion updates replace `summary` with output. */
+  inputSummary?: string;
   /** Full body: stdout, file excerpt, thinking tokens… May be capped depending on the producer. */
   body?: string;
   /** One-line summary for compact views (≤ 120 chars). */
