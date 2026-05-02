@@ -4,8 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import pacote from 'pacote';
 import { dependencyFields, getPackageGraph, topologicalPackages, workspaceRoot } from './workspace-packages.mjs';
-import { defaultStageRoot, stageWorkspacePackages } from './stage-workspace-packages.mjs';
+
+const verificationRoot = path.join(workspaceRoot, '.tmp/package-verify');
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -22,11 +24,12 @@ function run(command, args, options = {}) {
   return result.stdout || '';
 }
 
-function assertNoLocalDependencies(manifest, manifestPath) {
-  if (manifest.repository?.url !== 'https://github.com/EtienneLescot/yagr') {
-    throw new Error(`${manifestPath} must set repository.url to https://github.com/EtienneLescot/yagr for npm provenance`);
-  }
+function parsePackOutput(output) {
+  const parsed = JSON.parse(output.trim());
+  return Array.isArray(parsed) ? parsed[0] : parsed;
+}
 
+function assertNoLocalDependencies(manifest, manifestPath) {
   for (const field of dependencyFields) {
     for (const [name, spec] of Object.entries(manifest[field] || {})) {
       if (/^(file|link|workspace):/.test(spec)) {
@@ -36,13 +39,18 @@ function assertNoLocalDependencies(manifest, manifestPath) {
   }
 }
 
-function packStagedPackage(stagedPackage, tarballDir) {
-  const output = run('npm', ['pack', stagedPackage.path, '--pack-destination', tarballDir, '--json'], { capture: true });
-  const [packed] = JSON.parse(output);
-  const files = new Set(packed.files.map(file => file.path));
-  if (!files.has('dist/index.js')) throw new Error(`${stagedPackage.name} tarball is missing dist/index.js`);
-  if (!files.has('dist/index.d.ts')) throw new Error(`${stagedPackage.name} tarball is missing dist/index.d.ts`);
-  return path.join(tarballDir, packed.filename);
+async function packPackage(pkg, tarballDir) {
+  const output = run('pnpm', ['--dir', pkg.absolutePath, 'pack', '--pack-destination', tarballDir, '--json'], { capture: true });
+  const packed = parsePackOutput(output);
+  const tarballPath = path.isAbsolute(packed.filename) ? packed.filename : path.join(tarballDir, packed.filename);
+  const files = new Set((packed.files || []).map(file => file.path || file));
+
+  if (!files.has('dist/index.js')) throw new Error(`${pkg.name} tarball is missing dist/index.js`);
+  if (!files.has('dist/index.d.ts')) throw new Error(`${pkg.name} tarball is missing dist/index.d.ts`);
+
+  const manifest = await pacote.manifest(tarballPath);
+  assertNoLocalDependencies(manifest, `${pkg.name}@${manifest.version}`);
+  return tarballPath;
 }
 
 function smokeImport(tarballs) {
@@ -57,29 +65,24 @@ function smokeImport(tarballs) {
   run('node', ['--input-type=module', '--eval', "await import('@yagr/runtime'); await import('@yagr/runtime-events'); await import('@yagr/plugin-runtime'); console.log('primary public bricks ok');"], { cwd: tempDir });
 }
 
-function main() {
-  run('npm', ['run', 'deps:check']);
-  run('npm', ['run', 'build:packages']);
-  run('npm', ['run', 'build:root']);
+async function main() {
+  run('pnpm', ['run', 'deps:check']);
+  run('pnpm', ['run', 'build']);
 
-  const staged = stageWorkspacePackages({ stageRoot: defaultStageRoot, includeRoot: true });
-  const tarballDir = path.join(defaultStageRoot, 'tarballs');
+  fs.rmSync(verificationRoot, { recursive: true, force: true });
+  const tarballDir = path.join(verificationRoot, 'tarballs');
   fs.mkdirSync(tarballDir, { recursive: true });
 
   const tarballs = [];
-  for (const stagedPackage of staged) {
-    const manifestPath = path.join(stagedPackage.path, 'package.json');
-    assertNoLocalDependencies(JSON.parse(fs.readFileSync(manifestPath, 'utf8')), manifestPath);
-    tarballs.push(packStagedPackage(stagedPackage, tarballDir));
+  for (const pkg of topologicalPackages(getPackageGraph())) {
+    tarballs.push(await packPackage(pkg, tarballDir));
   }
 
   smokeImport(tarballs);
   process.stdout.write('Workspace package publish verification succeeded.\n');
 }
 
-try {
-  main();
-} catch (error) {
+main().catch(error => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
-}
+});

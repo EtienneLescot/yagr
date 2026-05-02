@@ -68,8 +68,8 @@ That is the point: Yagr should be opinionated about runtime clarity, not about w
 ## Basic Usage
 
 ```bash
-npm install
-npm run build
+pnpm install
+pnpm run build
 node dist/cli.js "inspect this repository and summarize it"
 ```
 

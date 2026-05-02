@@ -1,6 +1,6 @@
 {
   "name": "@yagr/session-service",
-  "version": "0.1.1-next.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,14 +12,13 @@
   },
   "scripts": {
     "build": "node --input-type=module --eval \"(await import('node:fs')).rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
-    "test": "node --import tsx --test src/**/*.test.ts",
-    "prepublishOnly": "node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const f of ['dependencies','peerDependencies','optionalDependencies'])for(const [n,s] of Object.entries(p[f]||{}))if(/^(file|link|workspace):/.test(s)){console.error('Refusing to publish '+p.name+': '+f+'.'+n+' uses local spec '+s);process.exit(1)}\""
+    "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@langchain/langgraph-checkpoint": "^1.0.0",
-    "@yagr/session-checkpoint": "file:../session-checkpoint",
-    "@yagr/session-memory": "file:../session-memory",
-    "@yagr/webui-session-registry": "file:../webui-session-registry"
+    "@langchain/langgraph-checkpoint": "^1.0.1",
+    "@yagr/session-checkpoint": "workspace:*",
+    "@yagr/session-memory": "workspace:*",
+    "@yagr/webui-session-registry": "workspace:*"
   },
   "files": [
     "dist/"

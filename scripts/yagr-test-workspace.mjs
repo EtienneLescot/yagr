@@ -57,9 +57,9 @@ async function main() {
     default: {
       process.stderr.write(
         'Usage:\n' +
-          '  npm run yagr:test:workspace\n' +
-          '  npm run yagr:test:init -- [init args]\n' +
-          '  npm run yagr:test:agent -- [agent args]\n',
+          '  pnpm run yagr:test:workspace\n' +
+          '  pnpm run yagr:test:init -- [init args]\n' +
+          '  pnpm run yagr:test:agent -- [agent args]\n',
       );
       process.exit(1);
     }

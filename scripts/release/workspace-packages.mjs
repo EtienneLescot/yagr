@@ -124,8 +124,7 @@ export function topologicalPackages(packages = getPackageGraph()) {
 }
 
 export function expectedLocalDependencySpec(fromPkg, toPkg) {
-  const relative = path.relative(fromPkg.absolutePath, toPkg.absolutePath).replaceAll(path.sep, '/');
-  return `file:${relative}`;
+  return 'workspace:*';
 }
 
 export function getPackageSourceDirs(pkg) {
