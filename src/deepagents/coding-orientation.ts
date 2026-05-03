@@ -19,13 +19,18 @@ export function getRuntimePathAnchorPrompt(): string {
   return `Backend working directory: ${getYagrHomeDir()}`;
 }
 
+export interface CodingOrientationMiddlewareOptions {
+  runtimePathAnchor?: string;
+}
+
 export function createCodingOrientationMiddleware(
   prompt: string = CODING_ORIENTATION_SYSTEM_PROMPT,
+  options: CodingOrientationMiddlewareOptions = {},
 ) {
   return createMiddleware({
     name: 'YagrCodingOrientationMiddleware',
     wrapModelCall(request, handler) {
-      const parts = [prompt, getRuntimePathAnchorPrompt()];
+      const parts = [prompt, options.runtimePathAnchor ?? getRuntimePathAnchorPrompt()];
       return handler({
         ...request,
         systemMessage: request.systemMessage.concat(
@@ -36,9 +41,9 @@ export function createCodingOrientationMiddleware(
   });
 }
 
-export function getCodingOrientedDeepAgentMiddleware() {
+export function getCodingOrientedDeepAgentMiddleware(options: CodingOrientationMiddlewareOptions = {}) {
   return [
-    createCodingOrientationMiddleware(),
+    createCodingOrientationMiddleware(CODING_ORIENTATION_SYSTEM_PROMPT, options),
     createInjectMemoryMiddleware(),
   ];
 }

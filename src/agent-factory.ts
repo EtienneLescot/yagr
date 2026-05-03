@@ -39,6 +39,19 @@ export interface YagrDeepAgentHandle {
   compactionService: CompactionService;
 }
 
+export interface YagrDeepAgentRuntimeOptions {
+  /** DeepAgents backend working directory. Defaults to Yagr home for CLI/runtime compatibility. */
+  rootDir?: string;
+  /** Extra memory files to append to the default Yagr memory sources. */
+  memorySources?: string[];
+  /** Extra or replacement DeepAgents skill roots. Defaults to Yagr skill roots for the selected root. */
+  skillSourcePaths?: string[];
+  /** Replace default Yagr skill roots instead of appending to them. */
+  replaceSkillSourcePaths?: boolean;
+  /** Extra system prompt appended by the embedding surface, e.g. selected workflow context. */
+  systemPrompt?: string;
+}
+
 export const getYagrAgentMemorySources = getPristineDeepAgentMemorySources;
 export const getYagrAgentSkillSourcePaths = getDeepAgentSkillSourcePaths;
 
@@ -61,22 +74,37 @@ export async function createYagrDeepAgent(
   modelConfig?: { provider?: string; model?: string; apiKey?: string; baseUrl?: string },
   checkpointer?: BaseCheckpointSaver,
   runOptions?: YagrRunOptions,
+  runtimeOptions: YagrDeepAgentRuntimeOptions = {},
 ): Promise<YagrDeepAgentHandle> {
   const model = await createLangChainModel(modelConfig, configStore);
   const checkpointerInstance = checkpointer ?? new MemorySaver();
+  const rootDir = runtimeOptions.rootDir ?? getYagrHomeDir();
+  const defaultSkills = getDeepAgentSkillSourcePaths({ contextRoot: rootDir });
+  const skills = runtimeOptions.replaceSkillSourcePaths
+    ? (runtimeOptions.skillSourcePaths ?? [])
+    : [...defaultSkills, ...(runtimeOptions.skillSourcePaths ?? [])];
 
   const compactionService = new CompactionService({
     historyLimit: runOptions?.historyLimit ?? 50,
   });
 
+  const pristineConfig = buildPristineDeepAgentConfig({
+    model,
+    checkpointer: checkpointerInstance,
+    rootDir,
+    skills: [...new Set(skills)],
+  });
+
   const agent = createDeepAgent({
-    ...buildPristineDeepAgentConfig({
-      model,
-      checkpointer: checkpointerInstance,
-      rootDir: getYagrHomeDir(),
-      skills: getDeepAgentSkillSourcePaths(),
+    ...pristineConfig,
+    memory: [...new Set([
+      ...pristineConfig.memory,
+      ...(runtimeOptions.memorySources ?? []),
+    ])],
+    ...(runtimeOptions.systemPrompt ? { systemPrompt: runtimeOptions.systemPrompt } : {}),
+    middleware: getCodingOrientedDeepAgentMiddleware({
+      runtimePathAnchor: `Backend working directory: ${rootDir}`,
     }),
-    middleware: getCodingOrientedDeepAgentMiddleware(),
   });
 
   return { agent, checkpointer: checkpointerInstance, compactionService };
