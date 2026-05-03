@@ -102,6 +102,15 @@ export type {
   YagrRunStep,
   YagrPhaseEvent,
 } from './types.js';
+export type {
+  YagrDeepAgentHandle,
+  YagrDeepAgentRuntimeOptions,
+} from './agent-factory.js';
+export {
+  createYagrDeepAgent,
+  getYagrAgentMemorySources,
+  getYagrAgentSkillSourcePaths,
+} from './agent-factory.js';
 
 export type {
   YagrGatewayConfig,
