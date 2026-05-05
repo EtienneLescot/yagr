@@ -28,6 +28,7 @@ type ChatStreamEvent =
       endedAt?: number;
     }
   | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
+  | { type: 'context-usage-reset' }
   | { type: 'text-delta'; delta: string }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string };
@@ -1006,6 +1007,11 @@ function App() {
 
         if (streamEvent.type === 'context-usage') {
           setContextFillPercent(streamEvent.fillPercent);
+          return;
+        }
+
+        if (streamEvent.type === 'context-usage-reset') {
+          setContextFillPercent(null);
           return;
         }
 
