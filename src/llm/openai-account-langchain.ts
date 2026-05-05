@@ -84,7 +84,7 @@ export class OpenAiAccountChatModel extends BaseChatModel<OpenAiAccountChatCallO
     const toolCalls = (result.toolCalls ?? []).map<ToolCall>((toolCall) => ({
       id: toolCall.toolCallId,
       name: toolCall.toolName,
-      args: parseToolArgs(toolCall.args),
+      args: parseToolArgs(toolCall.toolName, toolCall.args),
     }));
 
     const aiMessage = new AIMessage({
@@ -216,10 +216,14 @@ function normalizeToolChoice(toolChoice: OpenAiAccountChatCallOptions['tool_choi
   return undefined;
 }
 
-function parseToolArgs(args: string): Record<string, unknown> {
+function parseToolArgs(toolName: string, args: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(args);
-    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+    const normalized = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+    if (toolName === 'edit_file' && normalized.replace_all === null) {
+      delete normalized.replace_all;
+    }
+    return normalized;
   } catch {
     return {};
   }

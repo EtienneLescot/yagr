@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   CODING_ORIENTATION_SYSTEM_PROMPT,
+  createEditFileToolInputNormalizerMiddleware,
   getRuntimePathAnchorPrompt,
   getCodingOrientedDeepAgentMiddleware,
 } from '../dist/deepagents/coding-orientation.js';
@@ -24,13 +25,39 @@ test('pristine deepagents memory sources are loaded from active-memory-sources (
 test('coding-oriented overlay includes both coding orientation and inject-memory middleware', () => {
   const middleware = getCodingOrientedDeepAgentMiddleware();
   assert.equal(Array.isArray(middleware), true);
-  assert.equal(middleware.length, 2);
+  assert.equal(middleware.length, 3);
   assert.match(CODING_ORIENTATION_SYSTEM_PROMPT, /coding-focused agent/i);
   assert.match(CODING_ORIENTATION_SYSTEM_PROMPT, /smallest correct edit/i);
   assert.match(CODING_ORIENTATION_SYSTEM_PROMPT, /smallest relevant build, typecheck, or test command/i);
   const names = middleware.map((m) => m.name);
   assert.ok(names.includes('YagrCodingOrientationMiddleware'), 'coding orientation middleware present');
+  assert.ok(names.includes('YagrEditFileToolInputNormalizerMiddleware'), 'edit_file normalizer middleware present');
   assert.ok(names.includes('YagrInjectMemoryMiddleware'), 'inject-memory middleware present');
+});
+
+test('edit_file tool input normalizer drops null replace_all', async () => {
+  const middleware = createEditFileToolInputNormalizerMiddleware();
+  let receivedRequest;
+  await middleware.wrapToolCall({
+    toolCall: {
+      name: 'edit_file',
+      args: {
+        file_path: '/tmp/workflow.ts',
+        old_string: 'old',
+        new_string: 'new',
+        replace_all: null,
+      },
+    },
+  }, (request) => {
+    receivedRequest = request;
+    return { content: 'ok' };
+  });
+
+  assert.deepEqual(receivedRequest.toolCall.args, {
+    file_path: '/tmp/workflow.ts',
+    old_string: 'old',
+    new_string: 'new',
+  });
 });
 
 test('runtime path anchor points to the yagr home directory (not process.cwd)', async () => {
