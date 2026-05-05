@@ -47,7 +47,7 @@ export interface YagrDeepAgentRuntimeOptions {
   rootDir?: string;
   /** Extra memory files to append to the default Yagr memory sources. */
   memorySources?: string[];
-  /** Extra or replacement DeepAgents skill roots. Defaults to Yagr skill roots for the selected root. */
+  /** Extra or replacement DeepAgents skill roots. Defaults to Yagr global and launch-workspace skill roots. */
   skillSourcePaths?: string[];
   /** Replace default Yagr skill roots instead of appending to them. */
   replaceSkillSourcePaths?: boolean;
@@ -113,7 +113,7 @@ export async function createYagrDeepAgent(
   const model = await createLangChainModel(modelConfig, configStore);
   const checkpointerInstance = checkpointer ?? new MemorySaver();
   const rootDir = runtimeOptions.rootDir ?? getYagrHomeDir();
-  const defaultSkills = getDeepAgentSkillSourcePaths({ contextRoot: rootDir });
+  const defaultSkills = getDeepAgentSkillSourcePaths();
   const skills = runtimeOptions.replaceSkillSourcePaths
     ? (runtimeOptions.skillSourcePaths ?? [])
     : [...defaultSkills, ...(runtimeOptions.skillSourcePaths ?? [])];
