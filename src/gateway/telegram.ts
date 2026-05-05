@@ -702,7 +702,7 @@ class TelegramGateway implements Gateway {
     try {
       await reply('Yagr is working...');
 
-      const { agent } = await this.resolveAgentHandle();
+      const { agent, compactionService } = await this.resolveAgentHandle();
       const threadId = await this.getOrCreateThreadId(chatId);
       this.sessions.touch(threadId, { title: deriveSessionTitle(prompt, `Telegram chat ${chatId}`) });
       const accumulator = createRunAccumulator();
@@ -741,6 +741,16 @@ class TelegramGateway implements Gateway {
         this.pendingApprovals.set(chatId, accumulator.requiredActions);
       } else {
         this.pendingApprovals.delete(chatId);
+      }
+
+      if (accumulator.fileModificationDetected) {
+        try {
+          await this.sessions.saveCheckpoint(threadId, {
+            payloadState: compactionService.getState(threadId),
+          });
+        } catch (err) {
+          console.error('[telegram auto-checkpoint] Failed to save checkpoint:', err);
+        }
       }
 
       const htmlSections: string[] = [];
