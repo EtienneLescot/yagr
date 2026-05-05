@@ -399,6 +399,18 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
         setActiveOperationText('Run finished. Ready for the next request.');
       }
 
+      if (accumulator.fileModificationDetected) {
+        try {
+          const checkpoint = await sessions.saveCheckpoint(threadIdRef.current, {
+            payloadState: compactionService.getState(threadIdRef.current),
+          });
+          pushEntry('result', 'Checkpoint saved', checkpoint.id);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          pushEntry('interrupt', 'Checkpoint failed', message);
+        }
+      }
+
       const finalContextPercent = Math.min(100, Math.round(((prompt.length + accumulator.responseText.length) / 4 / 100000) * 100));
       setContextFillPercent(finalContextPercent);
     } catch (error) {
@@ -504,6 +516,8 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
           pushEntry('result', 'Sessions', result.message);
         } else if (parsed.command === 'checkpoints') {
           pushEntry('result', 'Checkpoints', result.message);
+        } else if (parsed.command === 'compact') {
+          pushEntry('result', 'Compaction', result.message);
         } else if (parsed.command === 'impact') {
           pushEntry('result', 'Impact', result.message);
         } else if (parsed.command === 'save') {
@@ -699,7 +713,7 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
       </Box>
 
       <Text dimColor>
-        /help · /sessions · /impact · /new · /expand · /collapse · /stop · ↑↓ scroll
+        /help · /sessions · /compact · /checkpoints · /save · /restore · /impact · /new · /stop · ↑↓ scroll
       </Text>
     </Box>
   );
