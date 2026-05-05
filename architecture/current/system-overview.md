@@ -57,7 +57,7 @@ Yagr owns:
 - generic Agent Skills installation and source-path resolution
 - local shell and file execution semantics
 - provider/model runtime
-- sessions/checkpoints
+- sessions/checkpoints, including first-class checkpoint lifecycle APIs, native LangGraph checkpoint restore, opaque surface payloads, checkpoint summaries, policies, and lifecycle events
 - runtime events
 - reusable runtime context compaction and provider-reported context usage metrics
 - impact event schema and append-only local impact ledger

@@ -72,7 +72,9 @@ For a VS Code extension, prefer this composition path:
 - render progress and tool activity from `@yagr/runtime-events`
 - record meaningful runtime effects with `@yagr/impact-ledger` and `@yagr/reality-observer`
 - use `@yagr/plugin-runtime` for plugin contracts
-- use `@yagr/session-service` only if the extension owns Yagr-compatible session UX directly
+- use `@yagr/session-service` only if the extension owns Yagr-compatible session UX directly, including first-class checkpoint lifecycle APIs and opaque surface payload restore
+
+`@yagr/session-service` is the stable checkpoint authority exposed through `@yagr/runtime`. It wraps `@yagr/session-checkpoint`, which persists native LangGraph checkpoint tuples, while the service owns UI-ready summaries, session metadata restore, checkpoint policy, and checkpoint lifecycle events.
 
 ## Root App Composition
 
