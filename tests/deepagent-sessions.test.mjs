@@ -134,7 +134,7 @@ test('SessionService.delete removes persisted checkpoint directories', async () 
   assert.equal(await checkpointer.getTuple({ configurable: { thread_id: 'session-2' } }), undefined);
 });
 
-test('CheckpointManager saves and restores compaction state alongside checkpoint', async () => {
+test('CheckpointManager saves and restores namespaced compaction payload alongside checkpoint', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-checkpoints-compaction-'));
   const checkpointer = new MemorySaver();
   const manager = new CheckpointManager(checkpointer, tempDir);
@@ -159,17 +159,19 @@ test('CheckpointManager saves and restores compaction state alongside checkpoint
     totalCompactions: 1,
   };
 
-  const saved = await manager.saveCheckpoint('session-compaction', compactionState);
+  const saved = await manager.saveCheckpoint('session-compaction', { payloads: { compaction: compactionState } });
   await checkpointer.deleteThread('session-compaction');
 
-  const restoredCompaction = await manager.restoreCheckpoint('session-compaction', saved.id);
+  const result = await manager.restoreCheckpoint('session-compaction', saved.id);
+  const restoredCompaction = result.payloads.compaction;
 
   assert.equal(restoredCompaction?.totalCompactions, 1);
   assert.equal(restoredCompaction?.lastCompaction?.summary, 'test summary');
   assert.equal(restoredCompaction?.lastCompaction?.messagesCompacted, 10);
+  assert.deepEqual(result.payloadsRestored, ['compaction']);
 });
 
-test('CheckpointManager restoreCheckpoint returns null when no compaction state was saved', async () => {
+test('CheckpointManager restoreCheckpoint returns empty payloads when no payload was saved', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-checkpoints-nocompaction-'));
   const checkpointer = new MemorySaver();
   const manager = new CheckpointManager(checkpointer, tempDir);
@@ -191,9 +193,11 @@ test('CheckpointManager restoreCheckpoint returns null when no compaction state 
   const saved = await manager.saveCheckpoint('session-nocompaction');
   await checkpointer.deleteThread('session-compaction');
 
-  const restoredCompaction = await manager.restoreCheckpoint('session-nocompaction', saved.id);
+  const result = await manager.restoreCheckpoint('session-nocompaction', saved.id);
 
-  assert.equal(restoredCompaction, null);
+  assert.deepEqual(result.payloads, {});
+  assert.deepEqual(result.payloadsRestored, []);
+  assert.equal(result.langGraphRestored, true);
 });
 
 test('SessionService.saveCheckpoint throws when no initializer and no checkpointer set', async () => {
@@ -221,7 +225,7 @@ test('SessionService.registerCheckpointInitializer enables lazy checkpoint acces
   assert.deepEqual(await service.listCheckpoints('session-init-test'), []);
 });
 
-test('SessionService.restoreCheckpoint returns RestoreResult with payload state', async () => {
+test('SessionService.restoreCheckpoint returns RestoreCheckpointResult with namespaced payloads', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-session-service-restore-'));
   const sessionsDir = path.join(rootDir, 'sessions');
   const memoriesDir = path.join(rootDir, 'memories');
@@ -250,14 +254,15 @@ test('SessionService.restoreCheckpoint returns RestoreResult with payload state'
     totalCompactions: 1,
   };
 
-  const saved = await service.saveCheckpoint('session-restore-test', { payloadState: compactionState });
+  const saved = await service.saveCheckpoint('session-restore-test', { payloads: { compaction: compactionState } });
   await checkpointer.deleteThread('session-restore-test');
 
   const result = await service.restoreCheckpoint('session-restore-test', saved.id);
 
   assert.equal(result.checkpointId, saved.id);
   assert.equal(result.sessionId, 'session-restore-test');
-  assert.equal(result.payloadState?.totalCompactions, 1);
-  assert.equal(result.payloadState?.lastCompaction?.summary, 'restore test');
+  assert.equal(result.payloads.compaction?.totalCompactions, 1);
+  assert.equal(result.payloads.compaction?.lastCompaction?.summary, 'restore test');
+  assert.deepEqual(result.payloadsRestored, ['compaction']);
   assert.ok(result.restoredAt);
 });
