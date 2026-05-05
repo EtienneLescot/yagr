@@ -97,6 +97,12 @@ Preferred direction:
 - plugins depend on plugin/runtime contracts
 - core does not depend on product-specific integration behavior
 
+## Runtime Context Capabilities
+
+Manual context compaction is exposed by the root Yagr runtime handle through `CompactionService.compactSession(...)`. The service owns API/result normalization and per-session event state, while the actual compaction adapter remains tied to native DeepAgents.js summarization state (`_summarizationEvent` and `_summarizationSessionId`) rather than a separate Yagr summarizer.
+
+Provider-reported context usage is surfaced as a runtime stream capability through `@yagr/runtime-events` and `@yagr/stream-adapter`. Surfaces consume `context-usage` events only when real provider/runtime usage metadata is available; surface-side estimates are not emitted by default.
+
 ## Integrator Note
 
 If integrating Yagr into another product, prefer `@yagr/runtime` and `@yagr/surfaces` over internal packages unless the facade is insufficient.

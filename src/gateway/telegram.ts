@@ -354,7 +354,17 @@ class TelegramGateway implements Gateway {
     });
 
     this.bot.command('compact', async (ctx) => {
-      await ctx.reply('Conversation compaction is handled automatically by Yagr.');
+      const chatId = String(ctx.chat?.id);
+      if (!this.isLinkedChat(chatId)) return;
+      const handle = await this.resolveAgentHandle();
+      const threadId = await this.getOrCreateThreadId(chatId);
+      const service = new SlashCommandService(this.sessions, handle.compactionService);
+      const result = await service.execute(
+        { command: 'compact', args: [], raw: ctx.message?.text ?? '' },
+        { surface: 'telegram', sessionId: chatId, threadId },
+        this.createTelegramSlashHandler(chatId),
+      );
+      await ctx.reply(result.message);
     });
 
     this.bot.command('unlink', async (ctx) => {

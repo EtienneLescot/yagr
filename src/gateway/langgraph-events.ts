@@ -15,7 +15,7 @@ import type { StreamEvent } from '@langchain/core/tracers/log_stream';
 import type { ImpactLedger } from '@yagr/impact-ledger';
 import { recordRuntimeOperationImpact, type RuntimeImpactContext } from '@yagr/reality-observer';
 import type { RuntimeOperationEvent } from '@yagr/runtime-events';
-import type { YagrContextCompactionEvent, YagrOperationEvent, YagrRequiredAction, YagrToolEvent } from '../types.js';
+import type { YagrContextCompactionEvent, YagrContextUsageEvent, YagrOperationEvent, YagrRequiredAction, YagrToolEvent } from '../types.js';
 import {
   type YagrUserVisibleUpdate,
   makeToolStartOperationEvent,
@@ -44,6 +44,10 @@ export interface LangGraphRunAccumulator {
   fileModificationDetected: boolean;
   /** Compaction events that occurred during this run. */
   compactions: YagrContextCompactionEvent[];
+  /** Real context-usage events reported by the provider/runtime. */
+  contextUsages: YagrContextUsageEvent[];
+  /** Dedupe keys for usage metadata that appears in both stream and end events. */
+  emittedUsageKeys: Set<string>;
 }
 
 export interface LangGraphEventCallbacks {
@@ -62,6 +66,10 @@ export interface LangGraphEventCallbacks {
   };
   /** Called when a context compaction event occurs. */
   onCompaction?: (event: YagrContextCompactionEvent) => void | Promise<void>;
+  /** Called when provider/runtime context usage metadata is available. */
+  onContextUsage?: (event: YagrContextUsageEvent) => void | Promise<void>;
+  /** Context-window size for the active model, required for fillPercent. */
+  contextWindowTokens?: number;
 }
 
 export function createRunAccumulator(): LangGraphRunAccumulator {
@@ -73,6 +81,8 @@ export function createRunAccumulator(): LangGraphRunAccumulator {
     activeOperations: new Map(),
     fileModificationDetected: false,
     compactions: [],
+    contextUsages: [],
+    emittedUsageKeys: new Set(),
   };
 }
 
@@ -101,6 +111,7 @@ export async function processStreamEvent(
   switch (event.event) {
     case 'on_chat_model_stream': {
       const { textDelta, thinkingDelta } = extractDeltas(event.data?.chunk);
+      await emitContextUsage(event, event.data?.chunk, accumulator, callbacks);
 
       if (DEBUG) {
         console.error(`[DEBUG_LANGGRAPH_EVENTS]   textDelta.len=${textDelta.length} thinkingDelta.len=${thinkingDelta.length}`);
@@ -159,6 +170,12 @@ export async function processStreamEvent(
         accumulator.responseText += textDelta;
         await callbacks.onTextDelta?.(textDelta);
       }
+      break;
+    }
+
+    case 'on_chat_model_end': {
+      await emitContextUsage(event, event.data, accumulator, callbacks);
+      await emitContextUsage(event, event.data?.output, accumulator, callbacks);
       break;
     }
 
@@ -237,6 +254,103 @@ export async function processStreamEvent(
     default:
       break;
   }
+}
+
+async function emitContextUsage(
+  event: StreamEvent,
+  payload: unknown,
+  accumulator: LangGraphRunAccumulator,
+  callbacks: LangGraphEventCallbacks,
+): Promise<void> {
+  const usage = extractContextUsageFromPayload(payload, callbacks.contextWindowTokens);
+  if (!usage) {
+    return;
+  }
+  const runId = typeof event.run_id === 'string' ? event.run_id : 'unknown';
+  const key = `${runId}:${usage.promptTokens}:${usage.completionTokens}`;
+  if (accumulator.emittedUsageKeys.has(key)) {
+    return;
+  }
+  accumulator.emittedUsageKeys.add(key);
+  accumulator.contextUsages.push(usage);
+  await callbacks.onContextUsage?.(usage);
+}
+
+function extractContextUsageFromPayload(payload: unknown, contextWindowTokens?: number): YagrContextUsageEvent | null {
+  if (!contextWindowTokens || contextWindowTokens <= 0) {
+    return null;
+  }
+  const tokenUsage = extractTokenUsageMetadata(payload);
+  if (!tokenUsage) {
+    return null;
+  }
+  const totalTokens = tokenUsage.promptTokens + tokenUsage.completionTokens;
+  return {
+    type: 'context-usage',
+    promptTokens: tokenUsage.promptTokens,
+    completionTokens: tokenUsage.completionTokens,
+    contextWindowTokens,
+    fillPercent: Math.max(0, Math.min(100, Math.round((totalTokens / contextWindowTokens) * 100))),
+    source: 'api',
+  };
+}
+
+function extractTokenUsageMetadata(payload: unknown): { promptTokens: number; completionTokens: number } | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  const obj = payload as Record<string, unknown>;
+  const direct = normalizeTokenUsage(obj);
+  if (direct) {
+    return direct;
+  }
+  const knownContainers = [
+    obj.usage_metadata,
+    obj.usage,
+    obj.tokenUsage,
+    obj.token_usage,
+    obj.llmOutput,
+    obj.response_metadata,
+    obj.output,
+    obj.message,
+  ];
+  for (const value of knownContainers) {
+    const usage = extractTokenUsageMetadata(value);
+    if (usage) {
+      return usage;
+    }
+  }
+  if (Array.isArray(obj.generations)) {
+    for (const generationGroup of obj.generations) {
+      if (!Array.isArray(generationGroup)) {
+        continue;
+      }
+      for (const generation of generationGroup) {
+        const usage = extractTokenUsageMetadata(generation);
+        if (usage) {
+          return usage;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function normalizeTokenUsage(obj: Record<string, unknown>): { promptTokens: number; completionTokens: number } | null {
+  const promptTokens = firstNumber(obj.promptTokens, obj.inputTokens, obj.prompt_tokens, obj.input_tokens);
+  const completionTokens = firstNumber(obj.completionTokens, obj.outputTokens, obj.completion_tokens, obj.output_tokens);
+  return promptTokens !== undefined && completionTokens !== undefined
+    ? { promptTokens, completionTokens }
+    : null;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 async function emitOperation(callbacks: LangGraphEventCallbacks, event: YagrOperationEvent): Promise<void> {

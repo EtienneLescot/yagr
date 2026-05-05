@@ -59,6 +59,14 @@ export interface CheckpointPayloadManager {
   getState(sessionId: string): unknown;
   setState(sessionId: string, state: unknown): void;
   reset(sessionId?: string): void;
+  compactSession?(sessionId: string): Promise<ManualCompactionResult> | ManualCompactionResult;
+}
+
+interface ManualCompactionResult {
+  status: 'completed' | 'skipped' | 'failed' | 'unavailable';
+  reason?: string;
+  messagesCompacted?: number;
+  preservedRecentMessages?: number;
 }
 
 export class SlashCommandService {
@@ -105,7 +113,7 @@ export class SlashCommandService {
         }
         return this.executeApprove(handler);
       case 'compact':
-        return { kind: 'ok', message: 'Compaction runs automatically when needed.' };
+        return this.executeCompact(ctx);
       case 'toggle_thinking':
         if (handler.setDisplayOptions) {
           const current = handler.getDisplayOptions?.() ?? { showThinking: true, showExecution: true };
@@ -126,6 +134,28 @@ export class SlashCommandService {
         return { kind: 'ok', message: '/exit' };
       default:
         return { kind: 'unknown_command', message: `Unknown command: /${command}` };
+    }
+  }
+
+  private async executeCompact(ctx: SlashCommandContext): Promise<SlashCommandResult> {
+    if (!this.checkpointPayloads.compactSession) {
+      return { kind: 'unsupported_in_surface', message: 'Manual compaction is not available in this runtime.' };
+    }
+
+    const result = await this.checkpointPayloads.compactSession(ctx.threadId);
+    switch (result.status) {
+      case 'completed':
+        return {
+          kind: 'ok',
+          message: `Context compacted (${result.messagesCompacted ?? 0} messages compacted, ${result.preservedRecentMessages ?? 0} preserved).`,
+          data: result,
+        };
+      case 'skipped':
+        return { kind: 'ok', message: result.reason ?? 'Context compaction skipped.', data: result };
+      case 'unavailable':
+        return { kind: 'unsupported_in_surface', message: result.reason ?? 'Manual compaction is unavailable.', data: result };
+      case 'failed':
+        return { kind: 'error', message: result.reason ?? 'Context compaction failed.', data: result };
     }
   }
 

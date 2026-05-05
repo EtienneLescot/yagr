@@ -1,4 +1,4 @@
-import type { YagrContextCompactionEvent } from '../types.js';
+import type { YagrContextCompactionEvent, YagrManualCompactionOptions, YagrManualCompactionResult } from '../types.js';
 
 export interface CompactionState {
   lastCompaction: YagrContextCompactionEvent | null;
@@ -13,6 +13,11 @@ export interface CompactionSubscriber {
 export interface CompactionConfig {
   historyLimit?: number;
 }
+
+export type SessionCompactor = (
+  sessionId: string,
+  options?: YagrManualCompactionOptions,
+) => Promise<YagrManualCompactionResult>;
 
 export const DEFAULT_COMPACTION_CONFIG: CompactionConfig = {
   historyLimit: 50,

@@ -1,14 +1,16 @@
-import type { YagrContextCompactionEvent } from '../types.js';
-import type { CompactionConfig, CompactionState, CompactionSubscriber } from './compaction-types.js';
+import type { YagrContextCompactionEvent, YagrManualCompactionOptions, YagrManualCompactionResult } from '../types.js';
+import type { CompactionConfig, CompactionState, CompactionSubscriber, SessionCompactor } from './compaction-types.js';
 import { DEFAULT_COMPACTION_CONFIG, buildCompactionContextBlock } from './compaction-types.js';
 
 export class CompactionService {
   private readonly config: CompactionConfig;
   private readonly subscribers = new Set<CompactionSubscriber>();
   private readonly states = new Map<string, CompactionState>();
+  private readonly sessionCompactor?: SessionCompactor;
 
-  constructor(config: Partial<CompactionConfig> = {}) {
+  constructor(config: Partial<CompactionConfig> = {}, sessionCompactor?: SessionCompactor) {
     this.config = { ...DEFAULT_COMPACTION_CONFIG, ...config };
+    this.sessionCompactor = sessionCompactor;
   }
 
   getConfig(): CompactionConfig {
@@ -53,6 +55,21 @@ export class CompactionService {
     });
 
     await Promise.allSettled(notifications);
+  }
+
+  async compactSession(sessionId: string, options: YagrManualCompactionOptions = {}): Promise<YagrManualCompactionResult> {
+    if (!this.sessionCompactor) {
+      return {
+        status: 'unavailable',
+        reason: 'Compaction runtime is not available.',
+      };
+    }
+
+    const result = await this.sessionCompactor(sessionId, options);
+    if (result.status === 'completed' && result.event) {
+      await this.notifyCompaction(sessionId, result.event);
+    }
+    return result;
   }
 
   reset(sessionId?: string): void {

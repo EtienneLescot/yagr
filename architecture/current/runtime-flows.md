@@ -13,6 +13,7 @@ sequenceDiagram
     participant C as coding middleware
     participant S as DeepAgents SkillsMiddleware
     participant M as LangChain Model
+    participant Cx as Context Capabilities
     participant T as Deepagents native tools
     participant E as Local shell/files
     participant O as Reality Observer
@@ -20,10 +21,15 @@ sequenceDiagram
 
     U->>F: prompt
     F->>H: stream
+    F->>H: optional compactSession
     H->>P: backend + memory sources
     H->>S: installed skill source paths
     H->>C: coding-oriented middleware
     H->>M: run prompt with system instructions + skill index
+    M-->>Cx: provider usage metadata when available
+    Cx-->>F: context-usage event
+    H->>Cx: manual compaction request
+    Cx->>H: DeepAgents summarization state update
     M->>T: tool call(s)
     T->>E: file and shell tools
     E-->>T: results
@@ -43,6 +49,8 @@ Observations:
 - external integrations are not built in; they are invoked only as ordinary local commands or files when present in the user's environment
 - impact recording is a runtime-side concern: the shared gateway stream adapter passes operation events to `@yagr/reality-observer`, and `@yagr/impact-ledger` persists append-only JSONL records
 - WebUI, TUI, and Telegram expose recorded impact through the same `/impact` slash command handled by `@yagr/conversation-service`
+- manual context compaction is a runtime capability exposed through `CompactionService.compactSession(...)`; it adapts native DeepAgents.js summarization state instead of implementing surface-specific fallback summaries
+- context usage is emitted through the stream adapter only when provider/runtime token usage metadata is available, with `source: api`; surfaces do not emit hidden estimates by default
 
 ## Impact Summary Command
 

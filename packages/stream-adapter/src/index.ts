@@ -1,6 +1,7 @@
 import type { StreamEvent } from '@langchain/core/tracers/log_stream';
 import {
   extractCompactionFromChunk,
+  extractContextUsageEvent,
   extractDeltas,
   makeGenericToolStartOperationEvent,
   makeThinkingEndEvent,
@@ -8,6 +9,7 @@ import {
   makeToolEndOperationEvent,
   THINKING_OPERATION_ID,
   type RuntimeContextCompactionEvent,
+  type RuntimeContextUsageEvent,
   type RuntimeOperationEvent,
 } from '@yagr/runtime-events';
 
@@ -17,6 +19,8 @@ export interface LangGraphStreamAccumulator {
   thinkingStartedAt: number;
   activeOperations: Map<string, RuntimeOperationEvent>;
   compactions: RuntimeContextCompactionEvent[];
+  contextUsages: RuntimeContextUsageEvent[];
+  emittedUsageKeys: Set<string>;
 }
 
 export interface LangGraphStreamCallbacks {
@@ -24,6 +28,8 @@ export interface LangGraphStreamCallbacks {
   onThinkingDelta?: (delta: string) => void | Promise<void>;
   onOperation?: (event: RuntimeOperationEvent) => void | Promise<void>;
   onCompaction?: (event: RuntimeContextCompactionEvent) => void | Promise<void>;
+  onContextUsage?: (event: RuntimeContextUsageEvent) => void | Promise<void>;
+  contextWindowTokens?: number;
 }
 
 export function createLangGraphStreamAccumulator(): LangGraphStreamAccumulator {
@@ -33,6 +39,8 @@ export function createLangGraphStreamAccumulator(): LangGraphStreamAccumulator {
     thinkingStartedAt: 0,
     activeOperations: new Map(),
     compactions: [],
+    contextUsages: [],
+    emittedUsageKeys: new Set(),
   };
 }
 
@@ -64,6 +72,7 @@ export async function processLangGraphStreamEvent(
   switch (event.event) {
     case 'on_chat_model_stream': {
       const { textDelta, thinkingDelta } = extractDeltas(event.data?.chunk);
+      await emitContextUsage(event, event.data?.chunk, accumulator, callbacks);
       if (thinkingDelta) {
         const firstThinking = accumulator.thinkingText.length === 0;
         accumulator.thinkingText += thinkingDelta;
@@ -107,6 +116,11 @@ export async function processLangGraphStreamEvent(
       }
       break;
     }
+    case 'on_chat_model_end': {
+      await emitContextUsage(event, event.data, accumulator, callbacks);
+      await emitContextUsage(event, event.data?.output, accumulator, callbacks);
+      break;
+    }
     case 'on_tool_start': {
       const toolName = event.name || 'tool';
       const operationKey = getToolOperationKey(event);
@@ -142,6 +156,26 @@ export async function processLangGraphStreamEvent(
     default:
       break;
   }
+}
+
+async function emitContextUsage(
+  event: StreamEvent,
+  payload: unknown,
+  accumulator: LangGraphStreamAccumulator,
+  callbacks: LangGraphStreamCallbacks,
+): Promise<void> {
+  const usage = extractContextUsageEvent(payload, callbacks.contextWindowTokens);
+  if (!usage) {
+    return;
+  }
+  const runId = typeof event.run_id === 'string' ? event.run_id : 'unknown';
+  const key = `${runId}:${usage.promptTokens}:${usage.completionTokens}`;
+  if (accumulator.emittedUsageKeys.has(key)) {
+    return;
+  }
+  accumulator.emittedUsageKeys.add(key);
+  accumulator.contextUsages.push(usage);
+  await callbacks.onContextUsage?.(usage);
 }
 
 function getToolOperationKey(event: StreamEvent): string {

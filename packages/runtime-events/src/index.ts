@@ -41,6 +41,20 @@ export interface RuntimeContextCompactionEvent {
   fallbackReason?: string;
 }
 
+export interface RuntimeContextUsageEvent {
+  type: 'context-usage';
+  promptTokens: number;
+  completionTokens: number;
+  contextWindowTokens: number;
+  fillPercent: number;
+  source: 'api' | 'estimated';
+}
+
+export interface RuntimeTokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+}
+
 export interface ExtractedDeltas {
   textDelta: string;
   thinkingDelta: string;
@@ -193,6 +207,109 @@ export function extractCompactionFromChunk(chunk: unknown): RuntimeContextCompac
     };
   }
   return null;
+}
+
+export function extractTokenUsageMetadata(payload: unknown): RuntimeTokenUsage | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const obj = payload as Record<string, unknown>;
+  const direct = normalizeTokenUsage(obj);
+  if (direct) {
+    return direct;
+  }
+
+  const knownContainers = [
+    obj.usage_metadata,
+    obj.usage,
+    obj.tokenUsage,
+    obj.token_usage,
+    obj.llmOutput,
+    obj.response_metadata,
+    obj.output,
+    obj.message,
+  ];
+
+  for (const value of knownContainers) {
+    const usage = extractTokenUsageMetadata(value);
+    if (usage) {
+      return usage;
+    }
+  }
+
+  if (Array.isArray(obj.generations)) {
+    for (const generationGroup of obj.generations) {
+      if (!Array.isArray(generationGroup)) {
+        continue;
+      }
+      for (const generation of generationGroup) {
+        const usage = extractTokenUsageMetadata(generation);
+        if (usage) {
+          return usage;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+export function extractContextUsageEvent(
+  payload: unknown,
+  contextWindowTokens?: number,
+): RuntimeContextUsageEvent | null {
+  if (!contextWindowTokens || contextWindowTokens <= 0) {
+    return null;
+  }
+  const usage = extractTokenUsageMetadata(payload);
+  if (!usage) {
+    return null;
+  }
+  const totalTokens = usage.promptTokens + usage.completionTokens;
+  return {
+    type: 'context-usage',
+    promptTokens: usage.promptTokens,
+    completionTokens: usage.completionTokens,
+    contextWindowTokens,
+    fillPercent: clampPercent(Math.round((totalTokens / contextWindowTokens) * 100)),
+    source: 'api',
+  };
+}
+
+function normalizeTokenUsage(obj: Record<string, unknown>): RuntimeTokenUsage | null {
+  const promptTokens = firstNumber(
+    obj.promptTokens,
+    obj.inputTokens,
+    obj.prompt_tokens,
+    obj.input_tokens,
+  );
+  const completionTokens = firstNumber(
+    obj.completionTokens,
+    obj.outputTokens,
+    obj.completion_tokens,
+    obj.output_tokens,
+  );
+  if (promptTokens === undefined || completionTokens === undefined) {
+    return null;
+  }
+  return { promptTokens, completionTokens };
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, value));
 }
 
 function summarizeToolInput(toolName: string, input: Record<string, unknown> | undefined): string | undefined {
