@@ -98,6 +98,8 @@ jobs:
 
       - name: Set snapshot package versions
         run: pnpm run release:snapshot:version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify snapshot package artifacts
         run: pnpm run publish:verify
