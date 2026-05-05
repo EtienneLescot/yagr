@@ -161,3 +161,94 @@ test('processStreamEvent sets fileModificationDetected for edit_file tool', asyn
 
   assert.equal(accumulator.fileModificationDetected, true);
 });
+
+test('processStreamEvent emits api context usage from stream usage metadata', async () => {
+  const accumulator = createRunAccumulator();
+  const usages = [];
+
+  await processStreamEvent({
+    event: 'on_chat_model_stream',
+    name: 'ChatModel',
+    run_id: 'run-usage-stream',
+    data: {
+      chunk: {
+        content: '',
+        usage_metadata: {
+          input_tokens: 200,
+          output_tokens: 50,
+          total_tokens: 250,
+        },
+      },
+    },
+  }, accumulator, {
+    contextWindowTokens: 1000,
+    onContextUsage: async (event) => {
+      usages.push(event);
+    },
+  });
+
+  assert.deepEqual(usages, [{
+    type: 'context-usage',
+    promptTokens: 200,
+    completionTokens: 50,
+    contextWindowTokens: 1000,
+    fillPercent: 25,
+    source: 'api',
+  }]);
+  assert.equal(accumulator.contextUsages.length, 1);
+});
+
+test('processStreamEvent emits api context usage from model end llm output', async () => {
+  const accumulator = createRunAccumulator();
+  const usages = [];
+
+  await processStreamEvent({
+    event: 'on_chat_model_end',
+    name: 'ChatModel',
+    run_id: 'run-usage-end',
+    data: {
+      output: {
+        llmOutput: {
+          usage: {
+            promptTokens: 750,
+            completionTokens: 250,
+          },
+        },
+      },
+    },
+  }, accumulator, {
+    contextWindowTokens: 2000,
+    onContextUsage: async (event) => {
+      usages.push(event);
+    },
+  });
+
+  assert.deepEqual(usages, [{
+    type: 'context-usage',
+    promptTokens: 750,
+    completionTokens: 250,
+    contextWindowTokens: 2000,
+    fillPercent: 50,
+    source: 'api',
+  }]);
+});
+
+test('processStreamEvent does not emit context usage without api metadata', async () => {
+  const accumulator = createRunAccumulator();
+  const usages = [];
+
+  await processStreamEvent({
+    event: 'on_chat_model_stream',
+    name: 'ChatModel',
+    run_id: 'run-no-usage',
+    data: { chunk: { content: 'hello' } },
+  }, accumulator, {
+    contextWindowTokens: 1000,
+    onContextUsage: async (event) => {
+      usages.push(event);
+    },
+  });
+
+  assert.equal(usages.length, 0);
+  assert.equal(accumulator.contextUsages.length, 0);
+});

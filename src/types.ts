@@ -201,6 +201,7 @@ export interface YagrContextCompactionEvent {
 }
 
 export interface YagrContextUsageEvent {
+  type: 'context-usage';
   /** Tokens used by the prompt (input), as reported by the API or estimated from content length. */
   promptTokens: number;
   /** Tokens generated in the last completion step. */
@@ -211,6 +212,24 @@ export interface YagrContextUsageEvent {
   fillPercent: number;
   /** Whether the counts come from the API response or from a character-length estimate. */
   source: 'api' | 'estimated';
+}
+
+export type YagrManualCompactionStatus = 'completed' | 'skipped' | 'failed' | 'unavailable';
+
+export interface YagrManualCompactionOptions {
+  /** Optional message list supplied by a caller that already owns the session history. */
+  messages?: unknown[];
+  /** Force compaction even when DeepAgents' automatic trigger threshold is not reached. */
+  force?: boolean;
+  abortSignal?: AbortSignal;
+}
+
+export interface YagrManualCompactionResult {
+  status: YagrManualCompactionStatus;
+  event?: YagrContextCompactionEvent;
+  reason?: string;
+  messagesCompacted?: number;
+  preservedRecentMessages?: number;
 }
 
 export type YagrOperationStatus = 'running' | 'done' | 'error';

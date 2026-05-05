@@ -1091,15 +1091,21 @@ function App() {
 
     setBusyLabel('Compacting context…');
     try {
-      const result = await request<{ compacted: boolean; event: { messagesCompacted: number; preservedRecentMessages: number } | null }>(
+      const result = await request<{
+        status: 'completed' | 'skipped' | 'failed' | 'unavailable';
+        reason?: string;
+        event?: { messagesCompacted: number; preservedRecentMessages: number } | null;
+      }>(
         '/api/chat/compact',
         { method: 'POST', body: JSON.stringify({ sessionId }) },
       );
-      if (result.compacted && result.event) {
+      if (result.status === 'completed' && result.event) {
         setContextFillPercent(null);
         notify(`Context compacted: ${result.event.messagesCompacted} messages folded.`);
+      } else if (result.status === 'failed' || result.status === 'unavailable') {
+        notify(result.reason ?? 'Context compaction is unavailable.', 'error');
       } else {
-        notify('Nothing to compact — conversation is too short.');
+        notify(result.reason ?? 'Nothing to compact — conversation is too short.');
       }
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error), 'error');
