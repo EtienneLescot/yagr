@@ -41,9 +41,36 @@ export function createCodingOrientationMiddleware(
   });
 }
 
+export function createEditFileToolInputNormalizerMiddleware() {
+  return createMiddleware({
+    name: 'YagrEditFileToolInputNormalizerMiddleware',
+    wrapToolCall(request, handler) {
+      if (request.toolCall.name !== 'edit_file') {
+        return handler(request);
+      }
+
+      const args = request.toolCall.args;
+      if (!args || typeof args !== 'object' || Array.isArray(args) || (args as Record<string, unknown>).replace_all !== null) {
+        return handler(request);
+      }
+
+      const normalizedArgs = { ...(args as Record<string, unknown>) };
+      delete normalizedArgs.replace_all;
+      return handler({
+        ...request,
+        toolCall: {
+          ...request.toolCall,
+          args: normalizedArgs,
+        },
+      });
+    },
+  });
+}
+
 export function getCodingOrientedDeepAgentMiddleware(options: CodingOrientationMiddlewareOptions = {}) {
   return [
     createCodingOrientationMiddleware(CODING_ORIENTATION_SYSTEM_PROMPT, options),
+    createEditFileToolInputNormalizerMiddleware(),
     createInjectMemoryMiddleware(),
   ];
 }

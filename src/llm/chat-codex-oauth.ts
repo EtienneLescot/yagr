@@ -128,7 +128,7 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
     const toolCalls = (result.toolCalls ?? []).map<ToolCall>((toolCall) => ({
       id: toolCall.toolCallId,
       name: toolCall.toolName,
-      args: parseToolArgs(toolCall.args),
+      args: parseToolArgs(toolCall.toolName, toolCall.args),
     }));
 
     const aiMessage = new AIMessage({
@@ -247,7 +247,7 @@ export class ChatCodexOAuth extends BaseChatModel<ChatCodexOAuthCallOptions> {
           } as ConstructorParameters<typeof AIMessageChunk>[0]);
           yield new ChatGenerationChunk({ message, text: '' });
         } else if (part.type === 'tool-call') {
-          const parsedArgs = parseToolArgs(part.args);
+          const parsedArgs = parseToolArgs(part.toolName, part.args);
           const message = new AIMessageChunk({
             content: '',
             tool_calls: [{
@@ -478,10 +478,14 @@ function normalizeToolChoice(toolChoice: ChatCodexOAuthCallOptions['tool_choice'
   return undefined;
 }
 
-function parseToolArgs(args: string): Record<string, unknown> {
+function parseToolArgs(toolName: string, args: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(args);
-    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+    const normalized = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+    if (toolName === 'edit_file' && normalized.replace_all === null) {
+      delete normalized.replace_all;
+    }
+    return normalized;
   } catch {
     return {};
   }

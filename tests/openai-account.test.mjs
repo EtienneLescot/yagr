@@ -449,6 +449,88 @@ test('openai-oauth LangChain model preserves bindTools tool choice and sends bou
   }
 });
 
+test('openai-oauth LangChain model drops null edit_file replace_all argument', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-edit-file-null-'));
+  const authPath = path.join(tempDir, 'auth.json');
+  const accessToken = makeJwtWithAccountId('acct_yagr_edit_file_null');
+  fs.writeFileSync(authPath, JSON.stringify({
+    auth_mode: 'chatgpt',
+    tokens: {
+      access_token: accessToken,
+      refresh_token: 'refresh-token',
+    },
+  }));
+
+  const previousAuthPath = process.env.YAGR_CODEX_AUTH_PATH;
+  const previousFetch = globalThis.fetch;
+
+  process.env.YAGR_CODEX_AUTH_PATH = authPath;
+  globalThis.fetch = async () => createSseResponse([
+    {
+      type: 'response.output_item.added',
+      item: {
+        type: 'function_call',
+        call_id: 'call_edit_file',
+        name: 'edit_file',
+        arguments: '',
+      },
+    },
+    {
+      type: 'response.function_call_arguments.delta',
+      item_id: 'call_edit_file',
+      delta: JSON.stringify({
+        file_path: '/tmp/workflow.ts',
+        old_string: 'old',
+        new_string: 'new',
+        replace_all: null,
+      }),
+    },
+    {
+      type: 'response.completed',
+      response: { usage: { input_tokens: 9, output_tokens: 4 } },
+    },
+  ]);
+
+  try {
+    const model = await createLangChainModel({ provider: 'openai-oauth', model: 'gpt-5.1-codex-mini' });
+    const boundModel = model.bindTools([
+      {
+        name: 'edit_file',
+        description: 'Edit a file.',
+        parameters: {
+          type: 'object',
+          properties: {
+            file_path: { type: 'string' },
+            old_string: { type: 'string' },
+            new_string: { type: 'string' },
+            replace_all: { type: 'boolean' },
+          },
+          required: ['file_path', 'old_string', 'new_string'],
+          additionalProperties: false,
+        },
+      },
+    ], { tool_choice: 'any' });
+
+    const result = await boundModel.invoke([new HumanMessage('Edit a file.')]);
+
+    assert.equal(result.tool_calls.length, 1);
+    assert.equal(result.tool_calls[0].name, 'edit_file');
+    assert.deepEqual(result.tool_calls[0].args, {
+      file_path: '/tmp/workflow.ts',
+      old_string: 'old',
+      new_string: 'new',
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousAuthPath === undefined) {
+      delete process.env.YAGR_CODEX_AUTH_PATH;
+    } else {
+      process.env.YAGR_CODEX_AUTH_PATH = previousAuthPath;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('openai-oauth always sends include: ["reasoning.encrypted_content"] in request body', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-openai-include-'));
   const authPath = path.join(tempDir, 'auth.json');
