@@ -6,7 +6,7 @@ import {
   type SlashSurface,
 } from '@yagr/conversation-core';
 import { buildImpactSummary, type ImpactLedger, type ImpactLedgerQuery } from '@yagr/impact-ledger';
-import type { CheckpointMetadata, DeepAgentSessionScope, SessionService } from '@yagr/session-service';
+import type { CheckpointMetadata, CheckpointReason, DeepAgentSessionScope, SessionService } from '@yagr/session-service';
 
 export interface SessionListEntry {
   id: string;
@@ -23,6 +23,9 @@ export interface CheckpointListEntry {
   createdAt: string;
   messageCount: number;
   summary?: string;
+  reason?: CheckpointReason;
+  label?: string;
+  restoredAt?: string;
 }
 
 export type SlashCommandResultKind =
@@ -280,8 +283,16 @@ export class SlashCommandService {
       createdAt: cp.createdAt,
       messageCount: cp.messageCount,
       summary: cp.summary,
+      reason: cp.reason,
+      label: cp.label,
+      restoredAt: cp.restoredAt,
     }));
-    const lines = checkpoints.map((cp: CheckpointMetadata, i: number) => `${i + 1}. ${cp.id} — ${new Date(cp.createdAt).toLocaleString()} — ${cp.messageCount} msgs`);
+    const lines = checkpoints.map((cp: CheckpointMetadata, i: number) => {
+      const label = cp.label ? ` "${cp.label}"` : '';
+      const reason = cp.reason ? ` [${cp.reason}]` : '';
+      const restored = cp.restoredAt ? ` restored ${new Date(cp.restoredAt).toLocaleString()}` : '';
+      return `${i + 1}. ${cp.id}${label}${reason} — ${new Date(cp.createdAt).toLocaleString()} — ${cp.messageCount} msgs${restored}`;
+    });
     return {
       kind: 'ok',
       message: `Checkpoints:\n${lines.join('\n')}`,
@@ -291,12 +302,14 @@ export class SlashCommandService {
 
   private async executeSaveCheckpoint(ctx: SlashCommandContext): Promise<SlashCommandResult> {
     try {
-      const payloadState = this.checkpointPayloads.getState(ctx.threadId);
-      const checkpoint = await this.sessions.saveCheckpoint(ctx.threadId, { payloadState });
+      const checkpoint = await this.sessions.saveCheckpoint(ctx.threadId, {
+        reason: 'manual',
+        payloads: { compaction: this.checkpointPayloads.getState(ctx.threadId) },
+      });
       return {
         kind: 'ok',
         message: `Checkpoint saved: ${checkpoint.id}`,
-        data: { checkpointId: checkpoint.id },
+        data: { checkpointId: checkpoint.id, checkpoint },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -311,16 +324,15 @@ export class SlashCommandService {
     const checkpointId = args[0]!;
     try {
       const result = await this.sessions.restoreCheckpoint(ctx.threadId, checkpointId);
-      if (result.payloadState) {
-        this.checkpointPayloads.setState(ctx.threadId, result.payloadState);
+      if ('compaction' in result.payloads) {
+        this.checkpointPayloads.setState(ctx.threadId, result.payloads.compaction);
       } else {
         this.checkpointPayloads.reset(ctx.threadId);
       }
-      handler.resetLocalState();
       return {
         kind: 'ok',
-        message: `Checkpoint ${checkpointId} restored. Feed cleared. Resume your conversation.`,
-        data: { checkpointId },
+        message: `Checkpoint ${checkpointId} restored. Resume your conversation.`,
+        data: result,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

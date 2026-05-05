@@ -67,6 +67,37 @@ Observations:
 - `/impact` defaults to the current session/thread and accepts `all` for global recent events
 - rich dashboard views remain future work; the current surface contract is a compact shared summary
 
+## Checkpoint Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant UI as Surface or external host
+    participant SS as SessionService
+    participant CM as CheckpointManager
+    participant LG as LangGraph checkpointer
+    participant R as Runtime/UI payloads
+
+    UI->>SS: saveCheckpoint(sessionId, options)
+    SS->>CM: save native tuple + metadata + payloads
+    CM->>LG: getTuple(thread_id)
+    CM-->>SS: CheckpointSummary
+    SS-->>UI: summary + saved event
+
+    UI->>SS: restoreCheckpoint(sessionId, checkpointId)
+    SS->>CM: restore native tuple
+    CM->>LG: put checkpoint + putWrites
+    CM-->>SS: RestoreCheckpointResult + opaque payloads
+    SS-->>UI: restored event + payloads
+    UI->>R: restore display thread/context from payloads.surface
+```
+
+Observations:
+
+- LangGraph remains the runtime state authority; Yagr persists and restores the native `CheckpointTuple` rather than recoding graph state.
+- `@yagr/session-service` is the stable surface-facing authority for checkpoint lifecycle APIs, summaries, policies, session metadata snapshots, and events.
+- Surface-specific payloads are namespaced opaque JSON values. Yagr restores and returns them without understanding external schemas such as workflow selections or node markers.
+- Built-in surfaces may use `payloads.compaction` and `payloads.surface`, but external hosts can define additional payload namespaces.
+
 ## Instructions And Middleware
 
 ```mermaid

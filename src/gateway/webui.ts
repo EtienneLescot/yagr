@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getYagrDeepAgentSessionsDir, getYagrMemoriesDir, getYagrSessionsDir } from '../config/yagr-home.js';
-import type { SessionSummary } from '@yagr/session-service';
+import type { CheckpointReason, SessionSummary } from '@yagr/session-service';
 import { SessionService, deriveSessionTitle } from '@yagr/session-service';
 import { SlashCommandService } from '@yagr/conversation-service';
 import { YagrConfigService } from '../config/yagr-config-service.js';
@@ -70,6 +70,7 @@ type WebUiChatStreamEvent =
       endedAt?: number;
     }
   | { type: 'text-delta'; delta: string }
+  | { type: 'checkpoint'; checkpoint: unknown }
   | { type: 'compaction'; summary: string; source: 'llm' | 'fallback'; messagesCompacted: number; preservedRecentMessages: number }
   | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
@@ -428,8 +429,22 @@ class WebUiGateway implements Gateway {
         return;
       }
       const handle = await this.resolveAgentHandle();
-      const compactionState = handle.compactionService.getState(sessionId);
-      const checkpoint = await this.sessions.saveCheckpoint(sessionId, { payloadState: compactionState });
+      const body = await this.readJson(request);
+      const displaySession = this.sessions.readDisplaySession(sessionId);
+      const requestedPayloads = isRecord(body.payloads) ? body.payloads : {};
+      const checkpoint = await this.sessions.saveCheckpoint(sessionId, {
+        summary: typeof body.summary === 'string' ? body.summary : undefined,
+        label: typeof body.label === 'string' ? body.label : undefined,
+        reason: parseCheckpointReason(body.reason) ?? 'manual',
+        payloads: {
+          ...requestedPayloads,
+          compaction: handle.compactionService.getState(sessionId),
+          surface: {
+            ...(isRecord(requestedPayloads.surface) ? requestedPayloads.surface : {}),
+            ...(displaySession ?? {}),
+          },
+        },
+      });
       this.sendJson(response, 201, { checkpoint });
       return;
     }
@@ -447,16 +462,30 @@ class WebUiGateway implements Gateway {
         this.sendJson(response, 400, { error: 'Checkpoint ID is required.' });
         return;
       }
-      await this.resolveAgentHandle();
-      const result = await this.sessions.restoreCheckpoint(sessionId, checkpointId);
-      this.sessions.clearDisplayThread(sessionId);
       const handle = await this.resolveAgentHandle();
-      if (isCompactionState(result.payloadState)) {
-        handle.compactionService.setState(sessionId, result.payloadState);
+      const result = await this.sessions.restoreCheckpoint(sessionId, checkpointId);
+      if (isCompactionState(result.payloads.compaction)) {
+        handle.compactionService.setState(sessionId, result.payloads.compaction);
       } else {
         handle.compactionService.reset(sessionId);
       }
-      this.sendJson(response, 200, { ok: true, compactionRestored: !!result.payloadState });
+      const surfacePayload = isRecord(result.payloads.surface) ? result.payloads.surface : undefined;
+      let displayThreadRestored = false;
+      const displayThread = surfacePayload?.displayThread;
+      if (Array.isArray(displayThread)) {
+        this.sessions.syncDisplayThread(sessionId, displayThread);
+        displayThreadRestored = true;
+      }
+      const title = surfacePayload?.title;
+      if (typeof title === 'string') {
+        this.sessions.setTitle(sessionId, title);
+      }
+      this.sendJson(response, 200, {
+        ok: true,
+        result: { ...result, displayThreadRestored },
+        compactionRestored: 'compaction' in result.payloads,
+        displayThreadRestored,
+      });
       return;
     }
 
@@ -629,6 +658,19 @@ class WebUiGateway implements Gateway {
     response.end(content);
   }
 
+  private readDisplayMetadata(sessionId: string): Record<string, unknown> {
+    const session = this.sessions.readDisplaySession(sessionId);
+    if (!session) {
+      return {};
+    }
+    return {
+      id: session.id,
+      title: session.title,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    };
+  }
+
   private async handleStreamingChat(response: ServerResponse, sessionId: string, message: string): Promise<void> {
     const setupStatus = this.setupService.getSetupStatus({
       activeSurfaces: [...ACTIVE_WEBUI_SURFACES],
@@ -772,8 +814,16 @@ class WebUiGateway implements Gateway {
 
       if (accumulator.fileModificationDetected) {
         try {
-          const compactionState = compactionService.getState(sessionId);
-          await this.sessions.saveCheckpoint(sessionId, { payloadState: compactionState });
+          const checkpoint = await this.sessions.maybeSaveCheckpoint(sessionId, 'after-tool', {
+            summary: 'Saved after file modifications',
+            payloads: {
+              compaction: compactionService.getState(sessionId),
+              surface: this.readDisplayMetadata(sessionId),
+            },
+          });
+          if (checkpoint) {
+            writeEvent({ type: 'checkpoint', checkpoint });
+          }
         } catch (err) {
           console.error('[auto-checkpoint] Failed to save checkpoint:', err);
         }
@@ -826,4 +876,22 @@ function isCompactionState(value: unknown): value is CompactionState {
     && Array.isArray((value as { compactionHistory?: unknown[] }).compactionHistory)
     && typeof (value as { totalCompactions?: unknown }).totalCompactions === 'number',
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function parseCheckpointReason(value: unknown): CheckpointReason | undefined {
+  switch (value) {
+    case 'manual':
+    case 'auto':
+    case 'before-tool':
+    case 'after-tool':
+    case 'before-compaction':
+    case 'after-compaction':
+      return value;
+    default:
+      return undefined;
+  }
 }
