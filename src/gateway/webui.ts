@@ -328,19 +328,24 @@ class WebUiGateway implements Gateway {
     if (method === 'POST' && url.pathname === '/api/chat/compact') {
       const body = await this.readJson(request);
       const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
-      if (sessionId && !isValidSessionId(sessionId)) {
+      if (!sessionId) {
+        this.sendJson(response, 400, { error: 'Session id is required.' });
+        return;
+      }
+      if (!isValidSessionId(sessionId)) {
         this.sendJson(response, 400, { error: 'Invalid session id.' });
         return;
       }
-      const handle = this.agentHandlePromise ? await this.resolveAgentHandle() : undefined;
-      const state = sessionId && handle
-        ? handle.compactionService.getState(sessionId)
-        : { lastCompaction: null, compactionHistory: [], totalCompactions: 0 };
+      const handle = await this.resolveAgentHandle();
+      const result = await handle.compactionService.compactSession(sessionId);
+      const state = handle.compactionService.getState(sessionId);
       this.sendJson(response, 200, {
+        ...result,
         compacted: state.lastCompaction !== null,
-        event: state.lastCompaction,
+        event: result.event ?? null,
+        lastCompaction: state.lastCompaction,
         totalCompactions: state.totalCompactions,
-        contextBlock: sessionId && handle ? handle.compactionService.getContextBlock(sessionId) : '',
+        contextBlock: handle.compactionService.getContextBlock(sessionId),
       });
       return;
     }
@@ -693,16 +698,6 @@ class WebUiGateway implements Gateway {
       const provider = (localConfig.provider ?? 'anthropic') as YagrModelProvider;
       const model = localConfig.model ?? 'claude-sonnet-4-20250514';
       const contextWindow = getSnapshotContextWindow(provider, model) ?? 200000;
-      const estimatedPromptTokens = Math.ceil(message.length / 4);
-
-      writeEvent({
-        type: 'context-usage',
-        promptTokens: estimatedPromptTokens,
-        completionTokens: 0,
-        contextWindowTokens: contextWindow,
-        fillPercent: Math.round((estimatedPromptTokens / contextWindow) * 100),
-        source: 'estimated',
-      });
 
       for await (const event of stream) {
         eventCount++;
@@ -721,6 +716,7 @@ class WebUiGateway implements Gateway {
             ledger: getGatewayImpactLedger(),
             context: { sessionId },
           },
+          contextWindowTokens: contextWindow,
           onTextDelta: (delta) => {
             writeEvent({ type: 'text-delta', delta });
           },
@@ -759,6 +755,9 @@ class WebUiGateway implements Gateway {
               preservedRecentMessages: compaction.preservedRecentMessages,
             });
           },
+          onContextUsage: (usage) => {
+            writeEvent(usage);
+          },
         });
       }
 
@@ -778,17 +777,6 @@ class WebUiGateway implements Gateway {
           console.error('[auto-checkpoint] Failed to save checkpoint:', err);
         }
       }
-
-      const estimatedCompletionTokens = Math.ceil(accumulator.responseText.length / 4);
-      const totalEstimatedTokens = estimatedPromptTokens + estimatedCompletionTokens;
-      writeEvent({
-        type: 'context-usage',
-        promptTokens: estimatedPromptTokens,
-        completionTokens: estimatedCompletionTokens,
-        contextWindowTokens: contextWindow,
-        fillPercent: Math.min(100, Math.round((totalEstimatedTokens / contextWindow) * 100)),
-        source: 'estimated',
-      });
 
       writeEvent({
         type: 'final',

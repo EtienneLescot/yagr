@@ -59,6 +59,7 @@ Yagr owns:
 - provider/model runtime
 - sessions/checkpoints
 - runtime events
+- reusable runtime context compaction and provider-reported context usage metrics
 - impact event schema and append-only local impact ledger
 - runtime-to-impact classification for meaningful operation events
 - shared `/impact` slash summaries for WebUI, TUI, and Telegram
