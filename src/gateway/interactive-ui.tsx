@@ -402,7 +402,7 @@ function YagrInteractiveApp({ agent, compactionService, threadIdRef, options, se
       if (accumulator.fileModificationDetected) {
         try {
           const checkpoint = await sessions.saveCheckpoint(threadIdRef.current, {
-            payloadState: compactionService.getState(threadIdRef.current),
+            payloads: { compaction: compactionService.getState(threadIdRef.current) },
           });
           pushEntry('result', 'Checkpoint saved', checkpoint.id);
         } catch (err) {
