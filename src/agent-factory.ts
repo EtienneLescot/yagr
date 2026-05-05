@@ -19,7 +19,7 @@ import { createDeepAgent, computeSummarizationDefaults } from 'deepagents';
 import { countTokensApproximately } from 'langchain';
 import { MemorySaver } from '@langchain/langgraph';
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
-import { HumanMessage, getBufferString, type BaseMessage } from '@langchain/core/messages';
+import { AIMessage, HumanMessage, ToolMessage, getBufferString, type BaseMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { YagrConfigStoreLike } from './config/yagr-config-service.js';
 import { createLangChainModel } from './llm/create-langchain-model.js';
@@ -287,22 +287,74 @@ function shouldSummarize(messages: BaseMessage[], trigger: ContextSize, maxInput
 }
 
 function determineCutoffIndex(messages: BaseMessage[], keep: ContextSize, maxInputTokens?: number): number {
+  let rawCutoff: number;
   if (keep.type === 'messages') {
-    return messages.length <= keep.value ? 0 : messages.length - keep.value;
+    if (messages.length <= keep.value) {
+      return 0;
+    }
+    rawCutoff = messages.length - keep.value;
+  } else {
+    const targetTokens = keep.type === 'fraction' && maxInputTokens !== undefined
+      ? Math.floor(maxInputTokens * keep.value)
+      : keep.value;
+    let tokensKept = 0;
+    rawCutoff = 0;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const messageTokens = countTokensApproximately([messages[i]]);
+      if (tokensKept + messageTokens > targetTokens) {
+        rawCutoff = i + 1;
+        break;
+      }
+      tokensKept += messageTokens;
+    }
   }
 
-  const targetTokens = keep.type === 'fraction' && maxInputTokens !== undefined
-    ? Math.floor(maxInputTokens * keep.value)
-    : keep.value;
-  let tokensKept = 0;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const messageTokens = countTokensApproximately([messages[i]]);
-    if (tokensKept + messageTokens > targetTokens) {
-      return i + 1;
-    }
-    tokensKept += messageTokens;
+  return findSafeCutoffPoint(messages, rawCutoff);
+}
+
+function findSafeCutoffPoint(messages: BaseMessage[], cutoffIndex: number): number {
+  if (cutoffIndex >= messages.length || !ToolMessage.isInstance(messages[cutoffIndex])) {
+    return cutoffIndex;
   }
-  return 0;
+
+  let forwardIndex = cutoffIndex;
+  while (forwardIndex < messages.length && ToolMessage.isInstance(messages[forwardIndex])) {
+    forwardIndex += 1;
+  }
+
+  const toolCallIds = new Set<string>();
+  for (let i = cutoffIndex; i < forwardIndex; i++) {
+    const toolMessage = messages[i];
+    if (ToolMessage.isInstance(toolMessage) && toolMessage.tool_call_id) {
+      toolCallIds.add(toolMessage.tool_call_id);
+    }
+  }
+
+  let backwardIndex: number | null = null;
+  for (let i = cutoffIndex - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (!AIMessage.isInstance(message) || !message.tool_calls) {
+      continue;
+    }
+    const aiToolCallIds = new Set(message.tool_calls.map((toolCall) => toolCall.id).filter((id): id is string => typeof id === 'string'));
+    for (const id of toolCallIds) {
+      if (aiToolCallIds.has(id)) {
+        backwardIndex = i;
+        break;
+      }
+    }
+    if (backwardIndex !== null) {
+      break;
+    }
+  }
+
+  if (backwardIndex === null) {
+    return forwardIndex;
+  }
+  if (cutoffIndex - backwardIndex > cutoffIndex / 2 && cutoffIndex > 2) {
+    return forwardIndex;
+  }
+  return backwardIndex;
 }
 
 async function createDeepAgentsSummary(
