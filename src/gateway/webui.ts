@@ -71,6 +71,7 @@ type WebUiChatStreamEvent =
     }
   | { type: 'text-delta'; delta: string }
   | { type: 'compaction'; summary: string; source: 'llm' | 'fallback'; messagesCompacted: number; preservedRecentMessages: number }
+  | { type: 'context-usage-reset' }
   | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string };
@@ -670,6 +671,7 @@ class WebUiGateway implements Gateway {
 
     try {
       writeEvent({ type: 'start', sessionId, message: 'Run started.' });
+      writeEvent({ type: 'context-usage-reset' });
 
       const { agent, compactionService } = await this.resolveAgentHandle();
       const derivedTitle = deriveSessionTitle(message);
