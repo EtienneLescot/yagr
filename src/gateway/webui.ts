@@ -529,15 +529,18 @@ class WebUiGateway implements Gateway {
       }
 
       const slashCtx = { surface: 'webui' as const, sessionId, threadId: sessionId };
-        const webuiHandler = {
-          getActiveSessionId: () => this.sessions.getActiveForScope({ kind: 'webui', key: sessionId })?.id,
-          resumeSession: (_scope: { kind: string; key: string }, resumeSessionId: string) => {
-            this.sessions.ensure(resumeSessionId, { scope: { kind: 'webui', key: resumeSessionId } });
-          },
-          resetLocalState: () => {
+      const webuiHandler = {
+        getActiveSessionId: () => this.sessions.getActiveForScope({ kind: 'webui', key: sessionId })?.id,
+        resumeSession: (_scope: { kind: string; key: string }, resumeSessionId: string) => {
+          this.sessions.ensure(resumeSessionId, { scope: { kind: 'webui', key: resumeSessionId } });
+        },
+        resetLocalState: () => {
           this.sessions.clearDisplayThread(sessionId);
-          },
-        };
+        },
+        resetAfterRestore: () => {
+          // Checkpoint restore returns display payloads separately; do not clear the visible WebUI thread here.
+        },
+      };
 
       const result = await service.execute(parsed, slashCtx, webuiHandler);
       this.sendJson(response, 200, { kind: result.kind, message: result.message, data: result.data });

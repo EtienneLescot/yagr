@@ -53,6 +53,7 @@ export interface SlashHandler {
   getActiveSessionId(scope: DeepAgentSessionScope): string | undefined;
   resumeSession(scope: DeepAgentSessionScope, sessionId: string): void;
   resetLocalState(): void;
+  resetAfterRestore?(): void;
   approvePendingPermissions?(): Promise<number> | number;
   getDisplayOptions?(): { showThinking: boolean; showExecution: boolean };
   setDisplayOptions?(opts: { showThinking?: boolean; showExecution?: boolean }): void;
@@ -329,6 +330,7 @@ export class SlashCommandService {
       } else {
         this.checkpointPayloads.reset(ctx.threadId);
       }
+      (handler.resetAfterRestore ?? handler.resetLocalState)();
       return {
         kind: 'ok',
         message: `Checkpoint ${checkpointId} restored. Resume your conversation.`,

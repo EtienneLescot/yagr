@@ -29,6 +29,7 @@ type ChatStreamEvent =
     }
   | { type: 'context-usage'; promptTokens: number; completionTokens: number; contextWindowTokens: number; fillPercent: number; source: 'api' | 'estimated' }
   | { type: 'text-delta'; delta: string }
+  | { type: 'checkpoint'; checkpoint: unknown }
   | { type: 'final'; sessionId: string; response: string; finalState: string; requiredActions?: Array<{ title: string; message: string }> }
   | { type: 'error'; error: string };
 
@@ -1011,6 +1012,11 @@ function App() {
 
         if (streamEvent.type === 'text-delta') {
           appendBodyText(bodyId, streamEvent.delta);
+          return;
+        }
+
+        if (streamEvent.type === 'checkpoint') {
+          void refreshSessions();
           return;
         }
 
