@@ -746,7 +746,7 @@ class TelegramGateway implements Gateway {
       if (accumulator.fileModificationDetected) {
         try {
           await this.sessions.saveCheckpoint(threadId, {
-            payloadState: compactionService.getState(threadId),
+            payloads: { compaction: compactionService.getState(threadId) },
           });
         } catch (err) {
           console.error('[telegram auto-checkpoint] Failed to save checkpoint:', err);
