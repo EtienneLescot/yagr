@@ -36,8 +36,24 @@ test('makeToolEndOperationEvent extracts shell exit status and body', () => {
   const event = makeToolEndOperationEvent('op-1', 'execute', 'first\nlast\n[Command succeeded with exit code 0]', 1);
 
   assert.equal(event.status, 'done');
-  assert.equal(event.summary, 'exit 0  last');
+  assert.equal(event.summary, 'last');
   assert.equal(event.body, 'first\nlast');
+});
+
+test('makeToolEndOperationEvent strips stderr markers from successful shell output', () => {
+  const event = makeToolEndOperationEvent('op-1', 'execute', '[stderr] - Listing workflows...\n[Command succeeded with exit code 0]', 1);
+
+  assert.equal(event.status, 'done');
+  assert.equal(event.summary, '- Listing workflows...');
+  assert.equal(event.body, '- Listing workflows...');
+});
+
+test('makeToolEndOperationEvent uses a clearer shell failure summary', () => {
+  const event = makeToolEndOperationEvent('op-1', 'execute', 'Exit code: 127\n[Command failed with exit code 127]', 1);
+
+  assert.equal(event.status, 'error');
+  assert.equal(event.summary, 'Command failed (exit 127)');
+  assert.equal(event.body, 'Exit code: 127');
 });
 
 test('makeGenericToolStartOperationEvent uses user-facing labels and categories', () => {

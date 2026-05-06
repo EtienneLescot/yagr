@@ -461,22 +461,22 @@ function normalizeToolOutputForDisplay(toolName: string, rawOutput: unknown): To
     const ok = out?.ok === true;
     const stdout = typeof out?.stdout === 'string' ? out.stdout : '';
     const stderr = typeof out?.stderr === 'string' ? out.stderr : '';
-    const output = joinToolOutputParts([stdout, stderr]) || '';
-    const lastOutputLine = output.split('\n').reverse().find((line) => line.trim())?.trim();
+    const output = sanitizeShellOutput(joinToolOutputParts([stdout, stderr]) || '');
     return {
       status: exitCode !== undefined && exitCode !== 0 ? 'error' : 'done',
-      summary: exitCode !== undefined ? `exit ${exitCode}${lastOutputLine ? `  ${truncate(lastOutputLine, 80)}` : ''}` : (ok ? 'OK' : 'Failed'),
+      summary: exitCode !== undefined ? summarizeShellResult(output, exitCode) : (ok ? 'Completed' : 'Failed'),
       body: capToolBody(output),
     };
   }
 
   if (toolName === 'execute' || exitCode !== undefined) {
+    const shellBody = sanitizeShellOutput(body);
     return {
       status: exitCode !== undefined && exitCode !== 0 ? 'error' : 'done',
       summary: exitCode !== undefined
-        ? `exit ${exitCode}${lastLine ? `  ${truncate(lastLine, 80)}` : ''}`
-        : truncate(lastLine || body, 120),
-      body: capToolBody(body),
+        ? summarizeShellResult(shellBody, exitCode)
+        : truncate(lastMeaningfulLine(shellBody) || shellBody, 120),
+      body: capToolBody(shellBody),
     };
   }
 
@@ -660,6 +660,37 @@ function joinToolOutputParts(parts: unknown[]): string | undefined {
     .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
     .join('\n');
   return text || undefined;
+}
+
+function sanitizeShellOutput(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/^\[(stdout|stderr)\]\s*/i, '').trimEnd())
+    .join('\n')
+    .trim();
+}
+
+function summarizeShellResult(text: string, exitCode: number): string {
+  const lastLine = lastMeaningfulLine(text);
+  if (exitCode === 0) {
+    return truncate(lastLine || 'Completed', 120);
+  }
+  if (!lastLine || /^exit code:?\s*\d+$/i.test(lastLine)) {
+    return `Command failed (exit ${exitCode})`;
+  }
+  if (new RegExp(`\\b${exitCode}\\b`).test(lastLine)) {
+    return truncate(lastLine, 120);
+  }
+  return truncate(`${lastLine} (exit ${exitCode})`, 120);
+}
+
+function lastMeaningfulLine(text: string): string | undefined {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reverse()
+    .find(Boolean);
 }
 
 function capToolBody(text: string): string | undefined {
