@@ -157,6 +157,10 @@ export interface CodingOrientationMiddlewareOptions {
   runtimePathAnchor?: string;
 }
 
+function getDefaultRuntimePathAnchorPrompt(): string {
+  return `Backend working directory: ${process.cwd()}`;
+}
+
 export function createCodingOrientationMiddleware(
   prompt: string = CODING_ORIENTATION_SYSTEM_PROMPT,
   options: CodingOrientationMiddlewareOptions = {},
@@ -164,7 +168,7 @@ export function createCodingOrientationMiddleware(
   return createMiddleware({
     name: 'YagrCodingOrientationMiddleware',
     wrapModelCall(request, handler) {
-      const parts = [prompt, options.runtimePathAnchor].filter(Boolean);
+      const parts = [prompt, options.runtimePathAnchor ?? getDefaultRuntimePathAnchorPrompt()].filter(Boolean);
       return handler({
         ...request,
         systemMessage: request.systemMessage.concat(

@@ -143,6 +143,9 @@ export async function processLangGraphStreamEvent(
       if (update) {
         await callbacks.onUserVisibleUpdate?.(update);
       }
+      if (!shouldEmitOperationForTool(toolName)) {
+        break;
+      }
       const operation = makeGenericToolStartOperationEvent(toolName, input);
       accumulator.activeOperations.set(operationKey, operation);
       await emitOperation(callbacks, operation);
@@ -286,6 +289,14 @@ function normalizeEventInput(rawInput: Record<string, unknown> | undefined): Rec
     return inner as Record<string, unknown>;
   }
   return rawInput;
+}
+
+function shouldEmitOperationForTool(toolName: string): boolean {
+  return toolName !== 'reportProgress'
+    && toolName !== 'requestRequiredAction'
+    && toolName !== 'ls'
+    && toolName !== 'glob'
+    && toolName !== 'grep';
 }
 
 function parseToolOutput(raw: unknown): Record<string, unknown> | undefined {
