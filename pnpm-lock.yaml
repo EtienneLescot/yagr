@@ -50,9 +50,6 @@ importers:
       '@yagr/provider-runtime':
         specifier: workspace:*
         version: link:packages/provider-runtime
-      '@yagr/reality-observer':
-        specifier: workspace:*
-        version: link:packages/reality-observer
       '@yagr/runtime-events':
         specifier: workspace:*
         version: link:packages/runtime-events
