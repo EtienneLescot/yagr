@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "node --input-type=module --eval \"(await import('node:fs')).rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
-    "test": "node --import tsx --test src/**/*.test.ts"
+    "test": "pnpm --filter @yagr/session-checkpoint build && pnpm --filter @yagr/session-memory build && pnpm --filter @yagr/webui-session-registry build && node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@langchain/langgraph-checkpoint": "^1.0.1",
