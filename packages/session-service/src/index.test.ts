@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { SessionService } from './index.js';
+import { CompactionService } from './index.js';
 
 test('session service rotates scoped sessions and persists memory through adapter', () => {
   const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yagr-session-service-'));
@@ -88,6 +89,56 @@ test('maybeSaveCheckpoint obeys checkpoint policy', async () => {
   assert.equal(await service.maybeSaveCheckpoint(session.id, 'after-tool'), undefined);
   service.setCheckpointPolicy({ afterFileModifications: true });
   assert.ok(await service.maybeSaveCheckpoint(session.id, 'after-tool'));
+});
+
+test('compaction service stores history and context block in public session-service package', async () => {
+  const service = new CompactionService({ historyLimit: 2 });
+
+  await service.notifyCompaction('session-1', {
+    summary: 'Summarized early messages',
+    source: 'llm',
+    estimatedTokens: 1200,
+    thresholdTokens: 1000,
+    messagesCompacted: 8,
+    preservedRecentMessages: 4,
+  });
+
+  await service.notifyCompaction('session-1', {
+    summary: 'Summarized another chunk',
+    source: 'fallback',
+    estimatedTokens: 1800,
+    thresholdTokens: 1000,
+    messagesCompacted: 6,
+    preservedRecentMessages: 5,
+    fallbackReason: 'safety',
+  });
+
+  const state = service.getState('session-1');
+
+  assert.equal(state.totalCompactions, 2);
+  assert.equal(state.compactionHistory.length, 2);
+  assert.equal(state.lastCompaction?.summary, 'Summarized another chunk');
+  assert.match(service.getContextBlock('session-1'), /Recent context compactions/);
+  assert.match(service.getContextBlock('session-1'), /fallback/);
+});
+
+test('compaction service delegates manual compaction through public session-service package', async () => {
+  const service = new CompactionService({}, async () => ({
+    status: 'completed',
+    event: {
+      summary: 'Compacted now',
+      source: 'llm',
+      estimatedTokens: 500,
+      thresholdTokens: 400,
+      messagesCompacted: 3,
+      preservedRecentMessages: 2,
+    },
+  }));
+
+  const result = await service.compactSession('session-2');
+
+  assert.equal(result.status, 'completed');
+  assert.equal(service.getState('session-2').totalCompactions, 1);
 });
 
 class FakeCheckpointer {

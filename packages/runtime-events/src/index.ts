@@ -11,6 +11,16 @@ export interface RuntimeUserVisibleUpdate {
   dedupeKey: string;
 }
 
+export interface RuntimeRequiredAction {
+  id: string;
+  kind: 'input' | 'permission' | 'external';
+  title: string;
+  message: string;
+  detail?: string;
+  resumable: boolean;
+  blocking?: boolean;
+}
+
 export interface RuntimeOperationEvent {
   kind: 'operation';
   operationId: string;
@@ -34,8 +44,8 @@ export interface RuntimePhaseEvent {
 export interface RuntimeContextCompactionEvent {
   summary: string;
   source: 'llm' | 'fallback';
-  estimatedTokens?: number;
-  thresholdTokens?: number;
+  estimatedTokens: number;
+  thresholdTokens: number;
   messagesCompacted: number;
   preservedRecentMessages: number;
   fallbackReason?: string;
@@ -88,18 +98,70 @@ export function makeGenericToolStartOperationEvent(
   toolName: string,
   input: Record<string, unknown> | undefined,
 ): RuntimeOperationEvent {
-  const operationId = `tool:${toolName}:${randomUUID()}`;
+  const now = Date.now();
+  const operationId = toolName === 'write_todos' ? 'tool:write_todos' : `tool:${toolName}:${randomUUID()}`;
   const summary = summarizeToolInput(toolName, input);
+  const category = inferOperationCategory(toolName);
+  const label = makeToolStartLabel(toolName, input, summary);
+
   return {
     kind: 'operation',
     operationId,
-    label: summary ? `${toolName}: ${summary.slice(0, 80)}` : toolName,
-    category: inferOperationCategory(toolName),
+    label,
+    category,
     status: 'running',
     inputSummary: summary,
     summary,
-    startedAt: Date.now(),
+    startedAt: now,
+    phase: toolName === 'write_todos' ? 'plan' : undefined,
   };
+}
+
+export function mapToolStartToUserVisibleUpdate(
+  toolName: string,
+  input: Record<string, unknown> | undefined,
+): RuntimeUserVisibleUpdate | undefined {
+  switch (toolName) {
+    case 'reportProgress':
+      return undefined;
+    case 'requestRequiredAction':
+      return {
+        tone: 'info',
+        title: 'Needs attention',
+        detail: typeof input?.title === 'string' ? input.title : undefined,
+        dedupeKey: `tool:requestRequiredAction:${input?.title ?? ''}`,
+      };
+    case 'write_todos':
+      return {
+        tone: 'info',
+        title: 'Plan',
+        phase: 'plan',
+        dedupeKey: 'tool:write_todos',
+      };
+    case 'execute':
+      return {
+        tone: 'info',
+        title: 'Shell',
+        detail: typeof input?.command === 'string' ? truncate(input.command, 80) : undefined,
+        dedupeKey: `tool:execute:${input?.command ?? ''}`,
+      };
+    case 'httpRequest':
+      return {
+        tone: 'info',
+        title: 'HTTP request',
+        detail: typeof input?.url === 'string' ? `${input?.method ?? 'GET'} ${input.url}` : undefined,
+        dedupeKey: `tool:httpRequest:${input?.url ?? ''}`,
+      };
+    default:
+      if (!toolName || toolName === 'ls' || toolName === 'glob') {
+        return undefined;
+      }
+      return {
+        tone: 'info',
+        title: toolName,
+        dedupeKey: `tool:${toolName}`,
+      };
+  }
 }
 
 export function makeToolEndOperationEvent(
@@ -314,17 +376,55 @@ function summarizeToolInput(toolName: string, input: Record<string, unknown> | u
   if (typeof input.command === 'string') return input.command;
   if (typeof input.path === 'string') return input.path;
   if (typeof input.file_path === 'string') return input.file_path;
+  if (typeof input.cwd === 'string') return input.cwd;
   if (typeof input.url === 'string') return `${input.method ?? 'GET'} ${input.url}`;
   if (typeof input.prompt === 'string' && toolName === 'run_rewrite_planner') return truncate(input.prompt, 80);
   return undefined;
 }
 
+function makeToolStartLabel(toolName: string, input: Record<string, unknown> | undefined, summary: string | undefined): string {
+  switch (toolName) {
+    case 'execute':
+      return `Shell: ${summary ? truncate(summary, 80) : 'command'}`;
+    case 'runShell':
+      return `Shell: ${summary ? truncate(summary, 80) : 'command'}`;
+    case 'runScript':
+      return `Script: ${summary ? truncate(summary, 80) : 'command'}`;
+    case 'readFile':
+    case 'read_file':
+      return `Read ${summary || ''}`.trim();
+    case 'writeFile':
+    case 'write_file':
+    case 'writeWorkspaceFile':
+      return `Write ${summary || ''}`.trim();
+    case 'edit_file':
+      return `Edit ${summary || ''}`.trim();
+    case 'httpRequest': {
+      const method = typeof input?.method === 'string' ? input.method : 'GET';
+      const url = typeof input?.url === 'string' ? input.url : '';
+      return `${method} ${truncate(url, 80)}`.trim();
+    }
+    case 'write_todos':
+      return 'Planning';
+    case 'task':
+      return typeof input?.name === 'string'
+        ? input.name
+        : typeof input?.description === 'string'
+          ? truncate(input.description, 60)
+          : 'task';
+    default:
+      return summary ? `${toolName}: ${truncate(summary, 80)}` : toolName;
+  }
+}
+
 function inferOperationCategory(toolName: string): RuntimeOperationCategory {
-  if (toolName.includes('read')) return 'file-read';
-  if (toolName.includes('write') || toolName.includes('edit')) return 'file-write';
-  if (toolName.includes('shell') || toolName.includes('execute')) return 'shell';
-  if (toolName.includes('http')) return 'web';
-  if (toolName.includes('agent') || toolName.includes('task')) return 'agent';
+  const normalized = toolName.toLowerCase();
+  if (normalized === 'write_todos') return 'phase';
+  if (normalized.includes('read')) return 'file-read';
+  if (normalized.includes('write') || normalized.includes('edit') || normalized.includes('delete') || normalized.includes('move') || normalized.includes('replace')) return 'file-write';
+  if (normalized.includes('shell') || normalized.includes('script') || normalized.includes('execute')) return 'shell';
+  if (normalized.includes('http')) return 'web';
+  if (normalized.includes('agent') || normalized.includes('task')) return 'agent';
   return 'tool';
 }
 
@@ -357,6 +457,21 @@ function normalizeToolOutputForDisplay(toolName: string, rawOutput: unknown): To
   const body = exitMatch ? text.slice(0, exitMatch.index).trimEnd() : text;
   const lastLine = body.split('\n').reverse().find((line) => line.trim())?.trim();
 
+  if (toolName === 'runShell' || toolName === 'runScript') {
+    const out = parseToolOutputRecord(unwrapped);
+    const exitCode = typeof out?.exitCode === 'number' ? out.exitCode : undefined;
+    const ok = out?.ok === true;
+    const stdout = typeof out?.stdout === 'string' ? out.stdout : '';
+    const stderr = typeof out?.stderr === 'string' ? out.stderr : '';
+    const output = joinToolOutputParts([stdout, stderr]) || '';
+    const lastOutputLine = output.split('\n').reverse().find((line) => line.trim())?.trim();
+    return {
+      status: exitCode !== undefined && exitCode !== 0 ? 'error' : 'done',
+      summary: exitCode !== undefined ? `exit ${exitCode}${lastOutputLine ? `  ${truncate(lastOutputLine, 80)}` : ''}` : (ok ? 'OK' : 'Failed'),
+      body: capToolBody(output),
+    };
+  }
+
   if (toolName === 'execute' || exitCode !== undefined) {
     return {
       status: exitCode !== undefined && exitCode !== 0 ? 'error' : 'done',
@@ -367,10 +482,99 @@ function normalizeToolOutputForDisplay(toolName: string, rawOutput: unknown): To
     };
   }
 
+  if (toolName === 'readFile' || toolName === 'read_file') {
+    return {
+      summary: `${text.split('\n').length} lines`,
+      body: capToolBody(text),
+    };
+  }
+
+  if (toolName === 'write_file' || toolName === 'writeFile' || toolName === 'writeWorkspaceFile') {
+    return {
+      summary: `${text.split('\n').length} lines written`,
+    };
+  }
+
+  if (toolName === 'httpRequest') {
+    const out = parseToolOutputRecord(unwrapped);
+    const status = typeof out?.statusCode === 'number' ? out.statusCode : typeof out?.status === 'number' ? out.status : undefined;
+    return {
+      summary: status !== undefined ? `HTTP ${status} · ${text.length} bytes` : truncate(text, 120),
+      body: capToolBody(text),
+    };
+  }
+
   return {
     summary: truncate(lastLine || text, 120),
     body: capToolBody(text),
   };
+}
+
+function parseToolOutputRecord(output: unknown): Record<string, unknown> | undefined {
+  const unwrapped = unwrapToolOutput(output);
+  if (isRecord(unwrapped)) {
+    return unwrapped;
+  }
+  if (typeof unwrapped === 'string') {
+    const parsed = parseJsonObjectFromText(unwrapped);
+    if (parsed) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function parseJsonObjectFromText(raw: string): Record<string, unknown> | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return extractLeadingJsonObject(trimmed);
+  }
+}
+
+function extractLeadingJsonObject(raw: string): Record<string, unknown> | undefined {
+  if (!raw.startsWith('{')) {
+    return undefined;
+  }
+  let depth = 0;
+  let inString = false;
+  let escaping = false;
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+      } else if (char === '\\') {
+        escaping = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(raw.slice(0, index + 1));
+          return isRecord(parsed) ? parsed : undefined;
+        } catch {
+          return undefined;
+        }
+      }
+    }
+  }
+  return undefined;
 }
 
 function unwrapToolOutput(rawOutput: unknown): unknown {

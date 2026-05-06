@@ -24,6 +24,166 @@ import {
 } from '@yagr/session-checkpoint';
 import { WebUiSessionRegistry, type SessionSummary, type WebUiSession } from '@yagr/webui-session-registry';
 
+export interface ContextCompactionEvent {
+  summary: string;
+  source: 'llm' | 'fallback';
+  estimatedTokens: number;
+  thresholdTokens: number;
+  messagesCompacted: number;
+  preservedRecentMessages: number;
+  fallbackReason?: string;
+}
+
+export type ManualCompactionStatus = 'completed' | 'skipped' | 'failed' | 'unavailable';
+
+export interface ManualCompactionOptions {
+  messages?: unknown[];
+  force?: boolean;
+  abortSignal?: AbortSignal;
+}
+
+export interface ManualCompactionResult {
+  status: ManualCompactionStatus;
+  event?: ContextCompactionEvent;
+  reason?: string;
+  messagesCompacted?: number;
+  preservedRecentMessages?: number;
+}
+
+export interface CompactionState {
+  lastCompaction: ContextCompactionEvent | null;
+  compactionHistory: ContextCompactionEvent[];
+  totalCompactions: number;
+}
+
+export interface CompactionSubscriber {
+  onCompaction: (event: ContextCompactionEvent) => void | Promise<void>;
+}
+
+export interface CompactionConfig {
+  historyLimit?: number;
+}
+
+export type SessionCompactor = (
+  sessionId: string,
+  options?: ManualCompactionOptions,
+) => Promise<ManualCompactionResult>;
+
+export const DEFAULT_COMPACTION_CONFIG: CompactionConfig = {
+  historyLimit: 50,
+};
+
+export function buildCompactionContextBlock(state: CompactionState, limit = 3): string {
+  if (state.compactionHistory.length === 0) {
+    return '';
+  }
+
+  const recent = state.compactionHistory.slice(0, limit);
+  const lines = recent.map((compaction) => {
+    const date = new Date().toISOString().slice(0, 10);
+    const msgCount = `${compaction.messagesCompacted} msgs -> ${compaction.preservedRecentMessages} preserved`;
+    const source = compaction.source === 'llm' ? 'LLM summary' : 'fallback';
+    return `[${date}] ${source}: ${compaction.summary.slice(0, 80)}${compaction.summary.length > 80 ? '...' : ''} (${msgCount})`;
+  });
+
+  return `Recent context compactions (${state.compactionHistory.length} total): ${lines.join(' | ')}`;
+}
+
+export class CompactionService {
+  private readonly config: CompactionConfig;
+  private readonly subscribers = new Set<CompactionSubscriber>();
+  private readonly states = new Map<string, CompactionState>();
+  private readonly sessionCompactor?: SessionCompactor;
+
+  constructor(config: Partial<CompactionConfig> = {}, sessionCompactor?: SessionCompactor) {
+    this.config = { ...DEFAULT_COMPACTION_CONFIG, ...config };
+    this.sessionCompactor = sessionCompactor;
+  }
+
+  getConfig(): CompactionConfig {
+    return { ...this.config };
+  }
+
+  getState(sessionId: string): CompactionState {
+    const state = this.states.get(sessionId) ?? this.emptyState();
+    return {
+      lastCompaction: state.lastCompaction,
+      compactionHistory: [...state.compactionHistory],
+      totalCompactions: state.totalCompactions,
+    };
+  }
+
+  getContextBlock(sessionId: string, limit = 3): string {
+    return buildCompactionContextBlock(this.getState(sessionId), limit);
+  }
+
+  subscribe(subscriber: CompactionSubscriber): () => void {
+    this.subscribers.add(subscriber);
+    return () => this.subscribers.delete(subscriber);
+  }
+
+  async notifyCompaction(sessionId: string, event: ContextCompactionEvent): Promise<void> {
+    const previousState = this.states.get(sessionId) ?? this.emptyState();
+    this.states.set(sessionId, {
+      lastCompaction: event,
+      compactionHistory: [
+        event,
+        ...previousState.compactionHistory.slice(0, (this.config.historyLimit ?? 50) - 1),
+      ],
+      totalCompactions: previousState.totalCompactions + 1,
+    });
+
+    const notifications = [...this.subscribers].map(async (subscriber) => {
+      try {
+        await subscriber.onCompaction(event);
+      } catch {
+        // Subscribers must not affect compaction state.
+      }
+    });
+
+    await Promise.allSettled(notifications);
+  }
+
+  async compactSession(sessionId: string, options: ManualCompactionOptions = {}): Promise<ManualCompactionResult> {
+    if (!this.sessionCompactor) {
+      return {
+        status: 'unavailable',
+        reason: 'Compaction runtime is not available.',
+      };
+    }
+
+    const result = await this.sessionCompactor(sessionId, options);
+    if (result.status === 'completed' && result.event) {
+      await this.notifyCompaction(sessionId, result.event);
+    }
+    return result;
+  }
+
+  reset(sessionId?: string): void {
+    if (!sessionId) {
+      this.states.clear();
+      return;
+    }
+    this.states.delete(sessionId);
+  }
+
+  setState(sessionId: string, state: CompactionState): void {
+    this.states.set(sessionId, {
+      lastCompaction: state.lastCompaction,
+      compactionHistory: [...state.compactionHistory],
+      totalCompactions: state.totalCompactions,
+    });
+  }
+
+  private emptyState(): CompactionState {
+    return {
+      lastCompaction: null,
+      compactionHistory: [],
+      totalCompactions: 0,
+    };
+  }
+}
+
 export interface SessionServiceOptions {
   sessionsDir: string;
   webUiSessionsDir?: string;

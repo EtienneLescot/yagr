@@ -1,0 +1,317 @@
+import type { YagrLocalConfig } from './config/yagr-config-service.js';
+import { DEFAULT_COPILOT_API_BASE_URL, GITHUB_COPILOT_DEFAULT_MODEL } from './copilot-account.js';
+import { ANTHROPIC_ACCOUNT_DEFAULT_MODEL } from './anthropic-account.js';
+import { OPENAI_ACCOUNT_BASE_URL, OPENAI_ACCOUNT_DEFAULT_MODEL } from './openai-account.js';
+
+export type YagrModelProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'mistral'
+  | 'openrouter'
+  | 'openai-oauth'
+  | 'anthropic-proxy'
+  | 'copilot-proxy'
+  | 'minimax'
+  | 'minimax-token-plan'
+  | 'openai-compatible';
+
+export interface YagrProviderDefinition {
+  id: YagrModelProvider;
+  displayName?: string;
+  defaultModel: string;
+  defaultBaseUrl?: string;
+  requiresApiKey: boolean;
+  usesOpenAiCompatibleApi: boolean;
+  supported?: boolean;
+  experimental?: boolean;
+  setupHint?: string;
+  managedProxy?: {
+    packageName: string;
+    executable: string;
+    args?: string[];
+    readyTimeoutMs?: number;
+    startupNotes?: string[];
+  };
+  modelDiscovery?: {
+    buildUrl: (baseUrl?: string) => string | undefined;
+    authMode: 'bearer-optional' | 'bearer-required' | 'x-api-key-required' | 'none';
+    mapResponse: (data: Record<string, unknown>) => string[];
+  };
+}
+
+const MODEL_LIST_MAPPER = (data: Record<string, unknown>) =>
+  (data.data as Array<{ id: string }> | undefined)?.map((model) => model.id) ?? [];
+
+function getMiniMaxDiscoveryUrl(baseUrl?: string): string {
+  if (!baseUrl) {
+    return 'https://api.minimax.io/v1/models';
+  }
+
+  return baseUrl.replace(/\/anthropic\/?$/, '/v1/models');
+}
+
+const GOOGLE_OPENAI_MODEL_LIST_MAPPER = (data: Record<string, unknown>) =>
+  (data.data as Array<{ id: string }> | undefined)
+    ?.map((model) => model.id?.replace(/^models\//, ''))
+    .filter((id) => typeof id === 'string' && /^gemini-/i.test(id))
+    .filter((id): id is string => Boolean(id))
+  ?? [];
+
+export const YAGR_PROVIDER_DEFINITIONS: Record<YagrModelProvider, YagrProviderDefinition> = {
+  anthropic: {
+    id: 'anthropic',
+    displayName: 'Claude',
+    defaultModel: 'claude-haiku-4-5',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: false,
+    modelDiscovery: {
+      buildUrl: () => 'https://api.anthropic.com/v1/models',
+      authMode: 'x-api-key-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  openai: {
+    id: 'openai',
+    displayName: 'OpenAI',
+    defaultModel: 'gpt-4o',
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: () => 'https://api.openai.com/v1/models',
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  google: {
+    id: 'google',
+    displayName: 'Gemini',
+    defaultModel: 'gemini-3-flash-preview',
+    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: () => 'https://generativelanguage.googleapis.com/v1beta/openai/models',
+      authMode: 'bearer-required',
+      mapResponse: GOOGLE_OPENAI_MODEL_LIST_MAPPER,
+    },
+  },
+  mistral: {
+    id: 'mistral',
+    displayName: 'Mistral',
+    defaultModel: 'mistral-large-latest',
+    defaultBaseUrl: 'https://api.mistral.ai/v1',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: () => 'https://api.mistral.ai/v1/models',
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  openrouter: {
+    id: 'openrouter',
+    displayName: 'OpenRouter',
+    defaultModel: 'anthropic/claude-3.5-sonnet',
+    defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: () => 'https://openrouter.ai/api/v1/models',
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  'openai-oauth': {
+    id: 'openai-oauth',
+    displayName: 'OpenAI',
+    defaultModel: OPENAI_ACCOUNT_DEFAULT_MODEL,
+    defaultBaseUrl: OPENAI_ACCOUNT_BASE_URL,
+    requiresApiKey: false,
+    usesOpenAiCompatibleApi: true,
+    setupHint: 'ChatGPT subscription, no API key required',
+    modelDiscovery: {
+      buildUrl: () => `${OPENAI_ACCOUNT_BASE_URL}/codex/models`,
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  'anthropic-proxy': {
+    id: 'anthropic-proxy',
+    displayName: 'Claude',
+    defaultModel: ANTHROPIC_ACCOUNT_DEFAULT_MODEL,
+    requiresApiKey: false,
+    usesOpenAiCompatibleApi: false,
+    setupHint: 'Claude setup-token from `claude setup-token`',
+  },
+  'copilot-proxy': {
+    id: 'copilot-proxy',
+    displayName: 'GitHub',
+    defaultModel: GITHUB_COPILOT_DEFAULT_MODEL,
+    defaultBaseUrl: DEFAULT_COPILOT_API_BASE_URL,
+    requiresApiKey: false,
+    usesOpenAiCompatibleApi: true,
+    setupHint: 'Copilot subscription, no API key required',
+  },
+  minimax: {
+    id: 'minimax',
+    displayName: 'MiniMax',
+    defaultModel: 'MiniMax-M2.7',
+    defaultBaseUrl: 'https://api.minimax.io/anthropic',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: false,
+    modelDiscovery: {
+      buildUrl: getMiniMaxDiscoveryUrl,
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  'minimax-token-plan': {
+    id: 'minimax-token-plan',
+    displayName: 'MiniMax Token Plan',
+    defaultModel: 'MiniMax-M2.7',
+    defaultBaseUrl: 'https://api.minimax.io/anthropic',
+    requiresApiKey: true,
+    usesOpenAiCompatibleApi: false,
+    modelDiscovery: {
+      buildUrl: getMiniMaxDiscoveryUrl,
+      authMode: 'bearer-required',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+  'openai-compatible': {
+    id: 'openai-compatible',
+    displayName: 'OpenAI Compatible',
+    defaultModel: '',
+    requiresApiKey: false,
+    usesOpenAiCompatibleApi: true,
+    modelDiscovery: {
+      buildUrl: (baseUrl?: string) => baseUrl ? `${baseUrl}/models` : undefined,
+      authMode: 'bearer-optional',
+      mapResponse: MODEL_LIST_MAPPER,
+    },
+  },
+};
+
+export const YAGR_MODEL_PROVIDERS = Object.freeze(Object.keys(YAGR_PROVIDER_DEFINITIONS) as YagrModelProvider[]);
+export const YAGR_SUPPORTED_MODEL_PROVIDERS = Object.freeze(
+  YAGR_MODEL_PROVIDERS.filter((provider) => YAGR_PROVIDER_DEFINITIONS[provider].supported !== false),
+);
+
+const YAGR_HIDDEN_SELECTABLE_MODEL_PROVIDERS = new Set<YagrModelProvider>([
+  'anthropic-proxy',
+]);
+
+export const YAGR_SELECTABLE_MODEL_PROVIDERS = Object.freeze(
+  YAGR_SUPPORTED_MODEL_PROVIDERS.filter((provider) => {
+    if (YAGR_HIDDEN_SELECTABLE_MODEL_PROVIDERS.has(provider)) {
+      return false;
+    }
+    return !isOAuthAccountProvider(provider) || isSupportedProvider(provider);
+  }),
+);
+
+export function getProviderDefinition(provider: YagrModelProvider): YagrProviderDefinition {
+  return YAGR_PROVIDER_DEFINITIONS[provider];
+}
+
+export function getDefaultBaseUrlForProvider(provider: YagrModelProvider): string | undefined {
+  return getProviderDefinition(provider).defaultBaseUrl;
+}
+
+export function getDefaultModelForProvider(provider: YagrModelProvider): string {
+  return getProviderDefinition(provider).defaultModel;
+}
+
+export function providerNeedsBaseUrlInput(provider: YagrModelProvider): boolean {
+  if (isOAuthAccountProvider(provider)) {
+    return false;
+  }
+
+  return provider.endsWith('-proxy') || provider === 'mistral' || provider === 'openrouter' || provider === 'openai-compatible';
+}
+
+export function providerRequiresApiKey(provider: YagrModelProvider): boolean {
+  return getProviderDefinition(provider).requiresApiKey;
+}
+
+export function isExperimentalProvider(provider: YagrModelProvider): boolean {
+  return getProviderDefinition(provider).experimental === true;
+}
+
+export function isSupportedProvider(provider: YagrModelProvider): boolean {
+  return getProviderDefinition(provider).supported !== false;
+}
+
+export function getProviderSetupHint(provider: YagrModelProvider): string | undefined {
+  return getProviderDefinition(provider).setupHint;
+}
+
+export function getProviderDisplayName(provider: YagrModelProvider): string {
+  return getProviderDefinition(provider).displayName ?? provider;
+}
+
+export function isOAuthAccountProvider(provider: YagrModelProvider): boolean {
+  return provider === 'openai-oauth' || provider === 'anthropic-proxy' || provider === 'copilot-proxy';
+}
+
+export function normalizeProviderId(provider: string | undefined): YagrModelProvider | undefined {
+  if (!provider) {
+    return undefined;
+  }
+
+  const normalized = provider.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (normalized === 'claude') {
+    return 'anthropic';
+  }
+
+  if (normalized === 'gemini') {
+    return 'google';
+  }
+
+  if (normalized in YAGR_PROVIDER_DEFINITIONS) {
+    return normalized as YagrModelProvider;
+  }
+
+  return undefined;
+}
+
+export function isProviderConfigured(localConfig: YagrLocalConfig, getApiKey: (provider: YagrModelProvider) => string | undefined): boolean {
+  if (!localConfig.provider || !localConfig.model) {
+    return false;
+  }
+
+  const definition = getProviderDefinition(localConfig.provider);
+  if (definition.requiresApiKey && !getApiKey(localConfig.provider)) {
+    return false;
+  }
+
+  if (providerNeedsBaseUrlInput(localConfig.provider) && !(localConfig.baseUrl || definition.defaultBaseUrl)) {
+    return false;
+  }
+
+  return true;
+}
+
+function normalizeProxyModelsUrl(baseUrl?: string): string | undefined {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+  if (!normalizedBaseUrl) {
+    return undefined;
+  }
+
+  return normalizedBaseUrl.endsWith('/models') ? normalizedBaseUrl : `${normalizedBaseUrl}/models`;
+}
+
+function normalizeBaseUrl(baseUrl?: string): string | undefined {
+  const trimmed = baseUrl?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
