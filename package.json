@@ -1,6 +1,6 @@
 {
   "name": "@yagr/agent",
-  "version": "0.2.32",
+  "version": "0.2.33",
   "description": "Autonomous local coding agent",
   "packageManager": "pnpm@10.28.0",
   "type": "module",
