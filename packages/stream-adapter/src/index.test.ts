@@ -57,6 +57,26 @@ test('stream adapter collects required actions from tool output', async () => {
   assert.deepEqual(accumulator.requiredActions, [{ id: 'act-1', kind: 'input', title: 'Approve', message: 'Continue?', resumable: true }]);
 });
 
+test('stream adapter skips operation cards for internal progress-only tools', async () => {
+  const accumulator = createLangGraphStreamAccumulator();
+  const operations: unknown[] = [];
+  const updates: unknown[] = [];
+
+  await processLangGraphStreamEvent({
+    event: 'on_tool_start',
+    name: 'reportProgress',
+    run_id: 'run-1',
+    data: { input: { input: JSON.stringify({ message: 'Working' }) } },
+  } as any, accumulator, {
+    onOperation: (operation) => { operations.push(operation); },
+    onUserVisibleUpdate: (update) => { updates.push(update); },
+  });
+
+  assert.equal(operations.length, 0);
+  assert.equal(updates.length, 0);
+  assert.equal(accumulator.activeOperations.size, 0);
+});
+
 test('extractLastAiMessage is available from public stream adapter', () => {
   assert.equal(extractLastAiMessage({ messages: [{ role: 'assistant', content: [{ type: 'text', text: 'done' }] }] }), 'done');
 });
