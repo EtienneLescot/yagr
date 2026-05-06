@@ -87,5 +87,5 @@ test('makeToolEndOperationEvent preserves full execute output for shell logs', (
 
   assert.equal(event.status, 'done');
   assert.equal(event.body, body);
-  assert.match(event.summary, /^exit 0/);
+  assert.equal(event.summary, `${'x'.repeat(119)}…`);
 });
