@@ -66,7 +66,6 @@
     "@yagr/deepagent-bootstrap": "workspace:*",
     "@yagr/impact-ledger": "workspace:*",
     "@yagr/provider-runtime": "workspace:*",
-    "@yagr/reality-observer": "workspace:*",
     "@yagr/runtime-events": "workspace:*",
     "@yagr/session-service": "workspace:*",
     "@yagr/stream-adapter": "workspace:*",
