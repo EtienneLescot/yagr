@@ -174,8 +174,6 @@ export function makeToolEndOperationEvent(
 
   return {
     operationId,
-    label: toolName,
-    category: inferOperationCategory(toolName),
     status: display.status ?? 'done',
     summary: display.summary,
     body: display.body,
