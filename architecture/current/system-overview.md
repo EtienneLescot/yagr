@@ -8,11 +8,11 @@ This repository is now a local autonomous coding-agent runtime.
 flowchart TD
     User[User]
 
-    subgraph App[App]
+    subgraph App[App and CLI]
       AgentApp[@yagr/agent]
     end
 
-    subgraph Facades[Facade Packages]
+    subgraph Facades[Optional Facade Packages]
       RuntimeFacade[@yagr/runtime]
       SurfacesFacade[@yagr/surfaces]
     end
@@ -66,6 +66,8 @@ Yagr owns:
 - stream adaptation
 - conversation/slash behavior
 - reusable surface primitives
+
+The architectural source of truth now lives in the granular runtime packages. The root `@yagr/agent` package remains the assembled app/CLI distribution, while downstream products are expected to compose directly from the runtime packages when footprint and dependency control matter.
 
 Yagr does not own domain-specific backends. External systems can still be used by the agent through ordinary local shell and file operations when the user asks, but no such backend is part of the built-in architecture.
 

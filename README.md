@@ -57,6 +57,19 @@ See [architecture/target/observability-impact-ledger.md](./architecture/target/o
 - runtime event streaming
 - CLI/TUI/Web UI/Telegram surfaces
 
+## Package Status
+
+`@yagr/agent` is the assembled app and CLI distribution. It is not the recommended dependency for embedded runtime integrations because it intentionally carries product surfaces and setup/runtime conveniences.
+
+For integrations, compose the granular public packages directly:
+
+- `@yagr/deepagent-bootstrap` for agent construction
+- `@yagr/provider-runtime` for provider/model runtime
+- `@yagr/session-service` for sessions and checkpoints
+- `@yagr/stream-adapter` and `@yagr/runtime-events` for stream and tool activity normalization
+
+This keeps downstream products in control of dependency closure, which matters for packaged environments such as VS Code extensions.
+
 ## What It Does Not Own
 
 Yagr does not include a built-in domain backend.

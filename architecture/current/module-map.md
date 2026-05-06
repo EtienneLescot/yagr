@@ -6,14 +6,16 @@ This page maps the repository at the package/system level.
 
 ### Primary Public Bricks
 
-- `@yagr/runtime`
+- `@yagr/deepagent-bootstrap`
+- `@yagr/provider-runtime`
+- `@yagr/session-service`
+- `@yagr/stream-adapter`
 - `@yagr/runtime-events`
 - `@yagr/impact-ledger`
 - `@yagr/reality-observer`
 - `@yagr/plugin-runtime`
-- `@yagr/provider-runtime`
 
-These are the preferred package-level integration surfaces for downstream products such as a coding-agent VS Code extension.
+These are the preferred package-level integration surfaces for downstream products such as a coding-agent VS Code extension. Compose only the runtime capabilities you need so consumers keep control over dependency closure and packaging footprint.
 
 ### Optional Public Bricks
 
@@ -24,12 +26,12 @@ These are the preferred package-level integration surfaces for downstream produc
 
 These are useful when an integrator wants to own part of the composition directly, such as session storage, slash-command behavior, stream normalization, or existing Yagr UI primitives.
 
-### Facades
+### Optional Facades
 
 - `@yagr/runtime`
 - `@yagr/surfaces`
 
-These are the preferred integration surfaces for downstream products.
+These are convenience re-export packages. They remain useful for quick starts, but they are not the architectural source of truth for downstream integrations.
 
 ### Core Runtime Packages
 
@@ -58,7 +60,7 @@ These are the preferred integration surfaces for downstream products.
 
 ## Publish Policy
 
-All packages required by the transitive npm graph are published publicly so consumers can install facades such as `@yagr/runtime` and `@yagr/surfaces` normally.
+All packages required by the transitive npm graph are published publicly so consumers can install granular runtime bricks or optional facades normally.
 
 Publication does not mean every package is a recommended standalone API. Lower-level packages such as checkpoint, memory, bootstrap, registry, and individual surface packages are installable for npm resolution but are not promoted as primary integration bricks unless their APIs are explicitly stabilized.
 
@@ -68,17 +70,19 @@ Changesets is the release SSOT. Stable releases are prepared through a Changeset
 
 For a VS Code extension, prefer this composition path:
 
-- import runtime construction from `@yagr/runtime`
+- construct the agent from `@yagr/deepagent-bootstrap`
+- resolve providers and models from `@yagr/provider-runtime`
+- persist sessions and checkpoints with `@yagr/session-service`
+- normalize LangGraph streams with `@yagr/stream-adapter`
 - render progress and tool activity from `@yagr/runtime-events`
 - record meaningful runtime effects with `@yagr/impact-ledger` and `@yagr/reality-observer`
 - use `@yagr/plugin-runtime` for plugin contracts
-- use `@yagr/session-service` only if the extension owns Yagr-compatible session UX directly, including first-class checkpoint lifecycle APIs and opaque surface payload restore
 
-`@yagr/session-service` is the stable checkpoint authority exposed through `@yagr/runtime`. It wraps `@yagr/session-checkpoint`, which persists native LangGraph checkpoint tuples, while the service owns UI-ready summaries, session metadata restore, checkpoint policy, and checkpoint lifecycle events.
+`@yagr/session-service` is the stable checkpoint authority. It wraps `@yagr/session-checkpoint`, which persists native LangGraph checkpoint tuples, while the service owns UI-ready summaries, session metadata restore, checkpoint policy, and checkpoint lifecycle events.
 
 ## Root App Composition
 
-The root `src/` tree assembles the `@yagr/agent` app.
+The root `src/` tree assembles the `@yagr/agent` app and CLI.
 
 It wires:
 
@@ -94,7 +98,7 @@ It wires:
 
 Preferred direction:
 
-- apps depend on facades
+- apps depend on granular runtime packages, or on facades only when convenience outweighs package-footprint concerns
 - facades depend on internal core/surface packages
 - plugins depend on plugin/runtime contracts
 - core does not depend on product-specific integration behavior
@@ -107,4 +111,4 @@ Provider-reported context usage is surfaced as a runtime stream capability throu
 
 ## Integrator Note
 
-If integrating Yagr into another product, prefer `@yagr/runtime` and `@yagr/surfaces` over internal packages unless the facade is insufficient.
+If integrating Yagr into another product, prefer the granular runtime packages first. Reach for `@yagr/runtime` or `@yagr/surfaces` only when a convenience facade is genuinely preferable to explicit composition.
