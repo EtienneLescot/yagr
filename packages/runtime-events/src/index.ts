@@ -108,18 +108,15 @@ export function makeToolEndOperationEvent(
   rawOutput: unknown,
   startedAt: number,
 ): Partial<RuntimeOperationEvent> {
-  const summary = typeof rawOutput === 'string'
-    ? truncate(rawOutput, 120)
-    : rawOutput && typeof rawOutput === 'object'
-      ? truncate(JSON.stringify(rawOutput), 120)
-      : undefined;
+  const display = normalizeToolOutputForDisplay(toolName, rawOutput);
 
   return {
     operationId,
     label: toolName,
     category: inferOperationCategory(toolName),
-    status: 'done',
-    summary,
+    status: display.status ?? 'done',
+    summary: display.summary,
+    body: display.body,
     endedAt: Date.now(),
     startedAt,
   };
@@ -333,6 +330,147 @@ function inferOperationCategory(toolName: string): RuntimeOperationCategory {
 
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+interface ToolOutputDisplay {
+  status?: 'done' | 'error';
+  summary?: string;
+  body?: string;
+}
+
+const MAX_TOOL_BODY_CHARS = 20_000;
+
+function normalizeToolOutputForDisplay(toolName: string, rawOutput: unknown): ToolOutputDisplay {
+  const unwrapped = unwrapToolOutput(rawOutput);
+  const commandSummary = summarizeLangGraphCommand(unwrapped);
+  if (commandSummary) {
+    return { summary: commandSummary };
+  }
+
+  const text = toolOutputToString(unwrapped)?.trimEnd();
+  if (!text) {
+    return {};
+  }
+
+  const exitMatch = text.match(/\[Command (?:succeeded|failed) with exit code (\d+)\]\s*$/);
+  const exitCode = exitMatch ? Number.parseInt(exitMatch[1], 10) : undefined;
+  const body = exitMatch ? text.slice(0, exitMatch.index).trimEnd() : text;
+  const lastLine = body.split('\n').reverse().find((line) => line.trim())?.trim();
+
+  if (toolName === 'execute' || exitCode !== undefined) {
+    return {
+      status: exitCode !== undefined && exitCode !== 0 ? 'error' : 'done',
+      summary: exitCode !== undefined
+        ? `exit ${exitCode}${lastLine ? `  ${truncate(lastLine, 80)}` : ''}`
+        : truncate(lastLine || body, 120),
+      body: capToolBody(body),
+    };
+  }
+
+  return {
+    summary: truncate(lastLine || text, 120),
+    body: capToolBody(text),
+  };
+}
+
+function unwrapToolOutput(rawOutput: unknown): unknown {
+  if (typeof rawOutput === 'string') {
+    const trimmed = rawOutput.trim();
+    if (trimmed.startsWith('{') && (trimmed.includes('ToolMessage') || trimmed.includes('"lg_name"'))) {
+      try {
+        return unwrapToolOutput(JSON.parse(trimmed));
+      } catch {
+        return rawOutput;
+      }
+    }
+    return rawOutput;
+  }
+
+  if (!isRecord(rawOutput)) {
+    return rawOutput;
+  }
+
+  if (isSerializedToolMessage(rawOutput) && isRecord(rawOutput.kwargs)) {
+    return unwrapToolOutput(rawOutput.kwargs.content);
+  }
+
+  return rawOutput;
+}
+
+function toolOutputToString(output: unknown): string | undefined {
+  if (typeof output === 'string') {
+    return output;
+  }
+  if (Array.isArray(output)) {
+    return joinToolOutputParts(output.map(toolOutputToString));
+  }
+  if (!isRecord(output)) {
+    return undefined;
+  }
+  if (typeof output.text === 'string') {
+    return output.text;
+  }
+  if (typeof output.content === 'string') {
+    return output.content;
+  }
+  if (Array.isArray(output.content)) {
+    return toolOutputToString(output.content);
+  }
+  if (typeof output.result === 'string') {
+    return output.result;
+  }
+  if (typeof output.output === 'string') {
+    return output.output;
+  }
+  if (typeof output.stdout === 'string' || typeof output.stderr === 'string') {
+    return joinToolOutputParts([output.stdout, output.stderr]);
+  }
+  try {
+    return JSON.stringify(output);
+  } catch {
+    return undefined;
+  }
+}
+
+function summarizeLangGraphCommand(output: unknown): string | undefined {
+  if (!isRecord(output) || output.lg_name !== 'Command' || !isRecord(output.update)) {
+    return undefined;
+  }
+  const keys = Object.keys(output.update).filter((key) => key !== '__root__');
+  if (keys.includes('todos')) {
+    return 'Updated todos';
+  }
+  if (keys.includes('messages')) {
+    return 'Updated messages';
+  }
+  return keys.length ? `Updated ${keys.join(', ')}` : 'Updated state';
+}
+
+function isSerializedToolMessage(value: Record<string, unknown>): boolean {
+  return value.lc === 1 &&
+    value.type === 'constructor' &&
+    Array.isArray(value.id) &&
+    value.id.some((part) => part === 'ToolMessage');
+}
+
+function joinToolOutputParts(parts: unknown[]): string | undefined {
+  const text = parts
+    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+    .join('\n');
+  return text || undefined;
+}
+
+function capToolBody(text: string): string | undefined {
+  if (!text) {
+    return undefined;
+  }
+  return text.length > MAX_TOOL_BODY_CHARS
+    ? `${text.slice(0, MAX_TOOL_BODY_CHARS)}\n[output truncated]`
+    : text;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object';
 }
 
 function phaseLabel(phase: RuntimePhase): string {

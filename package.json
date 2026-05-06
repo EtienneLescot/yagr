@@ -24,7 +24,7 @@
     "build:clean:symlink": "pnpm run clean && pnpm run build && node --eval \"import('fs').then(({chmodSync})=>chmodSync('dist/cli.js',0o755))\" && pnpm link --global",
     "clean": "node scripts/clean.mjs",
     "test": "pnpm run test:unit && pnpm run test:packages",
-    "test:packages": "pnpm --filter @yagr/plugin-runtime test && pnpm --filter @yagr/session-memory test && pnpm --filter @yagr/session-service test && pnpm --filter @yagr/impact-ledger test && pnpm --filter @yagr/reality-observer test",
+    "test:packages": "pnpm --filter @yagr/plugin-runtime test && pnpm --filter @yagr/runtime-events test && pnpm --filter @yagr/session-memory test && pnpm --filter @yagr/session-service test && pnpm --filter @yagr/impact-ledger test && pnpm --filter @yagr/reality-observer test",
     "test:unit": "pnpm run build && node --test tests/*.test.mjs",
     "test:minimax-discovery": "pnpm run build && node scripts/test-minimax-discovery.mjs",
     "typecheck": "tsc --noEmit",
