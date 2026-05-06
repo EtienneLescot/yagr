@@ -1,5 +1,19 @@
 import type { YagrLanguageModelConfig } from './llm/create-langchain-model.js';
 import type { YagrModelProvider } from './llm/provider-registry.js';
+import type {
+  RuntimeContextCompactionEvent,
+  RuntimeContextUsageEvent,
+  RuntimeOperationCategory,
+  RuntimeOperationEvent,
+  RuntimePhase,
+  RuntimePhaseEvent,
+  RuntimeRequiredAction,
+} from '@yagr/runtime-events';
+import type {
+  ManualCompactionOptions,
+  ManualCompactionResult,
+  ManualCompactionStatus,
+} from '@yagr/session-service';
 
 export type EngineName = 'local-coding';
 
@@ -30,7 +44,7 @@ export interface CredentialRequirement {
 
 export type { YagrLanguageModelConfig, YagrModelProvider };
 
-export type YagrRunPhase = 'inspect' | 'plan' | 'edit' | 'summarize';
+export type YagrRunPhase = RuntimePhase;
 
 export type YagrAgentState =
   | 'idle'
@@ -44,17 +58,8 @@ export type YagrAgentState =
   | 'completed'
   | 'failed_terminal';
 
-export type YagrRequiredActionKind = 'input' | 'permission' | 'external';
-
-export interface YagrRequiredAction {
-  id: string;
-  kind: YagrRequiredActionKind;
-  title: string;
-  message: string;
-  detail?: string;
-  resumable: boolean;
-  blocking?: boolean;
-}
+export type YagrRequiredActionKind = RuntimeRequiredAction['kind'];
+export type YagrRequiredAction = RuntimeRequiredAction;
 
 export interface YagrToolCallTrace {
   toolName: string;
@@ -126,11 +131,7 @@ export interface YagrRunStep {
   usage?: { promptTokens: number; completionTokens: number };
 }
 
-export interface YagrPhaseEvent {
-  phase: YagrRunPhase;
-  status: 'started' | 'completed';
-  message: string;
-}
+export type YagrPhaseEvent = RuntimePhaseEvent;
 
 export interface YagrStateEvent {
   state: YagrAgentState;
@@ -190,79 +191,14 @@ export interface YagrRunJournalEntry {
   step?: YagrRunStep;
 }
 
-export interface YagrContextCompactionEvent {
-  summary: string;
-  source: 'llm' | 'fallback';
-  estimatedTokens: number;
-  thresholdTokens: number;
-  messagesCompacted: number;
-  preservedRecentMessages: number;
-  fallbackReason?: string;
-}
-
-export interface YagrContextUsageEvent {
-  type: 'context-usage';
-  /** Tokens used by the prompt (input), as reported by the API or estimated from content length. */
-  promptTokens: number;
-  /** Tokens generated in the last completion step. */
-  completionTokens: number;
-  /** Maximum context window for the active model. */
-  contextWindowTokens: number;
-  /** Percentage of the context window consumed by the current prompt (0–100). */
-  fillPercent: number;
-  /** Whether the counts come from the API response or from a character-length estimate. */
-  source: 'api' | 'estimated';
-}
-
-export type YagrManualCompactionStatus = 'completed' | 'skipped' | 'failed' | 'unavailable';
-
-export interface YagrManualCompactionOptions {
-  /** Optional message list supplied by a caller that already owns the session history. */
-  messages?: unknown[];
-  /** Force compaction even when DeepAgents' automatic trigger threshold is not reached. */
-  force?: boolean;
-  abortSignal?: AbortSignal;
-}
-
-export interface YagrManualCompactionResult {
-  status: YagrManualCompactionStatus;
-  event?: YagrContextCompactionEvent;
-  reason?: string;
-  messagesCompacted?: number;
-  preservedRecentMessages?: number;
-}
-
-export type YagrOperationStatus = 'running' | 'done' | 'error';
-
-export type YagrOperationCategory =
-  | 'file-read'
-  | 'file-write'
-  | 'shell'
-  | 'web'
-  | 'tool'
-  | 'agent'
-  | 'phase'
-  | 'thinking';
-
-export interface YagrOperationEvent {
-  kind: 'operation';
-  /** Unique identifier for this operation instance. */
-  operationId: string;
-  /** Human-readable label: "Read src/foo.ts", "Shell: npm test", "Thinking…" */
-  label: string;
-  /** Semantic category driving icon and colour. */
-  category: YagrOperationCategory;
-  status: YagrOperationStatus;
-  /** Original tool input summary, preserved when completion updates replace `summary` with output. */
-  inputSummary?: string;
-  /** Full body: stdout, file excerpt, thinking tokens… May be capped depending on the producer. */
-  body?: string;
-  /** One-line summary for compact views (≤ 120 chars). */
-  summary?: string;
-  startedAt: number;
-  endedAt?: number;
-  phase?: YagrRunPhase;
-}
+export type YagrContextCompactionEvent = RuntimeContextCompactionEvent;
+export type YagrContextUsageEvent = RuntimeContextUsageEvent;
+export type YagrManualCompactionStatus = ManualCompactionStatus;
+export type YagrManualCompactionOptions = ManualCompactionOptions;
+export type YagrManualCompactionResult = ManualCompactionResult;
+export type YagrOperationStatus = RuntimeOperationEvent['status'];
+export type YagrOperationCategory = RuntimeOperationCategory;
+export type YagrOperationEvent = RuntimeOperationEvent;
 
 export interface YagrDisplayOptions {
   showThinking?: boolean;

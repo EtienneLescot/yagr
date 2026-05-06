@@ -11,10 +11,13 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "test": "pnpm --filter @yagr/runtime-events build && node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.1.43",
+    "@yagr/impact-ledger": "workspace:*",
+    "@yagr/reality-observer": "workspace:*",
     "@yagr/runtime-events": "workspace:*"
   },
   "files": [
