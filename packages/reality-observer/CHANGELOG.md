@@ -1,5 +1,12 @@
 # @yagr/reality-observer
 
+## 0.1.3
+
+### Patch Changes
+
+- Updated dependencies [[`b22b3e8`](https://github.com/EtienneLescot/yagr/commit/b22b3e8cbe7093be513babe554b7efde91c0212a)]:
+  - @yagr/runtime-events@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes
